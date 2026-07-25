@@ -33,13 +33,13 @@ const channel = (() => {
 })()
 
 const APP_IDS = {
-  dev: "ai.opencode.desktop.dev",
-  beta: "ai.opencode.desktop.beta",
-  prod: "ai.opencode.desktop",
+  dev: "io.github.lin_a1.newhorse.dev",
+  beta: "io.github.lin_a1.newhorse.beta",
+  prod: "io.github.lin_a1.newhorse",
 } as const
 
 const getBase = (appId: string): Configuration => ({
-  artifactName: "opencode-desktop-${os}-${arch}.${ext}",
+  artifactName: "newhorse-desktop-${os}-${arch}.${ext}",
   directories: {
     output: "dist",
     buildResources: "resources",
@@ -74,8 +74,8 @@ const getBase = (appId: string): Configuration => ({
     sign: true,
   },
   protocols: {
-    name: "OpenCode",
-    schemes: ["opencode"],
+    name: "newhorse",
+    schemes: ["newhorse", "opencode"],
   },
   win: {
     icon: `resources/icons/icon.ico`,
@@ -115,29 +115,29 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode Dev",
-        rpm: { packageName: "opencode-dev" },
+        productName: "newhorse Dev",
+        rpm: { packageName: "newhorse-dev" },
       }
     }
     case "beta": {
       return {
         ...base,
         appId,
-        productName: "OpenCode Beta",
-        protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
-        rpm: { packageName: "opencode-beta" },
+        productName: "newhorse Beta",
+        protocols: { name: "newhorse Beta", schemes: ["newhorse", "opencode"] },
+        publish: { provider: "github", owner: "Lin-A1", repo: "newhorse", channel: "beta" },
+        rpm: { packageName: "newhorse-beta" },
       }
     }
     case "prod": {
       return {
         ...base,
         appId,
-        productName: "OpenCode",
-        protocols: { name: "OpenCode", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        productName: "newhorse",
+        protocols: { name: "newhorse", schemes: ["newhorse", "opencode"] },
+        publish: { provider: "github", owner: "Lin-A1", repo: "newhorse", channel: "latest" },
         deb: { fpm: [legacyDesktopEntryFpm] },
-        rpm: { packageName: "opencode", fpm: [legacyDesktopEntryFpm] },
+        rpm: { packageName: "newhorse", fpm: [legacyDesktopEntryFpm] },
       }
     }
   }

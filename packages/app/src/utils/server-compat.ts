@@ -1,6 +1,6 @@
 import type { ServerApi } from "./server"
 import type { ServerProtocol } from "./server-protocol"
-import type { OpencodeClient, Session } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeClient, Session } from "@newhorse/sdk/v2/client"
 import type {
   Project,
   ProjectCurrent,
@@ -14,7 +14,7 @@ import type {
   SessionPromptOutput,
   SessionShellInput,
   SessionShellOutput,
-} from "@opencode-ai/client/promise"
+} from "@newhorse/client/promise"
 
 type LegacyClient = OpencodeClient
 type LegacyFor = (directory?: string) => LegacyClient

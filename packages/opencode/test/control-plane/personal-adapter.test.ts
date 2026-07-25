@@ -1,7 +1,7 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
-import { Global } from "@opencode-ai/core/global"
-import { ProjectV2 } from "@opencode-ai/core/project"
+import { Global } from "@newhorse/core/global"
+import { ProjectV2 } from "@newhorse/core/project"
 import { getAdapter, listAdapters } from "../../src/control-plane/adapters"
 import {
   PERSONAL_ADAPTER_TYPE,

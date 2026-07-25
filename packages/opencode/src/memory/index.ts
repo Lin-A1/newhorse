@@ -1,16 +1,16 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { Database } from "@opencode-ai/core/database/database"
-import { MemoryTable } from "@opencode-ai/core/memory/sql"
+import { LayerNode } from "@newhorse/core/effect/layer-node"
+import { Database } from "@newhorse/core/database/database"
+import { MemoryTable } from "@newhorse/core/memory/sql"
 import type {
   MemoryKind,
   MemoryProvenance,
   MemoryScope,
   MemorySensitivity,
   MemoryStatus,
-} from "@opencode-ai/core/memory/sql"
-import type { WorkspaceV2 } from "@opencode-ai/core/workspace"
-import type { SessionSchema } from "@opencode-ai/core/session/schema"
-import { Identifier } from "@opencode-ai/core/id/id"
+} from "@newhorse/core/memory/sql"
+import type { WorkspaceV2 } from "@newhorse/core/workspace"
+import type { SessionSchema } from "@newhorse/core/session/schema"
+import { Identifier } from "@newhorse/core/id/id"
 import { InstanceState } from "@/effect/instance-state"
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
@@ -71,7 +71,7 @@ export interface Interface {
   readonly clear: () => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Memory") {}
+export class Service extends Context.Service<Service, Interface>()("@newhorse/Memory") {}
 
 const layer = Layer.effect(
   Service,

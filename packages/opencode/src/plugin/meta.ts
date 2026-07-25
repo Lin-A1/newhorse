@@ -1,10 +1,10 @@
 import path from "path"
 import { fileURLToPath } from "url"
 
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { Global } from "@opencode-ai/core/global"
+import { Flag } from "@newhorse/core/flag/flag"
+import { Global } from "@newhorse/core/global"
 import { Filesystem } from "@/util/filesystem"
-import { Flock } from "@opencode-ai/core/util/flock"
+import { Flock } from "@newhorse/core/util/flock"
 
 import { parsePluginSpecifier, pluginSource } from "./shared"
 

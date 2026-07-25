@@ -1,7 +1,7 @@
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { LayerNode } from "@newhorse/core/effect/layer-node"
+import { PermissionV1 } from "@newhorse/core/v1/permission"
 import { Config } from "@/config/config"
-import { serviceUse } from "@opencode-ai/core/effect/service-use"
+import { serviceUse } from "@newhorse/core/effect/service-use"
 import { Provider } from "@/provider/provider"
 
 import { generateObject, streamObject, type ModelMessage } from "ai"
@@ -16,7 +16,7 @@ import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
-import { Global } from "@opencode-ai/core/global"
+import { Global } from "@newhorse/core/global"
 import path from "path"
 import { Plugin } from "@/plugin"
 import { Skill } from "../skill"
@@ -24,13 +24,13 @@ import { Effect, Context, Layer, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
-import { AbsolutePath, type DeepMutable } from "@opencode-ai/core/schema"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { ModelV2 } from "@opencode-ai/core/model"
-import { LocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
-import { Reference } from "@opencode-ai/core/reference"
-import { Location } from "@opencode-ai/core/location"
-import { PluginV2 } from "@opencode-ai/core/plugin"
+import { AbsolutePath, type DeepMutable } from "@newhorse/core/schema"
+import { ProviderV2 } from "@newhorse/core/provider"
+import { ModelV2 } from "@newhorse/core/model"
+import { LocationServiceMap, locationServiceMapLayer } from "@newhorse/core/location-services"
+import { Reference } from "@newhorse/core/reference"
+import { Location } from "@newhorse/core/location"
+import { PluginV2 } from "@newhorse/core/plugin"
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -97,7 +97,7 @@ export interface Interface {
 
 type State = Omit<Interface, "generate">
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Agent") {}
+export class Service extends Context.Service<Service, Interface>()("@newhorse/Agent") {}
 
 export const use = serviceUse(Service)
 

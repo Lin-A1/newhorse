@@ -53,8 +53,8 @@ export const wslRuntimeRetryable = (runtime: WslServerRuntime) =>
 
 export function wslOpencodeAction(check?: WslOpencodeCheck) {
   if (!check) return
-  if (!check.resolvedPath) return "Install OpenCode"
-  if (check.matchesDesktop === false) return "Update OpenCode"
+  if (!check.resolvedPath) return "Install newhorse"
+  if (check.matchesDesktop === false) return "Update newhorse"
 }
 
 export function wslDistroReady(state: WslServersState | undefined, name: string) {

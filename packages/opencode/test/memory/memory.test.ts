@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Effect, Exit } from "effect"
 import { Memory, detectSensitive } from "@/memory"
 import { testEffect } from "../lib/effect"

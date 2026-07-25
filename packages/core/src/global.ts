@@ -7,16 +7,32 @@ import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 import { makeGlobalNode } from "./effect/app-node"
 
-const app = "opencode"
-const data = path.join(xdgData!, app)
-const cache = path.join(xdgCache!, app)
-const config = path.join(xdgConfig!, app)
-const state = path.join(xdgState!, app)
+const app = "newhorse"
+const legacyApp = "opencode"
+
+async function selectDirectory(root: string, fallback: string, name: string) {
+  const current = path.join(root, name)
+  const legacy = path.join(root, fallback)
+  const [hasCurrent, hasLegacy] = await Promise.all([
+    fs.stat(current).then(() => true).catch(() => false),
+    fs.stat(legacy).then(() => true).catch(() => false),
+  ])
+  // Existing installs keep using their legacy directory in place. New installs
+  // use newhorse, and once a newhorse directory exists it takes precedence.
+  return hasCurrent || !hasLegacy ? current : legacy
+}
+
+const [data, cache, config, state] = await Promise.all([
+  selectDirectory(xdgData!, legacyApp, app),
+  selectDirectory(xdgCache!, legacyApp, app),
+  selectDirectory(xdgConfig!, legacyApp, app),
+  selectDirectory(xdgState!, legacyApp, app),
+])
 const tmp = path.join(os.tmpdir(), app)
 
 const paths = {
   get home() {
-    return process.env.OPENCODE_TEST_HOME ?? os.homedir()
+    return process.env.NH_TEST_HOME ?? process.env.OPENCODE_TEST_HOME ?? os.homedir()
   },
   data,
   bin: path.join(cache, "bin"),
@@ -42,7 +58,7 @@ await Promise.all([
   fs.mkdir(Path.repos, { recursive: true }),
 ])
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Global") {}
+export class Service extends Context.Service<Service, Interface>()("@newhorse/Global") {}
 
 export interface Interface {
   readonly home: string

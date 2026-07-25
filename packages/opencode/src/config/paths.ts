@@ -1,11 +1,11 @@
 export * as ConfigPaths from "./paths"
 
 import path from "path"
-import { Flag } from "@opencode-ai/core/flag/flag"
-import { Global } from "@opencode-ai/core/global"
+import { Flag } from "@newhorse/core/flag/flag"
+import { Global } from "@newhorse/core/global"
 import { unique } from "remeda"
 import * as Effect from "effect/Effect"
-import { FSUtil } from "@opencode-ai/core/fs-util"
+import { FSUtil } from "@newhorse/core/fs-util"
 
 /** `.opencode` stays readable so configs written before the rename keep working. */
 export const CONFIG_DIRS = [".newhorse", ".opencode"]

@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { expect } from "bun:test"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Effect } from "effect"
 import { personalDirectory } from "../../src/control-plane/adapters/personal"
 import { MCP } from "../../src/mcp/index"

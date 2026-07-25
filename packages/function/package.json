@@ -1,5 +1,5 @@
 {
-  "name": "@opencode-ai/function",
+  "name": "@newhorse/function",
   "version": "1.18.4",
   "$schema": "https://json.schemastore.org/package.json",
   "private": true,

@@ -2,12 +2,12 @@ import { expect, test } from "bun:test"
 import { Effect } from "effect"
 import * as DateTime from "effect/DateTime"
 import { SessionID } from "../../src/session/schema"
-import { EventV2 } from "@opencode-ai/core/event"
-import { ModelV2 } from "@opencode-ai/core/model"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionMessageUpdater } from "@opencode-ai/core/session/message-updater"
-import { SessionMessage } from "@opencode-ai/core/session/message"
+import { EventV2 } from "@newhorse/core/event"
+import { ModelV2 } from "@newhorse/core/model"
+import { ProviderV2 } from "@newhorse/core/provider"
+import { SessionEvent } from "@newhorse/core/session/event"
+import { SessionMessageUpdater } from "@newhorse/core/session/message-updater"
+import { SessionMessage } from "@newhorse/core/session/message"
 
 test.skip("step snapshots carry over to assistant messages", () => {
   const state: SessionMessageUpdater.MemoryState = { messages: [] }

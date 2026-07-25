@@ -70,8 +70,8 @@ let arch = archMap[os.arch()]
 if (!arch) {
   arch = os.arch()
 }
-const base = "opencode-" + platform + "-" + arch
-const binary = platform === "windows" ? "opencode.exe" : "opencode"
+const bases = ["newhorse-" + platform + "-" + arch, "opencode-" + platform + "-" + arch]
+const binaries = platform === "windows" ? ["nh.exe", "newhorse.exe", "opencode.exe"] : ["nh", "newhorse", "opencode"]
 
 function supportsAvx2() {
   if (arch !== "x64") return false
@@ -123,7 +123,7 @@ function supportsAvx2() {
   return false
 }
 
-const names = (() => {
+const suffixes = (() => {
   const avx2 = supportsAvx2()
   const baseline = arch === "x64" && !avx2
 
@@ -148,25 +148,27 @@ const names = (() => {
 
     if (musl) {
       if (arch === "x64") {
-        if (baseline) return [`${base}-baseline-musl`, `${base}-musl`, `${base}-baseline`, base]
-        return [`${base}-musl`, `${base}-baseline-musl`, base, `${base}-baseline`]
+        if (baseline) return ["-baseline-musl", "-musl", "-baseline", ""]
+        return ["-musl", "-baseline-musl", "", "-baseline"]
       }
-      return [`${base}-musl`, base]
+      return ["-musl", ""]
     }
 
     if (arch === "x64") {
-      if (baseline) return [`${base}-baseline`, base, `${base}-baseline-musl`, `${base}-musl`]
-      return [base, `${base}-baseline`, `${base}-musl`, `${base}-baseline-musl`]
+      if (baseline) return ["-baseline", "", "-baseline-musl", "-musl"]
+      return ["", "-baseline", "-musl", "-baseline-musl"]
     }
-    return [base, `${base}-musl`]
+    return ["", "-musl"]
   }
 
   if (arch === "x64") {
-    if (baseline) return [`${base}-baseline`, base]
-    return [base, `${base}-baseline`]
+    if (baseline) return ["-baseline", ""]
+    return ["", "-baseline"]
   }
-  return [base]
+  return [""]
 })()
+
+const names = bases.flatMap((base) => suffixes.map((suffix) => base + suffix))
 
 function findBinary(startDir) {
   let current = startDir
@@ -174,8 +176,10 @@ function findBinary(startDir) {
     const modules = path.join(current, "node_modules")
     if (fs.existsSync(modules)) {
       for (const name of names) {
-        const candidate = path.join(modules, name, "bin", binary)
-        if (fs.existsSync(candidate)) return candidate
+        for (const binary of binaries) {
+          const candidate = path.join(modules, name, "bin", binary)
+          if (fs.existsSync(candidate)) return candidate
+        }
       }
     }
     const parent = path.dirname(current)
@@ -189,7 +193,7 @@ function findBinary(startDir) {
 const resolved = envPath || (fs.existsSync(cached) ? cached : findBinary(scriptDir))
 if (!resolved) {
   console.error(
-    "It seems that your package manager failed to install the right version of the opencode CLI for your platform. You can try manually installing " +
+    "newhorse could not find a platform binary. Install one of " +
       names.map((n) => `\"${n}\"`).join(" or ") +
       " package",
   )

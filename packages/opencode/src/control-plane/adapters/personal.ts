@@ -1,8 +1,8 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { Schema } from "effect"
-import { Global } from "@opencode-ai/core/global"
-import { ProjectV2 } from "@opencode-ai/core/project"
+import { Global } from "@newhorse/core/global"
+import { ProjectV2 } from "@newhorse/core/project"
 import { type WorkspaceAdapter, WorkspaceInfo } from "../types"
 
 const PersonalConfig = Schema.Struct({
