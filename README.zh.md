@@ -1,128 +1,75 @@
-<p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
-</p>
-<p align="center">开源的 AI Coding Agent。</p>
-<p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
-</p>
+<p align="center">newhorse</p>
+<p align="center">具备结构化长期记忆的 AI 编码代理。</p>
 
 <p align="center">
   <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.zh.md">简体中文</a>
 </p>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
-
 ---
 
-### 安装
+### 这是什么
+
+newhorse 是一个运行在终端里的 AI 编码代理。它可以读写代码、执行命令，并且会把你的偏好、
+项目背景和你给过的反馈持续记下来，这样你不必在每个新会话里重复交代同样的事情。
+
+本项目基于 [opencode](https://github.com/anomalyco/opencode) 二次开发，新增了结构化记忆层
+和工作区隔离机制。详见[与 opencode 的关系](#与-opencode-的关系)。
+
+### 当前状态
+
+早期开发阶段。目前还没有发布到包管理器，也没有安装脚本，请从源码构建。
+
+### 从源码构建
+
+需要 [Bun](https://bun.sh)。
 
 ```bash
-# 直接安装 (YOLO)
-curl -fsSL https://opencode.ai/install | bash
-
-# 软件包管理器
-npm i -g opencode-ai@latest        # 也可使用 bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS 和 Linux（推荐，始终保持最新）
-brew install opencode              # macOS 和 Linux（官方 brew formula，更新频率较低）
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # 任意系统
-nix run nixpkgs#opencode           # 或用 github:anomalyco/opencode 获取最新 dev 分支
+git clone https://github.com/Lin-A1/newhorse.git
+cd newhorse
+bun install
+bun run --cwd packages/opencode dev
 ```
 
-> [!TIP]
-> 安装前请先移除 0.1.x 之前的旧版本。
-
-### 桌面应用程序 (BETA)
-
-OpenCode 也提供桌面版应用。可直接从 [发布页 (releases page)](https://github.com/anomalyco/opencode/releases) 或 [opencode.ai/download](https://opencode.ai/download) 下载。
-
-| 平台                  | 下载文件                           |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe` |
-| Linux                 | `.deb`、`.rpm` 或 AppImage         |
+运行测试：
 
 ```bash
-# macOS (Homebrew Cask)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
+bun test
 ```
 
-#### 安装目录
+### 记忆机制
 
-安装脚本按照以下优先级决定安装路径：
+newhorse 会在会话之间维护基于文件的记忆，分为四类记录：
 
-1. `$OPENCODE_INSTALL_DIR` - 自定义安装目录
-2. `$XDG_BIN_DIR` - 符合 XDG 基础目录规范的路径
-3. `$HOME/bin` - 如果存在或可创建的用户二进制目录
-4. `$HOME/.opencode/bin` - 默认备用路径
+- **user** — 你的角色、目标和工作偏好
+- **feedback** — 你给过的指导，包括哪些做法有效、哪些要避免
+- **project** — 无法从代码本身推导出的工作背景
+- **reference** — 指向外部系统的线索，说明信息存放在哪里
 
-```bash
-# 示例
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
-```
+记忆按工作区隔离。全局偏好会单向流入工作区，但工作区内的记录不会外泄。模型自行推断出的
+记录只会存为待确认状态，不会被当成既定事实。
 
-### Agents
+### 代理
 
-OpenCode 内置两种 Agent，可用 `Tab` 键快速切换：
+内置两个代理，用 `Tab` 键切换：
 
-- **build** - 默认模式，具备完整权限，适合开发工作
-- **plan** - 只读模式，适合代码分析与探索
-  - 默认拒绝修改文件
-  - 运行 bash 命令前会询问
-  - 便于探索未知代码库或规划改动
+- **build** — 完全权限，用于日常开发
+- **plan** — 只读，用于分析和代码探索；默认拒绝文件修改，执行命令前会先征求许可
 
-另外还包含一个 **general** 子 Agent，用于复杂搜索和多步任务，内部使用，也可在消息中输入 `@general` 调用。
+另有 **general** 子代理处理复杂搜索和多步任务，在消息中用 `@general` 调用。
 
-了解更多 [Agents](https://opencode.ai/docs/agents) 相关信息。
+### 配置
 
-### 文档
+配置位于项目目录或用户主目录下的 `.newhorse/`，环境变量使用 `NH_` 前缀。
+旧的 `.opencode/` 目录和 `OPENCODE_` 变量仍会被读取以保持兼容。
 
-更多配置说明请查看我们的 [**官方文档**](https://opencode.ai/docs)。
+### 与 opencode 的关系
 
-### 参与贡献
+newhorse 是 [opencode](https://github.com/anomalyco/opencode) 的独立分支，并非由 opencode
+团队开发，也未获其背书，与其没有任何隶属关系。newhorse 的问题请提交到本仓库，不要提到上游。
 
-如有兴趣贡献代码，请在提交 PR 前阅读 [贡献指南 (Contributing Docs)](./CONTRIBUTING.md)。
+原始项目的许可条款依然适用，详见 [LICENSE](./LICENSE)。
 
-### 基于 OpenCode 进行开发
+### 贡献
 
-如果你在项目名中使用了 “opencode”（如 “opencode-dashboard” 或 “opencode-mobile”），请在 README 里注明该项目不是 OpenCode 团队官方开发，且不存在隶属关系。
-
----
-
-**加入我们的社区** [飞书](https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=52ao9352-5623-4fa0-b7dd-3407c392c1af&qr_code=true) | [X.com](https://x.com/opencode)
+提交 PR 前请先阅读[贡献指南](./CONTRIBUTING.md)。
