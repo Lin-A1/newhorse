@@ -55,6 +55,22 @@ export const Info = Schema.Struct({
 }).annotate({ identifier: "Agent" })
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
 
+const READONLY_DENY = {
+  edit: "deny",
+  write: "deny",
+  apply_patch: "deny",
+  bash: "deny",
+  task: "deny",
+} as const
+
+// Applied after user/project config so these agents cannot be widened into
+// write, shell, or delegation capability they are defined to never have.
+const ENFORCED_PERMISSION: Record<string, Record<string, "allow" | "ask" | "deny">> = {
+  researcher: { ...READONLY_DENY },
+  writer: { bash: "deny", task: "deny" },
+  self: { ...READONLY_DENY },
+}
+
 const GeneratedAgent = Schema.Struct({
   identifier: Schema.String,
   whenToUse: Schema.String,
@@ -126,6 +142,9 @@ const layer = Layer.effect(
           question: "deny",
           plan_enter: "deny",
           plan_exit: "deny",
+          // Long-term memory outlives the session, so writing to it is always
+          // a confirmed action rather than something `* allow` sweeps in.
+          memory: "ask",
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",
@@ -262,6 +281,75 @@ const layer = Layer.effect(
             ),
             prompt: PROMPT_SUMMARY,
           },
+          researcher: {
+            name: "researcher",
+            description: "信息收集与研究。擅长搜索、阅读、整理信息，不修改文件。",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                question: "allow",
+                webfetch: "allow",
+                websearch: "allow",
+                read: "allow",
+                grep: "allow",
+                glob: "allow",
+                list: "allow",
+                todowrite: "allow",
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+          },
+          writer: {
+            name: "writer",
+            description: "文案写作助手。擅长撰写文档、笔记、邮件等文本内容。",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                question: "allow",
+                read: "allow",
+                grep: "allow",
+                glob: "allow",
+                list: "allow",
+                todowrite: "allow",
+                webfetch: "allow",
+                websearch: "allow",
+                edit: "ask",
+                write: "ask",
+                apply_patch: "ask",
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+          },
+          self: {
+            name: "self",
+            description: "系统自我感知。只读查看当前配置、工具、插件与 MCP 状态。",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                read: "allow",
+                glob: "allow",
+                grep: "allow",
+                question: "allow",
+                external_directory: readonlyExternalDirectory,
+              }),
+              user,
+            ),
+            mode: "subagent",
+            native: true,
+            hidden: false,
+            steps: 3,
+          },
         }
 
         for (const [key, value] of Object.entries(cfg.agent ?? {})) {
@@ -291,6 +379,12 @@ const layer = Layer.effect(
           item.steps = value.steps ?? item.steps
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
+        }
+
+        for (const [name, enforced] of Object.entries(ENFORCED_PERMISSION)) {
+          const agent = agents[name]
+          if (!agent) continue
+          agent.permission = Permission.merge(agent.permission, Permission.fromConfig(enforced))
         }
 
         // Ensure Truncate.GLOB is allowed unless explicitly configured

@@ -20985,6 +20985,9 @@
           "enabled": {
             "type": "boolean"
           },
+          "personal": {
+            "type": "boolean"
+          },
           "timeout": {
             "type": "integer",
             "exclusiveMinimum": 0
@@ -21029,6 +21032,9 @@
             "description": "URL of the remote MCP server"
           },
           "enabled": {
+            "type": "boolean"
+          },
+          "personal": {
             "type": "boolean"
           },
           "headers": {
@@ -22603,6 +22609,10 @@
           "status": {
             "type": "string",
             "enum": ["disabled"]
+          },
+          "reason": {
+            "type": "string",
+            "enum": ["config", "personal_workspace"]
           }
         },
         "required": ["status"],

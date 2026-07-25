@@ -1832,6 +1832,7 @@ export type McpLocalConfig = {
     [key: string]: string
   }
   enabled?: boolean
+  personal?: boolean
   timeout?: number
 }
 
@@ -1853,6 +1854,7 @@ export type McpRemoteConfig = {
    */
   url: string
   enabled?: boolean
+  personal?: boolean
   headers?: {
     [key: string]: string
   }
@@ -2384,6 +2386,7 @@ export type McpStatusConnected = {
 
 export type McpStatusDisabled = {
   status: "disabled"
+  reason?: "config" | "personal_workspace"
 }
 
 export type McpStatusFailed = {

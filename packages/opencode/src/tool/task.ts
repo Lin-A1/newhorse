@@ -133,9 +133,15 @@ export const TaskTool = Tool.define(
         return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
       }
 
-      const session = params.task_id
+      const resumed = params.task_id
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
+      if (resumed && (resumed.parentID !== ctx.sessionID || (resumed.agent && resumed.agent !== next.name))) {
+        return yield* Effect.fail(
+          new Error(`Task ${params.task_id} does not belong to this session and agent, so it cannot be resumed`),
+        )
+      }
+      const session = resumed
       const childPermission = deriveSubagentSessionPermission({
         parentSessionPermission: parent.permission ?? [],
         subagent: next,

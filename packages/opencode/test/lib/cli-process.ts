@@ -68,6 +68,10 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     XDG_STATE_HOME: path.join(home, ".local/state"),
     XDG_CACHE_HOME: path.join(home, ".cache"),
     OPENCODE_CONFIG_CONTENT: configJson,
+    // yargs localizes help text, so snapshots would otherwise depend on the
+    // developer's system locale.
+    LC_ALL: "C",
+    LANG: "C",
     OPENCODE_DISABLE_PROJECT_CONFIG: "1",
     OPENCODE_PURE: "1",
     OPENCODE_DISABLE_AUTOUPDATE: "1",

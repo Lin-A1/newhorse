@@ -181,7 +181,12 @@ describe("tool.write", () => {
 
         if (process.platform !== "win32") {
           const stats = yield* Effect.promise(() => fs.stat(filepath))
-          expect(stats.mode & 0o777).toBe(0o644)
+          // The tool deliberately does not force a mode — forcing one would strip
+          // the executable bit off existing scripts. So the expected mode is
+          // whatever umask allows, and what matters is that no execute bit is set.
+          const umask = process.umask()
+          expect(stats.mode & 0o777).toBe(0o666 & ~umask)
+          expect(stats.mode & 0o111).toBe(0)
         }
       }),
     )

@@ -29,6 +29,7 @@ import { TuiEvent } from "@/server/tui-event"
 import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
+import { isPersonalDirectory } from "@/control-plane/adapters/personal"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
@@ -83,7 +84,12 @@ function createClient(directory: string) {
 const StatusConnected = Schema.Struct({ status: Schema.Literal("connected") }).annotate({
   identifier: "MCPStatusConnected",
 })
-const StatusDisabled = Schema.Struct({ status: Schema.Literal("disabled") }).annotate({
+const StatusDisabled = Schema.Struct({
+  status: Schema.Literal("disabled"),
+  // Distinguishes an explicit `enabled: false` from a server withheld because
+  // the workspace is personal; without it both look like an unexplained absence.
+  reason: Schema.optional(Schema.Literals(["config", "personal_workspace"])),
+}).annotate({
   identifier: "MCPStatusDisabled",
 })
 const StatusFailed = Schema.Struct({ status: Schema.Literal("failed"), error: Schema.String }).annotate({
@@ -118,6 +124,13 @@ type McpEntry = NonNullable<ConfigV1.Info["mcp"]>[string]
 
 function isMcpConfigured(entry: McpEntry): entry is ConfigMCPV1.Info {
   return typeof entry === "object" && entry !== null && "type" in entry
+}
+
+// Personal workspaces opt in per server rather than inheriting project
+// tooling, so an unrelated MCP server never sees personal content.
+function isAllowedInDirectory(entry: ConfigMCPV1.Info, directory: string) {
+  if (!isPersonalDirectory(directory)) return true
+  return entry.personal === true
 }
 
 function remoteURL(value: string) {
@@ -493,6 +506,7 @@ const layer = Layer.effect(
       Effect.fn("MCP.state")(function* () {
         const cfg = yield* cfgSvc.get()
         const bridge = yield* EffectBridge.make()
+        const stateDirectory = yield* InstanceState.directory
         const config = cfg.mcp ?? {}
         const s: State = {
           config: {},
@@ -512,7 +526,12 @@ const layer = Layer.effect(
               }
 
               if (mcp.enabled === false) {
-                s.status[key] = { status: "disabled" }
+                s.status[key] = { status: "disabled", reason: "config" }
+                return
+              }
+
+              if (!isAllowedInDirectory(mcp, stateDirectory)) {
+                s.status[key] = { status: "disabled", reason: "personal_workspace" }
                 return
               }
 
@@ -626,6 +645,11 @@ const layer = Layer.effect(
 
     const createAndStore = Effect.fn("MCP.createAndStore")(function* (name: string, mcp: ConfigMCPV1.Info) {
       const s = yield* InstanceState.get(state)
+      const directory = yield* InstanceState.directory
+      if (!isAllowedInDirectory(mcp, directory)) {
+        s.status[name] = { status: "disabled", reason: "personal_workspace" }
+        return s.status[name]
+      }
       const result = yield* create(name, mcp)
 
       s.status[name] = result.status

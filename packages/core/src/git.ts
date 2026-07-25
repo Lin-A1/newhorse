@@ -860,7 +860,10 @@ const layer = Layer.effect(
       cwd = repository.worktree,
     ) {
       const result = yield* proc
-        .run(ChildProcess.make("git", args, { cwd, extendEnv: true, stdin: "ignore" }))
+        // forceRequired below parses git's stderr, so pin the locale — otherwise a
+        // localized git reports a dirty worktree in the user's language and we
+        // silently fail to tell them --force is needed.
+        .run(ChildProcess.make("git", args, { cwd, extendEnv: true, stdin: "ignore", env: { LC_ALL: "C" } }))
         .pipe(
           Effect.mapError(
             (cause) => new WorktreeError({ operation, directory: worktreeDirectory, message: cause.message, cause }),
