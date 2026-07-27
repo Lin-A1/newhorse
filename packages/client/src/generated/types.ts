@@ -2533,6 +2533,15 @@ export type SkillsListOutput = {
     readonly name: string
     readonly description?: string
     readonly slash?: boolean
+    readonly parameters?: {
+      readonly [x: string]: {
+        readonly type: "string" | "number" | "integer" | "boolean"
+        readonly description?: string
+        readonly required?: boolean
+        readonly enum?: ReadonlyArray<string | number | "Infinity" | "-Infinity" | "NaN" | boolean>
+        readonly default?: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
+      }
+    }
     readonly location: string
     readonly content: string
   }>
