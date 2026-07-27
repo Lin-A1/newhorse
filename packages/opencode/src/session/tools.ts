@@ -43,7 +43,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   model: Provider.Model
   session: Session.Info
   processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
-  bypassAgentCheck: boolean
+  bypassAgentCheck?: readonly string[]
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
 }) {
@@ -84,7 +84,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           ...req,
           sessionID: input.session.id,
           tool: { messageID: input.processor.message.id, callID: options.toolCallId },
-          ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
+          ruleset: Agent.effectivePermission(input.agent, input.session.permission ?? []),
         })
         .pipe(Effect.orDie),
   })

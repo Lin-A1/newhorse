@@ -13,6 +13,7 @@ import { Config } from "@/config/config"
 import { Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Permission } from "@/permission"
 import { Database } from "@newhorse/core/database/database"
 
 export interface TaskPromptOps {
@@ -116,7 +117,20 @@ export const TaskTool = Tool.define(
         )
       }
 
-      if (!ctx.extra?.bypassAgentCheck) {
+      const caller = yield* agent.get(ctx.agent)
+      if (!caller) return yield* Effect.fail(new Error(`Unknown caller agent: ${ctx.agent}`))
+      const taskRule = Permission.evaluate(
+        "task",
+        params.subagent_type,
+        Agent.effectivePermission(caller, parent.permission ?? []),
+      )
+      if (taskRule.action === "deny") {
+        return yield* Effect.fail(new Error(`Agent ${ctx.agent} cannot delegate to ${params.subagent_type}`))
+      }
+      const bypassAgentCheck = Array.isArray(ctx.extra?.bypassAgentCheck)
+        ? ctx.extra.bypassAgentCheck.filter((name): name is string => typeof name === "string")
+        : []
+      if (!bypassAgentCheck.includes(params.subagent_type)) {
         yield* ctx.ask({
           permission: id,
           patterns: [params.subagent_type],
@@ -129,16 +143,24 @@ export const TaskTool = Tool.define(
       }
 
       const next = yield* agent.get(params.subagent_type)
-      if (!next) {
-        return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid agent type`))
+      if (!next || next.mode === "primary" || next.hidden === true) {
+        return yield* Effect.fail(new Error(`Unknown agent type: ${params.subagent_type} is not a valid subagent type`))
       }
 
       const resumed = params.task_id
         ? yield* sessions.get(SessionID.make(params.task_id)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
-      if (resumed && (resumed.parentID !== ctx.sessionID || (resumed.agent && resumed.agent !== next.name))) {
+      if (
+        resumed &&
+        (resumed.parentID !== ctx.sessionID ||
+          resumed.agent !== next.name ||
+          resumed.workspaceID !== parent.workspaceID ||
+          resumed.profileID !== parent.profileID)
+      ) {
         return yield* Effect.fail(
-          new Error(`Task ${params.task_id} does not belong to this session and agent, so it cannot be resumed`),
+          new Error(
+            `Task ${params.task_id} does not belong to this session, agent, workspace, and profile, so it cannot be resumed`,
+          ),
         )
       }
       const session = resumed
@@ -146,35 +168,33 @@ export const TaskTool = Tool.define(
         parentSessionPermission: parent.permission ?? [],
         subagent: next,
       })
-      const childToolDenies = [
-        ...(next.permission.some((rule) => rule.permission === "todowrite")
-          ? []
-          : [{ permission: "todowrite" as const, pattern: "*" as const, action: "deny" as const }]),
-        ...(next.permission.some((rule) => rule.permission === id)
-          ? []
-          : [{ permission: id, pattern: "*" as const, action: "deny" as const }]),
-        ...(cfg.experimental?.primary_tools?.map((permission) => ({
+      const primaryToolDenies =
+        cfg.experimental?.primary_tools?.map((permission) => ({
           permission,
           pattern: "*" as const,
           action: "deny" as const,
-        })) ?? []),
-      ]
+        })) ?? []
+      const inherited = session?.permission ?? []
+      const inheritedDenies = inherited.filter((rule) => rule.action === "deny")
+      const nextPermission = [...inherited, ...childPermission, ...primaryToolDenies, ...inheritedDenies].filter(
+        (rule, index, rules) =>
+          rules.findLastIndex(
+            (candidate) =>
+              candidate.permission === rule.permission &&
+              candidate.pattern === rule.pattern &&
+              candidate.action === rule.action,
+          ) === index,
+      )
+      if (session && JSON.stringify(session.permission ?? []) !== JSON.stringify(nextPermission)) {
+        yield* sessions.setPermission({ sessionID: session.id, permission: nextPermission })
+      }
       const nextSession =
         session ??
         (yield* sessions.create({
           parentID: ctx.sessionID,
           title: params.description + ` (@${next.name} subagent)`,
           agent: next.name,
-          permission: [
-            ...childPermission,
-            ...childToolDenies.filter(
-              (deny) =>
-                !childPermission.some(
-                  (rule) =>
-                    rule.permission === deny.permission && rule.pattern === deny.pattern && rule.action === deny.action,
-                ),
-            ),
-          ],
+          permission: nextPermission,
         }))
 
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(

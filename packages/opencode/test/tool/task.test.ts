@@ -1,5 +1,9 @@
 import { afterEach, describe, expect } from "bun:test"
 import { SessionV1 } from "@newhorse/core/v1/session"
+import { SessionTable } from "@newhorse/core/session/sql"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
+import { Profile } from "@/profile"
+import { eq } from "drizzle-orm"
 import { Database } from "@newhorse/core/database/database"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { SessionProjector } from "@newhorse/core/session/projector"
@@ -22,6 +26,7 @@ import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { Permission } from "@/permission"
 import { ProviderV2 } from "@newhorse/core/provider"
 import { ModelV2 } from "@newhorse/core/model"
 
@@ -138,6 +143,17 @@ function reply(input: SessionPrompt.PromptInput, text: string): SessionV1.WithPa
   }
 }
 
+function updateTaskBinding(sessionID: SessionID, input: { workspaceID?: WorkspaceV2.ID; profileID?: Profile.ID }) {
+  return Database.Service.use(({ db }) =>
+    db
+      .update(SessionTable)
+      .set({ workspace_id: input.workspaceID, profile_id: input.profileID })
+      .where(eq(SessionTable.id, sessionID))
+      .run()
+      .pipe(Effect.orDie),
+  )
+}
+
 describe("tool.task", () => {
   it.instance(
     "description sorts subagents by name and is stable across calls",
@@ -189,7 +205,11 @@ describe("tool.task", () => {
         const build = yield* agent.get("build")
         const registry = yield* ToolRegistry.Service
         const description =
-          (yield* registry.tools({ ...ref, agent: build })).find((tool) => tool.id === TaskTool.id)?.description ?? ""
+          (yield* registry.tools({
+            ...ref,
+            agent: build,
+            permission: [{ permission: "task", pattern: "zebra", action: "deny" }],
+          })).find((tool) => tool.id === TaskTool.id)?.description ?? ""
 
         expect(description).toContain("- alpha: Alpha agent")
         expect(description).not.toContain("- zebra: Zebra agent")
@@ -197,10 +217,7 @@ describe("tool.task", () => {
     {
       config: {
         permission: {
-          task: {
-            "*": "allow",
-            zebra: "deny",
-          },
+          task: "allow",
         },
         agent: {
           zebra: {
@@ -220,7 +237,7 @@ describe("tool.task", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
-      const child = yield* sessions.create({ parentID: chat.id, title: "Existing child" })
+      const child = yield* sessions.create({ parentID: chat.id, title: "Existing child", agent: "general" })
       const tool = yield* TaskTool
       const def = yield* tool.init()
       let seen: SessionPrompt.PromptInput | undefined
@@ -255,6 +272,125 @@ describe("tool.task", () => {
     }),
   )
 
+  it.instance("rejects task resume when the stored agent is missing or different", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const missing = yield* sessions.create({ parentID: chat.id, title: "Legacy child" })
+      const different = yield* sessions.create({ parentID: chat.id, title: "Other child", agent: "explore" })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps: stubOps() },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+
+      for (const taskID of [missing.id, different.id]) {
+        const exit = yield* def
+          .execute(
+            {
+              description: "inspect bug",
+              prompt: "look into the cache key path",
+              subagent_type: "general",
+              task_id: taskID,
+            },
+            context,
+          )
+          .pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+      }
+    }),
+  )
+
+  it.instance("rejects task resume across workspace or profile bindings", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const workspace = yield* sessions.create({ parentID: chat.id, title: "Workspace child", agent: "general" })
+      const profile = yield* sessions.create({ parentID: chat.id, title: "Profile child", agent: "general" })
+      yield* updateTaskBinding(workspace.id, { workspaceID: WorkspaceV2.ID.make("wrk_other") })
+      yield* updateTaskBinding(profile.id, { profileID: Profile.ID.make("companion") })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const context = {
+        sessionID: chat.id,
+        messageID: assistant.id,
+        agent: "build",
+        abort: new AbortController().signal,
+        extra: { promptOps: stubOps() },
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+
+      for (const taskID of [workspace.id, profile.id]) {
+        const exit = yield* def
+          .execute(
+            {
+              description: "inspect bug",
+              prompt: "look into the cache key path",
+              subagent_type: "general",
+              task_id: taskID,
+            },
+            context,
+          )
+          .pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+      }
+    }),
+  )
+
+  it.instance("rebuilds the parent permission ceiling when resuming a task", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      yield* sessions.setPermission({
+        sessionID: chat.id,
+        permission: [{ permission: "bash", pattern: "*", action: "deny" }],
+      })
+      const child = yield* sessions.create({
+        parentID: chat.id,
+        title: "Existing child",
+        agent: "general",
+        permission: [
+          { permission: "bash", pattern: "*", action: "allow" },
+          { permission: "read", pattern: "/private/*", action: "deny" },
+        ],
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          task_id: child.id,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps() },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const permission = (yield* sessions.get(child.id)).permission ?? []
+      expect(Permission.evaluate("bash", "git status", permission).action).toBe("deny")
+      expect(Permission.evaluate("read", "/private/file", permission).action).toBe("deny")
+    }),
+  )
+
   it.instance("execute asks by default and skips checks when bypassed", () =>
     Effect.gen(function* () {
       const { chat, assistant } = yield* seed()
@@ -286,7 +422,7 @@ describe("tool.task", () => {
         )
 
       yield* exec()
-      yield* exec({ bypassAgentCheck: true })
+      yield* exec({ bypassAgentCheck: ["general"] })
 
       expect(calls).toHaveLength(1)
       expect(calls[0]).toEqual({
@@ -298,6 +434,72 @@ describe("tool.task", () => {
           subagent_type: "general",
         },
       })
+    }),
+  )
+
+  it.instance("explicit agent mentions only bypass checks for the named agents", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let asked = false
+
+      yield* def.execute(
+        {
+          description: "inspect files",
+          prompt: "find the relevant files",
+          subagent_type: "explore",
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps(), bypassAgentCheck: ["general"] },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.sync(() => (asked = true)),
+        },
+      )
+
+      expect(asked).toBe(true)
+    }),
+  )
+
+  it.instance("explicit agent mentions cannot bypass caller denies", () =>
+    Effect.gen(function* () {
+      const { chat, assistant } = yield* seed()
+      const sessions = yield* Session.Service
+      yield* sessions.setPermission({
+        sessionID: chat.id,
+        permission: [{ permission: "task", pattern: "general", action: "deny" }],
+      })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      let asked = false
+
+      const exit = yield* def
+        .execute(
+          {
+            description: "inspect bug",
+            prompt: "look into the cache key path",
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps(), bypassAgentCheck: ["general"] },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.sync(() => (asked = true)),
+          },
+        )
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(asked).toBe(false)
     }),
   )
 

@@ -71,6 +71,21 @@ const ENFORCED_PERMISSION: Record<string, Record<string, "allow" | "ask" | "deny
   self: { ...READONLY_DENY },
 }
 
+const ENFORCED_RULESET = Object.fromEntries(
+  Object.entries(ENFORCED_PERMISSION).map(([name, permission]) => [name, Permission.fromConfig(permission)]),
+) satisfies Record<string, PermissionV1.Ruleset>
+
+export function enforcedPermission(agent: Pick<Info, "name">): PermissionV1.Ruleset {
+  return ENFORCED_RULESET[agent.name] ?? []
+}
+
+export function effectivePermission(
+  agent: Pick<Info, "name" | "permission">,
+  session: PermissionV1.Ruleset = [],
+): PermissionV1.Ruleset {
+  return Permission.merge(agent.permission, session, enforcedPermission(agent))
+}
+
 const GeneratedAgent = Schema.Struct({
   identifier: Schema.String,
   whenToUse: Schema.String,
@@ -381,10 +396,10 @@ const layer = Layer.effect(
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
         }
 
-        for (const [name, enforced] of Object.entries(ENFORCED_PERMISSION)) {
+        for (const name of Object.keys(ENFORCED_PERMISSION)) {
           const agent = agents[name]
           if (!agent) continue
-          agent.permission = Permission.merge(agent.permission, Permission.fromConfig(enforced))
+          agent.permission = Permission.merge(agent.permission, enforcedPermission(agent))
         }
 
         // Ensure Truncate.GLOB is allowed unless explicitly configured

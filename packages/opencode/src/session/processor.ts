@@ -369,13 +369,14 @@ const layer = Layer.effect(
             }
 
             const agent = yield* agents.get(ctx.assistantMessage.agent)
+            const currentSession = yield* session.get(ctx.assistantMessage.sessionID)
             yield* permission.ask({
               permission: "doom_loop",
               patterns: [value.name],
               sessionID: ctx.assistantMessage.sessionID,
               metadata: { tool: value.name, input },
               always: [value.name],
-              ruleset: agent.permission,
+              ruleset: Agent.effectivePermission(agent, currentSession.permission ?? []),
             })
             return
           }

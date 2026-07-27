@@ -110,6 +110,19 @@ describe("session.system", () => {
     }),
   )
 
+  it.effect("skills output honors session permission rules", () =>
+    Effect.gen(function* () {
+      const prompt = yield* SystemPrompt.Service
+      const output = yield* prompt.skills(
+        build,
+        Permission.fromConfig({ skill: { "*": "allow", "alpha-skill": "deny" } }),
+      )
+
+      expect(output).not.toContain("<name>alpha-skill</name>")
+      expect(output).toContain("<name>middle-skill</name>")
+    }),
+  )
+
   it.effect("MCP output includes connected server instructions", () =>
     Effect.gen(function* () {
       const prompt = yield* SystemPrompt.Service

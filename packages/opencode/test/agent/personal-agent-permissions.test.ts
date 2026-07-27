@@ -81,6 +81,33 @@ it.instance(
   },
 )
 
+it.instance("session rules cannot loosen platform-enforced denies", () =>
+  Effect.gen(function* () {
+    const researcher = yield* Agent.use.get("researcher")
+    const writer = yield* Agent.use.get("writer")
+    const self = yield* Agent.use.get("self")
+    const allow = Permission.fromConfig({ edit: "allow", bash: "allow", task: "allow" })
+
+    expect(Permission.evaluate("edit", "/x.ts", Agent.effectivePermission(researcher, allow)).action).toBe("deny")
+    expect(Permission.evaluate("bash", "rm -rf /", Agent.effectivePermission(researcher, allow)).action).toBe("deny")
+    expect(Permission.evaluate("task", "general", Agent.effectivePermission(researcher, allow)).action).toBe("deny")
+    expect(Permission.evaluate("bash", "rm -rf /", Agent.effectivePermission(writer, allow)).action).toBe("deny")
+    expect(Permission.evaluate("task", "general", Agent.effectivePermission(writer, allow)).action).toBe("deny")
+    expect(Permission.evaluate("edit", "/x.ts", Agent.effectivePermission(self, allow)).action).toBe("deny")
+  }),
+)
+
+it.instance("parent agent restrictions do not replace a subagent's own capabilities", () =>
+  Effect.gen(function* () {
+    const plan = yield* Agent.use.get("plan")
+    const general = yield* Agent.use.get("general")
+    const session = deriveSubagentSessionPermission({ parentSessionPermission: [], subagent: general })
+
+    expect(Permission.evaluate("edit", "/x.ts", plan.permission).action).toBe("deny")
+    expect(Permission.evaluate("edit", "/x.ts", Agent.effectivePermission(general, session)).action).toBe("allow")
+  }),
+)
+
 // Long-term memory outlives the session, so it must never be swept in by `* allow`.
 it.instance("memory writes require confirmation by default", () =>
   Effect.gen(function* () {
