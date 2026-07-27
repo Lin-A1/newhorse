@@ -20,6 +20,10 @@ const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
+const targetFlagIndex = process.argv.indexOf("--target")
+const targetFlag = targetFlagIndex === -1 ? undefined : process.argv[targetFlagIndex + 1]
+if (targetFlagIndex !== -1 && !targetFlag) throw new Error("--target requires a value")
+if (targetFlag && singleFlag) throw new Error("--target and --single cannot be used together")
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 
@@ -50,12 +54,19 @@ const createEmbeddedWebUIBundle = async () => {
 const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
 const treeSitterWorker = await Bun.file(fileURLToPath(import.meta.resolve("@opentui/core/parser.worker"))).text()
 
-const allTargets: {
+type BuildTarget = {
   os: string
   arch: "arm64" | "x64"
   abi?: "musl"
   avx2?: false
-}[] = [
+}
+
+const targetID = (item: BuildTarget) =>
+  [item.os === "win32" ? "windows" : item.os, item.arch, item.avx2 === false ? "baseline" : undefined, item.abi]
+    .filter(Boolean)
+    .join("-")
+
+const allTargets: BuildTarget[] = [
   {
     os: "linux",
     arch: "arm64",
@@ -113,28 +124,37 @@ const allTargets: {
   },
 ]
 
-const targets = singleFlag
-  ? allTargets.filter((item) => {
-      if (item.os !== process.platform || item.arch !== process.arch) {
-        return false
-      }
+const validTargetIDs = allTargets.map(targetID)
+if (targetFlag && !validTargetIDs.includes(targetFlag)) {
+  throw new Error(`Unknown target ${targetFlag}. Valid targets: ${validTargetIDs.join(", ")}`)
+}
 
-      // When building for the current platform, prefer a single native binary by default.
-      // Baseline binaries require additional Bun artifacts and can be flaky to download.
-      if (item.avx2 === false) {
-        return baselineFlag
-      }
+const targets = targetFlag
+  ? allTargets.filter((item) => targetID(item) === targetFlag)
+  : singleFlag
+    ? allTargets.filter((item) => {
+        if (item.os !== process.platform || item.arch !== process.arch) {
+          return false
+        }
 
-      // also skip abi-specific builds for the same reason
-      if (item.abi !== undefined) {
-        return false
-      }
+        // When building for the current platform, prefer a single native binary by default.
+        // Baseline binaries require additional Bun artifacts and can be flaky to download.
+        if (item.avx2 === false) {
+          return baselineFlag
+        }
 
-      return true
-    })
-  : allTargets
+        // also skip abi-specific builds for the same reason
+        if (item.abi !== undefined) {
+          return false
+        }
 
-await $`rm -rf dist`
+        return true
+      })
+    : allTargets
+
+for (const item of targets) {
+  await $`rm -rf ${path.join("dist", `${pkg.name}-${targetID(item)}`)}`
+}
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
@@ -143,16 +163,7 @@ if (!skipInstall) {
   await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
 for (const item of targets) {
-  const name = [
-    pkg.name,
-    // changing to win32 flags npm for some reason
-    item.os === "win32" ? "windows" : item.os,
-    item.arch,
-    item.avx2 === false ? "baseline" : undefined,
-    item.abi === undefined ? undefined : item.abi,
-  ]
-    .filter(Boolean)
-    .join("-")
+  const name = `${pkg.name}-${targetID(item)}`
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
 

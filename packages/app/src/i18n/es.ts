@@ -110,6 +110,7 @@ export const dict = {
   "dialog.provider.copilot.note": "Modelos de IA para asistencia de codificación a través de GitHub Copilot",
   "dialog.provider.openai.note": "Modelos GPT para tareas de IA generales rápidas y capaces",
   "dialog.provider.google.note": "Modelos Gemini para respuestas rápidas y estructuradas",
+  "dialog.provider.custom.label": "Proveedor personalizado compatible con OpenAI",
   "dialog.provider.openrouter.note": "Accede a todos los modelos soportados desde un solo proveedor",
   "dialog.provider.vercel.note": "Acceso unificado a modelos de IA con enrutamiento inteligente",
 
@@ -122,6 +123,7 @@ export const dict = {
 
   "dialog.model.unpaid.freeModels.title": "Modelos gratuitos proporcionados por newhorse",
   "dialog.model.unpaid.addMore.title": "Añadir más modelos de proveedores populares",
+  "dialog.model.unpaid.viewMoreProviders": "Ver más de 70 proveedores",
 
   "dialog.provider.viewAll": "Ver más proveedores",
 
@@ -686,6 +688,9 @@ export const dict = {
   "session.header.open.ariaLabel": "Abrir en {{app}}",
   "session.header.open.menu": "Opciones de apertura",
   "session.header.open.copyPath": "Copiar ruta",
+  "session.header.reveal.finder": "Mostrar en Finder",
+  "session.header.reveal.fileExplorer": "Mostrar en el Explorador de archivos",
+  "session.header.reveal.containingFolder": "Abrir carpeta contenedora",
 
   "status.popover.trigger": "Estado",
   "status.popover.ariaLabel": "Configuraciones del servidor",
@@ -938,6 +943,29 @@ export const dict = {
   "settings.providers.tag.config": "Configuración",
   "settings.providers.tag.custom": "Personalizado",
   "settings.providers.tag.other": "Otro",
+  "settings.profile.title": "Companion",
+  "settings.profile.persona.title": "Persona",
+  "settings.profile.persona.description":
+    "Define the Companion's tone and interaction style. Safety requirements remain protected.",
+  "settings.profile.memory.title": "Memory",
+  "settings.profile.memory.description": "Choose how relationship memory is stored for Companion sessions.",
+  "settings.profile.memory.off": "Off",
+  "settings.profile.memory.ask": "Ask before saving",
+  "settings.profile.memory.auto-safe": "Save safe explicit memories automatically",
+  "settings.profile.proactive.title": "Proactive care",
+  "settings.profile.proactive.description":
+    "Allow subscribed check-ins and follow-ups. Off by default; user-created reminders still work.",
+  "settings.profile.proactivePaused.title": "Pause proactive messages",
+  "settings.profile.proactivePaused.description":
+    "Keep the subscription but stop check-ins and follow-ups until resumed.",
+  "settings.profile.quietHours.title": "Quiet hours",
+  "settings.profile.quietHours.description": "Start, end, and IANA timezone. Cross-midnight ranges are supported.",
+  "settings.profile.frequency.title": "Frequency limit",
+  "settings.profile.frequency.description": "Maximum messages per day and minimum minutes between proactive messages.",
+  "settings.profile.crisisRegion.title": "Crisis-support region",
+  "settings.profile.crisisRegion.description":
+    "Optional region used to provide honest, locally relevant crisis guidance.",
+  "settings.profile.saved": "Companion settings saved",
   "settings.models.title": "Modelos",
   "settings.models.description": "La configuración de modelos estará disponible aquí.",
   "settings.agents.title": "Agentes",

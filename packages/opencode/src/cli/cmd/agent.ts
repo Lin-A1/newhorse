@@ -30,7 +30,7 @@ const AVAILABLE_PERMISSIONS = [
   "skill",
 ]
 
-const AgentCreateCommand = effectCmd({
+export const AgentCreateCommand = effectCmd({
   command: "create",
   describe: "create a new agent",
   builder: (yargs: Argv) =>

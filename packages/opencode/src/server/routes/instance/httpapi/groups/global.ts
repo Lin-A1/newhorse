@@ -7,6 +7,7 @@ import "@/server/event"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { described } from "./metadata"
+import { Profile } from "@/profile"
 
 const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
@@ -62,10 +63,21 @@ const GlobalUpgradeResult = Schema.Union([
   }),
 ])
 
+const ProfileState = Schema.Struct({
+  active: Profile.ID,
+  items: Schema.Array(Profile.Info),
+})
+
+const ProfileSelect = Schema.Struct({
+  id: Profile.ID,
+})
+
 export const GlobalPaths = {
   health: "/global/health",
   event: "/global/event",
   config: "/global/config",
+  profile: "/global/profile",
+  profileUpdate: "/global/profile/:profileID",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
 } as const
@@ -109,6 +121,38 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.config.update",
           summary: "Update global configuration",
           description: "Update global newhorse configuration settings and preferences.",
+        }),
+      ),
+      HttpApiEndpoint.get("profileGet", GlobalPaths.profile, {
+        success: described(ProfileState, "Global profile state"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.profile.get",
+          summary: "Get profiles",
+          description: "List redacted profiles and the profile selected for newly created sessions.",
+        }),
+      ),
+      HttpApiEndpoint.patch("profileSelect", GlobalPaths.profile, {
+        payload: ProfileSelect,
+        success: described(ProfileState, "Global profile state"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.profile.select",
+          summary: "Select profile",
+          description: "Select the profile used by newly created sessions.",
+        }),
+      ),
+      HttpApiEndpoint.patch("profileUpdate", GlobalPaths.profileUpdate, {
+        params: { profileID: Profile.ID },
+        payload: Profile.Update,
+        success: described(Profile.Runtime, "Updated profile runtime"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.profile.update",
+          summary: "Update profile",
+          description: "Update profile persona, memory policy, and crisis-support region.",
         }),
       ),
       HttpApiEndpoint.post("dispose", GlobalPaths.dispose, {

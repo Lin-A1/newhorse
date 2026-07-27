@@ -11,6 +11,8 @@ import { BackgroundJob } from "@/background/job"
 import { Command } from "@/command"
 import { Config } from "@/config/config"
 import { Workspace } from "@/control-plane/workspace"
+import { Profile } from "@/profile"
+import { Scheduler } from "@/scheduler"
 import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
@@ -96,6 +98,7 @@ import { projectCopyHandlers } from "./handlers/project-copy"
 import { providerHandlers } from "./handlers/provider"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
+import { reminderHandlers } from "./handlers/reminder"
 import { sessionHandlers } from "./handlers/session"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
@@ -164,6 +167,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     questionHandlers,
     permissionHandlers,
     providerHandlers,
+    reminderHandlers,
     sessionHandlers,
     syncHandlers,
     tuiHandlers,
@@ -216,6 +220,8 @@ const app = LayerNode.group([
   Auth.node,
   Account.node,
   Config.node,
+  Profile.node,
+  Scheduler.node,
   Env.node,
   Git.node,
   Ripgrep.node,

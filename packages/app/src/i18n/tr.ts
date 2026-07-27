@@ -114,6 +114,7 @@ export const dict = {
   "dialog.provider.copilot.note": "GitHub Copilot üzerinden kodlama yardımı için yapay zekâ modelleri",
   "dialog.provider.openai.note": "Hızlı ve yetenekli genel yapay zekâ görevleri için GPT modelleri",
   "dialog.provider.google.note": "Hızlı ve yapılandırılmış yanıtlar için Gemini modelleri",
+  "dialog.provider.custom.label": "Özel OpenAI uyumlu sağlayıcı",
   "dialog.provider.openrouter.note": "Tek bir sağlayıcıdan tüm desteklenen modellere eriş",
   "dialog.provider.vercel.note": "Akıllı yönlendirme ile yapay zekâ modellerine birleşik erişim",
 
@@ -126,6 +127,7 @@ export const dict = {
 
   "dialog.model.unpaid.freeModels.title": "newhorse tarafından sunulan ücretsiz modeller",
   "dialog.model.unpaid.addMore.title": "Popüler sağlayıcılardan daha fazla model ekleyin",
+  "dialog.model.unpaid.viewMoreProviders": "70'ten fazla sağlayıcıyı daha gör",
 
   "dialog.provider.viewAll": "Daha fazla sağlayıcı göster",
 
@@ -689,6 +691,9 @@ export const dict = {
   "session.header.open.ariaLabel": "{{app}} ile aç",
   "session.header.open.menu": "Açma seçenekleri",
   "session.header.open.copyPath": "Yolu kopyala",
+  "session.header.reveal.finder": "Finder'da Göster",
+  "session.header.reveal.fileExplorer": "Dosya Gezgini'nde Göster",
+  "session.header.reveal.containingFolder": "İçeren klasörü aç",
 
   "status.popover.trigger": "Durum",
   "status.popover.ariaLabel": "Sunucu yapılandırmaları",
@@ -938,6 +943,29 @@ export const dict = {
   "settings.providers.tag.config": "Yapılandırma",
   "settings.providers.tag.custom": "Özel",
   "settings.providers.tag.other": "Diğer",
+  "settings.profile.title": "Companion",
+  "settings.profile.persona.title": "Persona",
+  "settings.profile.persona.description":
+    "Define the Companion's tone and interaction style. Safety requirements remain protected.",
+  "settings.profile.memory.title": "Memory",
+  "settings.profile.memory.description": "Choose how relationship memory is stored for Companion sessions.",
+  "settings.profile.memory.off": "Off",
+  "settings.profile.memory.ask": "Ask before saving",
+  "settings.profile.memory.auto-safe": "Save safe explicit memories automatically",
+  "settings.profile.proactive.title": "Proactive care",
+  "settings.profile.proactive.description":
+    "Allow subscribed check-ins and follow-ups. Off by default; user-created reminders still work.",
+  "settings.profile.proactivePaused.title": "Pause proactive messages",
+  "settings.profile.proactivePaused.description":
+    "Keep the subscription but stop check-ins and follow-ups until resumed.",
+  "settings.profile.quietHours.title": "Quiet hours",
+  "settings.profile.quietHours.description": "Start, end, and IANA timezone. Cross-midnight ranges are supported.",
+  "settings.profile.frequency.title": "Frequency limit",
+  "settings.profile.frequency.description": "Maximum messages per day and minimum minutes between proactive messages.",
+  "settings.profile.crisisRegion.title": "Crisis-support region",
+  "settings.profile.crisisRegion.description":
+    "Optional region used to provide honest, locally relevant crisis guidance.",
+  "settings.profile.saved": "Companion settings saved",
   "settings.models.title": "Modeller",
   "settings.models.description": "Model ayarları burada yapılandırılabilecek.",
   "settings.agents.title": "Ajanlar",

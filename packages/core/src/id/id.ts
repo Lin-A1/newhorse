@@ -12,6 +12,8 @@ const prefixes = {
   tool: "tool",
   workspace: "wrk",
   memory: "mem",
+  scheduledEvent: "sch",
+  scheduledEventAudit: "sha",
 } as const
 
 export function ascending(prefix: keyof typeof prefixes, given?: string) {

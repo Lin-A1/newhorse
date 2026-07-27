@@ -17,6 +17,8 @@ import { Glob } from "@newhorse/core/util/glob"
 import { Discovery } from "./discovery"
 import { isRecord } from "@/util/record"
 import { escapeHtml } from "@/util/html"
+import { isPersonalDirectory } from "@/control-plane/adapters/personal"
+import { Skill as SkillSchema } from "@newhorse/schema/skill"
 
 const CLAUDE_EXTERNAL_DIR = ".claude"
 const AGENTS_EXTERNAL_DIR = ".agents"
@@ -37,6 +39,7 @@ const CUSTOMIZE_OPENCODE_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
 export const Info = Schema.Struct({
   name: Schema.String,
   description: Schema.optional(Schema.String),
+  parameters: Schema.optional(SkillSchema.Parameters),
   location: Schema.String,
   content: Schema.String,
 })
@@ -50,7 +53,7 @@ const Issue = Schema.StructWithRest(
   [Schema.Record(Schema.String, Schema.Unknown)],
 )
 
-function isSkillFrontmatter(data: unknown): data is { name: string; description?: string } {
+function isSkillFrontmatter(data: unknown): data is { name: string; description?: string; parameters?: unknown } {
   return (
     isRecord(data) &&
     typeof data.name === "string" &&
@@ -131,9 +134,26 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
   }
 
   state.dirs.add(path.dirname(match))
+  const parameters = yield* Effect.try({
+    try: () => SkillSchema.parseParameters(md.data.parameters),
+    catch: (error) => error,
+  }).pipe(
+    Effect.catch(
+      Effect.fnUntraced(function* (error) {
+        const message = error instanceof Error ? error.message : `Invalid parameters in skill ${match}`
+        const { Session } = yield* Effect.promise(() => import("@/session/session"))
+        yield* events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
+        yield* Effect.logError("failed to load skill parameters", { skill: match, error })
+        return undefined
+      }),
+    ),
+  )
+  if (md.data.parameters !== undefined && parameters === undefined) return
+
   state.skills[md.data.name] = {
     name: md.data.name,
     description: md.data.description,
+    parameters,
     location: match,
     content: md.content,
   }
@@ -181,9 +201,12 @@ const discoverSkills = Effect.fnUntraced(function* (
   worktree: string,
 ) {
   const state: ScanState = { matches: new Set(), dirs: new Set() }
+  const cfg = yield* config.get()
+  const personal = isPersonalDirectory(directory)
+  const allowExternal = !personal || cfg.skills?.personal === true
 
   const externalDirs: string[] = []
-  if (!disableExternalSkills) {
+  if (allowExternal && !disableExternalSkills) {
     if (!disableClaudeCodeSkills) externalDirs.push(CLAUDE_EXTERNAL_DIR)
     externalDirs.push(AGENTS_EXTERNAL_DIR)
 
@@ -207,7 +230,8 @@ const discoverSkills = Effect.fnUntraced(function* (
     yield* scan(state, dir, OPENCODE_SKILL_PATTERN)
   }
 
-  const cfg = yield* config.get()
+  if (!allowExternal) return { matches: Array.from(state.matches), dirs: Array.from(state.dirs) }
+
   for (const item of cfg.skills?.paths ?? []) {
     const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
     const dir = path.isAbsolute(expanded) ? expanded : path.join(directory, expanded)

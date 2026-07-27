@@ -8,6 +8,7 @@ import { AbsolutePath } from "@newhorse/core/schema"
 import { SessionV2 } from "@newhorse/core/session"
 import { Auth } from "../../src/auth"
 import { Config } from "../../src/config/config"
+import { Profile } from "../../src/profile"
 import { Installation } from "../../src/installation"
 import { ServerAuth } from "../../src/server/auth"
 import { RootHttpApi } from "../../src/server/routes/instance/httpapi/api"
@@ -38,6 +39,7 @@ const apiLayer = HttpRouter.serve(
   Layer.provideMerge(NodeHttpServer.layerTest),
   Layer.provide(Layer.mock(Auth.Service)({})),
   Layer.provide(Layer.mock(Config.Service)({})),
+  Layer.provide(Layer.mock(Profile.Service)({})),
   Layer.provide(Layer.mock(Installation.Service)({})),
   Layer.provide(
     Layer.mock(MoveSession.Service)({

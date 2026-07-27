@@ -100,6 +100,40 @@ describe("Memory", () => {
     }),
   )
 
+  it.instance("retrieves only relationship memory for the requested profile", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const companion = yield* memory.save({
+        kind: "relationship",
+        content: "likes a quiet check-in",
+        provenance: "user_explicit",
+        profileID: "companion",
+      })
+      yield* memory.save({
+        kind: "relationship",
+        content: "assistant relationship",
+        provenance: "user_explicit",
+        profileID: "assistant",
+      })
+      yield* memory.save({
+        kind: "preference",
+        content: "not relationship memory",
+        provenance: "user_explicit",
+        profileID: "companion",
+      })
+      yield* memory.save({
+        kind: "relationship",
+        content: "global relationship must not enter companion context",
+        provenance: "user_explicit",
+        profileID: "companion",
+        scope: "user_global",
+      })
+
+      const retrieved = yield* memory.retrieve({ profileID: "companion", relationshipOnly: true })
+      expect(retrieved.map((item) => item.id)).toEqual([companion.id])
+    }),
+  )
+
   it.instance("clear removes workspace memory but keeps user_global preferences", () =>
     Effect.gen(function* () {
       const memory = yield* Memory.Service

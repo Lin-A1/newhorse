@@ -35,6 +35,7 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@newhorse/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+import { isPersonalDirectory } from "@/control-plane/adapters/personal"
 
 // Custom merge function that concatenates array fields instead of replacing them
 // Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
@@ -397,6 +398,7 @@ const layer = Layer.effect(
           }
         }
 
+        const personal = isPersonalDirectory(ctx.directory)
         const global = Object.keys(authEnv).length ? yield* loadGlobal(authEnv) : yield* getGlobal()
         yield* merge(Global.Path.config, global, "global")
 
@@ -406,9 +408,17 @@ const layer = Layer.effect(
         }
 
         if (!Flag.OPENCODE_DISABLE_PROJECT_CONFIG) {
-          for (const name of ["opencode", "newhorse"]) {
-            for (const file of yield* ConfigPaths.files(name, ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
-              yield* merge(file, yield* loadFile(file, authEnv), "local")
+          if (personal) {
+            for (const name of ["opencode", "newhorse"]) {
+              for (const file of ConfigPaths.fileInDirectory(ctx.directory, name)) {
+                yield* merge(file, yield* loadFile(file, authEnv), "local")
+              }
+            }
+          } else {
+            for (const name of ["opencode", "newhorse"]) {
+              for (const file of yield* ConfigPaths.files(name, ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
+                yield* merge(file, yield* loadFile(file, authEnv), "local")
+              }
             }
           }
         }
@@ -417,7 +427,9 @@ const layer = Layer.effect(
         result.mode = result.mode || {}
         result.plugin = result.plugin || []
 
-        const directories = yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
+        const directories = personal
+          ? [ctx.directory, ...(Flag.OPENCODE_CONFIG_DIR ? [Flag.OPENCODE_CONFIG_DIR] : [])]
+          : yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
 
         if (Flag.OPENCODE_CONFIG_DIR) {
           yield* Effect.logDebug("loading config from OPENCODE_CONFIG_DIR", { path: Flag.OPENCODE_CONFIG_DIR })
@@ -585,6 +597,13 @@ const layer = Layer.effect(
         }
         if (Flag.OPENCODE_DISABLE_PRUNE) {
           result.compaction = { ...result.compaction, prune: false }
+        }
+
+        if (personal && result.plugin_origins) {
+          result.plugin_origins = result.plugin_origins.filter(
+            (origin) => origin.scope === "local" || ConfigPlugin.allowedInPersonalWorkspace(origin.spec),
+          )
+          result.plugin = result.plugin_origins.map((origin) => origin.spec)
         }
 
         return {

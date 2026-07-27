@@ -525,6 +525,50 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     expect(result.include).toBeUndefined()
   })
 
+  test("protected system survives plugin system replacement", async () => {
+    let exposed: string[] | undefined
+    const model = createGpt5Model("gpt-5.4")
+    const result = await Effect.runPromise(
+      LLMRequestPrep.prepare({
+        user: {
+          id: "msg_user-protected",
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "test",
+          model: { providerID: model.providerID, modelID: model.id },
+        } as any,
+        sessionID,
+        model,
+        agent: { name: "test", mode: "primary", options: {}, permission: [] } as any,
+        system: ["ordinary persona"],
+        protectedSystem: ["protected companion safety"],
+        messages: [{ role: "user", content: "Hello" }],
+        tools: {},
+        provider: { id: model.providerID, options: {} } as any,
+        auth: undefined,
+        plugin: {
+          trigger: (name: string, _input: unknown, output: any) => {
+            if (name === "experimental.chat.system.transform") {
+              exposed = output.system
+              output.system.length = 0
+              output.system.push("plugin replacement")
+            }
+            return Effect.succeed(output)
+          },
+          list: () => Effect.succeed([]),
+          init: () => Effect.void,
+        } as any,
+        flags: { outputTokenMax: 32_000, client: "test" } as any,
+        isWorkflow: false,
+      }),
+    )
+
+    exposed!.length = 0
+    expect(result.system).toEqual(["plugin replacement\nprotected companion safety"])
+    expect(result.system.join("\n")).not.toContain("ordinary persona")
+  })
+
   test("azure chat completions omit Responses-only reasoning options after variants merge", async () => {
     const model = {
       ...createGpt5Model("gpt-5.4"),

@@ -110,6 +110,7 @@ export const dict = {
   "dialog.provider.copilot.note": "โมเดล AI สำหรับการช่วยเหลือในการเขียนโค้ดผ่าน GitHub Copilot",
   "dialog.provider.openai.note": "โมเดล GPT สำหรับงาน AI ทั่วไปที่รวดเร็วและมีความสามารถ",
   "dialog.provider.google.note": "โมเดล Gemini สำหรับการตอบสนองที่รวดเร็วและมีโครงสร้าง",
+  "dialog.provider.custom.label": "ผู้ให้บริการแบบกำหนดเองที่เข้ากันได้กับ OpenAI",
   "dialog.provider.openrouter.note": "เข้าถึงโมเดลที่รองรับทั้งหมดจากผู้ให้บริการเดียว",
   "dialog.provider.vercel.note": "การเข้าถึงโมเดล AI แบบรวมด้วยการกำหนดเส้นทางอัจฉริยะ",
 
@@ -122,6 +123,7 @@ export const dict = {
 
   "dialog.model.unpaid.freeModels.title": "โมเดลฟรีที่จัดหาให้โดย newhorse",
   "dialog.model.unpaid.addMore.title": "เพิ่มโมเดลเพิ่มเติมจากผู้ให้บริการยอดนิยม",
+  "dialog.model.unpaid.viewMoreProviders": "ดูผู้ให้บริการเพิ่มเติมกว่า 70 ราย",
 
   "dialog.provider.viewAll": "แสดงผู้ให้บริการเพิ่มเติม",
 
@@ -679,6 +681,9 @@ export const dict = {
   "session.header.open.ariaLabel": "เปิดใน {{app}}",
   "session.header.open.menu": "ตัวเลือกการเปิด",
   "session.header.open.copyPath": "คัดลอกเส้นทาง",
+  "session.header.reveal.finder": "แสดงใน Finder",
+  "session.header.reveal.fileExplorer": "แสดงใน File Explorer",
+  "session.header.reveal.containingFolder": "เปิดโฟลเดอร์ที่บรรจุ",
 
   "status.popover.trigger": "สถานะ",
   "status.popover.ariaLabel": "การกำหนดค่าเซิร์ฟเวอร์",
@@ -918,6 +923,29 @@ export const dict = {
   "settings.providers.tag.config": "กำหนดค่า",
   "settings.providers.tag.custom": "กำหนดเอง",
   "settings.providers.tag.other": "อื่น ๆ",
+  "settings.profile.title": "Companion",
+  "settings.profile.persona.title": "Persona",
+  "settings.profile.persona.description":
+    "Define the Companion's tone and interaction style. Safety requirements remain protected.",
+  "settings.profile.memory.title": "Memory",
+  "settings.profile.memory.description": "Choose how relationship memory is stored for Companion sessions.",
+  "settings.profile.memory.off": "Off",
+  "settings.profile.memory.ask": "Ask before saving",
+  "settings.profile.memory.auto-safe": "Save safe explicit memories automatically",
+  "settings.profile.proactive.title": "Proactive care",
+  "settings.profile.proactive.description":
+    "Allow subscribed check-ins and follow-ups. Off by default; user-created reminders still work.",
+  "settings.profile.proactivePaused.title": "Pause proactive messages",
+  "settings.profile.proactivePaused.description":
+    "Keep the subscription but stop check-ins and follow-ups until resumed.",
+  "settings.profile.quietHours.title": "Quiet hours",
+  "settings.profile.quietHours.description": "Start, end, and IANA timezone. Cross-midnight ranges are supported.",
+  "settings.profile.frequency.title": "Frequency limit",
+  "settings.profile.frequency.description": "Maximum messages per day and minimum minutes between proactive messages.",
+  "settings.profile.crisisRegion.title": "Crisis-support region",
+  "settings.profile.crisisRegion.description":
+    "Optional region used to provide honest, locally relevant crisis guidance.",
+  "settings.profile.saved": "Companion settings saved",
   "settings.models.title": "โมเดล",
   "settings.models.description": "การตั้งค่าโมเดลจะสามารถกำหนดค่าได้ที่นี่",
   "settings.agents.title": "เอเจนต์",

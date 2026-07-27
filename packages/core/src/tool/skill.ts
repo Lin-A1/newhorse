@@ -10,12 +10,14 @@ import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { Skill } from "@newhorse/schema/skill"
 
 export const name = "skill"
 const FILE_LIMIT = 10
 
 export const Input = Schema.Struct({
   name: Schema.String.annotate({ description: "The name of the skill from the available skills list" }),
+  arguments: Skill.Arguments.pipe(Schema.optional),
 })
 
 export const Output = Schema.Struct({
@@ -32,7 +34,11 @@ export const description = [
   "The skill name must match one of the available skills in the system context.",
 ].join("\n")
 
-export const toModelOutput = (skill: SkillV2.Info, files: ReadonlyArray<string>) => {
+export const toModelOutput = (
+  skill: SkillV2.Info,
+  files: ReadonlyArray<string>,
+  arguments_: Skill.Arguments = {},
+) => {
   const directory = path.dirname(skill.location)
   return [
     `<skill_content name="${skill.name}">`,
@@ -47,8 +53,11 @@ export const toModelOutput = (skill: SkillV2.Info, files: ReadonlyArray<string>)
     "<skill_files>",
     ...files.map((file) => `<file>${file}</file>`),
     "</skill_files>",
+    Skill.formatArguments(arguments_),
     "</skill_content>",
-  ].join("\n")
+  ]
+    .filter(Boolean)
+    .join("\n")
 }
 
 const unableToLoad = (name: string, error?: unknown) =>
@@ -73,6 +82,10 @@ const layer = Layer.effectDiscard(
               const skill = current.find((skill) => skill.name === input.name)
               if (!skill) return yield* unableToLoad(input.name)
               return yield* Effect.gen(function* () {
+                const arguments_ = yield* Effect.try({
+                  try: () => Skill.resolveArguments(skill.parameters, input.arguments),
+                  catch: (error) => unableToLoad(input.name, error),
+                })
                 yield* permission.assert({
                   action: name,
                   resources: [skill.name],
@@ -92,7 +105,7 @@ const layer = Layer.effectDiscard(
                 return {
                   name: skill.name,
                   directory,
-                  output: toModelOutput(skill, files),
+                  output: toModelOutput(skill, files, arguments_),
                 }
               }).pipe(Effect.mapError((error) => unableToLoad(input.name, error)))
             }),

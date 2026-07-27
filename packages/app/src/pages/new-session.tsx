@@ -25,7 +25,14 @@ import { createPromptInputController, createPromptProjectControls } from "@/page
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
 import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
-import { PromptGitStatus, PromptWorkspaceSelector } from "@/components/prompt-workspace-selector"
+import {
+  PromptGitStatus,
+  PromptProfileSelector,
+  PromptWorkspaceSelector,
+  type ProfileOption,
+  type WorkspaceAdapterOption,
+  type WorkspaceOption,
+} from "@/components/prompt-workspace-selector"
 import { useTitlebarRightMount } from "@/components/titlebar"
 import { useCommand } from "@/context/command"
 import { useProviders } from "@/hooks/use-providers"
@@ -35,7 +42,7 @@ import createPresence from "solid-presence"
 import { useLocal } from "@/context/local"
 import { createPromptModelSelection } from "@/pages/session/composer/prompt-model-selection"
 
-const workspaceBarEnabled = import.meta.env.VITE_OPENCODE_CHANNEL !== "prod"
+const workspaceBarEnabled = true
 const providerTipDismissalDuration = 30 * 24 * 60 * 60 * 1000
 const providerTipExitDuration = 250
 
@@ -76,10 +83,46 @@ export default function NewSessionPage() {
   })
   const projectControls = createPromptProjectControls()
 
-  const [store, setStore] = createStore<{ worktree?: string }>({})
+  const [store, setStore] = createStore<{ worktree?: string; workspace?: string; profileID?: string }>({})
+  const [workspaceState] = createResource(
+    () => sdk().directory,
+    async () => {
+      await sdk()
+        .client.experimental.workspace.syncList()
+        .catch(() => undefined)
+      const [workspaces, adapters] = await Promise.all([
+        sdk()
+          .client.experimental.workspace.list()
+          .then((result) => result.data ?? []),
+        sdk()
+          .client.experimental.workspace.adapter.list()
+          .then((result) => result.data ?? []),
+      ])
+      return { workspaces: workspaces as WorkspaceOption[], adapters: adapters as WorkspaceAdapterOption[] }
+    },
+    { initialValue: { workspaces: [] as WorkspaceOption[], adapters: [] as WorkspaceAdapterOption[] } },
+  )
+  const [profileState] = createResource(
+    () => sdk().scope,
+    () =>
+      sdk()
+        .client.global.profile.get()
+        .then((result) => result.data),
+  )
+  const profiles = createMemo(() => (profileState()?.items ?? []) as ProfileOption[])
+  const selectedProfileID = createMemo(() => store.profileID ?? profileState()?.active)
+  const selectedWorkspace = createMemo(() => {
+    const value = store.workspace
+    if (!value?.startsWith("workspace:")) return
+    return workspaceState().workspaces.find((item) => item.id === value.slice("workspace:".length))
+  })
+  const selectedAdapter = createMemo(() => {
+    const value = store.workspace
+    return value?.startsWith("adapter:") ? value.slice("adapter:".length) : undefined
+  })
   const rightMount = useTitlebarRightMount()
 
-  const showWorkspaceBar = createMemo(() => workspaceBarEnabled && sync().project?.vcs === "git")
+  const showWorkspaceBar = createMemo(() => workspaceBarEnabled && !!projectController.selected())
   const newSessionWorktree = createMemo(() => {
     if (!showWorkspaceBar()) return "main"
     if (store.worktree) return store.worktree
@@ -87,6 +130,7 @@ export default function NewSessionPage() {
     if (project && sdk().directory !== project.worktree) return sdk().directory
     return "main"
   })
+  const workspaceSelection = createMemo(() => store.workspace ?? newSessionWorktree())
   const projectRoot = createMemo(() => sync().project?.worktree ?? sdk().directory)
   const localBranch = createMemo(() => serverSync().child(projectRoot())[0].vcs?.branch)
   const selectedBranch = createMemo(() => {
@@ -99,9 +143,21 @@ export default function NewSessionPage() {
       return inputController()
     },
     get newSessionWorktree() {
-      return newSessionWorktree()
+      return store.workspace ? "main" : newSessionWorktree()
     },
-    onNewSessionWorktreeReset: () => setStore("worktree", undefined),
+    get newSessionWorkspaceID() {
+      return selectedWorkspace()?.id
+    },
+    get newSessionWorkspaceType() {
+      return selectedAdapter()
+    },
+    get newSessionWorkspaceDirectory() {
+      return selectedWorkspace()?.directory ?? undefined
+    },
+    get newSessionProfileID() {
+      return selectedProfileID()
+    },
+    onNewSessionWorktreeReset: () => setStore({ worktree: undefined, workspace: undefined }),
     onSubmit: () => comments.clear(),
   })
   const projectController = createPromptProjectController({
@@ -181,20 +237,35 @@ export default function NewSessionPage() {
                         fallback={<PromptGitStatus branch={selectedBranch()} noGit={sync().project?.vcs !== "git"} />}
                       >
                         <PromptWorkspaceSelector
-                          value={newSessionWorktree()}
+                          value={workspaceSelection()}
                           projectRoot={projectRoot()}
                           workspaces={sync().project?.sandboxes ?? []}
-                          branch={selectedBranch()}
-                          onChange={(value) =>
-                            setStore(
-                              "worktree",
-                              value === "main" && sync().project?.worktree !== sdk().directory
-                                ? sync().project?.worktree
-                                : value,
-                            )
-                          }
+                          workspaceOptions={workspaceState().workspaces}
+                          adapterOptions={workspaceState().adapters}
+                          branch={selectedWorkspace()?.branch ?? selectedBranch()}
+                          onChange={(value) => {
+                            if (value.startsWith("workspace:") || value.startsWith("adapter:")) {
+                              setStore({ workspace: value, worktree: undefined })
+                              return
+                            }
+                            setStore({
+                              workspace: undefined,
+                              worktree:
+                                value === "main" && sync().project?.worktree !== sdk().directory
+                                  ? sync().project?.worktree
+                                  : value,
+                            })
+                          }}
                           onDone={promptInputV2Controller.restoreFocus}
                         />
+                        <Show when={selectedProfileID() && profiles().length > 0}>
+                          <PromptProfileSelector
+                            value={selectedProfileID()!}
+                            profiles={profiles()}
+                            onChange={(value) => setStore("profileID", value)}
+                            onDone={promptInputV2Controller.restoreFocus}
+                          />
+                        </Show>
                       </Show>
                     </div>
                   </Show>

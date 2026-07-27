@@ -25,6 +25,7 @@ type PrepareInput = {
   readonly agent: Agent.Info
   readonly permission?: PermissionV1.Ruleset
   readonly system: string[]
+  readonly protectedSystem?: string[]
   readonly messages: ModelMessage[]
   readonly small?: boolean
   readonly tools: Record<string, Tool>
@@ -55,7 +56,7 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
-  const system = [
+  let system = [
     [
       ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
       ...input.system,
@@ -75,6 +76,12 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     const rest = system.slice(1)
     system.length = 0
     system.push(header, rest.join("\n"))
+  }
+  system = [...system]
+  const protectedSystem = input.protectedSystem?.filter((value) => value.trim()).join("\n")
+  if (protectedSystem) {
+    if (system.length === 0) system.push(protectedSystem)
+    else system[system.length - 1] = `${system[system.length - 1]}\n${protectedSystem}`
   }
 
   const variant =

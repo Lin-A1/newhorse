@@ -16,6 +16,8 @@ import { AppNodeBuilder } from "@newhorse/core/effect/app-node-builder"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap"
+import { Profile } from "@/profile"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
 
 const it = testEffect(
   AppNodeBuilder.build(
@@ -217,6 +219,33 @@ describe("Session", () => {
 
       const getExit = yield* session.get(info.id).pipe(Effect.exit)
       expect(Exit.isFailure(getExit)).toBe(true)
+    }),
+  )
+
+  it.instance("persists workspace and profile bindings across children and forks", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const workspaceID = WorkspaceV2.ID.make("wrk_personal")
+      const profileID = Profile.ID.make("assistant")
+      const created = yield* Effect.acquireRelease(session.create({ title: "bound", workspaceID, profileID }), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+      const child = yield* Effect.acquireRelease(
+        session.create({
+          parentID: created.id,
+          workspaceID: WorkspaceV2.ID.make("wrk_other"),
+          profileID: Profile.ID.make("assistant"),
+        }),
+        (info) => session.remove(info.id).pipe(Effect.ignore),
+      )
+      const fork = yield* Effect.acquireRelease(session.fork({ sessionID: created.id }), (info) =>
+        session.remove(info.id).pipe(Effect.ignore),
+      )
+
+      for (const item of [yield* session.get(created.id), yield* session.get(child.id), yield* session.get(fork.id)]) {
+        expect(item.workspaceID).toBe(workspaceID)
+        expect(item.profileID).toBe(profileID)
+      }
     }),
   )
 

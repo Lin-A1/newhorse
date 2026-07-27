@@ -38,6 +38,7 @@ import { ProjectV2 } from "@newhorse/core/project"
 import { Filesystem } from "@/util/filesystem"
 import { ConfigPlugin } from "@/config/plugin"
 import { ConfigPluginV1 } from "@newhorse/core/v1/config/plugin"
+import { personalDirectory } from "@/control-plane/adapters/personal"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
@@ -353,6 +354,36 @@ it.instance(
     expect(config.shell).toBe("bash")
   }),
   { config: { shell: "bash" } },
+)
+
+it.effect("filters global plugins in personal workspaces unless explicitly opted in", () =>
+  Effect.gen(function* () {
+    const directory = personalDirectory(`config-isolation-${Date.now()}`)
+    yield* Effect.promise(() => fs.mkdir(directory, { recursive: true }))
+    yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })))
+
+    yield* withGlobalConfig(
+      {
+        config: {
+          plugin: ["blocked-plugin", ["allowed-plugin", { personal: true }]],
+        },
+      },
+      ({ dir }) =>
+        withGlobalConfigDir(
+          dir,
+          withInstanceDir(
+            directory,
+            Effect.gen(function* () {
+              const config = yield* Config.use.get()
+              expect(config.plugin_origins?.map((origin) => origin.spec)).toEqual([
+                ["allowed-plugin", { personal: true }],
+              ])
+              expect(yield* Config.use.directories()).toEqual([directory])
+            }),
+          ),
+        ),
+    )
+  }),
 )
 
 it.instance("updates config and preserves empty shell sentinel", () =>

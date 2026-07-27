@@ -545,6 +545,7 @@ export const SessionInfo = Schema.Struct({
   slug: Schema.String,
   projectID: Project.ID,
   workspaceID: optional(WorkspaceID),
+  profileID: optional(Schema.String),
   directory: Schema.String,
   path: optional(Schema.String),
   parentID: optional(SessionID),

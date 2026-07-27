@@ -1221,6 +1221,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         setStore({ popover, slashMenu: false, slashMenuQuery: "" })
       },
       newSessionWorktree: () => props.newSessionWorktree,
+      newSessionWorkspaceID: () => props.newSessionWorkspaceID,
+      newSessionWorkspaceType: () => props.newSessionWorkspaceType,
+      newSessionWorkspaceDirectory: () => props.newSessionWorkspaceDirectory,
+      newSessionProfileID: () => props.newSessionProfileID,
       onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
       shouldQueue: props.shouldQueue,
       onQueue: props.onQueue,

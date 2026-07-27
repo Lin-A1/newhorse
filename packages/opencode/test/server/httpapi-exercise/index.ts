@@ -79,6 +79,29 @@ const scenarios: Scenario[] = [
       "status",
     ),
   http.protected.get("/global/config", "global.config.get").global().json(),
+  http.protected.get("/global/profile", "global.profile.get").global().json(),
+  http.protected
+    .patch("/global/profile", "global.profile.select")
+    .global()
+    .mutating()
+    .at(() => ({ path: "/global/profile", body: { id: "companion" } }))
+    .json(200, (body) => {
+      object(body)
+      check(body.active === "companion", "profile select should activate companion for new sessions")
+    }),
+  http.protected
+    .patch("/global/profile/{profileID}", "global.profile.update")
+    .global()
+    .mutating()
+    .at(() => ({
+      path: route("/global/profile/{profileID}", { profileID: "companion" }),
+      body: { persona: "Calm and concise", memory: "ask", crisisRegion: "US" },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.id === "companion", "profile update should return companion runtime")
+      check(body.persona === "Calm and concise", "profile update should persist persona")
+    }),
   http.protected
     .patch("/global/config", "global.config.update")
     .global()
@@ -279,6 +302,75 @@ const scenarios: Scenario[] = [
       body: { method: "bad" },
     }))
     .status(400),
+  http.protected
+    .get("/reminder", "reminder.list")
+    .seeded((ctx) => ctx.reminder({ title: "List reminder" }))
+    .json(200, (body, ctx) => {
+      array(body)
+      check(
+        body.some((item) => isRecord(item) && item.id === ctx.state.id),
+        "reminder list should return workspace reminder",
+      )
+    }),
+  http.protected
+    .post("/reminder", "reminder.create")
+    .mutating()
+    .at((ctx) => ({
+      path: "/reminder",
+      headers: ctx.headers(),
+      body: {
+        profileID: "assistant",
+        title: "Created over HTTP",
+        body: "Persistent HTTP reminder",
+        scheduleAt: Date.now() + 60_000,
+        timezone: "UTC",
+      },
+    }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        object(body)
+        check(body.title === "Created over HTTP", "reminder create should return created reminder")
+        check(
+          (yield* ctx.reminders()).some((item) => item.id === body.id),
+          "reminder create should persist reminder",
+        )
+      }),
+    ),
+  http.protected
+    .patch("/reminder/{reminderID}", "reminder.update")
+    .mutating()
+    .seeded((ctx) => ctx.reminder({ title: "Before update" }))
+    .at((ctx) => ({
+      path: route("/reminder/{reminderID}", { reminderID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { title: "Updated over HTTP", paused: true },
+    }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        object(body)
+        check(body.title === "Updated over HTTP" && body.status === "paused", "reminder update should return changes")
+        const stored = (yield* ctx.reminders()).find((item) => item.id === ctx.state.id)
+        check(
+          stored?.title === "Updated over HTTP" && stored.status === "paused",
+          "reminder update should persist changes",
+        )
+      }),
+    ),
+  http.protected
+    .delete("/reminder/{reminderID}", "reminder.cancel")
+    .mutating()
+    .seeded((ctx) => ctx.reminder({ title: "Cancel reminder" }))
+    .at((ctx) => ({
+      path: route("/reminder/{reminderID}", { reminderID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        check(body === true, "reminder cancel should return true")
+        const stored = (yield* ctx.reminders()).find((item) => item.id === ctx.state.id)
+        check(stored?.status === "cancelled", "reminder cancel should persist cancelled status")
+      }),
+    ),
   http.protected.get("/permission", "permission.list").json(200, array),
   http.protected
     .post("/permission/{requestID}/reply", "permission.reply.invalid")

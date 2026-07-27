@@ -44,6 +44,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@newhorse/core/provider"
 import { ModelV2 } from "@newhorse/core/model"
 import { SessionMessage } from "@newhorse/schema/session-message"
+import { Profile } from "@/profile"
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
@@ -80,6 +81,7 @@ export function fromRow(row: SessionRow): Info {
     slug: row.slug,
     projectID: row.project_id,
     workspaceID: row.workspace_id ?? undefined,
+    profileID: row.profile_id ? Profile.ID.make(row.profile_id) : undefined,
     directory: row.directory,
     path: row.path ?? undefined,
     parentID: row.parent_id ?? undefined,
@@ -122,6 +124,7 @@ export function toRow(info: Info) {
     id: info.id,
     project_id: info.projectID,
     workspace_id: info.workspaceID,
+    profile_id: info.profileID,
     parent_id: info.parentID,
     slug: info.slug,
     directory: info.directory,
@@ -226,6 +229,7 @@ export const Info = Schema.Struct({
   slug: Schema.String,
   projectID: ProjectV2.ID,
   workspaceID: optional(WorkspaceV2.ID),
+  profileID: optional(Profile.ID),
   directory: Schema.String,
   path: optional(Schema.String),
   parentID: optional(SessionID),
@@ -266,6 +270,7 @@ export const CreateInput = Schema.optional(
     metadata: Schema.optional(Metadata),
     permission: Schema.optional(PermissionV1.Ruleset),
     workspaceID: Schema.optional(WorkspaceV2.ID),
+    profileID: Schema.optional(Profile.ID),
   }),
 )
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
@@ -423,6 +428,7 @@ export interface Interface {
     metadata?: typeof Metadata.Type
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
+    profileID?: Profile.ID
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
@@ -477,7 +483,10 @@ export class Service extends Context.Service<Service, Interface>()("@newhorse/Se
 
 export const use = serviceUse(Service)
 
-export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" | "permission"> & {
+export type Patch = Omit<
+  Partial<Info>,
+  "time" | "share" | "summary" | "revert" | "permission" | "workspaceID" | "profileID"
+> & {
   time?: Partial<Info["time"]>
   share?: Partial<NonNullable<Info["share"]>> | null
   summary?: Info["summary"] | null
@@ -488,7 +497,7 @@ export type Patch = Omit<Partial<Info>, "time" | "share" | "summary" | "revert" 
 const layer: Layer.Layer<
   Service,
   never,
-  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service
+  BackgroundJob.Service | RuntimeFlags.Service | Database.Service | EventV2Bridge.Service | Profile.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -497,6 +506,7 @@ const layer: Layer.Layer<
     const background = yield* BackgroundJob.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const profiles = yield* Profile.Service
 
     const createNext = Effect.fn("Session.createNext")(function* (input: {
       id?: SessionID
@@ -505,6 +515,7 @@ const layer: Layer.Layer<
       model?: Schema.Schema.Type<typeof Model>
       parentID?: SessionID
       workspaceID?: WorkspaceV2.ID
+      profileID?: Profile.ID
       directory: string
       path?: string
       metadata?: typeof Metadata.Type
@@ -519,6 +530,7 @@ const layer: Layer.Layer<
         directory: input.directory,
         path: input.path,
         workspaceID: input.workspaceID,
+        profileID: input.profileID,
         parentID: input.parentID,
         title: input.title ?? (input.parentID ? childTitlePrefix : parentTitlePrefix) + new Date().toISOString(),
         agent: input.agent,
@@ -674,9 +686,13 @@ const layer: Layer.Layer<
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
       workspaceID?: WorkspaceV2.ID
+      profileID?: Profile.ID
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
+      const parent = input?.parentID ? yield* get(input.parentID).pipe(Effect.orDie) : undefined
+      const profileID = parent?.profileID ?? input?.profileID ?? (yield* profiles.activeID())
+      yield* profiles.get(profileID).pipe(Effect.orDie)
       return yield* createNext({
         parentID: input?.parentID,
         directory: ctx.directory,
@@ -686,7 +702,8 @@ const layer: Layer.Layer<
         model: input?.model,
         metadata: input?.metadata,
         permission: input?.permission,
-        workspaceID: input?.workspaceID ?? workspace,
+        workspaceID: parent ? parent.workspaceID : (input?.workspaceID ?? workspace),
+        profileID,
       })
     })
 
@@ -698,6 +715,7 @@ const layer: Layer.Layer<
         directory: ctx.directory,
         path: sessionPath(ctx.worktree, ctx.directory),
         workspaceID: original.workspaceID,
+        profileID: original.profileID,
         title,
         metadata: structuredClone(original.metadata),
       })
@@ -733,7 +751,12 @@ const layer: Layer.Layer<
       return session
     })
 
-    const patch = (sessionID: SessionID, info: Patch) =>
+    type InternalPatch = Patch & {
+      workspaceID?: Info["workspaceID"]
+      profileID?: Info["profileID"]
+    }
+
+    const patch = (sessionID: SessionID, info: InternalPatch) =>
       Effect.gen(function* () {
         const current = yield* get(sessionID)
         const next = {
@@ -817,9 +840,10 @@ const layer: Layer.Layer<
       sessionID: SessionID
       workspaceID: Info["workspaceID"]
     }) {
-      yield* patch(input.sessionID, { workspaceID: input.workspaceID, time: { updated: Date.now() } }).pipe(
-        Effect.orDie,
-      )
+      yield* patch(input.sessionID, {
+        workspaceID: input.workspaceID,
+        time: { updated: Date.now() },
+      }).pipe(Effect.orDie)
     })
 
     const diff = Effect.fn("Session.diff")(function* (sessionID: SessionID) {
@@ -1012,7 +1036,7 @@ function listByProject(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node],
+  deps: [BackgroundJob.node, RuntimeFlags.node, Database.node, EventV2Bridge.node, Profile.node],
 })
 
 export * as Session from "./session"

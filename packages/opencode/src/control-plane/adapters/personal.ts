@@ -61,7 +61,9 @@ export const PersonalAdapter: WorkspaceAdapter = {
   },
   async create(info) {
     const directory = resolveDirectory(info)
-    await fs.mkdir(path.join(directory, "notes"), { recursive: true })
+    await Promise.all(
+      ["files", "notes", "output", "tmp"].map((name) => fs.mkdir(path.join(directory, name), { recursive: true })),
+    )
   },
   async list() {
     const entries = await fs.readdir(ROOT, { withFileTypes: true }).catch(() => [])

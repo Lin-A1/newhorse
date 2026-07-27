@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
-import { Cause, Effect, Exit, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { Tool } from "@/tool/tool"
@@ -135,14 +135,7 @@ describe("Tool.define", () => {
       const execute = tool.execute as unknown as (args: unknown, ctx: Tool.Context) => ReturnType<typeof tool.execute>
 
       // Missing required `question` field on the first questions[] entry.
-      const exit = yield* execute({ questions: [{ options: ["a"] }] }, makeCtx()).pipe(Effect.exit)
-      expect(Exit.isFailure(exit)).toBe(true)
-      if (!Exit.isFailure(exit)) return
-
-      // The wrap ends with Effect.orDie, so the failure lives in the cause as a
-      // defect. Recover the typed instance from there.
-      const die = exit.cause.reasons.find(Cause.isDieReason)
-      const error = die?.defect
+      const error = yield* execute({ questions: [{ options: ["a"] }] }, makeCtx()).pipe(Effect.flip)
       expect(error).toBeInstanceOf(Tool.InvalidArgumentsError)
       const args = error as Tool.InvalidArgumentsError
       expect(args.tool).toBe("qtest")

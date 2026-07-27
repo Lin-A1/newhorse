@@ -51,6 +51,8 @@ import { memoMap } from "@newhorse/core/effect/memo-map"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { Scheduler } from "@/scheduler"
+import { Profile } from "@/profile"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@newhorse/core/session/projector"
@@ -82,6 +84,8 @@ export const AppLayer = AppNodeBuilderV1.build(
     BackgroundJob.node,
     RuntimeFlags.node,
     EventV2Bridge.node,
+    Profile.node,
+    Scheduler.node,
     SessionRunState.node,
     SessionProcessor.node,
     SessionCompaction.node,

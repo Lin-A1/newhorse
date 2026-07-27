@@ -28,6 +28,7 @@ export const SessionTable = sqliteTable(
       .notNull()
       .references(() => ProjectTable.id, { onDelete: "cascade" }),
     workspace_id: text().$type<WorkspaceV2.ID>(),
+    profile_id: text(),
     parent_id: text().$type<SessionSchema.ID>(),
     slug: text().notNull(),
     directory: DatabasePath.directoryColumn().notNull(),
@@ -61,6 +62,7 @@ export const SessionTable = sqliteTable(
   (table) => [
     index("session_project_idx").on(table.project_id),
     index("session_workspace_idx").on(table.workspace_id),
+    index("session_profile_idx").on(table.profile_id),
     index("session_parent_idx").on(table.parent_id),
   ],
 )

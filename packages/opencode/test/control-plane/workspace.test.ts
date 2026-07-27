@@ -21,6 +21,7 @@ import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, provideTmpdirInstance, requireInstance, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { registerAdapter } from "../../src/control-plane/adapters"
+import { PERSONAL_ADAPTER_TYPE } from "../../src/control-plane/adapters/personal"
 import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { WorkspaceTable } from "@newhorse/core/control-plane/workspace.sql"
 import type { Target, WorkspaceAdapter, WorkspaceInfo } from "../../src/control-plane/types"
@@ -413,6 +414,54 @@ describe("workspace CRUD", () => {
         yield* insertWorkspace(a)
 
         expect(yield* workspace.list(instance.project)).toEqual([a, b])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "lists global personal workspaces without exposing unrelated global workspaces",
+    () =>
+      Effect.gen(function* () {
+        const instance = yield* requireInstance
+        const workspace = yield* Workspace.Service
+        yield* insertProject(ProjectV2.ID.global, "/tmp/global")
+        const personal = workspaceInfo(ProjectV2.ID.global, "personal", {
+          id: WorkspaceV2.ID.ascending("wrk_global_personal"),
+          name: "journal",
+          directory: "/personal/journal",
+        })
+        const unrelated = workspaceInfo(ProjectV2.ID.global, "remote", {
+          id: WorkspaceV2.ID.ascending("wrk_global_remote"),
+        })
+        yield* insertWorkspace(personal)
+        yield* insertWorkspace(unrelated)
+
+        expect(yield* workspace.list(instance.project)).toEqual([personal])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "creates personal workspaces under the global project without a preexisting global row",
+    () =>
+      Effect.gen(function* () {
+        const instance = yield* requireInstance
+        const workspace = yield* Workspace.Service
+        const info = yield* workspace.create({
+          type: PERSONAL_ADAPTER_TYPE,
+          branch: null,
+          projectID: instance.project.id,
+          extra: null,
+        })
+        try {
+          expect(info.projectID).toBe(ProjectV2.ID.global)
+          expect(info.type).toBe(PERSONAL_ADAPTER_TYPE)
+          expect((yield* workspace.list(instance.project)).map((item) => item.id)).toContain(info.id)
+          expect(yield* workspace.get(info.id)).toEqual(info)
+        } finally {
+          yield* workspace.remove(info.id)
+          if (info.directory) yield* Effect.promise(() => fs.rm(info.directory!, { recursive: true, force: true }))
+        }
       }),
     { git: true },
   )

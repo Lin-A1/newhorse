@@ -4,6 +4,7 @@ import { useTheme } from "../context/theme"
 import { useTerminalDimensions } from "@opentui/solid"
 import { SplitBorder } from "./border"
 import { TextAttributes } from "@opentui/core"
+import type { EventScheduledEventDue } from "@newhorse/sdk/v2/client"
 export type ToastOptions = {
   title?: string
   message: string
@@ -11,6 +12,20 @@ export type ToastOptions = {
   duration: number
 }
 type ToastInput = Omit<ToastOptions, "duration"> & { duration?: number }
+
+export function reminderToast(
+  event: EventScheduledEventDue,
+  workspace: string | undefined,
+  currentWorkspace: string | undefined,
+): ToastOptions | undefined {
+  if (workspace !== currentWorkspace) return
+  return {
+    title: event.properties.title,
+    message: event.properties.body,
+    variant: "info",
+    duration: 8000,
+  }
+}
 
 export function Toast() {
   const toast = useToast()

@@ -60,7 +60,7 @@ export interface Def<
   description: string
   parameters: Parameters
   jsonSchema?: JSONSchema7
-  execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>>
+  execute(args: Schema.Schema.Type<Parameters>, ctx: Context): Effect.Effect<ExecuteResult<M>, Error>
   formatValidationError?(error: unknown): string
 }
 export type DefWithoutID<
@@ -142,7 +142,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
               ...(truncated.truncated && { outputPath: truncated.outputPath }),
             },
           }
-        }).pipe(Effect.orDie, Effect.withSpan("Tool.execute", { attributes: attrs }))
+        }).pipe(Effect.withSpan("Tool.execute", { attributes: attrs }))
       }
       return toolInfo
     })

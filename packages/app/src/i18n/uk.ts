@@ -110,6 +110,7 @@ export const dict = {
   "dialog.provider.copilot.note": "Моделі AI для допомоги в кодуванні через GitHub Copilot",
   "dialog.provider.openai.note": "Моделі GPT для швидких і універсальних завдань AI",
   "dialog.provider.google.note": "Моделі Gemini для швидких структурованих відповідей",
+  "dialog.provider.custom.label": "Власний OpenAI-сумісний провайдер",
   "dialog.provider.openrouter.note": "Доступ до всіх підтримуваних моделей від одного провайдера",
   "dialog.provider.vercel.note": "Уніфікований доступ до моделей AI з інтелектуальною маршрутизацією",
 
@@ -122,6 +123,7 @@ export const dict = {
 
   "dialog.model.unpaid.freeModels.title": "Безкоштовні моделі від newhorse",
   "dialog.model.unpaid.addMore.title": "Додати більше моделей від популярних провайдерів",
+  "dialog.model.unpaid.viewMoreProviders": "Переглянути ще понад 70 провайдерів",
 
   "dialog.provider.viewAll": "Показати більше провайдерів",
 
@@ -713,6 +715,9 @@ export const dict = {
   "session.header.open.ariaLabel": "Відкрити в {{app}}",
   "session.header.open.menu": "Параметри відкриття",
   "session.header.open.copyPath": "Копіювати шлях",
+  "session.header.reveal.finder": "Показати у Finder",
+  "session.header.reveal.fileExplorer": "Показати у Провіднику файлів",
+  "session.header.reveal.containingFolder": "Відкрити папку, що містить файл",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "Провідник файлів",
   "session.header.open.fileManager": "Файловий менеджер",
@@ -1024,6 +1029,29 @@ export const dict = {
   "settings.providers.tag.config": "Конфігурація",
   "settings.providers.tag.custom": "Користувацький",
   "settings.providers.tag.other": "Інше",
+  "settings.profile.title": "Companion",
+  "settings.profile.persona.title": "Persona",
+  "settings.profile.persona.description":
+    "Define the Companion's tone and interaction style. Safety requirements remain protected.",
+  "settings.profile.memory.title": "Memory",
+  "settings.profile.memory.description": "Choose how relationship memory is stored for Companion sessions.",
+  "settings.profile.memory.off": "Off",
+  "settings.profile.memory.ask": "Ask before saving",
+  "settings.profile.memory.auto-safe": "Save safe explicit memories automatically",
+  "settings.profile.proactive.title": "Proactive care",
+  "settings.profile.proactive.description":
+    "Allow subscribed check-ins and follow-ups. Off by default; user-created reminders still work.",
+  "settings.profile.proactivePaused.title": "Pause proactive messages",
+  "settings.profile.proactivePaused.description":
+    "Keep the subscription but stop check-ins and follow-ups until resumed.",
+  "settings.profile.quietHours.title": "Quiet hours",
+  "settings.profile.quietHours.description": "Start, end, and IANA timezone. Cross-midnight ranges are supported.",
+  "settings.profile.frequency.title": "Frequency limit",
+  "settings.profile.frequency.description": "Maximum messages per day and minimum minutes between proactive messages.",
+  "settings.profile.crisisRegion.title": "Crisis-support region",
+  "settings.profile.crisisRegion.description":
+    "Optional region used to provide honest, locally relevant crisis guidance.",
+  "settings.profile.saved": "Companion settings saved",
   "settings.models.title": "Моделі",
   "settings.models.description": "Налаштування моделей будуть доступні тут.",
   "settings.agents.title": "Агенти",

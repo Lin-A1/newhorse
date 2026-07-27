@@ -58,7 +58,7 @@ import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
 import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
-import { ToastProvider, useToast } from "./ui/toast"
+import { ToastProvider, reminderToast, useToast } from "./ui/toast"
 import { isDefaultTitle } from "./util/session"
 import { KVProvider, useKV } from "./context/kv"
 import * as Model from "./util/model"
@@ -1013,6 +1013,11 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         message: "The current session was deleted",
       })
     }
+  })
+
+  event.on("scheduled-event.due", (evt, { workspace }) => {
+    const reminder = reminderToast(evt, workspace, project.workspace.current())
+    if (reminder) toast.show(reminder)
   })
 
   event.on("session.error", (evt, { workspace }) => {

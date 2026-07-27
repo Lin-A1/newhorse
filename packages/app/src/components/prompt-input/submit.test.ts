@@ -6,7 +6,13 @@ import type { ModelSelection } from "@/context/local"
 let createPromptSubmit: typeof import("./submit").createPromptSubmit
 
 const createdClients: string[] = []
+const createdClientOptions: Array<{
+  directory?: string
+  experimental_workspaceID?: string
+  throwOnError?: boolean
+}> = []
 const createdSessions: string[] = []
+const createdSessionInputs: Array<{ workspaceID?: string; profileID?: string } | undefined> = []
 const enabledAutoAccept: Array<{ server: string; sessionID: string; directory: string }> = []
 const optimistic: Array<{
   directory?: string
@@ -64,9 +70,10 @@ const clientFor = (directory: string) => {
   createdClients.push(directory)
   return {
     session: {
-      create: async () => {
+      create: async (input?: { workspaceID?: string; profileID?: string }) => {
         await createSessionGate
         createdSessions.push(directory)
+        createdSessionInputs.push(input)
         return {
           data: {
             id: `session-${createdSessions.length}`,
@@ -85,6 +92,13 @@ const clientFor = (directory: string) => {
     },
     worktree: {
       create: async () => ({ data: { directory: `${directory}/new` } }),
+    },
+    experimental: {
+      workspace: {
+        create: async () => ({
+          data: { id: "wrk_created", type: "personal", name: "personal", directory: "/personal/default" },
+        }),
+      },
     },
   }
 }
@@ -174,6 +188,7 @@ beforeAll(async () => {
         client: rootClient,
         url: "http://localhost:4096",
         createClient(opts: any) {
+          createdClientOptions.push(opts)
           return clientFor(opts.directory)
         },
       }
@@ -250,7 +265,9 @@ beforeAll(async () => {
 
 beforeEach(() => {
   createdClients.length = 0
+  createdClientOptions.length = 0
   createdSessions.length = 0
+  createdSessionInputs.length = 0
   enabledAutoAccept.length = 0
   optimistic.length = 0
   optimisticSeeded.length = 0
@@ -268,6 +285,65 @@ beforeEach(() => {
 })
 
 describe("prompt submit worktree selection", () => {
+  test("creates new sessions in the selected workspace and profile", async () => {
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "shell",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorkspaceID: () => "wrk_personal",
+      newSessionWorkspaceDirectory: () => "/personal/default",
+      newSessionProfileID: () => "assistant",
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+
+    expect(createdClientOptions).toContainEqual({
+      directory: "/repo/main",
+      experimental_workspaceID: "wrk_personal",
+      throwOnError: true,
+    })
+    expect(createdSessionInputs).toEqual([{ workspaceID: "wrk_personal", profileID: "assistant" }])
+    expect(promoted).toEqual([{ directory: "/personal/default", sessionID: "session-1" }])
+  })
+
+  test("ignores workspace and profile selectors for an existing session", async () => {
+    params = { id: "session-1" }
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "shell",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      newSessionWorkspaceType: () => "personal",
+      newSessionProfileID: () => "companion",
+    })
+
+    await submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+
+    expect(createdClientOptions).toEqual([])
+    expect(createdSessionInputs).toEqual([])
+  })
+
   test("reads the latest worktree accessor value per submit", async () => {
     const submit = createPromptSubmit({
       prompt,

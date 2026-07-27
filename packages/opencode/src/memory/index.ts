@@ -1,6 +1,7 @@
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Database } from "@newhorse/core/database/database"
 import { MemoryTable } from "@newhorse/core/memory/sql"
+import { SessionTable } from "@newhorse/core/session/sql"
 import type {
   MemoryKind,
   MemoryProvenance,
@@ -12,12 +13,13 @@ import type { WorkspaceV2 } from "@newhorse/core/workspace"
 import type { SessionSchema } from "@newhorse/core/session/schema"
 import { Identifier } from "@newhorse/core/id/id"
 import { InstanceState } from "@/effect/instance-state"
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm"
+import { and, desc, eq, gt, inArray, isNull, or } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 
 export interface Info {
   id: string
   workspaceID?: WorkspaceV2.ID
+  profileID?: string
   scope: MemoryScope
   kind: MemoryKind
   content: string
@@ -37,6 +39,7 @@ export interface SaveInput {
   sensitivity?: MemorySensitivity
   confidence?: number
   sourceSessionID?: SessionSchema.ID
+  profileID?: string
   expiresAt?: number
 }
 
@@ -65,7 +68,11 @@ export function detectSensitive(content: string): boolean {
 export interface Interface {
   readonly save: (input: SaveInput) => Effect.Effect<Info, SensitiveMemoryRejected>
   readonly list: (input?: { status?: MemoryStatus[]; includeGlobal?: boolean }) => Effect.Effect<Info[]>
-  readonly retrieve: (input?: { limit?: number }) => Effect.Effect<Info[]>
+  readonly retrieve: (input?: {
+    limit?: number
+    profileID?: string
+    relationshipOnly?: boolean
+  }) => Effect.Effect<Info[]>
   readonly setStatus: (input: { id: string; status: MemoryStatus }) => Effect.Effect<void>
   readonly forget: (id: string) => Effect.Effect<void>
   readonly clear: () => Effect.Effect<void>
@@ -81,6 +88,7 @@ const layer = Layer.effect(
     const decode = (row: typeof MemoryTable.$inferSelect): Info => ({
       id: row.id,
       workspaceID: row.workspace_id ?? undefined,
+      profileID: row.profile_id ?? undefined,
       scope: row.scope,
       kind: row.kind,
       content: row.content,
@@ -101,10 +109,24 @@ const layer = Layer.effect(
       const scope = input.scope ?? "workspace"
       // Model inference is a proposal, never a fact the assistant may rely on.
       const status: MemoryStatus = input.provenance === "model_inferred" ? "proposed" : "active"
+      const profileID = input.profileID
+        ? input.profileID
+        : input.sourceSessionID
+          ? yield* db
+              .select({ profileID: SessionTable.profile_id })
+              .from(SessionTable)
+              .where(eq(SessionTable.id, input.sourceSessionID))
+              .get()
+              .pipe(
+                Effect.orDie,
+                Effect.map((row) => row?.profileID ?? undefined),
+              )
+          : undefined
       const row = {
         id: Identifier.ascending("memory"),
         workspace_id: scope === "user_global" ? null : (workspaceID ?? null),
         scope,
+        profile_id: scope === "user_global" ? null : (profileID ?? null),
         kind: input.kind,
         content: input.content,
         source_session_id: input.sourceSessionID ?? null,
@@ -124,7 +146,8 @@ const layer = Layer.effect(
     // Workspace memory never leaks across workspaces; user_global preferences
     // flow in one direction only, into the current workspace.
     const scopeFilter = (workspaceID: WorkspaceV2.ID | undefined, includeGlobal: boolean) => {
-      const own = workspaceID ? eq(MemoryTable.workspace_id, workspaceID) : isNull(MemoryTable.workspace_id)
+      const workspace = workspaceID ? eq(MemoryTable.workspace_id, workspaceID) : isNull(MemoryTable.workspace_id)
+      const own = and(eq(MemoryTable.scope, "workspace"), workspace)
       if (!includeGlobal) return own
       return or(own, and(eq(MemoryTable.scope, "user_global"), isNull(MemoryTable.workspace_id)))
     }
@@ -142,23 +165,52 @@ const layer = Layer.effect(
       return rows.map(decode)
     })
 
-    const retrieve = Effect.fn("Memory.retrieve")(function* (input?: { limit?: number }) {
+    const retrieve = Effect.fn("Memory.retrieve")(function* (input?: {
+      limit?: number
+      profileID?: string
+      relationshipOnly?: boolean
+    }) {
+      const workspaceID = yield* InstanceState.workspaceID
       const now = Date.now()
-      const rows = yield* list({ status: ["active"] })
-      return rows.filter((row) => !row.timeExpires || row.timeExpires > now).slice(0, input?.limit ?? 20)
+      const conditions = [
+        scopeFilter(workspaceID, !input?.relationshipOnly),
+        eq(MemoryTable.status, "active"),
+        or(isNull(MemoryTable.time_expires), gt(MemoryTable.time_expires, now)),
+      ]
+      if (input?.relationshipOnly) conditions.push(eq(MemoryTable.kind, "relationship"))
+      if (input?.profileID) {
+        conditions.push(
+          or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID)),
+        )
+      }
+      const rows = yield* db
+        .select()
+        .from(MemoryTable)
+        .where(and(...conditions))
+        .orderBy(desc(MemoryTable.time_created))
+        .limit(input?.limit ?? 20)
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map(decode)
     })
 
     const setStatus = Effect.fn("Memory.setStatus")(function* (input: { id: string; status: MemoryStatus }) {
+      const workspaceID = yield* InstanceState.workspaceID
       yield* db
         .update(MemoryTable)
         .set({ status: input.status, time_updated: Date.now() })
-        .where(eq(MemoryTable.id, input.id))
+        .where(and(eq(MemoryTable.id, input.id), scopeFilter(workspaceID, true)))
         .run()
         .pipe(Effect.orDie)
     })
 
     const forget = Effect.fn("Memory.forget")(function* (id: string) {
-      yield* db.delete(MemoryTable).where(eq(MemoryTable.id, id)).run().pipe(Effect.orDie)
+      const workspaceID = yield* InstanceState.workspaceID
+      yield* db
+        .delete(MemoryTable)
+        .where(and(eq(MemoryTable.id, id), scopeFilter(workspaceID, true)))
+        .run()
+        .pipe(Effect.orDie)
     })
 
     // Scope is matched explicitly: an unbound workspace also has a null

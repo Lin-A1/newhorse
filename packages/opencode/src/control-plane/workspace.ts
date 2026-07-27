@@ -7,6 +7,7 @@ import { Database } from "@newhorse/core/database/database"
 import { asc } from "drizzle-orm"
 import { eq } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
+import { or } from "drizzle-orm"
 import { Project } from "@/project/project"
 import { GlobalBus } from "@/bus/global"
 import { Auth } from "@/auth"
@@ -16,6 +17,8 @@ import { EventSequenceTable, EventTable } from "@newhorse/core/event/sql"
 import { FSUtil } from "@newhorse/core/fs-util"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProjectV2 } from "@newhorse/core/project"
+import { ProjectTable } from "@newhorse/core/project/sql"
+import { AbsolutePath } from "@newhorse/core/schema"
 import { Slug } from "@newhorse/core/util/slug"
 import { WorkspaceTable } from "@newhorse/core/control-plane/workspace.sql"
 import { getAdapter, registeredAdapters } from "./adapters"
@@ -34,6 +37,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { WorkspaceAdapterRuntime } from "./workspace-adapter-runtime"
 import { AppNodeBuilderV1 } from "@/effect/app-node-builder-v1"
 import { WorkspaceEvent } from "@newhorse/schema/workspace-event"
+import { PERSONAL_ADAPTER_TYPE } from "./adapters/personal"
 
 export const Info = Schema.Struct({
   ...WorkspaceInfoSchema.fields,
@@ -439,7 +443,7 @@ const layer = Layer.effect(
     })
 
     const startSync = Effect.fn("Workspace.startSync")(function* (space: Info) {
-      if (!flags.experimentalWorkspaces) return
+      if (!flags.experimentalWorkspaces && space.type !== PERSONAL_ADAPTER_TYPE) return
 
       const target = yield* WorkspaceAdapterRuntime.target(space).pipe(
         Effect.catch((error) =>
@@ -489,6 +493,15 @@ const layer = Layer.effect(
       connections.delete(id)
     })
 
+    const ensureGlobalProject = Effect.fn("Workspace.ensureGlobalProject")(function* () {
+      yield* db
+        .insert(ProjectTable)
+        .values({ id: ProjectV2.ID.global, worktree: AbsolutePath.make("/"), sandboxes: [] })
+        .onConflictDoNothing()
+        .run()
+        .pipe(Effect.orDie)
+    })
+
     const create = Effect.fn("Workspace.create")(function* (input: CreateInput) {
       const id = WorkspaceV2.ID.ascending(input.id)
       const adapter = getAdapter(input.projectID, input.type)
@@ -507,9 +520,11 @@ const layer = Layer.effect(
         name: config.name ?? null,
         directory: config.directory ?? null,
         extra: config.extra ?? null,
-        projectID: input.projectID,
+        projectID: config.type === PERSONAL_ADAPTER_TYPE ? ProjectV2.ID.global : input.projectID,
         timeUsed: Date.now(),
       }
+
+      if (info.projectID === ProjectV2.ID.global) yield* ensureGlobalProject()
 
       yield* db
         .insert(WorkspaceTable)
@@ -717,10 +732,15 @@ const layer = Layer.effect(
       return (yield* db
         .select()
         .from(WorkspaceTable)
-        .where(eq(WorkspaceTable.project_id, project.id))
+        .where(
+          project.id === ProjectV2.ID.global
+            ? eq(WorkspaceTable.project_id, project.id)
+            : or(eq(WorkspaceTable.project_id, project.id), eq(WorkspaceTable.project_id, ProjectV2.ID.global)),
+        )
         .all()
         .pipe(Effect.orDie))
         .map(fromRow)
+        .filter((workspace) => workspace.projectID === project.id || workspace.type === PERSONAL_ADAPTER_TYPE)
         .sort((a, b) => a.id.localeCompare(b.id))
     })
 
@@ -754,6 +774,8 @@ const layer = Layer.effect(
               projectID: item.projectID,
               timeUsed: Date.now(),
             }
+
+            if (info.projectID === ProjectV2.ID.global) yield* ensureGlobalProject()
 
             yield* db
               .insert(WorkspaceTable)

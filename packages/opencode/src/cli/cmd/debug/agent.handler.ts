@@ -52,7 +52,7 @@ const run = Effect.fn("Cli.debug.agent.body")(function* (
     }
     const params = parseToolParams(args.params)
     const toolCtx = yield* createToolContext(agent, ctx)
-    const result = yield* tool.execute(params, toolCtx)
+    const result = yield* tool.execute(params, toolCtx).pipe(Effect.catch((error) => fail(error.message)))
     process.stdout.write(JSON.stringify({ tool: toolID, input: params, result }, null, 2) + EOL)
     return
   }

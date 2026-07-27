@@ -8,10 +8,11 @@ import { InstallationVersion } from "@newhorse/core/installation/version"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
 import { GlobalUpgradeInput } from "../groups/global"
+import { Profile } from "@/profile"
 
 function eventData(data: unknown): Sse.Event {
   return {
@@ -69,6 +70,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
   Effect.gen(function* () {
     const config = yield* Config.Service
     const installation = yield* Installation.Service
+    const profile = yield* Profile.Service
     const bridge = yield* EffectBridge.make()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
@@ -87,6 +89,21 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       const result = yield* config.updateGlobal(ctx.payload)
       if (result.changed) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
       return result.info
+    })
+
+    const profileState = Effect.fn("GlobalHttpApi.profileState")(function* () {
+      return { active: yield* profile.activeID(), items: yield* profile.list() }
+    })
+
+    const profileSelect = Effect.fn("GlobalHttpApi.profileSelect")(function* (ctx) {
+      yield* profile.select(ctx.payload.id).pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      return yield* profileState()
+    })
+
+    const profileUpdate = Effect.fn("GlobalHttpApi.profileUpdate")(function* (ctx) {
+      return yield* profile
+        .update(ctx.params.profileID, ctx.payload)
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
     })
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
@@ -150,6 +167,9 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handleRaw("event", event)
       .handle("configGet", configGet)
       .handle("configUpdate", configUpdate)
+      .handle("profileGet", profileState)
+      .handle("profileSelect", profileSelect)
+      .handle("profileUpdate", profileUpdate)
       .handle("dispose", dispose)
       .handleRaw("upgrade", upgradeRaw)
   }),

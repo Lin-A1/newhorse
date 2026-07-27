@@ -91,6 +91,7 @@ export type Event =
   | EventWorkspaceStatus
   | EventWorktreeReady
   | EventWorktreeFailed
+  | EventScheduledEventDue
   | EventServerConnected
   | EventGlobalDisposed
   | EventServerInstanceDisposed
@@ -172,6 +173,7 @@ export type Session = {
   slug: string
   projectID: string
   workspaceID?: string
+  profileID?: string
   directory: string
   path?: string
   parentID?: string
@@ -1588,6 +1590,20 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "scheduled-event.due"
+        properties: {
+          id: string
+          workspaceID?: string
+          profileID: string
+          sessionID?: string
+          eventType: "reminder" | "check_in" | "follow_up"
+          title: string
+          body: string
+          scheduleAt: number
+        }
+      }
+    | {
+        id: string
         type: "server.connected"
         properties: {
           [key: string]: unknown
@@ -1644,7 +1660,7 @@ export type GlobalEvent = {
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR"
 
 /**
- * Server configuration for opencode serve and web commands
+ * Server configuration for nh serve and web commands
  */
 export type ServerConfig = {
   port?: number
@@ -1652,6 +1668,33 @@ export type ServerConfig = {
   mdns?: boolean
   mdnsDomain?: string
   cors?: Array<string>
+}
+
+export type ProfileConfig = {
+  kind: "assistant" | "companion"
+  name?: string
+  persona?: string
+  personaVersion?: number
+  memory?: "off" | "ask" | "auto-safe"
+  proactive?: boolean
+  proactivePaused?: boolean
+  quietHours?: {
+    start: string
+    end: string
+    timezone: string
+  }
+  proactiveFrequency?: {
+    maxPerDay: number
+    minIntervalMinutes: number
+  }
+  crisisRegion?: string
+}
+
+export type ProfilesConfig = {
+  active?: string
+  items?: {
+    [key: string]: ProfileConfig
+  }
 }
 
 export type PermissionActionConfig = "ask" | "allow" | "deny"
@@ -1897,6 +1940,7 @@ export type Config = {
     }
   }
   skills?: {
+    personal?: boolean
     paths?: Array<string>
     urls?: Array<string>
   }
@@ -1932,6 +1976,7 @@ export type Config = {
   default_agent?: string
   subagent_depth?: number
   username?: string
+  profile?: ProfilesConfig
   mode?: {
     build?: AgentConfig
     plan?: AgentConfig
@@ -2195,6 +2240,7 @@ export type GlobalSession = {
   slug: string
   projectID: string
   workspaceID?: string
+  profileID?: string
   directory: string
   path?: string
   parentID?: string
@@ -2539,10 +2585,388 @@ export type ProviderAuthError1 = {
   }
 }
 
+export type Session1 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session2 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
 export type NotFoundError = {
   name: "NotFoundError"
   data: {
     message: string
+  }
+}
+
+export type Session3 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session4 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session5 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session6 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session7 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
   }
 }
 
@@ -2598,6 +3022,114 @@ export type SessionBusyError = {
   _tag: "SessionBusyError"
   sessionID: string
   message: string
+}
+
+export type Session8 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
+}
+
+export type Session9 = {
+  id: string
+  slug: string
+  projectID: string
+  workspaceID?: string
+  profileID?: string
+  directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: Array<SnapshotFileDiff>
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  share?: {
+    url: string
+  }
+  title: string
+  agent?: string
+  model?: {
+    id: string
+    providerID: string
+    variant?: string
+  }
+  version: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  time: {
+    created: number
+    updated: number
+    compacting?: number
+    archived?: number
+  }
+  permission?: PermissionRuleset
+  revert?: {
+    messageID: string
+    partID?: string
+    snapshot?: string
+    diff?: string
+  }
 }
 
 export type EventTuiPromptAppend = {
@@ -2938,6 +3470,7 @@ export type V2Event =
   | WorkspaceStatus
   | WorktreeReady
   | WorktreeFailed
+  | ScheduledEventDue
   | ServerConnected
   | GlobalDisposed
 
@@ -6070,6 +6603,30 @@ export type WorktreeFailed = {
   }
 }
 
+export type ScheduledEventDue = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "scheduled-event.due"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    id: string
+    workspaceID?: string
+    profileID: string
+    sessionID?: string
+    eventType: "reminder" | "check_in" | "follow_up"
+    title: string
+    body: string
+    scheduleAt: number
+  }
+}
+
 export type ServerConnected = {
   id: string
   metadata?: {
@@ -7035,6 +7592,21 @@ export type EventWorktreeFailed = {
   }
 }
 
+export type EventScheduledEventDue = {
+  id: string
+  type: "scheduled-event.due"
+  properties: {
+    id: string
+    workspaceID?: string
+    profileID: string
+    sessionID?: string
+    eventType: "reminder" | "check_in" | "follow_up"
+    title: string
+    body: string
+    scheduleAt: number
+  }
+}
+
 export type EventServerConnected = {
   id: string
   type: "server.connected"
@@ -7324,6 +7896,138 @@ export type GlobalConfigUpdateResponses = {
 }
 
 export type GlobalConfigUpdateResponse = GlobalConfigUpdateResponses[keyof GlobalConfigUpdateResponses]
+
+export type GlobalProfileGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/profile"
+}
+
+export type GlobalProfileGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalProfileGetError = GlobalProfileGetErrors[keyof GlobalProfileGetErrors]
+
+export type GlobalProfileGetResponses = {
+  /**
+   * Global profile state
+   */
+  200: {
+    active: string
+    items: Array<{
+      id: string
+      kind: "assistant" | "companion"
+      name: string
+      memory: "off" | "ask" | "auto-safe"
+      proactive: boolean
+    }>
+  }
+}
+
+export type GlobalProfileGetResponse = GlobalProfileGetResponses[keyof GlobalProfileGetResponses]
+
+export type GlobalProfileSelectData = {
+  body?: {
+    id: string
+  }
+  path?: never
+  query?: never
+  url: "/global/profile"
+}
+
+export type GlobalProfileSelectErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type GlobalProfileSelectError = GlobalProfileSelectErrors[keyof GlobalProfileSelectErrors]
+
+export type GlobalProfileSelectResponses = {
+  /**
+   * Global profile state
+   */
+  200: {
+    active: string
+    items: Array<{
+      id: string
+      kind: "assistant" | "companion"
+      name: string
+      memory: "off" | "ask" | "auto-safe"
+      proactive: boolean
+    }>
+  }
+}
+
+export type GlobalProfileSelectResponse = GlobalProfileSelectResponses[keyof GlobalProfileSelectResponses]
+
+export type GlobalProfileUpdateData = {
+  body?: {
+    name?: string
+    persona?: string
+    memory?: "off" | "ask" | "auto-safe"
+    proactive?: boolean
+    proactivePaused?: boolean
+    quietHours?: {
+      start: string
+      end: string
+      timezone: string
+    }
+    proactiveFrequency?: {
+      maxPerDay: number
+      minIntervalMinutes: number
+    }
+    crisisRegion?: string
+  }
+  path: {
+    profileID: string
+  }
+  query?: never
+  url: "/global/profile/{profileID}"
+}
+
+export type GlobalProfileUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type GlobalProfileUpdateError = GlobalProfileUpdateErrors[keyof GlobalProfileUpdateErrors]
+
+export type GlobalProfileUpdateResponses = {
+  /**
+   * Updated profile runtime
+   */
+  200: {
+    id: string
+    kind: "assistant" | "companion"
+    name: string
+    persona?: string
+    personaVersion: number
+    memory: "off" | "ask" | "auto-safe"
+    proactive: boolean
+    proactivePaused: boolean
+    quietHours?: {
+      start: string
+      end: string
+      timezone: string
+    }
+    proactiveFrequency: {
+      maxPerDay: number
+      minIntervalMinutes: number
+    }
+    crisisRegion?: string
+  }
+}
+
+export type GlobalProfileUpdateResponse = GlobalProfileUpdateResponses[keyof GlobalProfileUpdateResponses]
 
 export type GlobalDisposeData = {
   body?: never
@@ -9435,6 +10139,184 @@ export type ProviderOauthCallbackResponses = {
 
 export type ProviderOauthCallbackResponse = ProviderOauthCallbackResponses[keyof ProviderOauthCallbackResponses]
 
+export type ReminderListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/reminder"
+}
+
+export type ReminderListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ReminderListError = ReminderListErrors[keyof ReminderListErrors]
+
+export type ReminderListResponses = {
+  /**
+   * Workspace reminders
+   */
+  200: Array<{
+    id: string
+    workspaceID?: string
+    profileID: string
+    sessionID?: string
+    type: "reminder" | "check_in" | "follow_up"
+    title: string
+    body: string
+    scheduleAt: number
+    timezone: string
+    status: "pending" | "paused" | "delivered" | "cancelled" | "failed"
+    attemptCount: number
+    lastError?: string
+    lastFiredAt?: number
+    timeCreated: number
+    timeUpdated: number
+  }>
+}
+
+export type ReminderListResponse = ReminderListResponses[keyof ReminderListResponses]
+
+export type ReminderCreateData = {
+  body?: {
+    profileID: string
+    sessionID?: string
+    type?: "reminder" | "check_in" | "follow_up"
+    title: string
+    body: string
+    scheduleAt: number
+    timezone: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/reminder"
+}
+
+export type ReminderCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ReminderCreateError = ReminderCreateErrors[keyof ReminderCreateErrors]
+
+export type ReminderCreateResponses = {
+  /**
+   * Created reminder
+   */
+  200: {
+    id: string
+    workspaceID?: string
+    profileID: string
+    sessionID?: string
+    type: "reminder" | "check_in" | "follow_up"
+    title: string
+    body: string
+    scheduleAt: number
+    timezone: string
+    status: "pending" | "paused" | "delivered" | "cancelled" | "failed"
+    attemptCount: number
+    lastError?: string
+    lastFiredAt?: number
+    timeCreated: number
+    timeUpdated: number
+  }
+}
+
+export type ReminderCreateResponse = ReminderCreateResponses[keyof ReminderCreateResponses]
+
+export type ReminderCancelData = {
+  body?: never
+  path: {
+    reminderID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/reminder/{reminderID}"
+}
+
+export type ReminderCancelErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ReminderCancelError = ReminderCancelErrors[keyof ReminderCancelErrors]
+
+export type ReminderCancelResponses = {
+  /**
+   * Reminder cancelled
+   */
+  200: boolean
+}
+
+export type ReminderCancelResponse = ReminderCancelResponses[keyof ReminderCancelResponses]
+
+export type ReminderUpdateData = {
+  body?: {
+    title?: string
+    body?: string
+    scheduleAt?: number
+    timezone?: string
+    paused?: boolean
+  }
+  path: {
+    reminderID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/reminder/{reminderID}"
+}
+
+export type ReminderUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ReminderUpdateError = ReminderUpdateErrors[keyof ReminderUpdateErrors]
+
+export type ReminderUpdateResponses = {
+  /**
+   * Updated reminder
+   */
+  200: {
+    id: string
+    workspaceID?: string
+    profileID: string
+    sessionID?: string
+    type: "reminder" | "check_in" | "follow_up"
+    title: string
+    body: string
+    scheduleAt: number
+    timezone: string
+    status: "pending" | "paused" | "delivered" | "cancelled" | "failed"
+    attemptCount: number
+    lastError?: string
+    lastFiredAt?: number
+    timeCreated: number
+    timeUpdated: number
+  }
+}
+
+export type ReminderUpdateResponse = ReminderUpdateResponses[keyof ReminderUpdateResponses]
+
 export type SessionListData = {
   body?: never
   path?: never
@@ -9464,7 +10346,7 @@ export type SessionListResponses = {
   /**
    * List of sessions
    */
-  200: Array<Session>
+  200: Array<Session1>
 }
 
 export type SessionListResponse = SessionListResponses[keyof SessionListResponses]
@@ -9484,6 +10366,7 @@ export type SessionCreateData = {
     }
     permission?: PermissionRuleset
     workspaceID?: string
+    profileID?: string
   }
   path?: never
   query?: {
@@ -9506,7 +10389,7 @@ export type SessionCreateResponses = {
   /**
    * Successfully created session
    */
-  200: Session
+  200: Session3
 }
 
 export type SessionCreateResponse = SessionCreateResponses[keyof SessionCreateResponses]
@@ -9604,7 +10487,7 @@ export type SessionGetResponses = {
   /**
    * Get session
    */
-  200: Session
+  200: Session2
 }
 
 export type SessionGetResponse = SessionGetResponses[keyof SessionGetResponses]
@@ -9647,7 +10530,7 @@ export type SessionUpdateResponses = {
   /**
    * Successfully updated session
    */
-  200: Session
+  200: Session4
 }
 
 export type SessionUpdateResponse = SessionUpdateResponses[keyof SessionUpdateResponses]
@@ -9681,7 +10564,7 @@ export type SessionChildrenResponses = {
   /**
    * List of children
    */
-  200: Array<Session>
+  200: Array<Session1>
 }
 
 export type SessionChildrenResponse = SessionChildrenResponses[keyof SessionChildrenResponses]
@@ -9950,7 +10833,7 @@ export type SessionForkResponses = {
   /**
    * 200
    */
-  200: Session
+  200: Session5
 }
 
 export type SessionForkResponse = SessionForkResponses[keyof SessionForkResponses]
@@ -10056,7 +10939,7 @@ export type SessionUnshareResponses = {
   /**
    * Successfully unshared session
    */
-  200: Session
+  200: Session7
 }
 
 export type SessionUnshareResponse = SessionUnshareResponses[keyof SessionUnshareResponses]
@@ -10094,7 +10977,7 @@ export type SessionShareResponses = {
   /**
    * Successfully shared session
    */
-  200: Session
+  200: Session6
 }
 
 export type SessionShareResponse = SessionShareResponses[keyof SessionShareResponses]
@@ -10323,7 +11206,7 @@ export type SessionRevertResponses = {
   /**
    * Updated session
    */
-  200: Session
+  200: Session8
 }
 
 export type SessionRevertResponse = SessionRevertResponses[keyof SessionRevertResponses]
@@ -10361,7 +11244,7 @@ export type SessionUnrevertResponses = {
   /**
    * Updated session
    */
-  200: Session
+  200: Session9
 }
 
 export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnrevertResponses]

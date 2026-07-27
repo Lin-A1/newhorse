@@ -109,6 +109,7 @@ export const dict = {
   "dialog.provider.copilot.note": "AI-modeller for kodeassistanse via GitHub Copilot",
   "dialog.provider.openai.note": "GPT-modeller for raske, dyktige generelle AI-oppgaver",
   "dialog.provider.google.note": "Gemini-modeller for raske, strukturerte svar",
+  "dialog.provider.custom.label": "Egendefinert OpenAI-kompatibel leverandør",
   "dialog.provider.openrouter.note": "Tilgang til alle støttede modeller fra én leverandør",
   "dialog.provider.vercel.note": "Enhetlig tilgang til AI-modeller med smart ruting",
 
@@ -121,6 +122,7 @@ export const dict = {
 
   "dialog.model.unpaid.freeModels.title": "Gratis modeller levert av newhorse",
   "dialog.model.unpaid.addMore.title": "Legg til flere modeller fra populære leverandører",
+  "dialog.model.unpaid.viewMoreProviders": "Se 70+ flere leverandører",
 
   "dialog.provider.viewAll": "Vis flere leverandører",
 
@@ -566,6 +568,9 @@ export const dict = {
   "session.header.open.ariaLabel": "Åpne i {{app}}",
   "session.header.open.menu": "Åpne alternativer",
   "session.header.open.copyPath": "Kopier bane",
+  "session.header.reveal.finder": "Vis i Finder",
+  "session.header.reveal.fileExplorer": "Vis i Filutforsker",
+  "session.header.reveal.containingFolder": "Åpne overordnet mappe",
 
   "status.popover.trigger": "Status",
   "status.popover.ariaLabel": "Serverkonfigurasjoner",
@@ -775,6 +780,29 @@ export const dict = {
   "settings.providers.tag.config": "Konfigurasjon",
   "settings.providers.tag.custom": "Tilpasset",
   "settings.providers.tag.other": "Annet",
+  "settings.profile.title": "Companion",
+  "settings.profile.persona.title": "Persona",
+  "settings.profile.persona.description":
+    "Define the Companion's tone and interaction style. Safety requirements remain protected.",
+  "settings.profile.memory.title": "Memory",
+  "settings.profile.memory.description": "Choose how relationship memory is stored for Companion sessions.",
+  "settings.profile.memory.off": "Off",
+  "settings.profile.memory.ask": "Ask before saving",
+  "settings.profile.memory.auto-safe": "Save safe explicit memories automatically",
+  "settings.profile.proactive.title": "Proactive care",
+  "settings.profile.proactive.description":
+    "Allow subscribed check-ins and follow-ups. Off by default; user-created reminders still work.",
+  "settings.profile.proactivePaused.title": "Pause proactive messages",
+  "settings.profile.proactivePaused.description":
+    "Keep the subscription but stop check-ins and follow-ups until resumed.",
+  "settings.profile.quietHours.title": "Quiet hours",
+  "settings.profile.quietHours.description": "Start, end, and IANA timezone. Cross-midnight ranges are supported.",
+  "settings.profile.frequency.title": "Frequency limit",
+  "settings.profile.frequency.description": "Maximum messages per day and minimum minutes between proactive messages.",
+  "settings.profile.crisisRegion.title": "Crisis-support region",
+  "settings.profile.crisisRegion.description":
+    "Optional region used to provide honest, locally relevant crisis guidance.",
+  "settings.profile.saved": "Companion settings saved",
   "settings.models.title": "Modeller",
   "settings.models.description": "Modellinnstillinger vil kunne konfigureres her.",
   "settings.agents.title": "Agenter",

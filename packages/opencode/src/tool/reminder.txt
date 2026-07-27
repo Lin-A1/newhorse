@@ -1,0 +1,12 @@
+Create and manage user-requested reminders that persist across sessions.
+
+Actions:
+- create: requires title, body, scheduleAt (Unix milliseconds), and timezone
+- list: show reminders in the current workspace
+- update: requires id and any fields to change; paused=true pauses, paused=false resumes
+- cancel: permanently cancels future delivery
+
+Use type "reminder" for a reminder explicitly requested by the user. Use
+"check_in" or "follow_up" only when the user has explicitly enabled proactive
+messages. Never create reminders to pressure, guilt, alarm, or manipulate the
+user into returning.

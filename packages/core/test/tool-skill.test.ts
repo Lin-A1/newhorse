@@ -36,6 +36,10 @@ describe("SkillTool", () => {
           const info: SkillV2.Info = {
             name: "effect",
             description: "Use Effect",
+            parameters: {
+              environment: { type: "string", required: true, enum: ["staging", "production"] },
+              retries: { type: "integer", default: 1 },
+            },
             location: AbsolutePath.make(location),
             content: "# Effect\n\nGuidance",
           }
@@ -84,23 +88,46 @@ describe("SkillTool", () => {
               yield* executeTool(registry, {
                 sessionID,
                 ...toolIdentity,
-                call: { type: "tool-call", id: "call-skill", name: "skill", input: { name: "effect" } },
+                call: {
+                  type: "tool-call",
+                  id: "call-skill",
+                  name: "skill",
+                  input: { name: "effect", arguments: { environment: "staging" } },
+                },
               }),
             ).toEqual({
               type: "text",
-              value: SkillTool.toModelOutput(info, [reference]),
+              value: SkillTool.toModelOutput(info, [reference], { environment: "staging", retries: 1 }),
             })
+            expect(SkillTool.toModelOutput(info, [reference], { environment: "staging", retries: 1 })).toContain(
+              '<skill_arguments trust="untrusted" encoding="json">',
+            )
             expect(SkillTool.toModelOutput(info, [reference])).toContain(`Base directory for this skill: ${directory}`)
             expect(
               yield* settleTool(registry, {
                 sessionID,
                 ...toolIdentity,
-                call: { type: "tool-call", id: "call-skill-overflow", name: "skill", input: { name: "effect" } },
+                call: {
+                  type: "tool-call",
+                  id: "call-skill-overflow",
+                  name: "skill",
+                  input: { name: "effect", arguments: { environment: "production", retries: 2 } },
+                },
               }),
             ).toMatchObject({
-              result: { type: "text", value: SkillTool.toModelOutput(info, [reference]) },
+              result: {
+                type: "text",
+                value: SkillTool.toModelOutput(info, [reference], { environment: "production", retries: 2 }),
+              },
               output: { structured: { name: "effect" } },
             })
+            expect(
+              yield* executeTool(registry, {
+                sessionID,
+                ...toolIdentity,
+                call: { type: "tool-call", id: "call-invalid-args", name: "skill", input: { name: "effect" } },
+              }),
+            ).toEqual({ type: "error", value: "Unable to load skill effect" })
             expect(assertions).toMatchObject([
               { sessionID, action: "skill", resources: ["effect"], save: ["effect"] },
               { sessionID, action: "skill", resources: ["effect"], save: ["effect"] },

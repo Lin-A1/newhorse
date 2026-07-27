@@ -110,6 +110,7 @@ export const dict = {
   "dialog.provider.copilot.note": "AI modeli za pomoć pri kodiranju putem GitHub Copilot",
   "dialog.provider.openai.note": "GPT modeli za brze, sposobne opšte AI zadatke",
   "dialog.provider.google.note": "Gemini modeli za brze, strukturirane odgovore",
+  "dialog.provider.custom.label": "Prilagođeni pružalac kompatibilan s OpenAI",
   "dialog.provider.openrouter.note": "Pristup svim podržanim modelima preko jednog provajdera",
   "dialog.provider.vercel.note": "Jedinstven pristup AI modelima uz pametno rutiranje",
 
@@ -122,6 +123,7 @@ export const dict = {
 
   "dialog.model.unpaid.freeModels.title": "Besplatni modeli koje obezbjeđuje newhorse",
   "dialog.model.unpaid.addMore.title": "Dodaj još modela od popularnih provajdera",
+  "dialog.model.unpaid.viewMoreProviders": "Pogledaj još 70+ provajdera",
 
   "dialog.provider.viewAll": "Prikaži više provajdera",
 
@@ -685,6 +687,9 @@ export const dict = {
   "session.header.open.ariaLabel": "Otvori u {{app}}",
   "session.header.open.menu": "Opcije otvaranja",
   "session.header.open.copyPath": "Kopiraj putanju",
+  "session.header.reveal.finder": "Prikaži u Finderu",
+  "session.header.reveal.fileExplorer": "Prikaži u File Exploreru",
+  "session.header.reveal.containingFolder": "Otvori mapu koja sadrži datoteku",
 
   "status.popover.trigger": "Status",
   "status.popover.ariaLabel": "Konfiguracije servera",
@@ -930,6 +935,29 @@ export const dict = {
   "settings.providers.tag.config": "Konfiguracija",
   "settings.providers.tag.custom": "Prilagođeno",
   "settings.providers.tag.other": "Ostalo",
+  "settings.profile.title": "Companion",
+  "settings.profile.persona.title": "Persona",
+  "settings.profile.persona.description":
+    "Define the Companion's tone and interaction style. Safety requirements remain protected.",
+  "settings.profile.memory.title": "Memory",
+  "settings.profile.memory.description": "Choose how relationship memory is stored for Companion sessions.",
+  "settings.profile.memory.off": "Off",
+  "settings.profile.memory.ask": "Ask before saving",
+  "settings.profile.memory.auto-safe": "Save safe explicit memories automatically",
+  "settings.profile.proactive.title": "Proactive care",
+  "settings.profile.proactive.description":
+    "Allow subscribed check-ins and follow-ups. Off by default; user-created reminders still work.",
+  "settings.profile.proactivePaused.title": "Pause proactive messages",
+  "settings.profile.proactivePaused.description":
+    "Keep the subscription but stop check-ins and follow-ups until resumed.",
+  "settings.profile.quietHours.title": "Quiet hours",
+  "settings.profile.quietHours.description": "Start, end, and IANA timezone. Cross-midnight ranges are supported.",
+  "settings.profile.frequency.title": "Frequency limit",
+  "settings.profile.frequency.description": "Maximum messages per day and minimum minutes between proactive messages.",
+  "settings.profile.crisisRegion.title": "Crisis-support region",
+  "settings.profile.crisisRegion.description":
+    "Optional region used to provide honest, locally relevant crisis guidance.",
+  "settings.profile.saved": "Companion settings saved",
   "settings.models.title": "Modeli",
   "settings.models.description": "Postavke modela će se ovdje moći podešavati.",
   "settings.agents.title": "Agenti",

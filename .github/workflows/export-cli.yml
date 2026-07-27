@@ -1,0 +1,109 @@
+name: export-cli
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "CLI target"
+        type: choice
+        required: true
+        default: windows-x64
+        options:
+          - windows-x64
+          - windows-x64-baseline
+          - linux-x64
+      version:
+        description: "Artifact version; blank uses packages/opencode/package.json"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      artifact: ${{ steps.meta.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Resolve artifact metadata
+        id: meta
+        shell: bash
+        env:
+          INPUT_TARGET: ${{ inputs.target }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="$INPUT_VERSION"
+          if [ -z "$version" ]; then
+            version=$(bun -e "console.log(require('./packages/opencode/package.json').version)")
+          fi
+          if [[ ! "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "Invalid artifact version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "artifact=newhorse-$INPUT_TARGET-v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Export CLI package
+        shell: bash
+        env:
+          EXPORT_TARGET: ${{ inputs.target }}
+          EXPORT_VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          bun run --cwd packages/opencode export:local \
+            --target "$EXPORT_TARGET" \
+            --version "$EXPORT_VERSION"
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.meta.outputs.artifact }}
+          path: |
+            packages/opencode/dist/exports/${{ steps.meta.outputs.artifact }}.zip
+            packages/opencode/dist/exports/${{ steps.meta.outputs.artifact }}.zip.sha256
+            packages/opencode/dist/exports/${{ steps.meta.outputs.artifact }}.manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  validate-windows:
+    if: startsWith(inputs.target, 'windows-')
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Download portable package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: package
+
+      - name: Validate archive and executable
+        shell: pwsh
+        run: |
+          $archive = Join-Path "package" "${{ needs.build.outputs.artifact }}.zip"
+          $checksumFile = "$archive.sha256"
+          $expected = (Get-Content $checksumFile).Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)[0]
+          $actual = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "SHA-256 mismatch" }
+
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $archive))
+          try {
+            if ($zip.Entries.Count -ne 1 -or $zip.Entries[0].FullName -ne "nh.exe") {
+              throw "Archive must contain exactly root-level nh.exe"
+            }
+          } finally {
+            $zip.Dispose()
+          }
+
+          Expand-Archive -Path $archive -DestinationPath extracted -Force
+          $version = (& .\extracted\nh.exe --version).Trim()
+          if ($version -ne "${{ needs.build.outputs.version }}") {
+            throw "Expected version ${{ needs.build.outputs.version }}, got $version"
+          }
+          & .\extracted\nh.exe setup profile --help | Out-Null

@@ -9,6 +9,7 @@ import { Config } from "../../src/config/config"
 import { CrossSpawnSpawner } from "@newhorse/core/cross-spawn-spawner"
 import { FSUtil } from "@newhorse/core/fs-util"
 import { Global } from "@newhorse/core/global"
+import { personalDirectory } from "../../src/control-plane/adapters/personal"
 import { provideInstance, provideTmpdirInstance, testInstanceStoreLayer, tmpdir } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import path from "path"
@@ -64,6 +65,39 @@ const withHome = <A, E, R>(home: string, self: Effect.Effect<A, E, R>) =>
   )
 
 describe("skill", () => {
+  it.live("isolates global skills from personal workspaces unless explicitly opted in", () =>
+    Effect.gen(function* () {
+      const home = Global.Path.home
+      yield* Effect.promise(() => createGlobalSkill(home))
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() =>
+          fs.rm(path.join(home, ".claude", "skills", "global-test-skill"), { recursive: true, force: true }),
+        ),
+      )
+
+      const run = (name: string, personal: boolean) => {
+        const directory = personalDirectory(`${name}-${Date.now()}`)
+        return Effect.gen(function* () {
+          yield* Effect.promise(() => fs.mkdir(directory, { recursive: true }))
+          yield* Effect.promise(() =>
+            Bun.write(
+              path.join(directory, "newhorse.json"),
+              JSON.stringify({ $schema: "https://opencode.ai/config.json", skills: { personal } }),
+            ),
+          )
+          yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })))
+          return yield* Skill.Service.use((skill) => skill.all()).pipe(provideInstance(directory))
+        })
+      }
+
+      const [blocked, allowed] = yield* Effect.all([run("skills-blocked", false), run("skills-allowed", true)], {
+        concurrency: 1,
+      })
+      expect(blocked.some((skill) => skill.name === "global-test-skill")).toBe(false)
+      expect(allowed.some((skill) => skill.name === "global-test-skill")).toBe(true)
+    }),
+  )
+
   it.effect("formats verbose locations as XML-safe filesystem paths", () =>
     Effect.sync(() => {
       const output = Skill.fmt(

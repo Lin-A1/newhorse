@@ -285,6 +285,22 @@ exports[`tool parameters JSON Schema (wire shape) skill 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "arguments": {
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string",
+          },
+          {
+            "type": "number",
+          },
+          {
+            "type": "boolean",
+          },
+        ],
+      },
+      "type": "object",
+    },
     "name": {
       "description": "The name of the skill from available_skills",
       "type": "string",

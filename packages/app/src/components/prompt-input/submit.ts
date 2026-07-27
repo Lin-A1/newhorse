@@ -186,6 +186,10 @@ type PromptSubmitInput = {
   setMode: (mode: "normal" | "shell") => void
   setPopover: (popover: "at" | "slash" | null) => void
   newSessionWorktree?: Accessor<string | undefined>
+  newSessionWorkspaceID?: Accessor<string | undefined>
+  newSessionWorkspaceType?: Accessor<string | undefined>
+  newSessionWorkspaceDirectory?: Accessor<string | undefined>
+  newSessionProfileID?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
   shouldQueue?: Accessor<boolean>
   onQueue?: (draft: FollowupDraft) => void
@@ -322,9 +326,36 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     let sessionDirectory = projectDirectory
     let client = sdk().client
+    let workspaceID = input.newSessionWorkspaceID?.()
 
     if (isNewSession) {
-      if (worktreeSelection === "create") {
+      const workspaceType = input.newSessionWorkspaceType?.()
+      if (!workspaceID && workspaceType) {
+        const workspace = await client.experimental.workspace
+          .create({ type: workspaceType, branch: null, extra: null })
+          .then((result) => result.data)
+          .catch((err) => {
+            showToast({
+              title: language.t("workspace.create.failed.title"),
+              description: errorMessage(err),
+            })
+            return undefined
+          })
+        if (!workspace) return
+        workspaceID = workspace.id
+        sessionDirectory = workspace.directory ?? projectDirectory
+      } else if (workspaceID) {
+        sessionDirectory = input.newSessionWorkspaceDirectory?.() ?? projectDirectory
+      }
+
+      if (workspaceID) {
+        client = sdk().createClient({
+          directory: projectDirectory,
+          experimental_workspaceID: workspaceID,
+          throwOnError: true,
+        })
+        serverSync().child(sessionDirectory)
+      } else if (worktreeSelection === "create") {
         const createdWorktree = await client.worktree
           .create({ directory: projectDirectory })
           .then((x) => x.data)
@@ -347,11 +378,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         sessionDirectory = createdWorktree.directory
       }
 
-      if (worktreeSelection !== "main" && worktreeSelection !== "create") {
+      if (!workspaceID && worktreeSelection !== "main" && worktreeSelection !== "create") {
         sessionDirectory = worktreeSelection
       }
 
-      if (sessionDirectory !== projectDirectory) {
+      if (!workspaceID && sessionDirectory !== projectDirectory) {
         client = sdk().createClient({
           directory: sessionDirectory,
           throwOnError: true,
@@ -365,7 +396,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let session = input.info()
     if (!session && isNewSession) {
       const created = await client.session
-        .create()
+        .create({
+          workspaceID,
+          profileID: input.newSessionProfileID?.(),
+        })
         .then((x) => x.data ?? undefined)
         .catch((err) => {
           showToast({

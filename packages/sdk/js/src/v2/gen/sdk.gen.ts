@@ -86,6 +86,12 @@ import type {
   GlobalEventResponses,
   GlobalHealthErrors,
   GlobalHealthResponses,
+  GlobalProfileGetErrors,
+  GlobalProfileGetResponses,
+  GlobalProfileSelectErrors,
+  GlobalProfileSelectResponses,
+  GlobalProfileUpdateErrors,
+  GlobalProfileUpdateResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
   InstanceDisposeErrors,
@@ -175,6 +181,14 @@ import type {
   QuestionReplyErrors,
   QuestionReplyResponses,
   QuestionV2Reply,
+  ReminderCancelErrors,
+  ReminderCancelResponses,
+  ReminderCreateErrors,
+  ReminderCreateResponses,
+  ReminderListErrors,
+  ReminderListResponses,
+  ReminderUpdateErrors,
+  ReminderUpdateResponses,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -556,7 +570,7 @@ export class App extends HeyApiClient {
   /**
    * List agents
    *
-   * Get a list of all available AI agents in the OpenCode system.
+   * Get a list of all available AI agents in the newhorse system.
    */
   public agents<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -586,7 +600,7 @@ export class App extends HeyApiClient {
   /**
    * List skills
    *
-   * Get a list of all available skills in the OpenCode system.
+   * Get a list of all available skills in the newhorse system.
    */
   public skills<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -661,7 +675,7 @@ export class Capabilities extends HeyApiClient {
   /**
    * Get experimental capabilities
    *
-   * Get experimental features enabled on the OpenCode server.
+   * Get experimental features enabled on the newhorse server.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -765,7 +779,7 @@ export class Console extends HeyApiClient {
   /**
    * Switch active Console org
    *
-   * Persist a new active Console account/org selection for the current local OpenCode state.
+   * Persist a new active Console account/org selection for the current local newhorse state.
    */
   public switchOrg<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -806,7 +820,7 @@ export class Session extends HeyApiClient {
   /**
    * List sessions
    *
-   * Get a list of all OpenCode sessions across projects, sorted by most recently updated. Archived sessions are excluded by default.
+   * Get a list of all newhorse sessions across projects, sorted by most recently updated. Archived sessions are excluded by default.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1281,7 +1295,7 @@ export class Config extends HeyApiClient {
   /**
    * Get global configuration
    *
-   * Retrieve the current global OpenCode configuration settings and preferences.
+   * Retrieve the current global newhorse configuration settings and preferences.
    */
   public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GlobalConfigGetResponses, GlobalConfigGetErrors, ThrowOnError>({
@@ -1293,7 +1307,7 @@ export class Config extends HeyApiClient {
   /**
    * Update global configuration
    *
-   * Update global OpenCode configuration settings and preferences.
+   * Update global newhorse configuration settings and preferences.
    */
   public update<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1315,11 +1329,113 @@ export class Config extends HeyApiClient {
   }
 }
 
+export class Profile extends HeyApiClient {
+  /**
+   * Get profiles
+   *
+   * List redacted profiles and the profile selected for newly created sessions.
+   */
+  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GlobalProfileGetResponses, GlobalProfileGetErrors, ThrowOnError>({
+      url: "/global/profile",
+      ...options,
+    })
+  }
+
+  /**
+   * Select profile
+   *
+   * Select the profile used by newly created sessions.
+   */
+  public select<ThrowOnError extends boolean = false>(
+    parameters?: {
+      id?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "id" }] }])
+    return (options?.client ?? this.client).patch<
+      GlobalProfileSelectResponses,
+      GlobalProfileSelectErrors,
+      ThrowOnError
+    >({
+      url: "/global/profile",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Update profile
+   *
+   * Update profile persona, memory policy, and crisis-support region.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      profileID: string
+      name?: string
+      persona?: string
+      memory?: "off" | "ask" | "auto-safe"
+      proactive?: boolean
+      proactivePaused?: boolean
+      quietHours?: {
+        start: string
+        end: string
+        timezone: string
+      }
+      proactiveFrequency?: {
+        maxPerDay: number
+        minIntervalMinutes: number
+      }
+      crisisRegion?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "profileID" },
+            { in: "body", key: "name" },
+            { in: "body", key: "persona" },
+            { in: "body", key: "memory" },
+            { in: "body", key: "proactive" },
+            { in: "body", key: "proactivePaused" },
+            { in: "body", key: "quietHours" },
+            { in: "body", key: "proactiveFrequency" },
+            { in: "body", key: "crisisRegion" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      GlobalProfileUpdateResponses,
+      GlobalProfileUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/global/profile/{profileID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Global extends HeyApiClient {
   /**
    * Get health
    *
-   * Get health information about the OpenCode server.
+   * Get health information about the newhorse server.
    */
   public health<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GlobalHealthResponses, GlobalHealthErrors, ThrowOnError>({
@@ -1331,7 +1447,7 @@ export class Global extends HeyApiClient {
   /**
    * Get global events
    *
-   * Subscribe to global events from the OpenCode system using server-sent events.
+   * Subscribe to global events from the newhorse system using server-sent events.
    */
   public event<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).sse.get<GlobalEventResponses, GlobalEventErrors, ThrowOnError>({
@@ -1343,7 +1459,7 @@ export class Global extends HeyApiClient {
   /**
    * Dispose instance
    *
-   * Clean up and dispose all OpenCode instances, releasing all resources.
+   * Clean up and dispose all newhorse instances, releasing all resources.
    */
   public dispose<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).post<GlobalDisposeResponses, GlobalDisposeErrors, ThrowOnError>({
@@ -1379,6 +1495,11 @@ export class Global extends HeyApiClient {
   private _config?: Config
   get config(): Config {
     return (this._config ??= new Config({ client: this.client }))
+  }
+
+  private _profile?: Profile
+  get profile(): Profile {
+    return (this._profile ??= new Profile({ client: this.client }))
   }
 }
 
@@ -1418,7 +1539,7 @@ export class Config2 extends HeyApiClient {
   /**
    * Get configuration
    *
-   * Retrieve the current OpenCode configuration settings and preferences.
+   * Retrieve the current newhorse configuration settings and preferences.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1448,7 +1569,7 @@ export class Config2 extends HeyApiClient {
   /**
    * Update configuration
    *
-   * Update OpenCode configuration settings and preferences.
+   * Update newhorse configuration settings and preferences.
    */
   public update<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1926,7 +2047,7 @@ export class Instance extends HeyApiClient {
   /**
    * Dispose instance
    *
-   * Clean up and dispose the current OpenCode instance, releasing all resources.
+   * Clean up and dispose the current newhorse instance, releasing all resources.
    */
   public dispose<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1958,7 +2079,7 @@ export class Path extends HeyApiClient {
   /**
    * Get paths
    *
-   * Retrieve the current working directory and related path information for the OpenCode instance.
+   * Retrieve the current working directory and related path information for the newhorse instance.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2160,7 +2281,7 @@ export class Command extends HeyApiClient {
   /**
    * List commands
    *
-   * Get a list of all available commands in the OpenCode system.
+   * Get a list of all available commands in the newhorse system.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2531,7 +2652,7 @@ export class Project extends HeyApiClient {
   /**
    * List all projects
    *
-   * Get a list of projects that have been opened with OpenCode.
+   * Get a list of projects that have been opened with newhorse.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2561,7 +2682,7 @@ export class Project extends HeyApiClient {
   /**
    * Get current project
    *
-   * Retrieve the currently active project that OpenCode is working with.
+   * Retrieve the currently active project that newhorse is working with.
    */
   public current<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2728,7 +2849,7 @@ export class Pty extends HeyApiClient {
   /**
    * List PTY sessions
    *
-   * Get a list of all active pseudo-terminal (PTY) sessions managed by OpenCode.
+   * Get a list of all active pseudo-terminal (PTY) sessions managed by newhorse.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -3359,11 +3480,163 @@ export class Provider extends HeyApiClient {
   }
 }
 
+export class Reminder extends HeyApiClient {
+  /**
+   * List reminders
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ReminderListResponses, ReminderListErrors, ThrowOnError>({
+      url: "/reminder",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create reminder
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      profileID?: string
+      sessionID?: string
+      type?: "reminder" | "check_in" | "follow_up"
+      title?: string
+      body?: string
+      scheduleAt?: number
+      timezone?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "profileID" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "type" },
+            { in: "body", key: "title" },
+            { in: "body", key: "body" },
+            { in: "body", key: "scheduleAt" },
+            { in: "body", key: "timezone" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ReminderCreateResponses, ReminderCreateErrors, ThrowOnError>({
+      url: "/reminder",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel reminder
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      reminderID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "reminderID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<ReminderCancelResponses, ReminderCancelErrors, ThrowOnError>({
+      url: "/reminder/{reminderID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update reminder
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      reminderID: string
+      directory?: string
+      workspace?: string
+      title?: string
+      body?: string
+      scheduleAt?: number
+      timezone?: string
+      paused?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "reminderID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "title" },
+            { in: "body", key: "body" },
+            { in: "body", key: "scheduleAt" },
+            { in: "body", key: "timezone" },
+            { in: "body", key: "paused" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<ReminderUpdateResponses, ReminderUpdateErrors, ThrowOnError>({
+      url: "/reminder/{reminderID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
    *
-   * Get a list of all OpenCode sessions, sorted by most recently updated.
+   * Get a list of all newhorse sessions, sorted by most recently updated.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -3405,7 +3678,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Create session
    *
-   * Create a new OpenCode session for interacting with AI assistants and managing conversations.
+   * Create a new newhorse session for interacting with AI assistants and managing conversations.
    */
   public create<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -3424,6 +3697,7 @@ export class Session2 extends HeyApiClient {
       }
       permission?: PermissionRuleset
       workspaceID?: string
+      profileID?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3441,6 +3715,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "metadata" },
             { in: "body", key: "permission" },
             { in: "body", key: "workspaceID" },
+            { in: "body", key: "profileID" },
           ],
         },
       ],
@@ -3522,7 +3797,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Get session
    *
-   * Retrieve detailed information about a specific OpenCode session.
+   * Retrieve detailed information about a specific newhorse session.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters: {
@@ -7190,6 +7465,11 @@ export class OpencodeClient extends HeyApiClient {
   private _provider?: Provider
   get provider(): Provider {
     return (this._provider ??= new Provider({ client: this.client }))
+  }
+
+  private _reminder?: Reminder
+  get reminder(): Reminder {
+    return (this._reminder ??= new Reminder({ client: this.client }))
   }
 
   private _session?: Session2

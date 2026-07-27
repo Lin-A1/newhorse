@@ -40,6 +40,16 @@ describe("tool.skill", () => {
           `---
 name: tool-skill
 description: Skill for tool tests.
+parameters:
+  environment:
+    type: string
+    required: true
+    enum: [staging, production]
+  retries:
+    type: integer
+    default: 1
+  note:
+    type: string
 ---
 
 # Tool Skill
@@ -79,7 +89,10 @@ Use this skill.
           }),
       }
 
-      const result = yield* tool.execute({ name: "tool-skill" }, ctx)
+      const result = yield* tool.execute(
+        { name: "tool-skill", arguments: { environment: "production", note: "<production&review>" } },
+        ctx,
+      )
       const file = path.resolve(skill, "scripts", "demo.txt")
 
       expect(requests.length).toBe(1)
@@ -90,6 +103,9 @@ Use this skill.
       expect(result.output).toContain(`<skill_content name="tool-skill">`)
       expect(result.output).toContain(`Base directory for this skill: ${skill}`)
       expect(result.output).toContain(`<file>${file}</file>`)
+      expect(result.output).toContain('<skill_arguments trust="untrusted" encoding="json">')
+      expect(result.output).toContain("&lt;production&amp;review&gt;")
+      expect(result.output).toContain('"retries":1')
     }),
   )
 

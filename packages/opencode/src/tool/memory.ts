@@ -2,6 +2,8 @@ import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import DESCRIPTION from "./memory.txt"
 import { Memory, SensitiveMemoryRejected } from "@/memory"
+import { Session } from "@/session/session"
+import { Profile } from "@/profile"
 
 export const Parameters = Schema.Struct({
   action: Schema.Literals(["list", "save", "accept", "reject", "forget"]).annotate({
@@ -35,10 +37,12 @@ type Metadata = {
   status?: string
 }
 
-export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Service>(
+export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Service | Session.Service | Profile.Service>(
   "memory",
   Effect.gen(function* () {
     const memory = yield* Memory.Service
+    const sessions = yield* Session.Service
+    const profiles = yield* Profile.Service
 
     return {
       description: DESCRIPTION,
@@ -54,12 +58,22 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
             if (!params.content || !params.kind || !params.provenance) {
               return yield* Effect.fail(new Error("save requires content, kind, and provenance"))
             }
-            yield* ctx.ask({
-              permission: "memory",
-              patterns: ["*"],
-              always: ["*"],
-              metadata: { content: params.content, kind: params.kind, scope: params.scope ?? "workspace" },
-            })
+            const session = yield* sessions.get(ctx.sessionID)
+            const profile = yield* profiles.runtime(session.profileID ?? Profile.ID.make("assistant"))
+            if (profile.memory === "off") return yield* Effect.fail(new Error("Memory is disabled for this profile"))
+            const autoSafe =
+              profile.memory === "auto-safe" &&
+              params.provenance === "user_explicit" &&
+              params.scope !== "user_global" &&
+              !Memory.detectSensitive(params.content)
+            if (!autoSafe) {
+              yield* ctx.ask({
+                permission: "memory",
+                patterns: ["*"],
+                always: ["*"],
+                metadata: { content: params.content, kind: params.kind, scope: params.scope ?? "workspace" },
+              })
+            }
             const saved = yield* memory
               .save({
                 content: params.content,

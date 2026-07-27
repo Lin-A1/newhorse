@@ -4,9 +4,11 @@ import { Ripgrep } from "@newhorse/core/ripgrep"
 import { Skill } from "../skill"
 import * as Tool from "./tool"
 import DESCRIPTION from "./skill.txt"
+import { Skill as SkillSchema } from "@newhorse/schema/skill"
 
 export const Parameters = Schema.Struct({
   name: Schema.String.annotate({ description: "The name of the skill from available_skills" }),
+  arguments: Schema.optional(SkillSchema.Arguments),
 })
 
 export const SkillTool = Tool.define(
@@ -23,6 +25,8 @@ export const SkillTool = Tool.define(
           const info = yield* skill
             .require(params.name)
             .pipe(Effect.catchTag("Skill.NotFoundError", (error) => Effect.die(new Error(error.message))))
+
+          const arguments_ = SkillSchema.resolveArguments(info.parameters, params.arguments)
 
           yield* ctx.ask({
             permission: "skill",
@@ -57,8 +61,11 @@ export const SkillTool = Tool.define(
               "<skill_files>",
               files.map((file) => `<file>${path.resolve(dir, file.path)}</file>`).join("\n"),
               "</skill_files>",
+              SkillSchema.formatArguments(arguments_),
               "</skill_content>",
-            ].join("\n"),
+            ]
+              .filter(Boolean)
+              .join("\n"),
             metadata: {
               name: info.name,
               dir,

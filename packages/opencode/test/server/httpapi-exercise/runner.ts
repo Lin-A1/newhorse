@@ -177,6 +177,22 @@ function withContext<A, E>(
           messages: (sessionID) =>
             run(modules.Session.Service.use((svc) => svc.messages({ sessionID }).pipe(Effect.orDie))),
           todos: (sessionID, todos) => run(modules.Todo.Service.use((svc) => svc.update({ sessionID, todos }))),
+          reminder: (input) =>
+            run(
+              modules.Scheduler.Service.use((svc) =>
+                svc
+                  .create({
+                    profileID: "assistant",
+                    title: "HTTP API reminder",
+                    body: "Seeded reminder",
+                    scheduleAt: Date.now() + 60_000,
+                    timezone: "UTC",
+                    ...input,
+                  })
+                  .pipe(Effect.orDie),
+              ),
+            ),
+          reminders: () => run(modules.Scheduler.Service.use((svc) => svc.list())),
           worktree: (input) => run(modules.Worktree.Service.use((svc) => svc.create(input).pipe(Effect.orDie))),
           worktreeRemove: (directory) =>
             run(modules.Worktree.Service.use((svc) => svc.remove({ directory })).pipe(Effect.ignore)),

@@ -37,6 +37,10 @@ export function pluginOptions(plugin: ConfigPluginV1.Spec): ConfigPluginV1.Optio
   return Array.isArray(plugin) ? plugin[1] : undefined
 }
 
+export function allowedInPersonalWorkspace(plugin: ConfigPluginV1.Spec) {
+  return pluginOptions(plugin)?.personal === true
+}
+
 // Path-like specs are resolved relative to the config file that declared them so merges later on do not
 // accidentally reinterpret `./plugin.ts` relative to some other directory.
 export async function resolvePluginSpec(

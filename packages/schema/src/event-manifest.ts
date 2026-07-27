@@ -21,6 +21,7 @@ import { Question } from "./question"
 import { QuestionV1 } from "./question-v1"
 import { Reference } from "./reference"
 import { ServerEvent } from "./server-event"
+import { SchedulerEvent } from "./scheduler-event"
 import { SessionCompactionEvent } from "./session-compaction-event"
 import { SessionEvent } from "./session-event"
 import { SessionStatusEvent } from "./session-status-event"
@@ -78,6 +79,7 @@ export const Definitions = Event.inventory(
   ...VcsEvent.Definitions,
   ...WorkspaceEvent.Definitions,
   ...WorktreeEvent.Definitions,
+  ...SchedulerEvent.Definitions,
   ...ServerEvent.Definitions,
 )
 export const Latest = Event.latest(Definitions)

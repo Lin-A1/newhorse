@@ -246,15 +246,14 @@ describe("workspace HttpApi", () => {
 
       expect(response.status).toBe(204)
       const listed = yield* request(WorkspacePaths.list, dir)
-      expect(yield* listed.json).toMatchObject([
-        {
-          type,
-          name: "listed-test",
-          branch: "listed/main",
-          directory: path.join(dir, ".listed"),
-          extra: { listed: true },
-        },
-      ])
+      const workspaces = (yield* listed.json) as Workspace.Info[]
+      expect(workspaces.find((workspace) => workspace.type === type)).toMatchObject({
+        type,
+        name: "listed-test",
+        branch: "listed/main",
+        directory: path.join(dir, ".listed"),
+        extra: { listed: true },
+      })
     }),
   )
 

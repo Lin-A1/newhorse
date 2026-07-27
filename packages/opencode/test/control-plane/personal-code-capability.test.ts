@@ -7,6 +7,8 @@ import { Agent } from "../../src/agent/agent"
 import { personalDirectory } from "../../src/control-plane/adapters/personal"
 import { Permission } from "../../src/permission"
 import { ToolRegistry } from "../../src/tool/registry"
+import { SessionID, MessageID } from "../../src/session/schema"
+import type { Tool } from "../../src/tool/tool"
 import { provideInstance, testInstanceStoreLayer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -16,6 +18,15 @@ const it = testEffect(LayerNode.compile(LayerNode.group([ToolRegistry.node, Agen
 // built on (notes, analysis, output generation), so a personal workspace must
 // expose the same toolset a project does.
 const CODE_TOOLS = ["read", "write", "edit", "grep", "glob", "bash", "task", "todowrite", "skill"]
+const toolContext: Tool.Context = {
+  sessionID: SessionID.make("ses_personal-code-capability"),
+  messageID: MessageID.make("msg_personal-code-capability"),
+  agent: "build",
+  abort: AbortSignal.any([]),
+  messages: [],
+  metadata: () => Effect.void,
+  ask: () => Effect.void,
+}
 
 function personalInstance<A, E, R>(name: string, self: (directory: string) => Effect.Effect<A, E, R>) {
   return Effect.gen(function* () {
@@ -53,10 +64,16 @@ it.live("build agent keeps write and shell permission in a personal workspace", 
 it.live("personal workspace can write and read a note through normal file tools", () =>
   personalInstance("note-roundtrip", (directory) =>
     Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const tools = yield* registry.all()
+      const write = tools.find((tool) => tool.id === "write")!
+      const read = tools.find((tool) => tool.id === "read")!
       const notePath = path.join(directory, "notes", "groceries.md")
-      yield* Effect.promise(() => fs.writeFile(notePath, "- oat milk\n"))
-      const content = yield* Effect.promise(() => fs.readFile(notePath, "utf8"))
-      expect(content).toContain("oat milk")
+
+      yield* write.execute({ filePath: notePath, content: "- oat milk\n" }, toolContext)
+      const result = yield* read.execute({ filePath: notePath }, toolContext)
+
+      expect(result.output).toContain("oat milk")
     }),
   ),
 )

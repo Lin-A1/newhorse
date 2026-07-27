@@ -1250,6 +1250,7 @@ describe("server session", () => {
     guard.active = true
 
     await store.history.loadMore("child")
+    guard.active = false
 
     expect(store.data.message.child).toEqual([older, latest])
   })

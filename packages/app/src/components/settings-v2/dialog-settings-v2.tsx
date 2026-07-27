@@ -11,6 +11,7 @@ import { SettingsModelsV2 } from "./models"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { useDialog } from "@newhorse/ui/context/dialog"
+import { SettingsProfileV2 } from "./profile"
 
 export const DialogSettings: Component<{
   sessionID?: string
@@ -67,6 +68,10 @@ export const DialogSettings: Component<{
                       <Icon name="models" />
                       {language.t("settings.models.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="profile">
+                      <Icon name="brain" />
+                      {language.t("settings.profile.title")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
               </div>
@@ -91,6 +96,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="models" class="settings-v2-panel">
           <SettingsModelsV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="profile" class="settings-v2-panel">
+          <SettingsProfileV2 />
         </TabsV2.Content>
       </TabsV2>
     </Dialog>

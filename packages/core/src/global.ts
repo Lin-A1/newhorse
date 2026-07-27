@@ -14,8 +14,14 @@ async function selectDirectory(root: string, fallback: string, name: string) {
   const current = path.join(root, name)
   const legacy = path.join(root, fallback)
   const [hasCurrent, hasLegacy] = await Promise.all([
-    fs.stat(current).then(() => true).catch(() => false),
-    fs.stat(legacy).then(() => true).catch(() => false),
+    fs
+      .stat(current)
+      .then(() => true)
+      .catch(() => false),
+    fs
+      .stat(legacy)
+      .then(() => true)
+      .catch(() => false),
   ])
   // Existing installs keep using their legacy directory in place. New installs
   // use newhorse, and once a newhorse directory exists it takes precedence.

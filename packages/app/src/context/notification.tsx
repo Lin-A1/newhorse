@@ -9,13 +9,13 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { base64Encode } from "@newhorse/core/util/encode"
 import { decode64 } from "@/utils/base64"
-import { EventSessionError } from "@newhorse/sdk/v2"
+import { EventSessionError, type EventScheduledEventDue } from "@newhorse/sdk/v2"
 import { Persist, persisted } from "@/utils/persist"
 import { playSoundById } from "@/utils/sound"
 import { useGlobal } from "./global"
 import { ServerConnection, useServer } from "./server"
 import { type DraftTab, useTabs } from "./tabs"
-import { requireServerKey } from "@/utils/session-route"
+import { legacySessionHref, requireServerKey } from "@/utils/session-route"
 import type { ServerScope } from "@/utils/server-scope"
 
 type NotificationBase = {
@@ -35,7 +35,34 @@ type ErrorNotification = NotificationBase & {
   error: EventSessionError["properties"]["error"]
 }
 
-export type Notification = TurnCompleteNotification | ErrorNotification
+type ReminderNotification = NotificationBase & {
+  type: "reminder"
+  title: string
+  body: string
+}
+
+export function reminderNotification(
+  directory: string,
+  event: EventScheduledEventDue,
+  time = Date.now(),
+): { notification: ReminderNotification; href: string } {
+  const sessionID = event.properties.sessionID
+  return {
+    notification: {
+      directory,
+      time,
+      viewed: false,
+      type: "reminder",
+      session: sessionID,
+      title: event.properties.title,
+      body: event.properties.body,
+      metadata: { id: event.properties.id, eventType: event.properties.eventType },
+    },
+    href: sessionID ? legacySessionHref(directory, sessionID) : `/${base64Encode(directory)}`,
+  }
+}
+
+export type Notification = TurnCompleteNotification | ErrorNotification | ReminderNotification
 
 type NotificationIndex = {
   session: {
@@ -393,10 +420,16 @@ function createServerNotificationState(input: {
 
   const unsub = serverSDK().event.listen((e) => {
     const event = e.details
-    if (event.type !== "session.idle" && event.type !== "session.error") return
-
     const directory = e.name
     const time = Date.now()
+    if (event.type === "scheduled-event.due") {
+      const reminder = reminderNotification(directory, event, time)
+      append(reminder.notification)
+      void platform.notify(event.properties.title, event.properties.body, reminder.href)
+      return
+    }
+    if (event.type !== "session.idle" && event.type !== "session.error") return
+
     if (event.type === "session.idle") {
       handleSessionIdle(directory, event, time)
       return

@@ -13,6 +13,7 @@ import { ConfigLSPV1 } from "./lsp"
 import { ConfigMCPV1 } from "./mcp"
 import { ConfigPermissionV1 } from "./permission"
 import { ConfigPluginV1 } from "./plugin"
+import { ConfigProfileV1 } from "./profile"
 import { ConfigProviderV1 } from "./provider"
 import { ConfigServerV1 } from "./server"
 import { ConfigSkillsV1 } from "./skills"
@@ -86,6 +87,9 @@ export const Info = Schema.Struct({
   }),
   username: Schema.optional(Schema.String).annotate({
     description: "Custom username to display in conversations instead of system username",
+  }),
+  profile: Schema.optional(ConfigProfileV1.Info).annotate({
+    description: "Product profiles and the active profile for newly created sessions",
   }),
   mode: Schema.optional(
     Schema.StructWithRest(

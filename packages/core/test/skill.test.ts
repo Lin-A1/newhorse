@@ -90,6 +90,59 @@ describe("SkillV2", () => {
     ),
   )
 
+  it.live("loads strict parameter declarations and skips invalid ones", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const valid = path.join(tmp.path, "deploy")
+          const invalid = path.join(tmp.path, "invalid")
+          yield* Effect.promise(async () => {
+            await fs.mkdir(valid, { recursive: true })
+            await fs.mkdir(invalid, { recursive: true })
+            await fs.writeFile(
+              path.join(valid, "SKILL.md"),
+              `---
+name: deploy
+parameters:
+  environment:
+    type: string
+    required: true
+    enum: [staging, production]
+  retries:
+    type: integer
+    default: 1
+---
+Deploy`,
+            )
+            await fs.writeFile(
+              path.join(invalid, "SKILL.md"),
+              `---
+name: invalid
+parameters:
+  retries:
+    type: integer
+    default: 1.5
+---
+Invalid`,
+            )
+          })
+
+          const skill = yield* SkillV2.Service
+          yield* skill.transform((editor) => editor.source({ type: "directory", path: AbsolutePath.make(tmp.path) }))
+          const list = yield* skill.list()
+          expect(list.map((item) => item.name)).toEqual(["deploy"])
+          expect(list[0].parameters).toEqual({
+            environment: { type: "string", required: true, enum: ["staging", "production"] },
+            retries: { type: "integer", default: 1 },
+          })
+        }),
+      ),
+    ),
+  )
+
   it.live("loads URL sources and filters skills for agents", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

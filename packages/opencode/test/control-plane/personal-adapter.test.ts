@@ -1,4 +1,5 @@
 import path from "node:path"
+import fs from "node:fs/promises"
 import { describe, expect, test } from "bun:test"
 import { Global } from "@newhorse/core/global"
 import { ProjectV2 } from "@newhorse/core/project"
@@ -51,6 +52,29 @@ describe("personal workspace adapter", () => {
         projectID: ProjectV2.ID.global,
       } as any),
     ).rejects.toThrow(/must stay under/)
+  })
+
+  test("creates the personal file scaffold without deleting user content", async () => {
+    const adapter = getAdapter(ProjectV2.ID.global, PERSONAL_ADAPTER_TYPE)
+    const directory = personalDirectory(`scaffold-${Date.now()}`)
+    const info = {
+      type: PERSONAL_ADAPTER_TYPE,
+      name: path.basename(directory),
+      branch: null,
+      directory,
+      projectID: ProjectV2.ID.global,
+    } as any
+    try {
+      await adapter.create(info, {})
+      for (const name of ["files", "notes", "output", "tmp"]) {
+        expect((await fs.stat(path.join(directory, name))).isDirectory()).toBe(true)
+      }
+      await fs.writeFile(path.join(directory, "notes", "journal.md"), "kept")
+      await adapter.remove(info)
+      expect(await fs.readFile(path.join(directory, "notes", "journal.md"), "utf8")).toBe("kept")
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true })
+    }
   })
 
   test("isPersonalDirectory only matches the personal root", () => {
