@@ -18,4 +18,4 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Run typecheck
-        run: bun typecheck
+        run: bun typecheck ${{ github.repository != 'anomalyco/opencode' && '--concurrency=1' || '' }}
