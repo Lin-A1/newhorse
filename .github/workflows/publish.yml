@@ -24,7 +24,7 @@ on:
         required: false
         type: string
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.version || inputs.bump }}
+concurrency: ${{ github.workflow }}-${{ github.ref }}-${{ github.repository != 'anomalyco/opencode' && github.run_id || inputs.version || inputs.bump }}
 
 permissions:
   id-token: write
