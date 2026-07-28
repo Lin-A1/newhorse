@@ -4,7 +4,7 @@ import { Icon } from "@newhorse/ui/icon"
 import { Switch } from "@newhorse/ui/switch"
 import { Tabs } from "@newhorse/ui/tabs"
 import { showToast } from "@/utils/toast"
-import { useNavigate } from "@solidjs/router"
+import { useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, For, type JSXElement, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
@@ -15,6 +15,8 @@ import { useSync } from "@/context/sync"
 import { type ServerHealth } from "@/utils/server-health"
 import { useGlobal } from "@/context/global"
 import { useSettings } from "@/context/settings"
+import type { CapabilityCurrent } from "@newhorse/sdk/v2"
+import { useSDK } from "@/context/sdk"
 import { useMcpToggle } from "@/context/mcp"
 
 const pluginEmptyMessage = (value: string, file: string): JSXElement => {
@@ -248,14 +250,19 @@ function ServerStatusList(props: { state: ServerStatusState }) {
   )
 }
 
-export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
+export function StatusPopoverBody(props: {
+  shown: Accessor<boolean>
+  workspaceID?: () => string | undefined
+}) {
   const sync = useSync()
+  const sdk = useSDK()
   const global = useGlobal()
   const server = useServer()
   const platform = usePlatform()
   const dialog = useDialog()
   const language = useLanguage()
   const navigate = useNavigate()
+  const params = useParams()
   const settings = useSettings()
 
   const fail = (err: unknown) => {
@@ -266,8 +273,34 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
     })
   }
 
+  const [capability, setCapability] = createStore({
+    value: undefined as CapabilityCurrent | undefined,
+    refresh: 0,
+  })
+  let capabilityRun = 0
   createEffect(() => {
-    if (!props.shown()) return
+    const shown = props.shown()
+    capability.refresh
+    const run = ++capabilityRun
+    setCapability("value", undefined)
+    if (!shown) return
+
+    const workspace = props.workspaceID?.() ?? (params.id ? sync().session.get(params.id)?.workspaceID : undefined)
+    const controller = new AbortController()
+    void sdk()
+      .client.capability.get(workspace ? { workspace } : undefined, { signal: controller.signal })
+      .then((response) => {
+        if (run !== capabilityRun || controller.signal.aborted) return
+        setCapability("value", response.data)
+      })
+      .catch((error) => {
+        if (run !== capabilityRun || controller.signal.aborted) return
+        fail(error)
+      })
+    onCleanup(() => {
+      capabilityRun += 1
+      controller.abort()
+    })
   })
 
   let dialogRun = 0
@@ -277,17 +310,29 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
     dialogRun += 1
   })
   const sortedServers = createMemo(() => listServersByHealth(global.servers.list(), server.key, global.servers.health))
-  const toggleMcp = useMcpToggle()
+  const toggleMcp = useMcpToggle({ onSuccess: () => setCapability("refresh", (value) => value + 1) })
   const defaultServer = useDefaultServerKey(platform.getDefaultServer)
-  const mcpNames = createMemo(() => Object.keys(sync().data.mcp ?? {}).sort((a, b) => a.localeCompare(b)))
+  const selectedWorkspaceID = () =>
+    props.workspaceID?.() ?? (params.id ? sync().session.get(params.id)?.workspaceID : undefined)
+  const capabilityMcp = createMemo(
+    () => new Map((capability.value?.mcp ?? []).map((item) => [item.name, item] as const)),
+  )
+  const mcpNames = createMemo(() =>
+    capability.value
+      ? capability.value.mcp.map((item) => item.name)
+      : Object.keys(sync().data.mcp ?? {}).sort((a, b) => a.localeCompare(b)),
+  )
   const mcpStatus = (name: string) => sync().data.mcp?.[name]?.status
-  const mcpConnected = createMemo(() => mcpNames().filter((name) => mcpStatus(name) === "connected").length)
+  const mcpToggleAllowed = (name: string) => capabilityMcp().get(name)?.reason !== "workspace_policy"
+  const mcpReason = (name: string) => capabilityMcp().get(name)?.reason?.replaceAll("_", " ")
+  const mcpConnected = createMemo(() =>
+    capability.value
+      ? capability.value.mcp.filter((item) => item.status === "connected").length
+      : mcpNames().filter((name) => mcpStatus(name) === "connected").length,
+  )
   const lspItems = createMemo(() => sync().data.lsp ?? [])
   const lspCount = createMemo(() => lspItems().length)
-  const plugins = createMemo(() =>
-    (sync().data.config.plugin ?? []).map((item) => (typeof item === "string" ? item : item[0])),
-  )
-  const pluginCount = createMemo(() => plugins().length)
+  const pluginCount = createMemo(() => capability.value?.plugins.loaded ?? 0)
   const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "opencode.json"))
 
   return (
@@ -300,6 +345,13 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
         defaultValue={settings.general.newLayoutDesigns() ? "mcp" : "servers"}
         variant="alt"
       >
+        <Show when={capability.value}>
+          {(status) => (
+            <div class="px-4 py-2 border-b border-border-weak-base text-12-regular text-text-weak">
+              {status().profile.name} · {status().workspace.contentScope} scope · {status().tools.length} tools
+            </div>
+          )}
+        </Show>
         <Tabs.List data-slot="tablist" class="bg-transparent border-b-0 px-4 pt-2 pb-0 gap-4 h-10">
           {!settings.general.newLayoutDesigns() && (
             <Tabs.Trigger value="servers" data-slot="tab" class="text-12-regular">
@@ -406,10 +458,10 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                         type="button"
                         class="flex items-center gap-2 w-full min-h-8 pl-3 pr-2 py-1 rounded-md hover:bg-surface-raised-base-hover transition-colors text-left"
                         onClick={() => {
-                          if (toggleMcp.isPending) return
-                          toggleMcp.mutate(name)
+                          if (!mcpToggleAllowed(name) || toggleMcp.isPending) return
+                          toggleMcp.mutate({ name, workspaceID: selectedWorkspaceID() })
                         }}
-                        disabled={toggleMcp.isPending && toggleMcp.variables === name}
+                        disabled={!mcpToggleAllowed(name) || (toggleMcp.isPending && toggleMcp.variables?.name === name)}
                       >
                         <div
                           classList={{
@@ -425,7 +477,12 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                           <span class="flex items-center gap-2 min-w-0">
                             <span class="text-14-regular text-text-base truncate">{name}</span>
                           </span>
-                          <Show when={status() === "needs_auth"}>
+                          <Show when={mcpReason(name)}>
+                            {(reason) => (
+                              <span class="text-11-regular text-text-weaker truncate">{reason()}</span>
+                            )}
+                          </Show>
+                          <Show when={status() === "needs_auth" && !mcpReason(name)}>
                             <span class="text-11-regular text-text-weaker truncate">
                               {language.t("mcp.auth.clickToAuthenticate")}
                             </span>
@@ -434,10 +491,12 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
                         <div onClick={(event) => event.stopPropagation()}>
                           <Switch
                             checked={enabled()}
-                            disabled={toggleMcp.isPending && toggleMcp.variables === name}
+                            disabled={
+                              !mcpToggleAllowed(name) || (toggleMcp.isPending && toggleMcp.variables?.name === name)
+                            }
                             onChange={() => {
-                              if (toggleMcp.isPending) return
-                              toggleMcp.mutate(name)
+                              if (!mcpToggleAllowed(name) || toggleMcp.isPending) return
+                              toggleMcp.mutate({ name, workspaceID: selectedWorkspaceID() })
                             }}
                           />
                         </div>
@@ -482,17 +541,13 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
           <div class="flex flex-col px-2 pb-2">
             <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
               <Show
-                when={plugins().length > 0}
+                when={pluginCount() > 0}
                 fallback={<div class="text-14-regular text-text-base text-center my-auto">{pluginEmpty()}</div>}
               >
-                <For each={plugins()}>
-                  {(plugin) => (
-                    <div class="flex items-center gap-2 w-full px-2 py-1">
-                      <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
-                      <span class="text-14-regular text-text-base truncate">{plugin}</span>
-                    </div>
-                  )}
-                </For>
+                <div class="flex items-center gap-2 w-full px-2 py-1">
+                  <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
+                  <span class="text-14-regular text-text-base">{pluginCount()} plugins loaded</span>
+                </div>
               </Show>
             </div>
           </div>

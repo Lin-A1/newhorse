@@ -13,7 +13,7 @@ import type { WorkspaceV2 } from "@newhorse/core/workspace"
 import type { SessionSchema } from "@newhorse/core/session/schema"
 import { Identifier } from "@newhorse/core/id/id"
 import { InstanceState } from "@/effect/instance-state"
-import { and, desc, eq, gt, inArray, isNull, or } from "drizzle-orm"
+import { and, desc, eq, gt, inArray, isNull, or, sql } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 
 export interface Info {
@@ -65,9 +65,16 @@ export function detectSensitive(content: string): boolean {
   return SENSITIVE_PATTERNS.some((pattern) => pattern.test(content))
 }
 
+export interface QueryInput {
+  status?: MemoryStatus[]
+  includeGlobal?: boolean
+  profileID?: string
+}
+
 export interface Interface {
   readonly save: (input: SaveInput) => Effect.Effect<Info, SensitiveMemoryRejected>
-  readonly list: (input?: { status?: MemoryStatus[]; includeGlobal?: boolean }) => Effect.Effect<Info[]>
+  readonly list: (input?: QueryInput) => Effect.Effect<Info[]>
+  readonly count: (input?: QueryInput) => Effect.Effect<number>
   readonly retrieve: (input?: {
     limit?: number
     profileID?: string
@@ -152,17 +159,48 @@ const layer = Layer.effect(
       return or(own, and(eq(MemoryTable.scope, "user_global"), isNull(MemoryTable.workspace_id)))
     }
 
-    const list = Effect.fn("Memory.list")(function* (input?: { status?: MemoryStatus[]; includeGlobal?: boolean }) {
+    const queryFilter = (workspaceID: WorkspaceV2.ID | undefined, input?: QueryInput) => {
+      const conditions = [
+        scopeFilter(workspaceID, input?.includeGlobal ?? true),
+        inArray(MemoryTable.status, input?.status ?? ["proposed", "active"]),
+      ]
+      if (input?.profileID) {
+        conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
+      }
+      return and(...conditions)
+    }
+
+    const list = Effect.fn("Memory.list")(function* (input?: QueryInput) {
       const workspaceID = yield* InstanceState.workspaceID
-      const status = input?.status ?? ["proposed", "active"]
       const rows = yield* db
         .select()
         .from(MemoryTable)
-        .where(and(scopeFilter(workspaceID, input?.includeGlobal ?? true), inArray(MemoryTable.status, status)))
+        .where(queryFilter(workspaceID, input))
         .orderBy(desc(MemoryTable.time_created))
         .all()
         .pipe(Effect.orDie)
       return rows.map(decode)
+    })
+
+    const count = Effect.fn("Memory.count")(function* (input?: QueryInput) {
+      const workspaceID = yield* InstanceState.workspaceID
+      const status = input?.status ?? ["proposed", "active"]
+      const scope = workspaceID
+        ? scopeFilter(workspaceID, input?.includeGlobal ?? true)
+        : input?.includeGlobal === false
+          ? sql`0`
+          : and(eq(MemoryTable.scope, "user_global"), isNull(MemoryTable.workspace_id))
+      const conditions = [scope, inArray(MemoryTable.status, status)]
+      if (input?.profileID) {
+        conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
+      }
+      const row = yield* db
+        .select({ count: sql<number>`count(*)` })
+        .from(MemoryTable)
+        .where(and(...conditions))
+        .get()
+        .pipe(Effect.orDie)
+      return row?.count ?? 0
     })
 
     const retrieve = Effect.fn("Memory.retrieve")(function* (input?: {
@@ -225,7 +263,7 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
     })
 
-    return Service.of({ save, list, retrieve, setStatus, forget, clear })
+    return Service.of({ save, list, count, retrieve, setStatus, forget, clear })
   }),
 )
 

@@ -492,10 +492,15 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     session,
     homeSessions,
     mcp: {
-      toggle: async (directory: string, name: string) => {
+      toggle: async (directory: string, name: string, workspaceID?: string) => {
         const key = directoryKey(directory)
-        const sdk = sdkFor(key)
-        const status = children.child(key, { bootstrap: false })[0].mcp[name].status
+        const sdk = workspaceID
+          ? serverSDK.createClient({ directory: key, experimental_workspaceID: workspaceID, throwOnError: true })
+          : sdkFor(key)
+        const status = workspaceID
+          ? await sdk.mcp.status().then((result) => result.data?.[name]?.status)
+          : children.child(key, { bootstrap: false })[0].mcp[name]?.status
+        if (!status) return
         await toggleMcp({
           status,
           connect: async () => {
@@ -508,6 +513,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
             await sdk.mcp.auth.authenticate({ name })
           },
           refresh: async () => {
+            if (workspaceID) return
             await queryClient.refetchQueries(queryOptionsApi.mcp(key))
             await queryClient.refetchQueries(queryOptionsApi.mcpResources(key))
           },

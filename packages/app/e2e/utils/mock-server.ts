@@ -25,6 +25,8 @@ export interface MockServerConfig {
   fileContent?: (path: string) => unknown | Promise<unknown>
   findFiles?: (input: { query: string; dirs?: string; limit?: number }) => unknown
   sessionStatus?: unknown
+  capability?: unknown
+  profileRuntime?: unknown
 }
 
 export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
@@ -70,6 +72,10 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (path === "/api/health" && config.protocol === "v2")
       return json(route, { healthy: true, version: "2.0.0", pid: 1 })
     if (path === "/experimental/capabilities") return json(route, { backgroundSubagents: true })
+    if (path === "/capability") return json(route, config.capability ?? defaultCapability())
+    if (/^\/global\/profile\/[^/]+$/.test(path) && route.request().method() === "GET") {
+      return json(route, config.profileRuntime ?? defaultProfileRuntime())
+    }
     if (path === "/permission")
       return json(route, typeof config.permissions === "function" ? config.permissions() : (config.permissions ?? []))
     if (path === "/question")
@@ -388,6 +394,38 @@ function currentMessage(value: unknown) {
         },
       ]
     }),
+  }
+}
+
+function defaultCapability() {
+  return {
+    profile: { id: "assistant", kind: "assistant", name: "Assistant", memory: "ask", proactive: false },
+    workspace: { kind: "project", contentScope: "project", source: "legacy-directory" },
+    agent: { default: "build", current: "build", items: [{ name: "build", mode: "primary" }] },
+    tools: ["read", "write", "edit", "bash"].map((id) => ({ id, action: "allow" })),
+    mcp: [],
+    skills: [],
+    plugins: { loaded: 0 },
+    memory: { policy: "ask", records: 0, availability: { available: true } },
+    reminders: {
+      proactive: false,
+      paused: false,
+      scheduled: 0,
+      availability: { available: false, reason: "config_disabled" },
+    },
+  }
+}
+
+function defaultProfileRuntime() {
+  return {
+    id: "companion",
+    kind: "companion",
+    name: "Companion",
+    personaVersion: 1,
+    memory: "ask",
+    proactive: false,
+    proactivePaused: false,
+    proactiveFrequency: { maxPerDay: 3, minIntervalMinutes: 120 },
   }
 }
 

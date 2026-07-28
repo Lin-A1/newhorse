@@ -1,4 +1,5 @@
 import { Agent } from "@/agent/agent"
+import { Capability } from "@/capability"
 import { Command } from "@/command"
 import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
@@ -6,6 +7,7 @@ import { Global } from "@newhorse/core/global"
 import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
+import { ToolRegistry } from "@/tool/registry"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -15,6 +17,8 @@ import { markInstanceForDisposal } from "../lifecycle"
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
     const agent = yield* Agent.Service
+    const capability = yield* Capability.Service
+    const toolRegistry = yield* ToolRegistry.Service
     const command = yield* Command.Service
     const format = yield* Format.Service
     const lsp = yield* LSP.Service
@@ -77,6 +81,10 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* command.list()
     })
 
+    const getCapability = Effect.fn("InstanceHttpApi.capability")(function* () {
+      return yield* capability.current({ toolIDs: yield* toolRegistry.ids() })
+    })
+
     const getAgent = Effect.fn("InstanceHttpApi.agent")(function* () {
       return yield* agent.list()
     })
@@ -102,6 +110,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("vcsDiffRaw", getVcsDiffRaw)
       .handle("vcsApply", applyVcs)
       .handle("command", getCommand)
+      .handle("capability", getCapability)
       .handle("agent", getAgent)
       .handle("skill", getSkill)
       .handle("lsp", getLsp)

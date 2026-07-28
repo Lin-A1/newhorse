@@ -2391,6 +2391,83 @@ export type Command = {
   hints: Array<string>
 }
 
+export type CapabilityCurrent = {
+  profile: {
+    id: string
+    kind: "assistant" | "companion"
+    name: string
+    memory: "off" | "ask" | "auto-safe"
+    proactive: boolean
+  }
+  workspace: {
+    id?: string
+    kind: "project" | "personal"
+    contentScope: "project" | "personal"
+    source: "metadata" | "legacy-directory"
+  }
+  agent: {
+    default: string
+    current: string
+    items: Array<{
+      name: string
+      mode: "subagent" | "primary" | "all"
+    }>
+  }
+  tools: Array<{
+    id: string
+    action: "allow" | "deny" | "ask" | "conditional"
+  }>
+  mcp: Array<{
+    name: string
+    status: "connected" | "unavailable"
+    reason?:
+      | "config_disabled"
+      | "workspace_policy"
+      | "permission_denied"
+      | "authentication_required"
+      | "client_registration_required"
+      | "runtime_failed"
+      | "not_configured"
+  }>
+  skills: Array<{
+    name: string
+  }>
+  plugins: {
+    loaded: number
+  }
+  memory: {
+    policy: "off" | "ask" | "auto-safe"
+    records: number
+    availability: {
+      available: boolean
+      reason?:
+        | "config_disabled"
+        | "workspace_policy"
+        | "permission_denied"
+        | "authentication_required"
+        | "client_registration_required"
+        | "runtime_failed"
+        | "not_configured"
+    }
+  }
+  reminders: {
+    proactive: boolean
+    paused: boolean
+    scheduled: number
+    availability: {
+      available: boolean
+      reason?:
+        | "config_disabled"
+        | "workspace_policy"
+        | "permission_denied"
+        | "authentication_required"
+        | "client_registration_required"
+        | "runtime_failed"
+        | "not_configured"
+    }
+  }
+}
+
 export type Agent = {
   name: string
   description?: string
@@ -5549,6 +5626,15 @@ export type SkillV2Info = {
   name: string
   description?: string
   slash?: boolean
+  parameters?: {
+    [key: string]: {
+      type: "string" | "number" | "integer" | "boolean"
+      description?: string
+      required?: boolean
+      enum?: Array<string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean>
+      default?: string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean
+    }
+  }
   location: string
   content: string
 }
@@ -7652,9 +7738,26 @@ export type SkillV2UrlSource = {
   url: string
 }
 
+export type SkillV2Info1 = {
+  name: string
+  description?: string
+  slash?: boolean
+  parameters?: {
+    [key: string]: {
+      type: "string" | "number" | "integer" | "boolean"
+      description?: string
+      required?: boolean
+      enum?: Array<string | number | "NaN" | "Infinity" | "-Infinity" | boolean>
+      default?: string | number | "NaN" | "Infinity" | "-Infinity" | boolean
+    }
+  }
+  location: string
+  content: string
+}
+
 export type SkillV2EmbeddedSource = {
   type: "embedded"
-  skill: SkillV2Info
+  skill: SkillV2Info1
 }
 
 export type BadRequestError = {
@@ -7966,6 +8069,52 @@ export type GlobalProfileSelectResponses = {
 }
 
 export type GlobalProfileSelectResponse = GlobalProfileSelectResponses[keyof GlobalProfileSelectResponses]
+
+export type GlobalProfileRuntimeData = {
+  body?: never
+  path: {
+    profileID: string
+  }
+  query?: never
+  url: "/global/profile/{profileID}"
+}
+
+export type GlobalProfileRuntimeErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type GlobalProfileRuntimeError = GlobalProfileRuntimeErrors[keyof GlobalProfileRuntimeErrors]
+
+export type GlobalProfileRuntimeResponses = {
+  /**
+   * Profile runtime settings
+   */
+  200: {
+    id: string
+    kind: "assistant" | "companion"
+    name: string
+    persona?: string
+    personaVersion: number
+    memory: "off" | "ask" | "auto-safe"
+    proactive: boolean
+    proactivePaused: boolean
+    quietHours?: {
+      start: string
+      end: string
+      timezone: string
+    }
+    proactiveFrequency: {
+      maxPerDay: number
+      minIntervalMinutes: number
+    }
+    crisisRegion?: string
+  }
+}
+
+export type GlobalProfileRuntimeResponse = GlobalProfileRuntimeResponses[keyof GlobalProfileRuntimeResponses]
 
 export type GlobalProfileUpdateData = {
   body?: {
@@ -9014,6 +9163,34 @@ export type CommandListResponses = {
 
 export type CommandListResponse = CommandListResponses[keyof CommandListResponses]
 
+export type CapabilityGetData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/capability"
+}
+
+export type CapabilityGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type CapabilityGetError = CapabilityGetErrors[keyof CapabilityGetErrors]
+
+export type CapabilityGetResponses = {
+  /**
+   * Redacted capability status
+   */
+  200: CapabilityCurrent
+}
+
+export type CapabilityGetResponse = CapabilityGetResponses[keyof CapabilityGetResponses]
+
 export type AppAgentsData = {
   body?: never
   path?: never
@@ -9068,6 +9245,15 @@ export type AppSkillsResponses = {
   200: Array<{
     name: string
     description?: string
+    parameters?: {
+      [key: string]: {
+        type: "string" | "number" | "integer" | "boolean"
+        description?: string
+        required?: boolean
+        enum?: Array<string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean>
+        default?: string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean
+      }
+    }
     location: string
     content: string
   }>

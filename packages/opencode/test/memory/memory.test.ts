@@ -2,6 +2,8 @@ import { describe, expect } from "bun:test"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Effect, Exit } from "effect"
 import { Memory, detectSensitive } from "@/memory"
+import { WorkspaceRef } from "@/effect/instance-ref"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(Memory.node))
@@ -131,6 +133,44 @@ describe("Memory", () => {
 
       const retrieved = yield* memory.retrieve({ profileID: "companion", relationshipOnly: true })
       expect(retrieved.map((item) => item.id)).toEqual([companion.id])
+    }),
+  )
+
+  it.instance("counts records without crossing profile or workspace scope", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const workspace = WorkspaceV2.ID.make("wrk_memory_count")
+      yield* memory.save({
+        kind: "preference",
+        content: "global preference",
+        provenance: "user_explicit",
+        scope: "user_global",
+      })
+      yield* memory
+        .save({
+          kind: "fact",
+          content: "assistant fact",
+          provenance: "user_explicit",
+          profileID: "assistant",
+        })
+        .pipe(Effect.provideService(WorkspaceRef, workspace))
+      yield* memory
+        .save({
+          kind: "relationship",
+          content: "companion relationship",
+          provenance: "model_inferred",
+          profileID: "companion",
+        })
+        .pipe(Effect.provideService(WorkspaceRef, workspace))
+
+      const count = (input?: Parameters<Memory.Interface["count"]>[0]) =>
+        memory.count(input).pipe(Effect.provideService(WorkspaceRef, workspace))
+      expect(yield* count({ profileID: "assistant" })).toBe(2)
+      expect(yield* count({ profileID: "companion", status: ["active"] })).toBe(1)
+      expect(yield* count({ profileID: "companion" })).toBe(2)
+      expect(yield* count({ includeGlobal: false, profileID: "companion" })).toBe(1)
+      expect(yield* memory.count({ profileID: "assistant" })).toBe(1)
+      expect(yield* memory.count({ includeGlobal: false })).toBe(0)
     }),
   )
 

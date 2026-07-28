@@ -72,12 +72,12 @@ export function StatusPopover() {
   )
 }
 
-export function StatusPopoverV2(props: { scope?: "server" }) {
+export function StatusPopoverV2(props: { scope?: "server"; workspaceID?: () => string | undefined }) {
   if (props.scope === "server") return <ServerStatusPopover />
-  return <DirectoryStatusPopover />
+  return <DirectoryStatusPopover workspaceID={props.workspaceID} />
 }
 
-function DirectoryStatusPopover() {
+function DirectoryStatusPopover(props: { workspaceID?: () => string | undefined }) {
   const language = useLanguage()
   const server = useServerSDK()
   const global = useGlobal()
@@ -100,7 +100,7 @@ function DirectoryStatusPopover() {
     onOpenChange: setShown,
     body: () => (
       <StatusPopoverBody shown={shown()}>
-        <Body shown={shown} />
+        <Body shown={shown} workspaceID={props.workspaceID} />
       </StatusPopoverBody>
     ),
   }))

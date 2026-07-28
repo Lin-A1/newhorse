@@ -528,6 +528,7 @@ describe("HttpApi SDK", () => {
         const findText = yield* capture(() => sdk.find.text({ pattern: "sdk-parity" }))
         const agents = yield* capture(() => sdk.app.agents())
         const skills = yield* capture(() => sdk.app.skills())
+        const capabilities = yield* capture(() => sdk.capability.get())
         const tools = yield* capture(() => sdk.tool.ids())
         const vcs = yield* capture(() => sdk.vcs.get())
         const formatter = yield* capture(() => sdk.formatter.status())
@@ -547,6 +548,7 @@ describe("HttpApi SDK", () => {
             findText,
             agents,
             skills,
+            capabilities,
             tools,
             vcs,
             formatter,
@@ -558,6 +560,14 @@ describe("HttpApi SDK", () => {
           hasProject: array(projects.data).length > 0,
           foundFile: JSON.stringify(findFiles.data).includes("hello.txt"),
           foundText: JSON.stringify(findText.data ?? null).includes("sdk-parity"),
+          capability: {
+            hasCodingTools: ["read", "write", "edit", "bash"].every((id) =>
+              array(record(capabilities.data).tools).some((item) => record(item).id === id),
+            ),
+            redacted: !["prompt", "options", "location", "content", "directory", "error"].some((field) =>
+              JSON.stringify(capabilities.data).includes(`\"${field}\"`),
+            ),
+          },
           listedFile: JSON.stringify(files.data).includes("hello.txt"),
           vcs: { hasBranch: typeof record(vcs.data).branch === "string" },
         }

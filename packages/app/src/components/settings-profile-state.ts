@@ -25,21 +25,22 @@ export function useCompanionProfileSettings() {
   })
 
   onMount(() => {
-    void Promise.all([serverSDK().client.global.profile.get(), serverSDK().client.global.config.get()])
-      .then(([profileResponse, configResponse]) => {
-        const profile = profileResponse.data?.items.find((item) => item.id === "companion")
-        const config = configResponse.data?.profile?.items?.companion
+    void serverSDK()
+      .client.global.profile.runtime({ profileID: "companion" })
+      .then((response) => {
+        const profile = response.data
+        if (!profile) throw new Error("Profile settings returned no data")
         setState({
-          persona: config?.persona ?? "",
-          memory: profile?.memory ?? config?.memory ?? "ask",
-          crisisRegion: config?.crisisRegion ?? "",
-          proactive: config?.proactive ?? false,
-          proactivePaused: config?.proactivePaused ?? false,
-          quietStart: config?.quietHours?.start ?? "22:00",
-          quietEnd: config?.quietHours?.end ?? "08:00",
-          timezone: config?.quietHours?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
-          maxPerDay: config?.proactiveFrequency?.maxPerDay ?? 3,
-          minIntervalMinutes: config?.proactiveFrequency?.minIntervalMinutes ?? 120,
+          persona: profile.persona ?? "",
+          memory: profile.memory,
+          crisisRegion: profile.crisisRegion ?? "",
+          proactive: profile.proactive,
+          proactivePaused: profile.proactivePaused,
+          quietStart: profile.quietHours?.start ?? "22:00",
+          quietEnd: profile.quietHours?.end ?? "08:00",
+          timezone: profile.quietHours?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+          maxPerDay: profile.proactiveFrequency.maxPerDay,
+          minIntervalMinutes: profile.proactiveFrequency.minIntervalMinutes,
           loading: false,
         })
       })

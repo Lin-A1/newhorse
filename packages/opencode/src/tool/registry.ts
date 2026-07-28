@@ -18,6 +18,7 @@ import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import { MemoryTool } from "./memory"
 import { ReminderTool } from "./reminder"
+import { CapabilityTool } from "./capability"
 import { Memory } from "@/memory"
 import { Scheduler } from "@/scheduler"
 import { Profile } from "@/profile"
@@ -59,6 +60,7 @@ import { ModelV2 } from "@newhorse/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@newhorse/core/v1/permission"
 import { McpCatalog } from "@/mcp/catalog"
+import { Capability } from "@/capability"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
   return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
@@ -94,6 +96,8 @@ const layer = Layer.effect(
     const config = yield* Config.Service
     const plugin = yield* Plugin.Service
     const agents = yield* Agent.Service
+    const sessions = yield* Session.Service
+    const capability = yield* Capability.Service
     const truncate = yield* Truncate.Service
     const flags = yield* RuntimeFlags.Service
     const mcp = yield* MCP.Service
@@ -208,6 +212,13 @@ const layer = Layer.effect(
         yield* config.get()
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
 
+        let toolIDs: string[] = []
+        const capabilityInfo = yield* CapabilityTool.make(() => Effect.succeed(toolIDs)).pipe(
+          Effect.provideService(Capability.Service, capability),
+          Effect.provideService(Truncate.Service, truncate),
+          Effect.provideService(Agent.Service, agents),
+          Effect.provideService(Session.Service, sessions),
+        )
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
           shell: Tool.init(shell),
@@ -223,6 +234,7 @@ const layer = Layer.effect(
           skill: Tool.init(skilltool),
           memory: Tool.init(memorytool),
           reminder: Tool.init(remindertool),
+          capability: Tool.init(capabilityInfo),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
@@ -230,29 +242,33 @@ const layer = Layer.effect(
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
 
+        const builtin = [
+          tool.invalid,
+          ...(questionEnabled ? [tool.question] : []),
+          tool.shell,
+          tool.read,
+          tool.glob,
+          tool.grep,
+          tool.edit,
+          tool.write,
+          tool.task,
+          tool.fetch,
+          tool.todo,
+          tool.search,
+          tool.skill,
+          tool.memory,
+          tool.reminder,
+          tool.capability,
+          tool.patch,
+          ...(tool.execute ? [tool.execute] : []),
+          ...(flags.experimentalLspTool ? [tool.lsp] : []),
+          ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+        ]
+        toolIDs = [...builtin, ...custom].map((item) => item.id)
+
         return {
           custom,
-          builtin: [
-            tool.invalid,
-            ...(questionEnabled ? [tool.question] : []),
-            tool.shell,
-            tool.read,
-            tool.glob,
-            tool.grep,
-            tool.edit,
-            tool.write,
-            tool.task,
-            tool.fetch,
-            tool.todo,
-            tool.search,
-            tool.skill,
-            tool.memory,
-            tool.reminder,
-            tool.patch,
-            ...(tool.execute ? [tool.execute] : []),
-            ...(flags.experimentalLspTool ? [tool.lsp] : []),
-            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
-          ],
+          builtin,
           task: tool.task,
           read: tool.read,
         }
@@ -460,6 +476,7 @@ export const node = LayerNode.make({
     Memory.node,
     Profile.node,
     Scheduler.node,
+    Capability.node,
   ],
 })
 

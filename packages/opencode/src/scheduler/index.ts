@@ -74,9 +74,15 @@ export class ProactiveDisabled extends Schema.TaggedErrorClass<ProactiveDisabled
   message: Schema.String,
 }) {}
 
+export interface QueryInput {
+  status?: ScheduledEventStatus[]
+  profileID?: string
+}
+
 export interface Interface {
   readonly create: (input: CreateInput) => Effect.Effect<Info, ProactiveDisabled>
-  readonly list: (input?: { status?: ScheduledEventStatus[]; profileID?: string }) => Effect.Effect<Info[]>
+  readonly list: (input?: QueryInput) => Effect.Effect<Info[]>
+  readonly count: (input?: QueryInput) => Effect.Effect<number>
   readonly update: (input: UpdateInput) => Effect.Effect<Info | undefined>
   readonly cancel: (id: ID) => Effect.Effect<void>
   readonly tick: (now?: number) => Effect.Effect<number>
@@ -223,22 +229,37 @@ const layer = Layer.effect(
       return decode(row)
     })
 
-    const list = Effect.fn("Scheduler.list")(function* (input?: {
-      status?: ScheduledEventStatus[]
-      profileID?: string
-    }) {
+    const conditions = (workspaceID: WorkspaceV2.ID | undefined, input?: QueryInput) => {
+      const result = [workspaceFilter(workspaceID)]
+      if (input?.status) result.push(inArray(ScheduledEventTable.status, input.status))
+      if (input?.profileID) result.push(eq(ScheduledEventTable.profile_id, input.profileID))
+      return result
+    }
+
+    const list = Effect.fn("Scheduler.list")(function* (input?: QueryInput) {
       const workspaceID = yield* InstanceState.workspaceID
-      const conditions = [workspaceFilter(workspaceID)]
-      if (input?.status) conditions.push(inArray(ScheduledEventTable.status, input.status))
-      if (input?.profileID) conditions.push(eq(ScheduledEventTable.profile_id, input.profileID))
       const rows = yield* db
         .select()
         .from(ScheduledEventTable)
-        .where(and(...conditions))
+        .where(and(...conditions(workspaceID, input)))
         .orderBy(asc(ScheduledEventTable.schedule_at))
         .all()
         .pipe(Effect.orDie)
       return rows.map(decode)
+    })
+
+    const count = Effect.fn("Scheduler.count")(function* (input?: QueryInput) {
+      const workspaceID = yield* InstanceState.workspaceID
+      const directory = (yield* InstanceState.context).directory
+      const filters = conditions(workspaceID, input)
+      if (!workspaceID) filters.push(eq(ScheduledEventTable.directory, directory))
+      const row = yield* db
+        .select({ count: sql<number>`count(*)` })
+        .from(ScheduledEventTable)
+        .where(and(...filters))
+        .get()
+        .pipe(Effect.orDie)
+      return row?.count ?? 0
     })
 
     const update = Effect.fn("Scheduler.update")(function* (input: UpdateInput) {
@@ -486,7 +507,7 @@ const layer = Layer.effect(
       Effect.forkScoped,
     )
 
-    return Service.of({ create, list, update, cancel, tick })
+    return Service.of({ create, list, count, update, cancel, tick })
   }),
 )
 

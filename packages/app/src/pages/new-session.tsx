@@ -213,7 +213,7 @@ export default function NewSessionPage() {
           <Portal mount={mount()}>
             <Show when={settings.visibility.status()}>
               <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-                <StatusPopoverV2 />
+                <StatusPopoverV2 workspaceID={() => selectedWorkspace()?.id} />
               </Tooltip>
             </Show>
           </Portal>

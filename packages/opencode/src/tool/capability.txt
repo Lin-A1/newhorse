@@ -1,0 +1,6 @@
+Use this tool to inspect the current redacted capability status.
+
+It reports the active profile, workspace content scope, runtime agents, tool permissions,
+MCP availability, skills, loaded plugin count, memory policy, and reminder availability.
+It never returns configuration values, file paths, prompts, credentials, memory content,
+reminder text, MCP URLs, headers, or raw runtime errors.

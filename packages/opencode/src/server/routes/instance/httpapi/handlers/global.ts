@@ -100,6 +100,12 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return yield* profileState()
     })
 
+    const profileRuntime = Effect.fn("GlobalHttpApi.profileRuntime")(function* (ctx) {
+      return yield* profile
+        .runtime(ctx.params.profileID)
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+    })
+
     const profileUpdate = Effect.fn("GlobalHttpApi.profileUpdate")(function* (ctx) {
       return yield* profile
         .update(ctx.params.profileID, ctx.payload)
@@ -169,6 +175,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("configUpdate", configUpdate)
       .handle("profileGet", profileState)
       .handle("profileSelect", profileSelect)
+      .handle("profileRuntime", profileRuntime)
       .handle("profileUpdate", profileUpdate)
       .handle("dispose", dispose)
       .handleRaw("upgrade", upgradeRaw)

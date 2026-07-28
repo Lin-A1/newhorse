@@ -81,6 +81,14 @@ const scenarios: Scenario[] = [
   http.protected.get("/global/config", "global.config.get").global().json(),
   http.protected.get("/global/profile", "global.profile.get").global().json(),
   http.protected
+    .get("/global/profile/{profileID}", "global.profile.runtime")
+    .global()
+    .at(() => ({ path: route("/global/profile/{profileID}", { profileID: "companion" }) }))
+    .json(200, (body) => {
+      object(body)
+      check(body.id === "companion", "profile runtime should return the requested profile")
+    }),
+  http.protected
     .patch("/global/profile", "global.profile.select")
     .global()
     .mutating()
@@ -163,6 +171,12 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({ path: "/vcs/apply", headers: ctx.headers(), body: { patch: "" } }))
     .status(400, undefined, "status"),
   http.protected.get("/command", "command.list").json(200, array, "status"),
+  http.protected.get("/capability", "capability.get").json(200, (body) => {
+    object(body)
+    object(body.profile)
+    object(body.workspace)
+    array(body.tools)
+  }),
   http.protected.get("/agent", "app.agents").json(200, array, "status"),
   http.protected.get("/skill", "app.skills").json(200, array, "status"),
   http.protected.get("/lsp", "lsp.status").json(200, array),

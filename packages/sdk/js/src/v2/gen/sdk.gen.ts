@@ -15,6 +15,8 @@ import type {
   AuthRemoveResponses,
   AuthSetErrors,
   AuthSetResponses,
+  CapabilityGetErrors,
+  CapabilityGetResponses,
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
@@ -88,6 +90,8 @@ import type {
   GlobalHealthResponses,
   GlobalProfileGetErrors,
   GlobalProfileGetResponses,
+  GlobalProfileRuntimeErrors,
+  GlobalProfileRuntimeResponses,
   GlobalProfileSelectErrors,
   GlobalProfileSelectResponses,
   GlobalProfileUpdateErrors,
@@ -1371,6 +1375,29 @@ export class Profile extends HeyApiClient {
   }
 
   /**
+   * Get profile settings
+   *
+   * Get editable runtime settings for one profile without exposing global configuration.
+   */
+  public runtime<ThrowOnError extends boolean = false>(
+    parameters: {
+      profileID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "profileID" }] }])
+    return (options?.client ?? this.client).get<
+      GlobalProfileRuntimeResponses,
+      GlobalProfileRuntimeErrors,
+      ThrowOnError
+    >({
+      url: "/global/profile/{profileID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Update profile
    *
    * Update profile persona, memory policy, and crisis-support region.
@@ -2303,6 +2330,38 @@ export class Command extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<CommandListResponses, CommandListErrors, ThrowOnError>({
       url: "/command",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Capability extends HeyApiClient {
+  /**
+   * Get capability status
+   *
+   * Get redacted capability availability for the current profile and workspace.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<CapabilityGetResponses, CapabilityGetErrors, ThrowOnError>({
+      url: "/capability",
       ...options,
       ...params,
     })
@@ -7425,6 +7484,11 @@ export class OpencodeClient extends HeyApiClient {
   private _command?: Command
   get command(): Command {
     return (this._command ??= new Command({ client: this.client }))
+  }
+
+  private _capability?: Capability
+  get capability(): Capability {
+    return (this._capability ??= new Capability({ client: this.client }))
   }
 
   private _lsp?: Lsp

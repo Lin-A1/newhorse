@@ -118,6 +118,21 @@ describe("global HttpApi", () => {
     }),
   )
 
+  it.live("reads companion runtime without fetching global configuration", () =>
+    Effect.gen(function* () {
+      companionRuntime = { ...companionRuntime, persona: "Warm and concise", memory: "ask", crisisRegion: "CN" }
+      const response = yield* HttpClient.get(GlobalPaths.profileRuntime.replace(":profileID", companionID))
+
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toMatchObject({
+        id: companionID,
+        persona: "Warm and concise",
+        memory: "ask",
+        crisisRegion: "CN",
+      })
+    }),
+  )
+
   it.live("updates companion runtime without exposing persona in profile state", () =>
     Effect.gen(function* () {
       companionRuntime = { ...companionRuntime, persona: "Warm and concise", memory: "ask", crisisRegion: "CN" }

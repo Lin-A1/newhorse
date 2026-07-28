@@ -6,6 +6,7 @@ import { FSUtil } from "@newhorse/core/fs-util"
 import * as Observability from "@newhorse/core/observability"
 import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
+import { Capability } from "@/capability"
 import { Auth } from "@/auth"
 import { BackgroundJob } from "@/background/job"
 import { Command } from "@/command"
@@ -232,6 +233,7 @@ const app = LayerNode.group([
   Provider.node,
   ProviderAuth.node,
   Agent.node,
+  Capability.node,
   Skill.node,
   Discovery.node,
   Question.node,

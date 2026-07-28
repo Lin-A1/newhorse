@@ -1,4 +1,5 @@
 import { Agent } from "@/agent/agent"
+import { Capability } from "@/capability"
 import { Command } from "@/command"
 import { Format } from "@/format"
 import { LSP } from "@/lsp/lsp"
@@ -49,6 +50,7 @@ export const InstancePaths = {
   vcsDiffRaw: "/vcs/diff/raw",
   vcsApply: "/vcs/apply",
   command: "/command",
+  capability: "/capability",
   agent: "/agent",
   skill: "/skill",
   lsp: "/lsp",
@@ -144,6 +146,16 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "command.list",
             summary: "List commands",
             description: "Get a list of all available commands in the newhorse system.",
+          }),
+        ),
+        HttpApiEndpoint.get("capability", InstancePaths.capability, {
+          query: WorkspaceRoutingQuery,
+          success: described(Capability.Current, "Redacted capability status"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "capability.get",
+            summary: "Get capability status",
+            description: "Get redacted capability availability for the current profile and workspace.",
           }),
         ),
         HttpApiEndpoint.get("agent", InstancePaths.agent, {

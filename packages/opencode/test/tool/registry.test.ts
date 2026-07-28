@@ -109,6 +109,13 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("exposes redacted capability inspection", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("capability")
+    }),
+  )
+
   it.instance("does not expose execute unless code mode is enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

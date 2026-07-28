@@ -3,12 +3,13 @@ import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { showToast } from "@/utils/toast"
 
-export function useMcpToggle() {
+export function useMcpToggle(input?: { onSuccess?: () => void }) {
   const sync = useSync()
   const language = useLanguage()
 
   return useMutation(() => ({
-    mutationFn: sync().mcp.toggle,
+    mutationFn: (input: { name: string; workspaceID?: string }) => sync().mcp.toggle(input.name, input.workspaceID),
+    onSuccess: input?.onSuccess,
     onError: (error) =>
       showToast({
         variant: "error",

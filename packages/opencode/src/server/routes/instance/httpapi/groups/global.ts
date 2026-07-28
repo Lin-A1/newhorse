@@ -77,6 +77,7 @@ export const GlobalPaths = {
   event: "/global/event",
   config: "/global/config",
   profile: "/global/profile",
+  profileRuntime: "/global/profile/:profileID",
   profileUpdate: "/global/profile/:profileID",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
@@ -141,6 +142,17 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.profile.select",
           summary: "Select profile",
           description: "Select the profile used by newly created sessions.",
+        }),
+      ),
+      HttpApiEndpoint.get("profileRuntime", GlobalPaths.profileRuntime, {
+        params: { profileID: Profile.ID },
+        success: described(Profile.Runtime, "Profile runtime settings"),
+        error: HttpApiError.BadRequest,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.profile.runtime",
+          summary: "Get profile settings",
+          description: "Get editable runtime settings for one profile without exposing global configuration.",
         }),
       ),
       HttpApiEndpoint.patch("profileUpdate", GlobalPaths.profileUpdate, {

@@ -27,6 +27,7 @@ describe("Scheduler", () => {
       const duplicate = yield* scheduler.create(input)
       expect(duplicate.id).toBe(first.id)
       expect((yield* scheduler.list()).map((item) => item.id)).toEqual([first.id])
+      expect(yield* scheduler.count({ profileID: "assistant", status: ["pending", "paused"] })).toBe(1)
 
       const paused = yield* scheduler.update({ id: first.id, paused: true })
       expect(paused?.status).toBe("paused")
@@ -35,6 +36,7 @@ describe("Scheduler", () => {
 
       yield* scheduler.cancel(first.id)
       expect((yield* scheduler.list())[0]?.status).toBe("cancelled")
+      expect(yield* scheduler.count({ profileID: "assistant", status: ["pending", "paused"] })).toBe(0)
     }),
   )
 
