@@ -32,6 +32,12 @@ permissions:
   packages: write
 
 jobs:
+  fork-guard:
+    if: github.repository != 'anomalyco/opencode'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Publishing is disabled outside anomalyco/opencode"
+
   version:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     if: github.repository == 'anomalyco/opencode'
