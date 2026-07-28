@@ -1,6 +1,6 @@
 import { Effect, Fiber, Layer, ManagedRuntime } from "effect"
 import * as Context from "effect/Context"
-import { InstanceRef, WorkspaceRef } from "./instance-ref"
+import { InstanceRef, WorkspaceMetadataRef, WorkspaceRef, type WorkspaceMetadata } from "./instance-ref"
 import * as Observability from "@newhorse/core/observability"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 import type { InstanceContext } from "@/project/instance-context"
@@ -9,16 +9,17 @@ import { memoMap } from "@newhorse/core/effect/memo-map"
 type Refs = {
   instance?: InstanceContext
   workspace?: string
+  workspaceMetadata?: WorkspaceMetadata
 }
 
 export function attachWith<A, E, R>(effect: Effect.Effect<A, E, R>, refs: Refs): Effect.Effect<A, E, R> {
-  if (!refs.instance && !refs.workspace) return effect
-  if (!refs.instance) return effect.pipe(Effect.provideService(WorkspaceRef, refs.workspace))
-  if (!refs.workspace) return effect.pipe(Effect.provideService(InstanceRef, refs.instance))
-  return effect.pipe(
-    Effect.provideService(InstanceRef, refs.instance),
-    Effect.provideService(WorkspaceRef, refs.workspace),
-  )
+  let attached = effect
+  if (refs.instance !== undefined) attached = attached.pipe(Effect.provideService(InstanceRef, refs.instance))
+  if (refs.workspace !== undefined) attached = attached.pipe(Effect.provideService(WorkspaceRef, refs.workspace))
+  if (refs.workspaceMetadata !== undefined) {
+    attached = attached.pipe(Effect.provideService(WorkspaceMetadataRef, refs.workspaceMetadata))
+  }
+  return attached
 }
 
 export function attach<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
@@ -27,6 +28,7 @@ export function attach<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A
   return attachWith(effect, {
     instance: fiber ? Context.getReferenceUnsafe(fiber.context, InstanceRef) : undefined,
     workspace: workspace ?? (fiber ? Context.getReferenceUnsafe(fiber.context, WorkspaceRef) : undefined),
+    workspaceMetadata: fiber ? Context.getReferenceUnsafe(fiber.context, WorkspaceMetadataRef) : undefined,
   })
 }
 

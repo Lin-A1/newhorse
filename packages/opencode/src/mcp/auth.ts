@@ -1,5 +1,6 @@
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import path from "path"
+import { createHash } from "node:crypto"
 import { serviceUse } from "@newhorse/core/effect/service-use"
 import { Global } from "@newhorse/core/global"
 import { Effect, Layer, Context, Option, Schema } from "effect"
@@ -55,6 +56,64 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@newhorse/McpAuth") {}
 
 export const use = serviceUse(Service)
+
+function scopedKey(scope: string, mcpName: string) {
+  return JSON.stringify(["scope", scope, mcpName])
+}
+
+function scopedName(scope: string, key: string): string | undefined {
+  try {
+    const value = JSON.parse(key)
+    if (!Array.isArray(value) || value.length !== 3 || value[0] !== "scope" || value[1] !== scope) return
+    return typeof value[2] === "string" ? value[2] : undefined
+  } catch {
+    return
+  }
+}
+
+export function scope(input: { workspaceID?: string; projectID: string; directory: string }) {
+  if (input.workspaceID) return `workspace:${input.workspaceID}`
+  const directory = createHash("sha256").update(input.directory).digest("hex").slice(0, 16)
+  return `project:${input.projectID}:${directory}`
+}
+
+export function scoped(auth: Interface, scope: string, options?: { legacy?: boolean }): Interface {
+  const key = (mcpName: string) => scopedKey(scope, mcpName)
+  const get = (mcpName: string) =>
+    auth.get(key(mcpName)).pipe(
+      Effect.flatMap((entry) => (entry || !options?.legacy ? Effect.succeed(entry) : auth.get(mcpName))),
+    )
+  const getForUrl = (mcpName: string, serverUrl: string) =>
+    auth.getForUrl(key(mcpName), serverUrl).pipe(
+      Effect.flatMap((entry) => (entry || !options?.legacy ? Effect.succeed(entry) : auth.getForUrl(mcpName, serverUrl))),
+    )
+  return {
+    all: () =>
+      Effect.map(auth.all(), (entries) => {
+        const scoped = Object.fromEntries(
+          Object.entries(entries).flatMap(([stored, entry]) => {
+            const name = scopedName(scope, stored)
+            return name ? [[name, entry]] : []
+          }),
+        )
+        if (!options?.legacy) return scoped
+        const legacy = Object.fromEntries(Object.entries(entries).filter(([stored]) => !stored.startsWith('["scope",')))
+        return { ...legacy, ...scoped }
+      }),
+    get,
+    getForUrl,
+    set: (mcpName, entry, serverUrl) => auth.set(key(mcpName), entry, serverUrl),
+    remove: (mcpName) =>
+      auth.remove(key(mcpName)).pipe(Effect.andThen(options?.legacy ? auth.remove(mcpName) : Effect.void)),
+    updateTokens: (mcpName, tokens, serverUrl) => auth.updateTokens(key(mcpName), tokens, serverUrl),
+    updateClientInfo: (mcpName, clientInfo, serverUrl) => auth.updateClientInfo(key(mcpName), clientInfo, serverUrl),
+    updateCodeVerifier: (mcpName, codeVerifier) => auth.updateCodeVerifier(key(mcpName), codeVerifier),
+    clearCodeVerifier: (mcpName) => auth.clearCodeVerifier(key(mcpName)),
+    updateOAuthState: (mcpName, oauthState) => auth.updateOAuthState(key(mcpName), oauthState),
+    getOAuthState: (mcpName) => auth.getOAuthState(key(mcpName)),
+    clearOAuthState: (mcpName) => auth.clearOAuthState(key(mcpName)),
+  }
+}
 
 const layer = Layer.effect(
   Service,

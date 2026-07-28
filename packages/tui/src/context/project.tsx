@@ -3,12 +3,13 @@ import type { Path, Workspace } from "@newhorse/sdk/v2"
 import { createStore, reconcile } from "solid-js/store"
 import { createSimpleContext } from "./helper"
 import { useSDK } from "./sdk"
+import type { TuiPluginHost } from "../plugin/runtime"
 
 type WorkspaceStatus = "connected" | "connecting" | "disconnected" | "error"
 
 export const { use: useProject, provider: ProjectProvider } = createSimpleContext({
   name: "Project",
-  init: () => {
+  init: (props: { pluginHost?: TuiPluginHost }) => {
     const sdk = useSDK()
 
     const defaultPath = {
@@ -58,12 +59,21 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
       const status = await sdk.client.experimental.workspace.status().catch(() => undefined)
       const next = Object.fromEntries((status?.data ?? []).map((item) => [item.workspaceID, item.status]))
 
+      const current = store.workspace.current
+      const reset = current !== undefined && !listed.data.some((item) => item.id === current)
+      if (reset) {
+        const reconcileWorkspace = props.pluginHost?.setWorkspace
+        if (reconcileWorkspace) {
+          await reconcileWorkspace(undefined, () => {
+            setStore("workspace", "current", undefined)
+          })
+        }
+      }
+
       batch(() => {
         setStore("workspace", "list", reconcile(listed.data))
         setStore("workspace", "status", reconcile(next))
-        if (!listed.data.some((item) => item.id === store.workspace.current)) {
-          setStore("workspace", "current", undefined)
-        }
+        if (reset && !props.pluginHost?.setWorkspace) setStore("workspace", "current", undefined)
       })
     }
 
@@ -92,8 +102,26 @@ export const { use: useProject, provider: ProjectProvider } = createSimpleContex
         },
         set(next?: string | null) {
           const workspace = next ?? undefined
-          if (store.workspace.current === workspace) return
-          setStore("workspace", "current", workspace)
+          if (store.workspace.current === workspace) return Promise.resolve()
+          const reconcileWorkspace = props.pluginHost?.setWorkspace
+          if (!reconcileWorkspace) {
+            setStore("workspace", "current", workspace)
+            return Promise.resolve()
+          }
+          const resolveMetadata = async () => {
+            if (!workspace) return undefined
+            const cached = store.workspace.list.find((item) => item.id === workspace)
+            if (cached) return cached
+            await syncWorkspace()
+            const metadata = store.workspace.list.find((item) => item.id === workspace)
+            if (!metadata) throw new Error(`Workspace metadata unavailable: ${workspace}`)
+            return metadata
+          }
+          return resolveMetadata().then((metadata) =>
+            reconcileWorkspace(metadata, () => {
+              setStore("workspace", "current", workspace)
+            }),
+          )
         },
         list() {
           return store.workspace.list

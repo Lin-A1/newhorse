@@ -20,17 +20,19 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     const abort = new AbortController()
     let sse: AbortController | undefined
 
-    function createSDK() {
+    function createSDK(workspace?: string) {
       return createOpencodeClient({
         baseUrl: props.url,
         signal: abort.signal,
         directory: props.directory,
+        experimental_workspaceID: workspace,
         fetch: props.fetch,
         headers: props.headers,
       })
     }
 
     let sdk = createSDK()
+    const workspaceClients = new Map<string, ReturnType<typeof createSDK>>()
 
     const handlers = new Set<(event: GlobalEvent) => void>()
     const emitter = {
@@ -141,6 +143,14 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     return {
       get client() {
         return sdk
+      },
+      clientFor(workspace?: string) {
+        if (!workspace) return sdk
+        const existing = workspaceClients.get(workspace)
+        if (existing) return existing
+        const client = createSDK(workspace)
+        workspaceClients.set(workspace, client)
+        return client
       },
       directory: props.directory,
       event: emitter,

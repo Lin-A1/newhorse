@@ -2,6 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { Schema } from "effect"
 import { Global } from "@newhorse/core/global"
+import { FSUtil } from "@newhorse/core/fs-util"
 import { ProjectV2 } from "@newhorse/core/project"
 import { type WorkspaceAdapter, WorkspaceInfo } from "../types"
 
@@ -31,17 +32,14 @@ export function personalDirectory(name: string) {
 }
 
 export function isPersonalDirectory(directory: string) {
-  const resolved = path.resolve(directory)
-  const root = path.resolve(ROOT)
-  return resolved === root || resolved.startsWith(root + path.sep)
+  return FSUtil.contains(FSUtil.resolve(ROOT), FSUtil.resolve(directory))
 }
 
 function resolveDirectory(info: WorkspaceInfo) {
   const config = decodePersonalConfig(info)
   const directory = config.directory?.trim() ? config.directory : personalDirectory(config.name)
-  const resolved = path.resolve(directory)
-  const prefix = path.resolve(ROOT) + path.sep
-  if (resolved !== path.resolve(ROOT) && !resolved.startsWith(prefix)) {
+  const resolved = FSUtil.resolve(directory)
+  if (!FSUtil.contains(FSUtil.resolve(ROOT), resolved)) {
     throw new Error(`Personal workspace directory must stay under ${ROOT}`)
   }
   return resolved

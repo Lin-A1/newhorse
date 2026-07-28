@@ -22,7 +22,10 @@ import { Filesystem } from "@/util/filesystem"
 import { ConfigVariable } from "@/config/variable"
 import { Npm } from "@newhorse/core/npm"
 import { FormatError, FormatUnknownError } from "@/cli/error"
+import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import { TuiConfig } from "@newhorse/tui/config"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
+import { ProjectV2 } from "@newhorse/core/project"
 
 export const Info = TuiConfig.Info
 export type Info = TuiConfig.Info
@@ -38,9 +41,17 @@ export type HostMetadata = {
   plugin_origins?: ConfigPlugin.Origin[]
 }
 
+export type WorkspacePluginMetadata = {
+  readonly id: string
+  readonly type: string
+  readonly projectID: string
+  readonly directory?: string | null
+}
+
 export interface Interface {
   readonly get: () => Effect.Effect<Resolved>
   readonly pluginOrigins: () => Effect.Effect<ConfigPlugin.Origin[]>
+  readonly workspacePluginOrigins: (workspace: WorkspacePluginMetadata) => Effect.Effect<ConfigPlugin.Origin[]>
   readonly waitForDependencies: () => Effect.Effect<void>
 }
 
@@ -80,7 +91,10 @@ function dropUnknownKeybinds(input: Record<string, unknown>) {
   }
 }
 
-const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: string }) {
+const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: {
+  directory: string
+  metadata?: WorkspacePluginMetadata
+}) {
   const afs = yield* FSUtil.Service
   let appliedOrder = 0
 
@@ -209,19 +223,37 @@ const loadState = Effect.fn("TuiConfig.loadState")(function* (ctx: { directory: 
     }
   }
 
+  const policy = WorkspacePolicy.resolve({
+    directory: ctx.directory,
+    metadata: ctx.metadata
+      ? {
+          ...ctx.metadata,
+          id: WorkspaceV2.ID.make(ctx.metadata.id),
+          projectID: ProjectV2.ID.make(ctx.metadata.projectID),
+        }
+      : undefined,
+  })
+  const pluginOrigins =
+    policy.kind === "personal"
+      ? acc.plugin_origins.filter(
+          (origin) => origin.scope === "local" || ConfigPlugin.allowedInPersonalWorkspace(origin.spec),
+        )
+      : acc.plugin_origins
   const result = TuiConfig.resolve(
     {
       ...acc.result,
+      plugin: pluginOrigins.map((origin) => origin.spec),
     },
     {
       terminalSuspend: process.platform !== "win32",
     },
   )
 
+  const pluginDirs = new Set(pluginOrigins.map((origin) => path.dirname(origin.source)))
   return {
     config: result,
-    pluginOrigins: acc.plugin_origins,
-    dirs: result.plugin?.length ? dirs : [],
+    pluginOrigins,
+    dirs: result.plugin?.length ? dirs.filter((dir) => pluginDirs.has(dir)) : [],
   }
 })
 
@@ -230,9 +262,16 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const directory = yield* CurrentWorkingDirectory
     const npm = yield* Npm.Service
+    const afs = yield* FSUtil.Service
     const data = yield* loadState({ directory })
+    const dependencyDirs = new Set([
+      ...data.dirs,
+      ...data.pluginOrigins
+        .map((origin) => ConfigPlugin.dependencyDirectory(origin.spec))
+        .filter((dir): dir is string => Boolean(dir)),
+    ])
     const deps = yield* Effect.forEach(
-      data.dirs,
+      dependencyDirs,
       (dir) =>
         npm
           .install(dir, {
@@ -251,11 +290,48 @@ const layer = Layer.effect(
 
     const get = Effect.fn("TuiConfig.get")(() => Effect.succeed(data.config))
     const pluginOrigins = Effect.fn("TuiConfig.pluginOrigins")(() => Effect.succeed(data.pluginOrigins))
+    const workspacePluginOrigins = Effect.fn("TuiConfig.workspacePluginOrigins")(function* (
+      workspace: WorkspacePluginMetadata,
+    ) {
+      if (!workspace.directory) return []
+      return yield* Effect.gen(function* () {
+        const target = yield* loadState({ directory: workspace.directory!, metadata: workspace }).pipe(
+          Effect.provideService(FSUtil.Service, afs),
+        )
+        const dependencyDirs = new Set([
+          ...target.dirs,
+          ...target.pluginOrigins
+            .map((origin) => ConfigPlugin.dependencyDirectory(origin.spec))
+            .filter((dir): dir is string => Boolean(dir)),
+        ])
+        yield* Effect.forEach(
+          dependencyDirs,
+          (dir) =>
+            npm.install(dir, {
+              add: [
+                {
+                  name: "@newhorse/plugin",
+                  version: InstallationLocal ? undefined : InstallationVersion,
+                },
+              ],
+            }),
+          { concurrency: "unbounded", discard: true },
+        )
+        return target.pluginOrigins
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("failed to prepare workspace tui plugins", {
+            workspaceID: workspace.id,
+            reason: FormatError(Cause.squash(cause)) ?? FormatUnknownError(Cause.squash(cause)),
+          }).pipe(Effect.as([])),
+        ),
+      )
+    })
 
     const waitForDependencies = Effect.fn("TuiConfig.waitForDependencies")(() =>
       Effect.forEach(deps, Fiber.join, { concurrency: "unbounded" }).pipe(Effect.ignore(), Effect.asVoid),
     )
-    return Service.of({ get, pluginOrigins, waitForDependencies })
+    return Service.of({ get, pluginOrigins, workspacePluginOrigins, waitForDependencies })
   }).pipe(Effect.withSpan("TuiConfig.layer")),
 )
 
@@ -273,4 +349,8 @@ export async function get() {
 
 export async function pluginOrigins() {
   return runPromise((svc) => svc.pluginOrigins())
+}
+
+export async function workspacePluginOrigins(workspace: WorkspacePluginMetadata) {
+  return runPromise((svc) => svc.workspacePluginOrigins(workspace))
 }

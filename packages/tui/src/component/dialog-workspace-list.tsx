@@ -78,7 +78,7 @@ export function DialogWorkspaceList() {
     }
 
     if (current() === workspace.id) {
-      project.workspace.set(undefined)
+      await project.workspace.set(undefined)
       route.navigate({ type: "home" })
     }
     await project.workspace.sync()

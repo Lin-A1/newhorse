@@ -5,8 +5,146 @@ import { pathToFileURL } from "url"
 import { tmpdir } from "../../fixture/fixture"
 import { createTuiPluginApi } from "../../fixture/tui-plugin"
 import { mockTuiRuntime } from "../../fixture/tui-runtime"
+import { TuiConfig } from "../../../src/config/tui"
 
 const { TuiPluginRuntime } = await import("../../../src/plugin/tui/runtime")
+
+test("serializes workspace reconciliation and recovers after a failure", async () => {
+  await using tmp = await tmpdir()
+  const { config, restore } = mockTuiRuntime(tmp.path, [])
+  const calls: string[] = []
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const origins = spyOn(TuiConfig, "workspacePluginOrigins").mockImplementation(async (workspace) => {
+    calls.push(`start:${workspace.id}`)
+    if (workspace.id === "one") await gate
+    if (workspace.id === "broken") throw new Error("broken workspace")
+    calls.push(`end:${workspace.id}`)
+    return []
+  })
+
+  try {
+    await TuiPluginRuntime.init({ api: createTuiPluginApi(), config })
+    const one = TuiPluginRuntime.setWorkspace({ id: "one", type: "personal", projectID: "global" })
+    const two = TuiPluginRuntime.setWorkspace({ id: "two", type: "worktree", projectID: "project" })
+    await Bun.sleep(10)
+    expect(calls).toEqual(["start:one"])
+    release()
+    await Promise.all([one, two])
+    expect(calls).toEqual(["start:one", "end:one", "start:two", "end:two"])
+
+    await expect(
+      TuiPluginRuntime.setWorkspace({ id: "broken", type: "personal", projectID: "global" }),
+    ).rejects.toThrow("broken workspace")
+    await TuiPluginRuntime.setWorkspace({ id: "three", type: "worktree", projectID: "project" })
+    expect(calls.at(-1)).toBe("end:three")
+
+    await TuiPluginRuntime.dispose()
+    await TuiPluginRuntime.setWorkspace({ id: "after", type: "worktree", projectID: "project" })
+    expect(calls.includes("start:after")).toBe(false)
+  } finally {
+    await TuiPluginRuntime.dispose()
+    origins.mockRestore()
+    restore()
+  }
+})
+
+test("reconciles plugins before switching workspace scope", async () => {
+  await using project = await tmpdir({
+    init: async (dir) => {
+      const file = path.join(dir, "project-plugin.ts")
+      const marker = path.join(dir, "project-marker.txt")
+      const spec = pathToFileURL(file).href
+      await Bun.write(
+        file,
+        `export default {
+  id: "demo.project",
+  tui: async (api, options) => {
+    await Bun.write(options.marker, (await Bun.file(options.marker).text().catch(() => "")) + "start\\n")
+    api.lifecycle.onDispose(async () => {
+      await Bun.write(options.marker, (await Bun.file(options.marker).text().catch(() => "")) + "stop\\n")
+    })
+  },
+}
+`,
+      )
+      return { spec, marker }
+    },
+  })
+  await using personal = await tmpdir({
+    init: async (dir) => {
+      const file = path.join(dir, "personal-plugin.ts")
+      const marker = path.join(dir, "personal-marker.txt")
+      const spec = pathToFileURL(file).href
+      await Bun.write(
+        file,
+        `export default {
+  id: "demo.personal",
+  tui: async (api, options) => {
+    await Bun.write(options.marker, (await Bun.file(options.marker).text().catch(() => "")) + "start\\n")
+    api.lifecycle.onDispose(async () => {
+      await Bun.write(options.marker, (await Bun.file(options.marker).text().catch(() => "")) + "stop\\n")
+    })
+  },
+}
+`,
+      )
+      return { spec, marker }
+    },
+  })
+
+  const { config, restore } = mockTuiRuntime(project.path, [
+    [project.extra.spec, { marker: project.extra.marker }],
+  ])
+  const origins = spyOn(TuiConfig, "workspacePluginOrigins").mockImplementation(async (workspace) => {
+    if (workspace.type === "personal") {
+      return [
+        {
+          spec: [personal.extra.spec, { marker: personal.extra.marker }],
+          scope: "local",
+          source: path.join(personal.path, "tui.json"),
+        },
+      ]
+    }
+    return [
+      {
+        spec: [project.extra.spec, { marker: project.extra.marker }],
+        scope: "local",
+        source: path.join(project.path, "tui.json"),
+      },
+    ]
+  })
+
+  try {
+    await TuiPluginRuntime.init({ api: createTuiPluginApi(), config })
+    await TuiPluginRuntime.setWorkspace({
+      id: "wrk_personal",
+      type: "personal",
+      projectID: "global",
+      directory: personal.path,
+    })
+
+    expect(await fs.readFile(project.extra.marker, "utf8")).toBe("start\nstop\n")
+    expect(await fs.readFile(personal.extra.marker, "utf8")).toBe("start\n")
+    expect(await TuiPluginRuntime.activatePlugin("demo.project")).toBe(false)
+
+    await TuiPluginRuntime.setWorkspace({
+      id: "wrk_project",
+      type: "worktree",
+      projectID: "project",
+      directory: project.path,
+    })
+
+    expect(await fs.readFile(project.extra.marker, "utf8")).toBe("start\nstop\nstart\n")
+    expect(await fs.readFile(personal.extra.marker, "utf8")).toBe("start\nstop\n")
+  } finally {
+    await TuiPluginRuntime.dispose()
+    origins.mockRestore()
+    restore()
+  }
+})
 
 test("runs onDispose callbacks with aborted signal and is idempotent", async () => {
   await using tmp = await tmpdir({

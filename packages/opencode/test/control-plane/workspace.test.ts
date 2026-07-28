@@ -32,6 +32,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Ripgrep } from "@newhorse/core/ripgrep"
 import { AppNodeBuilder } from "@newhorse/core/effect/app-node-builder"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
+import { Vcs } from "@/project/vcs"
+import { WorkspaceMetadataRef, WorkspaceRef } from "@/effect/instance-ref"
 
 const originalEnv = {
   OPENCODE_AUTH_CONTENT: process.env.OPENCODE_AUTH_CONTENT,
@@ -41,7 +43,7 @@ const originalEnv = {
   OTEL_RESOURCE_ATTRIBUTES: process.env.OTEL_RESOURCE_ATTRIBUTES,
 }
 
-const workspaceLayer = (experimentalWorkspaces: boolean) =>
+const workspaceLayer = (experimentalWorkspaces: boolean, vcs?: Layer.Layer<Vcs.Service>) =>
   AppNodeBuilder.build(
     LayerNode.group([
       Workspace.node,
@@ -53,6 +55,7 @@ const workspaceLayer = (experimentalWorkspaces: boolean) =>
     ]),
     [
       [RuntimeFlags.node, RuntimeFlags.layer({ experimentalWorkspaces })],
+      ...(vcs ? [[Vcs.node, vcs] as const] : []),
       [
         InstanceStore.bootstrapNode,
         Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
@@ -65,6 +68,35 @@ const testServerLayer = Layer.mergeAll(
   workspaceLayer(true),
 )
 const it = testEffect(testServerLayer)
+const vcsContexts: Array<{ operation: "diff" | "apply"; id?: string; type?: string }> = []
+const contextVcs = Layer.succeed(
+  Vcs.Service,
+  Vcs.Service.of({
+    init: () => Effect.void,
+    branch: () => Effect.succeed(undefined),
+    defaultBranch: () => Effect.succeed(undefined),
+    status: () => Effect.succeed([]),
+    diff: () => Effect.succeed([]),
+    diffRaw: () =>
+      Effect.gen(function* () {
+        const metadata = yield* WorkspaceMetadataRef
+        vcsContexts.push({ operation: "diff", id: yield* WorkspaceRef, type: metadata?.type })
+        return "patch"
+      }),
+    apply: () =>
+      Effect.gen(function* () {
+        const metadata = yield* WorkspaceMetadataRef
+        vcsContexts.push({ operation: "apply", id: yield* WorkspaceRef, type: metadata?.type })
+        return { applied: true }
+      }),
+  }),
+)
+const contextIt = testEffect(
+  Layer.mergeAll(
+    NodeHttpServer.layer(Http.createServer, { host: "127.0.0.1", port: 0 }),
+    workspaceLayer(true, contextVcs),
+  ),
+)
 
 type RecordedCreate = {
   info: WorkspaceInfo
@@ -910,6 +942,36 @@ describe("workspace CRUD", () => {
         expect(yield* sessionSequenceOwner(session.id)).toBe(target.id)
       })
     },
+    { git: true },
+  )
+
+  contextIt.instance(
+    "sessionWarp provides source and target workspace metadata to local VCS operations",
+    () =>
+      Effect.gen(function* () {
+        vcsContexts.length = 0
+        const { directory: dir } = yield* TestInstance
+        const instance = yield* requireInstance
+        const workspace = yield* Workspace.Service
+        const sessionSvc = yield* SessionNs.Service
+        const previousType = unique("warp-context-source")
+        const targetType = unique("warp-context-target")
+        const previous = workspaceInfo(instance.project.id, previousType)
+        const target = workspaceInfo(instance.project.id, targetType)
+        yield* insertWorkspace(previous)
+        yield* insertWorkspace(target)
+        registerAdapter(instance.project.id, previousType, localAdapter(path.join(dir, "context-source")).adapter)
+        registerAdapter(instance.project.id, targetType, localAdapter(path.join(dir, "context-target")).adapter)
+        const session = yield* sessionSvc.create({})
+        yield* attachSessionToWorkspace(session.id, previous.id)
+
+        yield* workspace.sessionWarp({ workspaceID: target.id, sessionID: session.id, copyChanges: true })
+
+        expect(vcsContexts).toEqual([
+          { operation: "diff", id: previous.id, type: previous.type },
+          { operation: "apply", id: target.id, type: target.type },
+        ])
+      }),
     { git: true },
   )
 

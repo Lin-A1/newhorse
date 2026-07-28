@@ -17,7 +17,7 @@ import { Glob } from "@newhorse/core/util/glob"
 import { Discovery } from "./discovery"
 import { isRecord } from "@/util/record"
 import { escapeHtml } from "@/util/html"
-import { isPersonalDirectory } from "@/control-plane/adapters/personal"
+import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import { Skill as SkillSchema } from "@newhorse/schema/skill"
 
 const CLAUDE_EXTERNAL_DIR = ".claude"
@@ -202,8 +202,8 @@ const discoverSkills = Effect.fnUntraced(function* (
 ) {
   const state: ScanState = { matches: new Set(), dirs: new Set() }
   const cfg = yield* config.get()
-  const personal = isPersonalDirectory(directory)
-  const allowExternal = !personal || cfg.skills?.personal === true
+  const policy = yield* WorkspacePolicy.current
+  const allowExternal = WorkspacePolicy.allowsPersonalOptIn(policy, cfg.skills?.personal === true)
 
   const externalDirs: string[] = []
   if (allowExternal && !disableExternalSkills) {

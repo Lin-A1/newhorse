@@ -276,11 +276,15 @@ export function Session() {
   const sdk = useSDK()
   const editor = useEditorContext()
 
+  let sessionLoad = 0
   createEffect(() => {
     const sessionID = route.sessionID
+    const generation = ++sessionLoad
+    const stale = () => generation !== sessionLoad || route.sessionID !== sessionID
     void (async () => {
       const previousWorkspace = untrack(() => project.workspace.current())
       const result = await sdk.client.session.get({ sessionID }, { throwOnError: true })
+      if (stale()) return
       if (!result.data) {
         toast.show({
           message: `Session not found: ${sessionID}`,
@@ -292,7 +296,8 @@ export function Session() {
       }
 
       if (result.data.workspaceID !== previousWorkspace) {
-        project.workspace.set(result.data.workspaceID)
+        await project.workspace.set(result.data.workspaceID)
+        if (stale()) return
 
         // Sync all the data for this workspace. Note that this
         // workspace may not exist anymore which is why this is not
@@ -301,10 +306,12 @@ export function Session() {
         try {
           await sync.bootstrap({ fatal: false })
         } catch {}
+        if (stale()) return
       }
       editor.reconnect(result.data.directory)
       await sync.session.sync(sessionID)
-      if (route.sessionID === sessionID && scroll) scroll.scrollBy(100_000)
+      if (stale()) return
+      if (scroll) scroll.scrollBy(100_000)
     })().catch((error) => {
       if (route.sessionID !== sessionID) return
       toast.show({

@@ -6,12 +6,15 @@ import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@newhorse/core/cross-spawn-spawner"
 import { FSUtil } from "@newhorse/core/fs-util"
 import { Effect } from "effect"
+import { ProjectV2 } from "@newhorse/core/project"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { Config } from "../../src/config/config"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { McpAuth } from "../../src/mcp/auth"
 import { MCP } from "../../src/mcp/index"
 import { McpOAuthCallback } from "../../src/mcp/oauth-callback"
 import { McpOAuthPendingProvider, McpOAuthProvider } from "../../src/mcp/oauth-provider"
+import { WorkspaceMetadataRef, WorkspaceRef } from "../../src/effect/instance-ref"
 import { testEffect } from "../lib/effect"
 
 const mcpTest = testEffect(
@@ -139,6 +142,33 @@ const remote = (url: string, enabled = true) => ({
 
 const stopOAuthCallback = Effect.addFinalizer(() => Effect.promise(() => McpOAuthCallback.stop()).pipe(Effect.ignore))
 
+function inWorkspace<A, E, R>(id: string, effect: Effect.Effect<A, E, R>) {
+  const workspaceID = WorkspaceV2.ID.make(id)
+  return effect.pipe(
+    Effect.provideService(WorkspaceRef, workspaceID),
+    Effect.provideService(WorkspaceMetadataRef, {
+      id: workspaceID,
+      type: "worktree",
+      projectID: ProjectV2.ID.global,
+    }),
+  )
+}
+
+mcpTest.instance("scoped auth excludes legacy credentials unless explicitly enabled", () =>
+  Effect.gen(function* () {
+    const auth = yield* McpAuth.Service
+    yield* auth.updateTokens("legacy-server", { accessToken: "legacy-token" }, "https://legacy.example/mcp")
+    const strict = McpAuth.scoped(auth, "workspace:personal")
+    const compatible = McpAuth.scoped(auth, "project:legacy", { legacy: true })
+
+    expect((yield* strict.all())["legacy-server"]).toBeUndefined()
+    expect(yield* strict.get("legacy-server")).toBeUndefined()
+    expect((yield* compatible.all())["legacy-server"]?.tokens?.accessToken).toBe("legacy-token")
+    expect((yield* compatible.get("legacy-server"))?.tokens?.accessToken).toBe("legacy-token")
+    yield* auth.remove("legacy-server")
+  }),
+)
+
 mcpTest.instance("first connect to OAuth server shows needs_auth instead of failed", () =>
   Effect.gen(function* () {
     const server = yield* serveOAuthMcp()
@@ -241,10 +271,40 @@ mcpTest.instance("successful reauthentication commits replacement credentials", 
     expect((yield* auth.get(name))?.tokens?.accessToken).toBe("old-token")
 
     expect((yield* mcp.finishAuth(name, "valid-code")).status).toBe("connected")
-    const entry = yield* auth.get(name)
-    expect(entry?.tokens?.accessToken).toBe("replacement-token")
-    expect(entry?.clientInfo?.clientId).toBe("replacement-client")
-    expect(entry?.serverUrl).toBe(server.url)
+    const entries = yield* auth.all()
+    const replacement = Object.values(entries).find((entry) => entry.tokens?.accessToken === "replacement-token")
+    expect(replacement?.clientInfo?.clientId).toBe("replacement-client")
+    expect(replacement?.serverUrl).toBe(server.url)
+    expect((yield* auth.get(name))?.tokens?.accessToken).toBe("old-token")
+  }),
+)
+
+mcpTest.instance("same-name OAuth state and credentials are isolated by workspace", () =>
+  Effect.gen(function* () {
+    yield* stopOAuthCallback
+    const serverOne = yield* serveOAuthMcp()
+    const serverTwo = yield* serveOAuthMcp()
+    const mcp = yield* MCP.Service
+    const name = "shared-oauth"
+    const one = "wrk_oauth_one"
+    const two = "wrk_oauth_two"
+
+    yield* inWorkspace(one, mcp.add(name, remote(serverOne.url)))
+    yield* inWorkspace(two, mcp.add(name, remote(serverTwo.url)))
+    const authOne = yield* inWorkspace(one, mcp.startAuth(name))
+    const authTwo = yield* inWorkspace(two, mcp.startAuth(name))
+    expect(authOne.oauthState).not.toBe(authTwo.oauthState)
+
+    expect((yield* inWorkspace(one, mcp.finishAuth(name, "valid-code"))).status).toBe("connected")
+    const second = yield* inWorkspace(two, mcp.finishAuth(name, "valid-code"))
+    expect(second.status).toBe("connected")
+    expect((yield* inWorkspace(one, mcp.storedAuth()))[name]?.tokens?.accessToken).toBe("replacement-token")
+    expect((yield* inWorkspace(two, mcp.storedAuth()))[name]?.tokens?.accessToken).toBe("replacement-token")
+
+    yield* inWorkspace(one, mcp.removeAuth(name))
+    expect((yield* inWorkspace(one, mcp.storedAuth()))[name]).toBeUndefined()
+    expect((yield* inWorkspace(two, mcp.storedAuth()))[name]?.tokens?.accessToken).toBe("replacement-token")
+    yield* inWorkspace(two, mcp.removeAuth(name))
   }),
 )
 

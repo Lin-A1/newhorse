@@ -11,6 +11,7 @@ import { ConfigPlugin } from "@/config/plugin"
 import { CurrentWorkingDirectory } from "@/config/tui-cwd"
 import { TuiConfig } from "../../src/config/tui"
 import { TestInstance } from "../fixture/fixture"
+import { personalDirectory } from "@/control-plane/adapters/personal"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([Config.node, FSUtil.node])))
@@ -118,6 +119,29 @@ it.instance("keeps server and tui plugin merge semantics aligned", () =>
       expect(serverOrigins.map((item) => ConfigPlugin.pluginSpecifier(item.spec))).toEqual(serverPlugins)
       expect(tuiOrigins.map((item) => ConfigPlugin.pluginSpecifier(item.spec))).toEqual(tuiPlugins)
       expect(serverOrigins.map((item) => item.scope)).toEqual(tuiOrigins.map((item) => item.scope))
+    }),
+  ),
+)
+
+it.instance("personal TUI startup filters global plugins before loading", () =>
+  withCleanState(
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const directory = personalDirectory(`tui-policy-${Date.now()}`)
+      const local = path.join(directory, ".opencode")
+      yield* fs.makeDirectory(local, { recursive: true })
+      yield* Effect.addFinalizer(() => fs.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore))
+
+      yield* fs.writeJson(path.join(Global.Path.config, "tui.json"), {
+        plugin: ["blocked-global", ["allowed-global", { personal: true }]],
+      })
+      yield* fs.writeJson(path.join(local, "tui.json"), { plugin: ["allowed-local"] })
+
+      const plugins = (yield* getTuiConfig(directory)).plugin?.map((item) => ConfigPlugin.pluginSpecifier(item)) ?? []
+      const origins = yield* getTuiPluginOrigins(directory)
+
+      expect(plugins).toEqual(["allowed-global", "allowed-local"])
+      expect(origins.map((origin) => ConfigPlugin.pluginSpecifier(origin.spec))).toEqual(plugins)
     }),
   ),
 )

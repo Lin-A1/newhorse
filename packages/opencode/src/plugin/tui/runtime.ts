@@ -42,7 +42,7 @@ import { ConfigPluginV1 } from "@newhorse/core/v1/config/plugin"
 import { createCommandShim } from "@newhorse/tui/plugin/command-shim"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Effect } from "effect"
-import { createPluginRuntime, type PluginRuntime, type TuiPluginHost } from "@newhorse/tui/plugin/runtime"
+import { createPluginRuntime, type PluginRuntime, type TuiPluginHost, type TuiPluginWorkspace } from "@newhorse/tui/plugin/runtime"
 
 ensureRuntimePluginSupport({ additional: keymapRuntimeModules })
 
@@ -116,6 +116,9 @@ type RuntimeState = {
   plugins: PluginEntry[]
   plugins_by_id: Map<string, PluginEntry>
   pending: Map<string, ConfigPlugin.Origin>
+  config: TuiConfig.Resolved
+  startup_origins: ConfigPlugin.Origin[]
+  workspace?: TuiPluginWorkspace
   dispose_timeout_ms: number
 }
 
@@ -499,6 +502,40 @@ function listPluginStatus(state: RuntimeState): TuiPluginStatus[] {
   }))
 }
 
+function removePluginEntry(state: RuntimeState, plugin: PluginEntry) {
+  state.plugins_by_id.delete(plugin.id)
+  state.plugins = state.plugins.filter((item) => item !== plugin)
+}
+
+async function reconcileWorkspace(
+  state: RuntimeState | undefined,
+  workspace?: TuiPluginWorkspace,
+  commit?: () => void,
+) {
+  if (!state) return
+  state.workspace = workspace
+  for (const plugin of [...state.plugins].reverse()) {
+    if (plugin.load.source === "internal") continue
+    if (plugin.scope) {
+      const scope = plugin.scope
+      plugin.scope = undefined
+      await scope.dispose()
+    }
+    removePluginEntry(state, plugin)
+  }
+
+  commit?.()
+  const origins = workspace ? await TuiConfig.workspacePluginOrigins(workspace) : state.startup_origins
+  const ready = await resolveExternalPlugins(origins, async () => {})
+  const added = await addExternalPluginEntries(state, ready)
+  const enabled = pluginEnabledState(state, state.config)
+  for (const plugin of added.plugins) {
+    plugin.enabled = enabled[plugin.id] ?? true
+    if (plugin.enabled) await activatePluginEntry(state, plugin, false)
+  }
+  state.view.update({ status: listPluginStatus(state) })
+}
+
 async function deactivatePluginEntry(state: RuntimeState, plugin: PluginEntry, persist: boolean) {
   plugin.enabled = false
   if (persist) writePluginEnabledState(state.api, plugin.id, false)
@@ -850,7 +887,9 @@ async function addPluginBySpec(state: RuntimeState | undefined, raw: string) {
   const spec = raw.trim()
   if (!spec) return false
 
-  const cfg = state.pending.get(spec) ?? defaultPluginOrigin(state, spec)
+  const pending = state.pending.get(spec)
+  if (state.workspace?.type === "personal" && !pending) return false
+  const cfg = pending ?? defaultPluginOrigin(state, spec)
   const next = ConfigPlugin.pluginSpecifier(cfg.spec)
   if (state.plugins.some((plugin) => plugin.load.spec === next)) {
     state.pending.delete(spec)
@@ -915,6 +954,15 @@ async function installPluginBySpec(
       message: "Paths are still syncing. Try again in a moment.",
     }
   }
+  if (
+    state.workspace?.type === "personal" &&
+    (global || !state.workspace.directory || !Filesystem.contains(state.workspace.directory, dir.directory))
+  ) {
+    return {
+      ok: false,
+      message: "This plugin is not allowed in the current Personal workspace.",
+    }
+  }
 
   const install = await installModulePlugin(spec)
   if (!install.ok) {
@@ -967,11 +1015,12 @@ async function installPluginBySpec(
   if (tui) {
     const file = patch.items.find((item) => item.kind === "tui")?.file
     const next = tui.opts ? ([spec, tui.opts] as ConfigPluginV1.Spec) : spec
-    state.pending.set(spec, {
+    const origin = {
       spec: next,
-      scope: global ? "global" : "local",
+      scope: global ? ("global" as const) : ("local" as const),
       source: (file ?? dir.config) || path.join(patch.dir, "tui.json"),
-    })
+    }
+    state.pending.set(spec, origin)
   }
 
   return {
@@ -984,6 +1033,8 @@ async function installPluginBySpec(
 let dir = ""
 let loaded: Promise<void> | undefined
 let runtime: RuntimeState | undefined
+let workspaceTask = Promise.resolve()
+let disposed = false
 
 export async function init(input: {
   api: HostPluginApi
@@ -1001,6 +1052,7 @@ export async function init(input: {
   }
 
   dir = cwd
+  disposed = false
   loaded = load({ ...input, runtime: input.runtime ?? createPluginRuntime() })
   return loaded
 }
@@ -1026,9 +1078,21 @@ export async function installPlugin(spec: string, options?: { global?: boolean }
   return installPluginBySpec(runtime, spec, options?.global)
 }
 
+export async function setWorkspace(workspace?: TuiPluginWorkspace, commit?: () => void) {
+  if (loaded) await loaded
+  if (disposed) return
+  workspaceTask = workspaceTask
+    .catch(() => {})
+    .then(() => (disposed ? undefined : reconcileWorkspace(runtime, workspace, commit)))
+  await workspaceTask
+}
+
 export async function dispose() {
+  disposed = true
   const task = loaded
   loaded = undefined
+  await workspaceTask.catch((error) => fail("failed to reconcile tui plugins during disposal", { error }))
+  workspaceTask = Promise.resolve()
   dir = ""
   if (task) await task.catch((error) => fail("failed to finish loading tui plugins during disposal", { error }))
   const state = runtime
@@ -1067,6 +1131,8 @@ async function load(input: {
     plugins: [],
     plugins_by_id: new Map(),
     pending: new Map(),
+    config,
+    startup_origins: [],
     dispose_timeout_ms: input.disposeTimeoutMs ?? DISPOSE_TIMEOUT_MS,
   }
   runtime = next
@@ -1087,6 +1153,7 @@ async function load(input: {
     )
     const pluginOrigins = config.plugin_origins ?? (await TuiConfig.pluginOrigins())
     const records = Flag.OPENCODE_PURE ? [] : pluginOrigins
+    next.startup_origins = records
     if (Flag.OPENCODE_PURE && pluginOrigins.length) {
     }
 
@@ -1124,6 +1191,7 @@ async function load(input: {
 export function createLegacyTuiPluginHost(): TuiPluginHost {
   return {
     start: init,
+    setWorkspace,
     dispose,
   }
 }

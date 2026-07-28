@@ -303,7 +303,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                           events={input.events}
                                         >
                                           <PermissionProvider>
-                                            <ProjectProvider>
+                                            <ProjectProvider pluginHost={input.pluginHost}>
                                               <SyncProvider>
                                                 <DataProvider>
                                                   <ThemeProvider mode={mode}>
@@ -396,6 +396,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
       routes: pluginRuntime.routes,
       event,
       sdk,
+      workspace: project.workspace.current,
       sync,
       theme: themeState,
       toast,

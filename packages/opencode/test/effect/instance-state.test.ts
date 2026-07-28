@@ -3,7 +3,10 @@ import { CrossSpawnSpawner } from "@newhorse/core/cross-spawn-spawner"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { $ } from "bun"
 import { Context, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { ProjectV2 } from "@newhorse/core/project"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { InstanceState } from "@/effect/instance-state"
+import { WorkspaceMetadataRef, WorkspaceRef } from "@/effect/instance-ref"
 import {
   disposeAllInstancesEffect,
   provideInstanceEffect,
@@ -52,6 +55,85 @@ it.live("InstanceState isolates directories", () =>
     expect(a).toBe(c)
     expect(a).not.toBe(b)
     expect(n).toBe(2)
+  }),
+)
+
+it.live("InstanceState isolates workspaces sharing a directory", () =>
+  Effect.gen(function* () {
+    const dir = yield* tmpdirScoped()
+    let n = 0
+    const state = yield* InstanceState.make(() =>
+      Effect.gen(function* () {
+        const metadata = yield* WorkspaceMetadataRef
+        return { n: ++n, type: metadata?.type }
+      }),
+    )
+
+    const provideWorkspace = (id: string, type: string) =>
+      Effect.provideService(WorkspaceRef, WorkspaceV2.ID.make(id)),
+      metadata = (id: string, type: string) =>
+        Effect.provideService(WorkspaceMetadataRef, {
+          id: WorkspaceV2.ID.make(id),
+          type,
+          projectID: ProjectV2.ID.global,
+          directory: dir,
+        })
+
+    const project = yield* access(state, dir).pipe(
+      provideWorkspace("wrk_shared_project", "worktree"),
+      metadata("wrk_shared_project", "worktree"),
+    )
+    const personal = yield* access(state, dir).pipe(
+      provideWorkspace("wrk_shared_personal", "personal"),
+      metadata("wrk_shared_personal", "personal"),
+    )
+    const projectAgain = yield* access(state, dir).pipe(
+      provideWorkspace("wrk_shared_project", "worktree"),
+      metadata("wrk_shared_project", "worktree"),
+    )
+
+    expect(project).toBe(projectAgain)
+    expect(project).not.toBe(personal)
+    expect(project.type).toBe("worktree")
+    expect(personal.type).toBe("personal")
+    expect(n).toBe(2)
+  }),
+)
+
+it.live("InstanceState invalidates every workspace entry for a directory", () =>
+  Effect.gen(function* () {
+    const dir = yield* tmpdirScoped()
+    const seen: string[] = []
+    const state = yield* InstanceState.make(() =>
+      Effect.gen(function* () {
+        const metadata = yield* WorkspaceMetadataRef
+        return yield* Effect.acquireRelease(
+          Effect.succeed(metadata?.type ?? "legacy"),
+          (type) => Effect.sync(() => seen.push(type)),
+        )
+      }),
+    )
+    const provideWorkspace = (id: string, type: string) =>
+      Effect.provideService(WorkspaceRef, WorkspaceV2.ID.make(id)),
+      metadata = (id: string, type: string) =>
+        Effect.provideService(WorkspaceMetadataRef, {
+          id: WorkspaceV2.ID.make(id),
+          type,
+          projectID: ProjectV2.ID.global,
+          directory: dir,
+        })
+
+    yield* access(state, dir).pipe(
+      provideWorkspace("wrk_dispose_project", "worktree"),
+      metadata("wrk_dispose_project", "worktree"),
+    )
+    yield* access(state, dir).pipe(
+      provideWorkspace("wrk_dispose_personal", "personal"),
+      metadata("wrk_dispose_personal", "personal"),
+    )
+    yield* reloadInstance({ directory: dir })
+
+    expect(seen.sort()).toEqual(["personal", "worktree"])
   }),
 )
 

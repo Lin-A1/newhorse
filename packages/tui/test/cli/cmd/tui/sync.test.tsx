@@ -2,7 +2,8 @@
 import { describe, expect, test } from "bun:test"
 import { tmpdir } from "../../../fixture/fixture"
 import { mount, wait } from "./sync-fixture"
-import type { GlobalEvent } from "@newhorse/sdk/v2"
+import type { GlobalEvent, Workspace } from "@newhorse/sdk/v2"
+import { json } from "./sync-fixture"
 
 function branchEvent(branch: string, workspace?: string): GlobalEvent {
   return {
@@ -35,6 +36,45 @@ describe("tui sync", () => {
       expect(session.at(-1)?.searchParams.get("scope")).toBe("project")
       expect(session.at(-1)?.searchParams.get("path")).toBeNull()
       expect(session.at(-1)?.searchParams.get("roots")).toBeNull()
+    } finally {
+      app.renderer.destroy()
+    }
+  })
+
+  test("loads missing workspace metadata before plugin reconciliation", async () => {
+    await using tmp = await tmpdir()
+    await Bun.write(`${tmp.path}/kv.json`, "{}")
+    const workspace = {
+      id: "ws_personal",
+      type: "personal",
+      projectID: "proj_test",
+      name: "Personal",
+      branch: null,
+      directory: "/tmp/personal",
+      extra: null,
+      timeUsed: 0,
+    } satisfies Workspace
+    const seen: Array<Workspace | undefined> = []
+    let reveal = false
+    const { app, project } = await mount(
+      (url) => (url.pathname === "/experimental/workspace" ? json(reveal ? [workspace] : []) : undefined),
+      tmp.path,
+      {
+        async start() {},
+        async setWorkspace(next, commit) {
+          seen.push(next as Workspace | undefined)
+          commit?.()
+        },
+        async dispose() {},
+      },
+    )
+
+    try {
+      expect(project.workspace.list()).toEqual([])
+      reveal = true
+      await project.workspace.set(workspace.id)
+      expect(project.workspace.current()).toBe(workspace.id)
+      expect(seen).toEqual([workspace])
     } finally {
       app.renderer.destroy()
     }

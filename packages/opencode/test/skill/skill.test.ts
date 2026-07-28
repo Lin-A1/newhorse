@@ -13,6 +13,9 @@ import { personalDirectory } from "../../src/control-plane/adapters/personal"
 import { provideInstance, provideTmpdirInstance, testInstanceStoreLayer, tmpdir } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import path from "path"
+import { WorkspaceMetadataRef } from "@/effect/instance-ref"
+import { ProjectV2 } from "@newhorse/core/project"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
 import fs from "fs/promises"
 
 const node = LayerNode.compile(CrossSpawnSpawner.node)
@@ -75,7 +78,7 @@ describe("skill", () => {
         ),
       )
 
-      const run = (name: string, personal: boolean) => {
+      const run = (name: string, personal: boolean, workspaceType = "personal") => {
         const directory = personalDirectory(`${name}-${Date.now()}`)
         return Effect.gen(function* () {
           yield* Effect.promise(() => fs.mkdir(directory, { recursive: true }))
@@ -86,15 +89,25 @@ describe("skill", () => {
             ),
           )
           yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })))
-          return yield* Skill.Service.use((skill) => skill.all()).pipe(provideInstance(directory))
+          return yield* Skill.Service.use((skill) => skill.all()).pipe(
+            provideInstance(directory),
+            Effect.provideService(WorkspaceMetadataRef, {
+              id: WorkspaceV2.ID.make(`wrk_skill_${name}`),
+              type: workspaceType,
+              projectID: ProjectV2.ID.global,
+              directory,
+            }),
+          )
         })
       }
 
-      const [blocked, allowed] = yield* Effect.all([run("skills-blocked", false), run("skills-allowed", true)], {
-        concurrency: 1,
-      })
+      const [blocked, allowed, projectMetadata] = yield* Effect.all(
+        [run("skills-blocked", false), run("skills-allowed", true), run("skills-project", false, "worktree")],
+        { concurrency: 1 },
+      )
       expect(blocked.some((skill) => skill.name === "global-test-skill")).toBe(false)
       expect(allowed.some((skill) => skill.name === "global-test-skill")).toBe(true)
+      expect(projectMetadata.some((skill) => skill.name === "global-test-skill")).toBe(true)
     }),
   )
 

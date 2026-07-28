@@ -4,7 +4,7 @@ import { testRender } from "@opentui/solid"
 import type { Event, GlobalEvent } from "@newhorse/sdk/v2"
 import { onMount } from "solid-js"
 import { ProjectProvider, useProject } from "../../../src/context/project"
-import { SDKProvider } from "../../../src/context/sdk"
+import { SDKProvider, useSDK } from "../../../src/context/sdk"
 import { useEvent } from "../../../src/context/event"
 import { createEventSource, createFetch, directory } from "../../fixture/tui-sdk"
 import { TestTuiContexts } from "../../fixture/tui-environment"
@@ -101,6 +101,41 @@ function Probe(props: {
 }
 
 describe("useEvent", () => {
+  test("workspace clients scope SDK requests", async () => {
+    const urls: URL[] = []
+    let sdk!: ReturnType<typeof useSDK>
+    let done!: () => void
+    const ready = new Promise<void>((resolve) => {
+      done = resolve
+    })
+    function SDKProbe() {
+      sdk = useSDK()
+      onMount(done)
+      return <box />
+    }
+    const scopedFetch = (async (input: RequestInfo | URL) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      urls.push(url)
+      return Response.json({ home: "", state: "", config: "", worktree: "", directory })
+    }) as typeof fetch
+    const app = await testRender(() => (
+      <TestTuiContexts>
+        <SDKProvider url="http://test" directory={directory} fetch={scopedFetch}>
+          <SDKProbe />
+        </SDKProvider>
+      </TestTuiContexts>
+    ))
+
+    try {
+      await ready
+      await sdk.clientFor("ws_personal").path.get()
+      expect(urls.at(-1)?.searchParams.get("workspace")).toBe("ws_personal")
+      expect(urls.at(-1)?.searchParams.get("directory")).toBe(directory)
+    } finally {
+      app.renderer.destroy()
+    }
+  })
+
   test("delivers events for the current project", async () => {
     const { app, emit, seen, workspaces } = await mount()
 

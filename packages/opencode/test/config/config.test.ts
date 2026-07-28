@@ -96,13 +96,14 @@ const configLayer = (
   options: {
     auth?: Layer.Layer<Auth.Service>
     account?: Layer.Layer<Account.Service>
+    npm?: Layer.Layer<Npm.Service>
     client?: HttpClient.HttpClient
   } = {},
 ) =>
   LayerNode.compile(LayerNode.group([Config.node, FSUtil.node, Env.node, CrossSpawnSpawner.node]), [
     [Auth.node, options.auth ?? AuthTest.empty],
     [Account.node, options.account ?? AccountTest.empty],
-    [Npm.node, NpmTest.noop],
+    [Npm.node, options.npm ?? NpmTest.noop],
     [httpClient, Layer.succeed(HttpClient.HttpClient, options.client ?? unexpectedHttp)],
   ])
 
@@ -110,6 +111,7 @@ const layer = configLayer()
 
 const it = testEffect(layer)
 const configIt = (options?: Parameters<typeof configLayer>[0]) => testEffect(configLayer(options))
+const externalPluginInstallDirs: string[] = []
 
 const schemaConfig = (config: object) => ({ $schema: "https://opencode.ai/config.json", ...config })
 
@@ -938,6 +940,96 @@ it.instance("gets config directories", () =>
     const dirs = yield* Config.use.directories()
     expect(dirs.length).toBeGreaterThanOrEqual(1)
   }),
+)
+
+it.effect("personal workspace loads its own config directories", () =>
+  Effect.gen(function* () {
+    const directory = personalDirectory(`config-local-${Date.now()}`)
+    const configDir = path.join(directory, ".newhorse")
+    yield* FSUtil.use.ensureDir(configDir)
+    yield* FSUtil.use.writeWithDirs(
+      path.join(configDir, "newhorse.json"),
+      JSON.stringify({ $schema: "https://opencode.ai/config.json", model: "test/personal-local" }),
+    )
+    yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })))
+
+    const config = yield* Config.use.get().pipe(provideInstanceEffect(directory))
+    expect(config.model).toBe("test/personal-local")
+    expect(yield* Config.use.directories().pipe(provideInstanceEffect(directory))).toContain(configDir)
+  }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
+)
+
+it.effect("personal workspace reads external config without enabling directory execution", () =>
+  Effect.gen(function* () {
+    const directory = personalDirectory(`config-data-only-${Date.now()}`)
+    const configDir = yield* tmpdirScoped()
+    yield* FSUtil.use.ensureDir(directory)
+    yield* FSUtil.use.writeWithDirs(
+      path.join(configDir, "newhorse.json"),
+      JSON.stringify({ $schema: "https://opencode.ai/config.json", model: "test/data-only" }),
+    )
+    yield* FSUtil.use.writeWithDirs(path.join(configDir, "plugin", "blocked.ts"), "throw new Error('loaded')\n")
+    yield* FSUtil.use.writeWithDirs(path.join(configDir, "tool", "blocked.ts"), "throw new Error('loaded')\n")
+    yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })))
+
+    yield* withProcessEnv(
+      "OPENCODE_CONFIG_DIR",
+      configDir,
+      Effect.gen(function* () {
+        const config = yield* Config.use.get()
+        expect(config.model).toBe("test/data-only")
+        expect(config.plugin_origins ?? []).toEqual([])
+        expect(yield* Config.use.directories()).not.toContain(configDir)
+        expect(yield* FSUtil.use.exists(path.join(configDir, ".gitignore"))).toBe(false)
+        expect(yield* FSUtil.use.exists(path.join(configDir, "package.json"))).toBe(false)
+      }).pipe(provideInstanceEffect(directory)),
+    )
+  }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
+)
+
+configIt({
+  npm: Layer.mock(Npm.Service)({
+    install: (dir) => Effect.sync(() => externalPluginInstallDirs.push(dir)),
+  }),
+}).effect("personal workspace only prepares explicitly opted-in external file plugins", () =>
+  Effect.gen(function* () {
+    externalPluginInstallDirs.length = 0
+    const directory = personalDirectory(`config-plugin-opt-in-${Date.now()}`)
+    const configDir = yield* tmpdirScoped()
+    const pluginDir = yield* tmpdirScoped()
+    const pluginFile = path.join(pluginDir, "plugin.ts")
+    yield* FSUtil.use.ensureDir(directory)
+    yield* FSUtil.use.writeWithDirs(pluginFile, "export default { server: async () => ({}) }\n")
+    yield* FSUtil.use.writeWithDirs(
+      path.join(configDir, "newhorse.json"),
+      JSON.stringify({
+        $schema: "https://opencode.ai/config.json",
+        plugin: [[pathToFileURL(pluginFile).href, { personal: true }]],
+      }),
+    )
+    yield* FSUtil.use.writeWithDirs(path.join(configDir, "plugin", "blocked.ts"), "throw new Error('loaded')\n")
+    yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(directory, { recursive: true, force: true })))
+
+    yield* withProcessEnv(
+      "OPENCODE_CONFIG_DIR",
+      configDir,
+      Config.Service.use((svc) =>
+        svc.get().pipe(
+          Effect.tap((config) =>
+            Effect.sync(() => {
+              expect(config.plugin_origins?.map((origin) => ConfigPlugin.pluginSpecifier(origin.spec))).toEqual([
+                pathToFileURL(pluginFile).href,
+              ])
+            }),
+          ),
+          Effect.andThen(svc.waitForDependencies()),
+        ),
+      ).pipe(provideInstanceEffect(directory)),
+    )
+
+    expect(externalPluginInstallDirs).toContain(pluginDir)
+    expect(externalPluginInstallDirs).not.toContain(configDir)
+  }).pipe(Effect.provide(testInstanceStoreLayer), Effect.provide(LayerNode.compile(CrossSpawnSpawner.node))),
 )
 
 it.effect("does not try to install dependencies in read-only OPENCODE_CONFIG_DIR", () =>
@@ -1774,6 +1866,15 @@ describe("resolvePluginSpec", () => {
     const file = path.join(tmp.path, "opencode.json")
     const hit = await ConfigPlugin.resolvePluginSpec("./plugin", file)
     expect(ConfigPlugin.pluginSpecifier(hit)).toBe(pathToFileURL(path.join(tmp.path, "plugin", "index.ts")).href)
+  })
+
+  test("uses file plugin module roots for dependency preparation", () => {
+    const root = path.join(os.tmpdir(), "plugins")
+    expect(ConfigPlugin.dependencyDirectory("demo-plugin")).toBeUndefined()
+    expect(ConfigPlugin.dependencyDirectory(pathToFileURL(path.join(root, "demo.ts")).href)).toBe(root)
+    expect(ConfigPlugin.dependencyDirectory(pathToFileURL(path.join(root, "demo.plugin")).href)).toBe(
+      path.join(root, "demo.plugin"),
+    )
   })
 })
 

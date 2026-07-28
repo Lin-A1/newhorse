@@ -1,6 +1,6 @@
 import { Glob } from "@newhorse/core/util/glob"
 import { ConfigPluginV1 } from "@newhorse/core/v1/config/plugin"
-import { pathToFileURL } from "url"
+import { pathToFileURL, fileURLToPath } from "url"
 import { isPathPluginSpec, parsePluginSpecifier, resolvePathPluginTarget } from "@/plugin/shared"
 import path from "path"
 
@@ -61,6 +61,13 @@ export async function resolvePluginSpec(
 
   if (Array.isArray(plugin)) return [resolved, plugin[1]]
   return resolved
+}
+
+export function dependencyDirectory(plugin: ConfigPluginV1.Spec): string | undefined {
+  const spec = pluginSpecifier(plugin)
+  if (!spec.startsWith("file://")) return undefined
+  const target = fileURLToPath(spec)
+  return /\.[cm]?[jt]sx?$/i.test(target) ? path.dirname(target) : target
 }
 
 // Dedupe on the load identity (package name for npm specs, exact file URL for local specs), but keep the

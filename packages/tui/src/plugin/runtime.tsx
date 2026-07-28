@@ -58,6 +58,13 @@ const emptyCommands: PluginRuntimeCommands = {
 
 export type PluginRuntime = ReturnType<typeof createPluginRuntime>
 
+export type TuiPluginWorkspace = {
+  id: string
+  type: string
+  projectID: string
+  directory?: string | null
+}
+
 export type TuiPluginHost = {
   start(input: {
     api: TuiPluginApi
@@ -65,6 +72,7 @@ export type TuiPluginHost = {
     runtime: PluginRuntime
     dispose?: () => void
   }): Promise<void>
+  setWorkspace?(workspace?: TuiPluginWorkspace, commit?: () => void): Promise<void>
   dispose(): Promise<void>
 }
 

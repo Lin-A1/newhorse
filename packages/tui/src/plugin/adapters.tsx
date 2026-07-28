@@ -30,6 +30,7 @@ type Input = {
   routes: PluginRoutes
   event: ReturnType<typeof useEvent>
   sdk: ReturnType<typeof useSDK>
+  workspace: () => string | undefined
   sync: ReturnType<typeof useSync>
   theme: ReturnType<typeof useTheme>
   toast: ReturnType<typeof useToast>
@@ -299,7 +300,7 @@ export function createTuiApiAdapters(input: Input): Omit<TuiPluginApi, "lifecycl
     },
     state: stateApi(input.sync),
     get client() {
-      return input.sdk.client
+      return input.sdk.clientFor(input.workspace())
     },
     event: input.event,
     renderer: input.renderer,

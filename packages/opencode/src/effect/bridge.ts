@@ -1,7 +1,7 @@
 import { Context, Effect, Exit, Fiber } from "effect"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 import type { WorkspaceV2 } from "@newhorse/core/workspace"
-import { InstanceRef, WorkspaceRef } from "./instance-ref"
+import { InstanceRef, WorkspaceMetadataRef, WorkspaceRef } from "./instance-ref"
 import { attachWith } from "./run-service"
 
 export interface Shape {
@@ -21,7 +21,8 @@ function captureSync() {
   const instance = fiber ? Context.getReferenceUnsafe(fiber.context, InstanceRef) : undefined
   const workspace =
     (fiber ? Context.getReferenceUnsafe(fiber.context, WorkspaceRef) : undefined) ?? WorkspaceContext.workspaceID
-  return { instance, workspace }
+  const workspaceMetadata = fiber ? Context.getReferenceUnsafe(fiber.context, WorkspaceMetadataRef) : undefined
+  return { instance, workspace, workspaceMetadata }
 }
 
 export const bind = <Args extends readonly unknown[], Result>(fn: (...args: Args) => Result) => {
@@ -57,8 +58,13 @@ export function make(): Effect.Effect<Shape> {
     const captured = captureSync()
     const instance = (yield* InstanceRef) ?? captured.instance
     const workspace = (yield* WorkspaceRef) ?? captured.workspace
+    const workspaceMetadata = (yield* WorkspaceMetadataRef) ?? captured.workspaceMetadata
     const wrap = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      attachWith(effect.pipe(Effect.provide(ctx)) as Effect.Effect<A, E, never>, { instance, workspace })
+      attachWith(effect.pipe(Effect.provide(ctx)) as Effect.Effect<A, E, never>, {
+        instance,
+        workspace,
+        workspaceMetadata,
+      })
 
     return {
       promise: <A, E, R>(effect: Effect.Effect<A, E, R>) =>

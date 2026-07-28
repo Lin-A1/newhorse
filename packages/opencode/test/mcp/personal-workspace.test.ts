@@ -6,11 +6,25 @@ import { Effect } from "effect"
 import { personalDirectory } from "../../src/control-plane/adapters/personal"
 import { MCP } from "../../src/mcp/index"
 import { provideInstance, testInstanceStoreLayer } from "../fixture/fixture"
+import { WorkspaceMetadataRef } from "@/effect/instance-ref"
+import { ProjectV2 } from "@newhorse/core/project"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(MCP.node))
 
 const UNREACHABLE = "http://127.0.0.1:9/mcp"
+
+function withWorkspaceType<A, E, R>(type: string, directory: string, effect: Effect.Effect<A, E, R>) {
+  return effect.pipe(
+    Effect.provideService(WorkspaceMetadataRef, {
+      id: WorkspaceV2.ID.make(`wrk_mcp_${type}`),
+      type,
+      projectID: ProjectV2.ID.global,
+      directory,
+    }),
+  )
+}
 
 function personalInstance<A, E, R>(name: string, self: (directory: string) => Effect.Effect<A, E, R>) {
   return Effect.gen(function* () {
@@ -56,6 +70,34 @@ it.live("connect() cannot re-enable a non-personal server inside a personal work
       const status = yield* mcp.status()
       expect(status["project-only"]?.status).toBe("disabled")
     }),
+  ),
+)
+
+it.live("personal workspace cannot inspect or mutate blocked MCP authentication", () =>
+  personalInstance("mcp-auth-policy", () =>
+    Effect.gen(function* () {
+      const mcp = yield* MCP.Service
+
+      expect(yield* mcp.supportsOAuth("project-only").pipe(Effect.flip)).toHaveProperty("name", "project-only")
+      expect(yield* mcp.hasStoredTokens("project-only")).toBe(false)
+      expect(yield* mcp.getAuthStatus("project-only")).toBe("not_authenticated")
+      expect(yield* mcp.startAuth("project-only").pipe(Effect.flip)).toHaveProperty("name", "project-only")
+      yield* mcp.removeAuth("project-only")
+    }),
+  ),
+)
+
+it.live("workspace metadata overrides a personal-looking project directory", () =>
+  personalInstance("mcp-metadata-project", (directory) =>
+    withWorkspaceType(
+      "worktree",
+      directory,
+      Effect.gen(function* () {
+        const mcp = yield* MCP.Service
+        const status = yield* mcp.status()
+        expect(status["project-only"]?.status).not.toBe("disabled")
+      }),
+    ),
   ),
 )
 

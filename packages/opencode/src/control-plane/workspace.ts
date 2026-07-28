@@ -31,7 +31,7 @@ import { SessionID } from "@/session/schema"
 import { NotFoundError } from "@/storage/storage"
 import { errorData } from "@/util/error"
 import { waitEvent } from "./util"
-import { WorkspaceRef } from "@/effect/instance-ref"
+import { WorkspaceMetadataRef, WorkspaceRef } from "@/effect/instance-ref"
 import { Vcs } from "@/project/vcs"
 import { InstanceStore } from "@/project/instance-store"
 import { WorkspaceAdapterRuntime } from "./workspace-adapter-runtime"
@@ -274,7 +274,13 @@ const layer = Layer.effect(
 
         if (target.type === "local") {
           const store = yield* InstanceStore.Service
-          return yield* store.provide({ directory: target.directory }, input.local())
+          return yield* store.provide(
+            { directory: target.directory },
+            input.local().pipe(
+              Effect.provideService(WorkspaceRef, workspace.id),
+              Effect.provideService(WorkspaceMetadataRef, workspace),
+            ),
+          )
         }
 
         const response = yield* http.execute(input.remote({ workspace, target })).pipe(

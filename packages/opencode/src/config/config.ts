@@ -35,7 +35,7 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@newhorse/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
-import { isPersonalDirectory } from "@/control-plane/adapters/personal"
+import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 
 // Custom merge function that concatenates array fields instead of replacing them
 // Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
@@ -398,7 +398,8 @@ const layer = Layer.effect(
           }
         }
 
-        const personal = isPersonalDirectory(ctx.directory)
+        const policy = yield* WorkspacePolicy.current
+        const personal = policy.kind === "personal"
         const global = Object.keys(authEnv).length ? yield* loadGlobal(authEnv) : yield* getGlobal()
         yield* merge(Global.Path.config, global, "global")
 
@@ -427,30 +428,25 @@ const layer = Layer.effect(
         result.mode = result.mode || {}
         result.plugin = result.plugin || []
 
+        const discoveredDirectories = yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
+        const localConfigDirectories = discoveredDirectories.filter((dir) => containsPath(dir, ctx))
+        const configDirectories = personal
+          ? [
+              ctx.directory,
+              ...localConfigDirectories,
+              ...(Flag.OPENCODE_CONFIG_DIR ? [Flag.OPENCODE_CONFIG_DIR] : []),
+            ].filter((dir, index, list) => list.indexOf(dir) === index)
+          : discoveredDirectories
         const directories = personal
-          ? [ctx.directory, ...(Flag.OPENCODE_CONFIG_DIR ? [Flag.OPENCODE_CONFIG_DIR] : [])]
-          : yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
+          ? [ctx.directory, ...localConfigDirectories].filter((dir, index, list) => list.indexOf(dir) === index)
+          : configDirectories
 
         if (Flag.OPENCODE_CONFIG_DIR) {
           yield* Effect.logDebug("loading config from OPENCODE_CONFIG_DIR", { path: Flag.OPENCODE_CONFIG_DIR })
         }
 
         const deps: Fiber.Fiber<void>[] = []
-
-        for (const dir of directories) {
-          if (ConfigPaths.isConfigDir(dir) || dir === Flag.OPENCODE_CONFIG_DIR) {
-            for (const file of ["newhorse.json", "newhorse.jsonc", "opencode.json", "opencode.jsonc"]) {
-              const source = path.join(dir, file)
-              yield* Effect.logDebug(`loading config from ${source}`)
-              yield* merge(source, yield* loadFile(source, authEnv))
-              result.agent ??= {}
-              result.mode ??= {}
-              result.plugin ??= []
-            }
-          }
-
-          yield* ensureGitignore(dir).pipe(Effect.orDie)
-
+        const prepareDependencies = Effect.fnUntraced(function* (dir: string) {
           const dep = yield* npmSvc
             .install(dir, {
               add: [
@@ -471,6 +467,24 @@ const layer = Layer.effect(
               Effect.forkDetach,
             )
           deps.push(dep)
+        })
+
+        for (const dir of configDirectories) {
+          if (ConfigPaths.isConfigDir(dir) || dir === Flag.OPENCODE_CONFIG_DIR) {
+            for (const file of ["newhorse.json", "newhorse.jsonc", "opencode.json", "opencode.jsonc"]) {
+              const source = path.join(dir, file)
+              yield* Effect.logDebug(`loading config from ${source}`)
+              yield* merge(source, yield* loadFile(source, authEnv))
+              result.agent ??= {}
+              result.mode ??= {}
+              result.plugin ??= []
+            }
+          }
+
+          if (!directories.includes(dir)) continue
+          yield* ensureGitignore(dir).pipe(Effect.orDie)
+
+          yield* prepareDependencies(dir)
 
           result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
           result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
@@ -604,6 +618,15 @@ const layer = Layer.effect(
             (origin) => origin.scope === "local" || ConfigPlugin.allowedInPersonalWorkspace(origin.spec),
           )
           result.plugin = result.plugin_origins.map((origin) => origin.spec)
+          const executable = new Set(directories.map(FSUtil.resolve))
+          const pluginDirs = new Set(
+            result.plugin_origins
+              .map((origin) => ConfigPlugin.dependencyDirectory(origin.spec))
+              .filter((dir): dir is string => Boolean(dir))
+              .map(FSUtil.resolve)
+              .filter((dir) => !executable.has(dir)),
+          )
+          yield* Effect.forEach(pluginDirs, prepareDependencies, { discard: true })
         }
 
         return {

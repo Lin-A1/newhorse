@@ -22,7 +22,9 @@ export async function wait(fn: () => boolean, timeout = 2000) {
 
 type Ctx = { kv: ReturnType<typeof useKV>; project: ReturnType<typeof useProject>; sync: ReturnType<typeof useSync> }
 
-export async function mount(override?: FetchHandler, state?: string) {
+import type { TuiPluginHost } from "../../../../src/plugin/runtime"
+
+export async function mount(override?: FetchHandler, state?: string, pluginHost?: TuiPluginHost) {
   const calls = createFetch(override)
   const events = createEventSource()
   let sync!: ReturnType<typeof useSync>
@@ -50,7 +52,7 @@ export async function mount(override?: FetchHandler, state?: string) {
         <KVProvider>
           <SDKProvider url="http://test" directory={directory} fetch={calls.fetch} events={events.source}>
             <PermissionProvider>
-              <ProjectProvider>
+              <ProjectProvider pluginHost={pluginHost}>
                 <ExitProvider exit={() => {}}>
                   <SyncProvider>
                     <Probe />

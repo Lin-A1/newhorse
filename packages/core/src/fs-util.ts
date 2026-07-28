@@ -1,6 +1,6 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { dirname, isAbsolute, join, relative, resolve as pathResolve, sep } from "path"
-import { realpathSync } from "fs"
+import { lstatSync, readlinkSync, realpathSync } from "fs"
 import * as NFS from "fs/promises"
 import { lookup } from "mime-types"
 import { Context, Effect, FileSystem, Layer, Schema } from "effect"
@@ -246,11 +246,32 @@ export namespace FSUtil {
 
   export function resolve(p: string): string {
     const resolved = pathResolve(windowsPath(p))
-    try {
-      return normalizePath(realpathSync(resolved))
-    } catch (e: any) {
-      if (e?.code === "ENOENT") return normalizePath(resolved)
-      throw e
+    return resolveCanonical(resolved, new Set())
+  }
+
+  function resolveCanonical(resolved: string, seen: Set<string>): string {
+    let current = resolved
+    const missing: string[] = []
+    while (true) {
+      try {
+        return normalizePath(join(realpathSync.native(current), ...missing.toReversed()))
+      } catch (e: any) {
+        if (e?.code !== "ENOENT") throw e
+        try {
+          if (lstatSync(current).isSymbolicLink()) {
+            if (seen.has(current)) throw new Error(`Symlink cycle: ${current}`)
+            seen.add(current)
+            const target = pathResolve(dirname(current), readlinkSync(current))
+            return normalizePath(join(resolveCanonical(target, seen), ...missing.toReversed()))
+          }
+        } catch (statError: any) {
+          if (statError?.code !== "ENOENT") throw statError
+        }
+        const parent = dirname(current)
+        if (parent === current) return normalizePath(resolved)
+        missing.push(current.slice(parent.length + (parent.endsWith(sep) ? 0 : 1)))
+        current = parent
+      }
     }
   }
 

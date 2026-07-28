@@ -1,8 +1,9 @@
 import { expect } from "bun:test"
 import { Effect, Layer, Context } from "effect"
-import { InstanceRef } from "../../src/effect/instance-ref"
+import { InstanceRef, WorkspaceMetadataRef } from "../../src/effect/instance-ref"
 import { makeRuntime } from "../../src/effect/run-service"
 import { ProjectV2 } from "@newhorse/core/project"
+import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { it } from "../lib/effect"
 
 class Shared extends Context.Service<Shared, { readonly id: number }>()("@test/Shared") {}
@@ -51,6 +52,33 @@ it.live("makeRuntime shares dependent layers through the shared memo map", () =>
   }),
 )
 
+it.live("makeRuntime inherits WorkspaceMetadataRef from the current fiber", () =>
+  Effect.gen(function* () {
+    class NeedsWorkspace extends Context.Service<
+      NeedsWorkspace,
+      { readonly type: () => Effect.Effect<string | undefined> }
+    >()("@test/NeedsWorkspace") {}
+
+    const runtime = makeRuntime(
+      NeedsWorkspace,
+      Layer.succeed(
+        NeedsWorkspace,
+        NeedsWorkspace.of({
+          type: () => Effect.map(WorkspaceMetadataRef, (workspace) => workspace?.type),
+        }),
+      ),
+    )
+
+    expect(yield* Effect.promise(() => runtime.runPromise((svc) => svc.type()))).toBe("personal")
+  }).pipe(
+    Effect.provideService(WorkspaceMetadataRef, {
+      id: WorkspaceV2.ID.make("wrk_runtime_metadata"),
+      type: "personal",
+      projectID: ProjectV2.ID.global,
+      directory: testDirectory,
+    }),
+  ),
+)
 it.live("makeRuntime inherits InstanceRef from the current fiber", () =>
   Effect.gen(function* () {
     class NeedsInstance extends Context.Service<

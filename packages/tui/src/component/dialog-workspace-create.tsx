@@ -130,7 +130,7 @@ export async function warpWorkspaceSession(input: {
     return false
   }
 
-  input.project.workspace.set(input.workspaceID)
+  await input.project.workspace.set(input.workspaceID)
 
   await input.sync.bootstrap({ fatal: false }).catch(() => undefined)
 

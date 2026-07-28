@@ -9,8 +9,6 @@ import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js"
 import * as prompts from "@clack/prompts"
 import { UI } from "../ui"
 import { MCP } from "../../mcp"
-import { McpAuth } from "../../mcp/auth"
-import { McpOAuthProvider } from "../../mcp/oauth-provider"
 import { Config } from "@/config/config"
 import { ConfigMCPV1 } from "@newhorse/core/v1/config/mcp"
 import { InstanceRef } from "@/effect/instance-ref"
@@ -345,7 +343,7 @@ export const McpLogoutCommand = effectCmd({
     UI.empty()
     prompts.intro("MCP OAuth Logout")
 
-    const credentials = yield* McpAuth.Service.use((auth) => auth.all())
+    const credentials = yield* MCP.Service.use((mcp) => mcp.storedAuth())
     const serverNames = Object.keys(credentials)
 
     if (serverNames.length === 0) {
@@ -678,13 +676,19 @@ export const McpDebugCommand = effectCmd({
   handler: Effect.fn("Cli.mcp.debug")(function* (args) {
     const config = yield* Config.Service.use((cfg) => cfg.get())
     const mcp = yield* MCP.Service
-    const auth = yield* McpAuth.Service
+    const stored = yield* mcp.storedAuth()
     const serverConfig = config.mcp?.[args.name]
     const authInfo =
       serverConfig && isMcpRemote(serverConfig) && serverConfig.oauth !== false
         ? yield* Effect.all({
             authStatus: mcp.getAuthStatus(args.name),
-            entry: auth.get(args.name),
+            entry: Effect.succeed(stored[args.name]),
+            provider: mcp.debugAuthProvider(args.name, serverConfig.url, {
+              clientId: typeof serverConfig.oauth === "object" ? serverConfig.oauth.clientId : undefined,
+              clientSecret: typeof serverConfig.oauth === "object" ? serverConfig.oauth.clientSecret : undefined,
+              scope: typeof serverConfig.oauth === "object" ? serverConfig.oauth.scope : undefined,
+              redirectUri: typeof serverConfig.oauth === "object" ? serverConfig.oauth.redirectUri : undefined,
+            }),
           })
         : undefined
     yield* Effect.promise(async () => {
@@ -773,22 +777,7 @@ export const McpDebugCommand = effectCmd({
         if (response.status === 401) {
           prompts.log.info("Initial unauthenticated check returned 401, so this server requires OAuth")
 
-          // Try to discover OAuth metadata
-          const oauthConfig = typeof serverConfig.oauth === "object" ? serverConfig.oauth : undefined
-          const authProvider = new McpOAuthProvider(
-            serverName,
-            serverConfig.url,
-            {
-              clientId: oauthConfig?.clientId,
-              clientSecret: oauthConfig?.clientSecret,
-              scope: oauthConfig?.scope,
-              redirectUri: oauthConfig?.redirectUri,
-            },
-            {
-              onRedirect: async () => {},
-            },
-            auth,
-          )
+          const authProvider = authInfo!.provider
 
           prompts.log.info("Testing OAuth flow (without completing authorization)...")
 

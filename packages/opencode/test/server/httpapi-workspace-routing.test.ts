@@ -220,6 +220,8 @@ const echoWebSocket = (request: HttpServerRequest.HttpServerRequest) =>
 const ProbeResult = Schema.Struct({
   directory: Schema.String,
   workspaceID: Schema.optional(Schema.String),
+  workspaceType: Schema.optional(Schema.String),
+  workspaceProjectID: Schema.optional(Schema.String),
 })
 
 const ProbeApi = HttpApi.make("workspace-routing-probe").add(
@@ -238,7 +240,12 @@ const ProbeApi = HttpApi.make("workspace-routing-probe").add(
 
 const routeContextResponse = Effect.gen(function* () {
   const route = yield* WorkspaceRouteContext
-  return { directory: route.directory, workspaceID: route.workspaceID }
+  return {
+    directory: route.directory,
+    workspaceID: route.workspaceID,
+    workspaceType: route.workspace?.type,
+    workspaceProjectID: route.workspace?.projectID,
+  }
 })
 
 const probeHandlers = HttpApiBuilder.group(ProbeApi, "probe", (handlers) =>
@@ -475,7 +482,12 @@ describe("HttpApi workspace routing middleware", () => {
       const response = yield* HttpClient.get(`/session?workspace=${workspace.id}`)
 
       expect(response.status).toBe(200)
-      expect(yield* response.json).toEqual({ directory: process.cwd(), workspaceID: workspace.id })
+      expect(yield* response.json).toEqual({
+        directory: process.cwd(),
+        workspaceID: workspace.id,
+        workspaceType: workspace.type,
+        workspaceProjectID: workspace.projectID,
+      })
     }),
   )
 
@@ -498,7 +510,12 @@ describe("HttpApi workspace routing middleware", () => {
       const response = yield* HttpClient.get(`${WorkspacePaths.list}?workspace=${workspace.id}`)
 
       expect(response.status).toBe(200)
-      expect(yield* response.json).toEqual({ directory: process.cwd(), workspaceID: workspace.id })
+      expect(yield* response.json).toEqual({
+        directory: process.cwd(),
+        workspaceID: workspace.id,
+        workspaceType: workspace.type,
+        workspaceProjectID: workspace.projectID,
+      })
     }),
   )
 
@@ -518,9 +535,19 @@ describe("HttpApi workspace routing middleware", () => {
       )
 
       expect(queryResponse.status).toBe(200)
-      expect(yield* queryResponse.json).toEqual({ directory: queryDir, workspaceID: null })
+      expect(yield* queryResponse.json).toEqual({
+        directory: queryDir,
+        workspaceID: null,
+        workspaceType: null,
+        workspaceProjectID: null,
+      })
       expect(headerResponse.status).toBe(200)
-      expect(yield* headerResponse.json).toEqual({ directory: headerDir, workspaceID: null })
+      expect(yield* headerResponse.json).toEqual({
+        directory: headerDir,
+        workspaceID: null,
+        workspaceType: null,
+        workspaceProjectID: null,
+      })
     }),
   )
 
@@ -546,6 +573,8 @@ describe("HttpApi workspace routing middleware", () => {
       expect(yield* response.json).toEqual({
         directory: workspaceDir,
         workspaceID: workspace.id,
+        workspaceType: workspace.type,
+        workspaceProjectID: workspace.projectID,
       })
     }),
   )

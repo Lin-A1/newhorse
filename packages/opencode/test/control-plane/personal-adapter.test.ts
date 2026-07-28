@@ -54,6 +54,41 @@ describe("personal workspace adapter", () => {
     ).rejects.toThrow(/must stay under/)
   })
 
+  test("configure rejects a symlink that escapes the personal root", async () => {
+    if (process.platform === "win32") return
+    const adapter = getAdapter(ProjectV2.ID.global, PERSONAL_ADAPTER_TYPE)
+    const outside = await fs.mkdtemp(path.join(Global.Path.data, "personal-outside-"))
+    const link = personalDirectory(`escape-${Date.now()}`)
+    try {
+      await fs.mkdir(ROOT, { recursive: true })
+      await fs.symlink(outside, link)
+      await expect(
+        adapter.configure({
+          type: PERSONAL_ADAPTER_TYPE,
+          name: "escape",
+          branch: null,
+          directory: link,
+          projectID: ProjectV2.ID.global,
+        } as any),
+      ).rejects.toThrow(/must stay under/)
+      await expect(
+        adapter.create(
+          {
+            type: PERSONAL_ADAPTER_TYPE,
+            name: "escape",
+            branch: null,
+            directory: path.join(link, "missing"),
+            projectID: ProjectV2.ID.global,
+          } as any,
+          {},
+        ),
+      ).rejects.toThrow(/must stay under/)
+    } finally {
+      await fs.rm(link, { force: true })
+      await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+
   test("creates the personal file scaffold without deleting user content", async () => {
     const adapter = getAdapter(ProjectV2.ID.global, PERSONAL_ADAPTER_TYPE)
     const directory = personalDirectory(`scaffold-${Date.now()}`)

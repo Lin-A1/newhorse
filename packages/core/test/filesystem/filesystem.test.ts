@@ -5,6 +5,8 @@ import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { FSUtil } from "@newhorse/core/fs-util"
 import { testEffect } from "../lib/effect"
 import path from "path"
+import os from "os"
+import fs from "fs/promises"
 
 const live = LayerNode.compile(LayerNode.group([FSUtil.node, LayerNodePlatform.filesystem]))
 const { effect: it } = testEffect(live)
@@ -374,6 +376,35 @@ describe("FSUtil", () => {
       expect(FSUtil.contains("/a/b", "/a/c")).toBe(false)
       expect(FSUtil.contains("/a/b", "/a/bad")).toBe(false)
       if (process.platform === "win32") expect(FSUtil.contains("C:\\a", "D:\\b")).toBe(false)
+    })
+
+    test("resolve canonicalizes the closest existing ancestor", async () => {
+      if (process.platform === "win32") return
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "fs-util-resolve-"))
+      const outside = await fs.mkdtemp(path.join(os.tmpdir(), "fs-util-outside-"))
+      try {
+        await fs.symlink(outside, path.join(root, "link"))
+        expect(FSUtil.resolve(path.join(root, "link", "missing", "file.txt"))).toBe(
+          path.join(outside, "missing", "file.txt"),
+        )
+      } finally {
+        await fs.rm(root, { recursive: true, force: true })
+        await fs.rm(outside, { recursive: true, force: true })
+      }
+    })
+
+    test("resolve canonicalizes dangling symlink targets", async () => {
+      if (process.platform === "win32") return
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), "fs-util-resolve-"))
+      const outside = await fs.mkdtemp(path.join(os.tmpdir(), "fs-util-outside-"))
+      const target = path.join(outside, "missing-target")
+      try {
+        await fs.symlink(target, path.join(root, "link"))
+        expect(FSUtil.resolve(path.join(root, "link", "file.txt"))).toBe(path.join(target, "file.txt"))
+      } finally {
+        await fs.rm(root, { recursive: true, force: true })
+        await fs.rm(outside, { recursive: true, force: true })
+      }
     })
 
     test("overlaps detects overlapping paths", () => {
