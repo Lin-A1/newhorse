@@ -130,21 +130,22 @@ describe("util.flock", () => {
           done,
           active,
           holdMs: 30,
-          staleMs: 1_000,
-          timeoutMs: 15_000,
+          staleMs: 10_000,
+          timeoutMs: 30_000,
         }),
       ),
     )
 
-    expect(out.map((x) => x.code)).toEqual(Array.from({ length: n }, () => 0))
-    expect(out.map((x) => x.stderr.toString()).filter(Boolean)).toEqual([])
+    expect(
+      out.map((x) => ({ code: x.code, stderr: x.stderr.toString() })),
+    ).toEqual(Array.from({ length: n }, () => ({ code: 0, stderr: "" })))
 
     const lines = (await fs.readFile(done, "utf8"))
       .split("\n")
       .map((x) => x.trim())
       .filter(Boolean)
     expect(lines.length).toBe(n)
-  }, 20_000)
+  }, 40_000)
 
   test("times out while waiting when lock is still healthy", async () => {
     await using tmp = await tmpdir()

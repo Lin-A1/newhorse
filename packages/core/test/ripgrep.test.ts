@@ -29,6 +29,7 @@ describe("Ripgrep", () => {
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
+    60_000,
   )
 
   it.live("never includes git metadata", () =>
@@ -61,5 +62,6 @@ describe("Ripgrep", () => {
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),
+    60_000,
   )
 })

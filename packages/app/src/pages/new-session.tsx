@@ -122,7 +122,7 @@ export default function NewSessionPage() {
   })
   const rightMount = useTitlebarRightMount()
 
-  const showWorkspaceBar = createMemo(() => workspaceBarEnabled && !!projectController.selected())
+  const showWorkspaceBar = createMemo(() => workspaceBarEnabled && projectControls().available.length > 0)
   const newSessionWorktree = createMemo(() => {
     if (!showWorkspaceBar()) return "main"
     if (store.worktree) return store.worktree
