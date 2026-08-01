@@ -115,11 +115,7 @@ export function resolveArguments(parameters: Parameters | undefined, value: unkn
 export function formatArguments(arguments_: Arguments) {
   if (Object.keys(arguments_).length === 0) return ""
   const json = JSON.stringify(arguments_).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-  return [
-    '<skill_arguments trust="untrusted" encoding="json">',
-    json,
-    "</skill_arguments>",
-  ].join("\n")
+  return ['<skill_arguments trust="untrusted" encoding="json">', json, "</skill_arguments>"].join("\n")
 }
 
 export interface DirectorySource extends Schema.Schema.Type<typeof DirectorySource> {}

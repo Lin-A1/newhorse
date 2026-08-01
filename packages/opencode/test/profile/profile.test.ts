@@ -78,7 +78,7 @@ it().effect("updates companion runtime and only bumps changed persona versions",
     const profile = yield* Profile.Service
 
     const first = yield* profile.update(companionID, {
-      persona: "Warm and concise",
+      persona: "  Warm and concise  ",
       memory: "auto-safe",
       crisisRegion: "CN",
     })
@@ -92,11 +92,42 @@ it().effect("updates companion runtime and only bumps changed persona versions",
       crisisRegion: "CN",
     })
 
-    const unchanged = yield* profile.update(companionID, { persona: "Warm and concise" })
+    const unchanged = yield* profile.update(companionID, { persona: " Warm and concise " })
     expect(unchanged.personaVersion).toBe(2)
+
+    const nonPersona = yield* profile.update(companionID, { memory: "off" })
+    expect(nonPersona.persona).toBe("Warm and concise")
+    expect(nonPersona.personaVersion).toBe(2)
 
     const changed = yield* profile.update(companionID, { persona: "Calm and direct" })
     expect(changed.personaVersion).toBe(3)
+
+    const cleared = yield* profile.update(companionID, { persona: "   " })
+    expect(cleared.persona).toBeUndefined()
+    expect(cleared.personaVersion).toBe(4)
+
+    const repeatedlyCleared = yield* profile.update(companionID, { persona: "" })
+    expect(repeatedlyCleared.persona).toBeUndefined()
+    expect(repeatedlyCleared.personaVersion).toBe(4)
+  }),
+)
+
+it({
+  profile: {
+    items: {
+      companion: {
+        kind: "companion",
+        name: "Anchor",
+        persona: "Existing persona",
+        personaVersion: 9,
+      },
+    },
+  },
+}).effect("preserves higher persona versions while changing the persona", () =>
+  Effect.gen(function* () {
+    const profile = yield* Profile.Service
+    const changed = yield* profile.update(companionID, { persona: "Updated persona" })
+    expect(changed.personaVersion).toBe(10)
   }),
 )
 

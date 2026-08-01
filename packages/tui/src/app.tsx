@@ -42,6 +42,8 @@ import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
+import { DialogMemory } from "./component/dialog-memory"
+import { DialogContinuityGrant } from "./component/dialog-continuity-grant"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogDebug } from "./component/dialog-debug"
 import { DialogThemeList } from "./component/dialog-theme-list"
@@ -682,6 +684,45 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashName: "agents",
         run: () => {
           dialog.replace(() => <DialogAgent />)
+        },
+      },
+      {
+        name: "memory.list",
+        title: "Manage Memory",
+        category: "Agent",
+        slashName: "memory",
+        run: () => {
+          dialog.replace(() => <DialogMemory />)
+        },
+      },
+      {
+        name: "continuity.list",
+        title: "Manage Continuity Grants",
+        category: "Agent",
+        slashName: "continuity",
+        run: () => {
+          const current = route.data
+          if (current.type !== "session") {
+            toast.show({ message: "Open a source session to manage Continuity grants", variant: "warning" })
+            return
+          }
+          const session = sync.session.get(current.sessionID)
+          if (!session) {
+            toast.show({ message: "Source session metadata is still loading", variant: "warning" })
+            return
+          }
+          const source = {
+            key: `session:${current.sessionID}:${session.workspaceID ?? ""}:${session.directory}`,
+            sessionID: current.sessionID,
+            workspaceID: session.workspaceID,
+            directory: session.directory,
+            query: {
+              session: current.sessionID,
+              directory: session.directory,
+              workspace: session.workspaceID,
+            },
+          }
+          dialog.replace(() => <DialogContinuityGrant source={source} />)
         },
       },
       {

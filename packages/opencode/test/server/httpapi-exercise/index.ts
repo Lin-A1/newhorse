@@ -317,6 +317,114 @@ const scenarios: Scenario[] = [
     }))
     .status(400),
   http.protected
+    .get("/memory", "memory.list")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const source = yield* ctx.session({ title: "Memory source" })
+        const message = yield* ctx.message(source.id, { text: "Remember this source" })
+        const record = yield* ctx.memory({
+          content: "Listed memory",
+          sourceSessionID: source.id,
+          sourceMessageID: message.info.id,
+        })
+        return { record, source, message }
+      }),
+    )
+    .json(200, (body, ctx) => {
+      object(body)
+      array(body.items)
+      const item = body.items.find((item) => isRecord(item) && item.id === ctx.state.record.id)
+      check(isRecord(item), "memory list should return the workspace record")
+      check(
+        item.sourceSessionID === ctx.state.source.id && item.sourceMessageID === ctx.state.message.info.id,
+        "memory list should preserve source ownership",
+      )
+    }),
+  http.protected
+    .patch("/memory/{memoryID}", "memory.update")
+    .mutating()
+    .seeded((ctx) => ctx.memory({ content: "Before update" }))
+    .at((ctx) => ({
+      path: route("/memory/{memoryID}", { memoryID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { content: "Updated over HTTP", kind: "preference" },
+    }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        object(body)
+        check(body.content === "Updated over HTTP", "memory update should return changes")
+        check(
+          (yield* ctx.memories()).some((item) => item.id === ctx.state.id && item.content === "Updated over HTTP"),
+          "memory update should persist changes",
+        )
+      }),
+    ),
+  http.protected
+    .post("/memory/{memoryID}/decision", "memory.decide")
+    .mutating()
+    .seeded((ctx) => ctx.memory({ content: "Proposed memory", provenance: "model_inferred" }))
+    .at((ctx) => ({
+      path: route("/memory/{memoryID}/decision", { memoryID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { decision: "accept" },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.status === "active" && body.provenance === "user_confirmed", "memory decision should confirm proposal")
+    }),
+  http.protected
+    .post("/memory/{memoryID}/pause", "memory.pause")
+    .mutating()
+    .seeded((ctx) => ctx.memory({ content: "Pause memory" }))
+    .at((ctx) => ({
+      path: route("/memory/{memoryID}/pause", { memoryID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { paused: true },
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.status === "paused", "memory pause should return paused state")
+    }),
+  http.protected
+    .delete("/memory/{memoryID}", "memory.remove")
+    .mutating()
+    .seeded((ctx) => ctx.memory({ content: "Remove memory" }))
+    .at((ctx) => ({
+      path: route("/memory/{memoryID}", { memoryID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        check(body === true, "memory remove should return true")
+        check(
+          !(yield* ctx.memories()).some((item) => item.id === ctx.state.id),
+          "memory remove should delete the record",
+        )
+      }),
+    ),
+  http.protected
+    .get("/memory/export", "memory.export")
+    .seeded((ctx) => ctx.memory({ content: "Exported memory" }))
+    .json(200, (body, ctx) => {
+      array(body)
+      check(
+        body.some((item) => isRecord(item) && item.id === ctx.state.id),
+        "memory export should return visible records",
+      )
+    }),
+  http.protected
+    .post("/memory/clear", "memory.clear")
+    .mutating()
+    .seeded((ctx) => ctx.memory({ content: "Clear memory" }))
+    .at((ctx) => ({ path: "/memory/clear", headers: ctx.headers(), body: { target: "workspace" } }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        object(body)
+        check(body.cleared === 1, "memory clear should report removed records")
+        check((yield* ctx.memories()).length === 0, "memory clear should remove workspace records")
+      }),
+    ),
+  http.protected
     .get("/reminder", "reminder.list")
     .seeded((ctx) => ctx.reminder({ title: "List reminder" }))
     .json(200, (body, ctx) => {

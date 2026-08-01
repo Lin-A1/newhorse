@@ -164,7 +164,7 @@ const layer = Layer.effect(
     })
 
     const nextItem = (current: Runtime, previous: ConfigProfileV1.Item, input: Update): ConfigProfileV1.Item => {
-      const persona = input.persona?.trim()
+      const persona = input.persona?.trim() || undefined
       return {
         ...previous,
         name: input.name?.trim() || current.name,

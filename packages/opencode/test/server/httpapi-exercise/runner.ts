@@ -193,6 +193,20 @@ function withContext<A, E>(
               ),
             ),
           reminders: () => run(modules.Scheduler.Service.use((svc) => svc.list())),
+          memory: (input) =>
+            run(
+              modules.Memory.Service.use((svc) =>
+                svc
+                  .save({
+                    kind: "preference",
+                    content: "HTTP API memory",
+                    provenance: "user_explicit",
+                    ...input,
+                  })
+                  .pipe(Effect.orDie),
+              ),
+            ),
+          memories: () => run(modules.Memory.Service.use((svc) => svc.list())),
           worktree: (input) => run(modules.Worktree.Service.use((svc) => svc.create(input).pipe(Effect.orDie))),
           worktreeRemove: (directory) =>
             run(modules.Worktree.Service.use((svc) => svc.remove({ directory })).pipe(Effect.ignore)),

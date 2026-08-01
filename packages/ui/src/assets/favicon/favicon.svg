@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="512" height="512"><svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-<rect width="512" height="512" fill="#131010"></rect>
-<path d="M320 224V352H192V224H320Z" fill="#5A5858"></path>
-<path fill-rule="evenodd" clip-rule="evenodd" d="M384 416H128V96H384V416ZM320 160H192V352H320V160Z" fill="white"></path>
-</svg><style>@media (prefers-color-scheme: light) { :root { filter: none; } }
-@media (prefers-color-scheme: dark) { :root { filter: none; } }
-</style></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Newhorse">
+  <rect width="512" height="512" fill="#0B0B0D" />
+  <g transform="translate(166 58) scale(36)">
+    <path fill="#8B8B90" d="M0 0h1v5H0zm4 0h1v5H4zM1 1h1v1H1zm2 2h1v1H3zM2 2h1v1H2z" />
+    <path fill="#F4F4F5" d="M0 6h1v5H0zm4 6h1v5H4zM1 8h3v1H1z" />
+  </g>
+</svg>

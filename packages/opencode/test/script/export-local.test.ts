@@ -23,8 +23,9 @@ function pe(machine = 0x8664) {
 describe("local CLI exporter", () => {
   test("parses deterministic defaults and supported targets", () => {
     expect(parseExportArgs([])).toMatchObject({ target: "windows-x64", version: "1.18.4", skipInstall: false })
-    expect(parseExportArgs(["--target", "linux-x64", "--version", "1.18.4-phase6.20260727", "--skip-install"]))
-      .toMatchObject({ target: "linux-x64", version: "1.18.4-phase6.20260727", skipInstall: true })
+    expect(
+      parseExportArgs(["--target", "linux-x64", "--version", "1.18.4-phase6.20260727", "--skip-install"]),
+    ).toMatchObject({ target: "linux-x64", version: "1.18.4-phase6.20260727", skipInstall: true })
     expect(() => parseExportArgs(["--target", "darwin-x64"])).toThrow("Unsupported target")
     expect(() => parseExportArgs(["--version", "bad version"])).toThrow("Invalid version")
   })

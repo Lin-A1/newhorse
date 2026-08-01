@@ -54,6 +54,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Scheduler } from "@/scheduler"
 import { Profile } from "@/profile"
 import { Capability } from "@/capability"
+import { Memory } from "@/memory"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@newhorse/core/session/projector"
@@ -87,6 +88,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     EventV2Bridge.node,
     Profile.node,
     Capability.node,
+    Memory.node,
     Scheduler.node,
     SessionRunState.node,
     SessionProcessor.node,

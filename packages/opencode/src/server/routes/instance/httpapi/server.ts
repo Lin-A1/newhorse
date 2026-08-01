@@ -7,6 +7,8 @@ import * as Observability from "@newhorse/core/observability"
 import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { Capability } from "@/capability"
+import { ContinuityGrant } from "@/continuity-grant"
+import { Memory } from "@/memory"
 import { Auth } from "@/auth"
 import { BackgroundJob } from "@/background/job"
 import { Command } from "@/command"
@@ -86,6 +88,7 @@ import { EventApi } from "./groups/event"
 import { PtyConnectApi } from "./groups/pty"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
+import { continuityGrantHandlers } from "./handlers/continuity-grant"
 import { controlHandlers } from "./handlers/control"
 import { controlPlaneHandlers } from "./handlers/control-plane"
 import { experimentalHandlers } from "./handlers/experimental"
@@ -93,6 +96,7 @@ import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
 import { mcpHandlers } from "./handlers/mcp"
+import { memoryHandlers } from "./handlers/memory"
 import { permissionHandlers } from "./handlers/permission"
 import { projectHandlers } from "./handlers/project"
 import { projectCopyHandlers } from "./handlers/project-copy"
@@ -158,10 +162,12 @@ const ptyConnectApiRoutes = HttpApiBuilder.layer(PtyConnectApi).pipe(
 const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     configHandlers,
+    continuityGrantHandlers,
     experimentalHandlers,
     fileHandlers,
     instanceHandlers,
     mcpHandlers,
+    memoryHandlers,
     projectHandlers,
     projectCopyHandlers,
     ptyHandlers,
@@ -234,6 +240,8 @@ const app = LayerNode.group([
   ProviderAuth.node,
   Agent.node,
   Capability.node,
+  ContinuityGrant.node,
+  Memory.node,
   Skill.node,
   Discovery.node,
   Question.node,

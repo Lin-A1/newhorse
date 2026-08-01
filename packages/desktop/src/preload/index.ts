@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { ElectronAPI, WslServersEvent } from "./types"
 import type { UpdaterState } from "@newhorse/app/updater"
+import { validateSaveTextFileInput } from "../save-text-file-input"
 
 const updaterCallbacks = new Set<(state: UpdaterState) => void>()
 let updaterState: UpdaterState | undefined
@@ -93,7 +94,7 @@ const api: ElectronAPI = {
   readPickedFile: (token, path) => ipcRenderer.invoke("read-picked-file", token, path),
   releasePickedFiles: (token) => ipcRenderer.invoke("release-picked-files", token),
   getPathForFile: (file) => webUtils.getPathForFile(file),
-  saveFilePicker: (opts) => ipcRenderer.invoke("save-file-picker", opts),
+  saveTextFile: (opts) => ipcRenderer.invoke("save-text-file", validateSaveTextFileInput(opts)),
   openLink: (url) => ipcRenderer.send("open-link", url),
   openPath: (path, app) => ipcRenderer.invoke("open-path", path, app),
   revealPath: (path) => ipcRenderer.invoke("reveal-path", path),

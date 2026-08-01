@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test"
 
-const emptyList = new Set(["/skill", "/command", "/lsp", "/formatter", "/vcs/status", "/vcs/diff"])
+const emptyList = new Set(["/skill", "/command", "/lsp", "/formatter", "/vcs/status", "/vcs/diff", "/pty/shells"])
 const emptyObject = new Set(["/global/config", "/config", "/provider/auth", "/mcp", "/experimental/resource"])
 
 export interface MockServerConfig {
@@ -9,6 +9,7 @@ export interface MockServerConfig {
   directory: string
   project: unknown
   sessions: ({ id: string } & Record<string, unknown>)[]
+  listSessions?: () => ({ id: string } & Record<string, unknown>)[]
   pageMessages: (sessionId: string, limit: number, before?: string) => { items: unknown[]; cursor?: string }
   vcsDiff?: unknown[]
   messageDelay?: number
@@ -25,8 +26,30 @@ export interface MockServerConfig {
   fileContent?: (path: string) => unknown | Promise<unknown>
   findFiles?: (input: { query: string; dirs?: string; limit?: number }) => unknown
   sessionStatus?: unknown
+  beforeSessionResponse?: (input: { path: string; sessionID?: string }) => Promise<void>
   capability?: unknown
   profileRuntime?: unknown
+  memory?: {
+    list: (
+      query: URLSearchParams,
+    ) => { items: unknown[]; nextCursor?: string } | Promise<{ items: unknown[]; nextCursor?: string }>
+    export?: (query: URLSearchParams) => unknown[]
+    mutate?: (input: { method: string; path: string; query: URLSearchParams; body?: unknown }) => unknown
+  }
+  continuityGrant?: {
+    list: (query: URLSearchParams, headers: Record<string, string>) => unknown[] | Promise<unknown[]>
+    audit?: (input: {
+      grantID: string
+      query: URLSearchParams
+      headers: Record<string, string>
+    }) => unknown[] | Promise<unknown[]>
+    mutate?: (input: {
+      action: "approve" | "revoke"
+      grantID: string
+      query: URLSearchParams
+      headers: Record<string, string>
+    }) => unknown | Promise<unknown>
+  }
 }
 
 export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
@@ -45,7 +68,6 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     "/project/current": config.project,
     "/agent": [{ name: "build", mode: "primary" }],
     "/vcs": { branch: "main", default_branch: "main" },
-    "/session": config.sessions,
   }
 
   await page.route("**/*", async (route) => {
@@ -57,6 +79,10 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (url.port !== targetPort && url.port !== appPort) return route.fallback()
 
     const path = url.pathname
+    const sessionID = path.match(/^\/(?:api\/)?session\/([^/]+)$/)?.[1]
+    if (path === "/session" || path === "/api/session" || sessionID) {
+      await config.beforeSessionResponse?.({ path, sessionID })
+    }
     if (path === "/global/event" || path === "/event" || path === "/api/event") {
       const events = config.events?.()
       return sse(
@@ -73,6 +99,43 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       return json(route, { healthy: true, version: "2.0.0", pid: 1 })
     if (path === "/experimental/capabilities") return json(route, { backgroundSubagents: true })
     if (path === "/capability") return json(route, config.capability ?? defaultCapability())
+    if (path === "/memory" && route.request().method() === "GET") {
+      return json(route, (await config.memory?.list(url.searchParams)) ?? { items: [] })
+    }
+    if (path === "/memory/export" && route.request().method() === "GET") {
+      return json(
+        route,
+        config.memory?.export?.(url.searchParams) ?? (await config.memory?.list(url.searchParams))?.items ?? [],
+      )
+    }
+    if (path.startsWith("/memory/") && config.memory?.mutate) {
+      const body = route.request().postData() ? route.request().postDataJSON() : undefined
+      return json(
+        route,
+        config.memory.mutate({ method: route.request().method(), path, query: url.searchParams, body }),
+      )
+    }
+    if (path === "/continuity-grant" && route.request().method() === "GET") {
+      return json(
+        route,
+        (await config.continuityGrant?.list(url.searchParams, await route.request().allHeaders())) ?? [],
+      )
+    }
+    const continuityGrant = path.match(/^\/continuity-grant\/([^/]+)\/(audit|approve|revoke)$/)
+    if (continuityGrant) {
+      const grantID = decodeURIComponent(continuityGrant[1]!)
+      const action = continuityGrant[2]!
+      const headers = await route.request().allHeaders()
+      if (action === "audit" && route.request().method() === "GET") {
+        return json(route, (await config.continuityGrant?.audit?.({ grantID, query: url.searchParams, headers })) ?? [])
+      }
+      if ((action === "approve" || action === "revoke") && route.request().method() === "POST") {
+        return json(
+          route,
+          await config.continuityGrant?.mutate?.({ action, grantID, query: url.searchParams, headers }),
+        )
+      }
+    }
     if (/^\/global\/profile\/[^/]+$/.test(path) && route.request().method() === "GET") {
       return json(route, config.profileRuntime ?? defaultProfileRuntime())
     }
@@ -167,7 +230,7 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       const parentID = url.searchParams.get("parentID")
       const limit = Number(url.searchParams.get("limit") ?? 50)
       const offset = Number(url.searchParams.get("cursor") ?? 0)
-      const sessions = config.sessions
+      const sessions = (config.listSessions?.() ?? config.sessions)
         .filter((session) => !directory || session.directory === directory)
         .filter((session) => parentID !== "null" || session.parentID === undefined)
         .filter((session) => {
@@ -215,6 +278,7 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (/^\/api\/session\/[^/]+$/.test(path) && route.request().method() === "DELETE") {
       return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
     }
+    if (path === "/session") return json(route, config.listSessions?.() ?? config.sessions)
     if (path in staticRoutes) return json(route, staticRoutes[path])
 
     const currentSessionMatch = path.match(/^\/api\/session\/([^/]+)$/)

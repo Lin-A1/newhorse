@@ -22,6 +22,7 @@ import { InvalidRequestError } from "../errors"
 export const WorkspaceRoutingQueryFields = {
   directory: Schema.optional(Schema.String),
   workspace: Schema.optional(Schema.String),
+  session: Schema.optional(Schema.String),
 }
 
 export const WorkspaceRoutingQuery = Schema.Struct(WorkspaceRoutingQueryFields)
@@ -35,6 +36,8 @@ type RequestPlan = Data.TaggedEnum<{
     readonly directory: string
     readonly workspaceID?: WorkspaceV2.ID
     readonly workspace?: Workspace.Info
+    readonly sessionID?: Session.Info["id"]
+    readonly profileID?: Session.Info["profileID"]
   }
   Remote: {
     readonly request: HttpServerRequest.HttpServerRequest
@@ -52,6 +55,8 @@ export class WorkspaceRouteContext extends Context.Service<
     readonly directory: string
     readonly workspaceID?: WorkspaceV2.ID
     readonly workspace?: Workspace.Info
+    readonly sessionID?: Session.Info["id"]
+    readonly profileID?: Session.Info["profileID"]
   }
 >()("@newhorse/ExperimentalHttpApiWorkspaceRouteContext") {}
 
@@ -154,11 +159,18 @@ function planWorkspaceRequest(
   request: HttpServerRequest.HttpServerRequest,
   url: URL,
   workspace: Workspace.Info,
+  session?: Session.Info,
 ): Effect.Effect<RequestPlan, never, Workspace.Service> {
   return Effect.gen(function* () {
     const target = yield* resolveTarget(workspace)
     if (target.type === "remote") return RequestPlan.Remote({ request, workspace, target, url })
-    return RequestPlan.Local({ directory: target.directory, workspaceID: workspace.id, workspace })
+    return RequestPlan.Local({
+      directory: target.directory,
+      workspaceID: workspace.id,
+      workspace,
+      sessionID: session?.id,
+      profileID: session?.profileID,
+    })
   })
 }
 
@@ -169,9 +181,10 @@ function planRequest(
   return Effect.gen(function* () {
     const url = requestURL(request)
     const envWorkspaceID = configuredWorkspaceID()
+    const trustedSession = !envWorkspaceID || session?.workspaceID === envWorkspaceID ? session : undefined
     const workspaceID = url.pathname.startsWith("/api/")
-      ? selectedV2WorkspaceID(url, session?.workspaceID)
-      : selectedWorkspaceID(url, session?.workspaceID)
+      ? selectedV2WorkspaceID(url, trustedSession?.workspaceID)
+      : selectedWorkspaceID(url, trustedSession?.workspaceID)
     if (workspaceID === InvalidWorkspaceID) return RequestPlan.InvalidWorkspace()
     const workspace = yield* resolveWorkspace(workspaceID, envWorkspaceID)
 
@@ -180,13 +193,15 @@ function planRequest(
     }
 
     if (workspace !== undefined && !envWorkspaceID && !shouldStayOnControlPlane(request, url)) {
-      return yield* planWorkspaceRequest(request, url, workspace)
+      return yield* planWorkspaceRequest(request, url, workspace, trustedSession)
     }
 
     return RequestPlan.Local({
-      directory: session?.directory || defaultDirectory(request, url),
+      directory: trustedSession?.directory || defaultDirectory(request, url),
       workspaceID: envWorkspaceID ?? workspaceID,
       workspace: workspace || undefined,
+      sessionID: trustedSession?.id,
+      profileID: trustedSession?.profileID,
     })
   })
 }
@@ -210,9 +225,12 @@ function routeWorkspace<E>(
       ),
     MissingWorkspace: ({ workspaceID }) => Effect.succeed(missingWorkspaceResponse(workspaceID)),
     Remote: ({ request, workspace, target, url }) => proxyRemote(client, request, workspace, target, url),
-    Local: ({ directory, workspaceID, workspace }) =>
+    Local: ({ directory, workspaceID, workspace, sessionID, profileID }) =>
       effect.pipe(
-        Effect.provideService(WorkspaceRouteContext, WorkspaceRouteContext.of({ directory, workspaceID, workspace })),
+        Effect.provideService(
+          WorkspaceRouteContext,
+          WorkspaceRouteContext.of({ directory, workspaceID, workspace, sessionID, profileID }),
+        ),
       ),
   })
 }
@@ -234,7 +252,6 @@ function routeHttpApiWorkspace<E>(
             (error): error is NotFoundError => NotFoundError.isInstance(error),
             () => Effect.succeed(undefined),
           ),
-          Effect.catchDefect(() => Effect.succeed(undefined)),
         )
       : undefined
     const plan = yield* planRequest(request, session)

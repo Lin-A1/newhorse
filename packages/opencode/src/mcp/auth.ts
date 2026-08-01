@@ -80,13 +80,17 @@ export function scope(input: { workspaceID?: string; projectID: string; director
 export function scoped(auth: Interface, scope: string, options?: { legacy?: boolean }): Interface {
   const key = (mcpName: string) => scopedKey(scope, mcpName)
   const get = (mcpName: string) =>
-    auth.get(key(mcpName)).pipe(
-      Effect.flatMap((entry) => (entry || !options?.legacy ? Effect.succeed(entry) : auth.get(mcpName))),
-    )
+    auth
+      .get(key(mcpName))
+      .pipe(Effect.flatMap((entry) => (entry || !options?.legacy ? Effect.succeed(entry) : auth.get(mcpName))))
   const getForUrl = (mcpName: string, serverUrl: string) =>
-    auth.getForUrl(key(mcpName), serverUrl).pipe(
-      Effect.flatMap((entry) => (entry || !options?.legacy ? Effect.succeed(entry) : auth.getForUrl(mcpName, serverUrl))),
-    )
+    auth
+      .getForUrl(key(mcpName), serverUrl)
+      .pipe(
+        Effect.flatMap((entry) =>
+          entry || !options?.legacy ? Effect.succeed(entry) : auth.getForUrl(mcpName, serverUrl),
+        ),
+      )
   return {
     all: () =>
       Effect.map(auth.all(), (entries) => {

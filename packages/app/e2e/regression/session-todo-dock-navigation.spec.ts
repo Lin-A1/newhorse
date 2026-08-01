@@ -81,23 +81,24 @@ test("preserves todo lifecycle without replaying it across session tabs", async 
   await switchSession(page, otherID, otherTitle)
   await expect(dock).toHaveCount(0)
 
-  const firstReturnOpacity = page.evaluate(() =>
-    new Promise<number>((resolve) => {
-      const read = () => {
-        const label = document.querySelector<HTMLElement>(
-          '[data-component="session-todo-dock"] [data-action="session-todo-toggle"] span[aria-label*="todos completed"]',
-        )
-        if (!label) return false
-        resolve(Number.parseFloat(getComputedStyle(label).opacity))
-        return true
-      }
-      if (read()) return
-      const observer = new MutationObserver(() => {
-        if (!read()) return
-        observer.disconnect()
-      })
-      observer.observe(document.body, { childList: true, subtree: true })
-    }),
+  const firstReturnOpacity = page.evaluate(
+    () =>
+      new Promise<number>((resolve) => {
+        const read = () => {
+          const label = document.querySelector<HTMLElement>(
+            '[data-component="session-todo-dock"] [data-action="session-todo-toggle"] span[aria-label*="todos completed"]',
+          )
+          if (!label) return false
+          resolve(Number.parseFloat(getComputedStyle(label).opacity))
+          return true
+        }
+        if (read()) return
+        const observer = new MutationObserver(() => {
+          if (!read()) return
+          observer.disconnect()
+        })
+        observer.observe(document.body, { childList: true, subtree: true })
+      }),
   )
   await switchSession(page, sourceID, sourceTitle)
   expect(await firstReturnOpacity).toBeGreaterThan(0.98)

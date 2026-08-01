@@ -51,7 +51,9 @@ describe("Scheduler", () => {
         scheduleAt: Date.now() + 60_000,
         timezone: "UTC",
       }
-      const created = yield* Effect.all([scheduler.create(input), scheduler.create(input)], { concurrency: "unbounded" })
+      const created = yield* Effect.all([scheduler.create(input), scheduler.create(input)], {
+        concurrency: "unbounded",
+      })
 
       expect(created[0].id).toBe(created[1].id)
       expect(yield* scheduler.list()).toHaveLength(1)
@@ -292,9 +294,9 @@ describe("Scheduler", () => {
         .pipe(Effect.provideService(WorkspaceRef, one))
 
       expect(
-        yield* scheduler.update({ id: reminder.id, title: "Cross-workspace edit" }).pipe(
-          Effect.provideService(WorkspaceRef, two),
-        ),
+        yield* scheduler
+          .update({ id: reminder.id, title: "Cross-workspace edit" })
+          .pipe(Effect.provideService(WorkspaceRef, two)),
       ).toBeUndefined()
       yield* scheduler.cancel(reminder.id).pipe(Effect.provideService(WorkspaceRef, two))
 

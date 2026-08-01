@@ -185,9 +185,11 @@ const layer = Layer.effect(
       const ruleset = Agent.effectivePermission(agent, input.permission ?? [])
       const memoryAction = action(["memory"], ruleset)
       const reminderAction = action(["reminder"], ruleset)
+      const memoryAvailable = runtime.memory !== "off"
+      const reminderAvailable = runtime.proactive && !runtime.proactivePaused
       const [memoryCount, scheduledCount] = yield* Effect.all(
         [
-          memoryAction === "deny"
+          memoryAction === "deny" || !memoryAvailable
             ? Effect.succeed(0)
             : memory.count({ includeGlobal: true, profileID: runtime.id }),
           reminderAction === "deny"
@@ -196,8 +198,6 @@ const layer = Layer.effect(
         ],
         { concurrency: "unbounded" },
       )
-      const memoryAvailable = runtime.memory !== "off"
-      const reminderAvailable = runtime.proactive && !runtime.proactivePaused
 
       return {
         profile: {

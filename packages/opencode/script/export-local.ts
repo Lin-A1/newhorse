@@ -73,12 +73,7 @@ export function validateBinary(target: ExportTarget, data: Uint8Array) {
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
   const offset = view.getUint32(0x3c, true)
   if (offset + 6 > data.length) throw new Error("Invalid PE header offset")
-  if (
-    data[offset] !== 0x50 ||
-    data[offset + 1] !== 0x45 ||
-    data[offset + 2] !== 0 ||
-    data[offset + 3] !== 0
-  ) {
+  if (data[offset] !== 0x50 || data[offset + 1] !== 0x45 || data[offset + 2] !== 0 || data[offset + 3] !== 0) {
     throw new Error("Expected a PE executable")
   }
   if (view.getUint16(offset + 4, true) !== 0x8664) throw new Error("Expected an AMD64 PE executable")

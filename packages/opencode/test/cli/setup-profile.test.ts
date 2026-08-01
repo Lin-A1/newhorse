@@ -75,14 +75,7 @@ describe("nh setup", () => {
         ])
         opencode.expectExit(configured, 0)
 
-        const updated = yield* opencode.spawn([
-          "setup",
-          "profile",
-          "companion",
-          "--max-per-day",
-          "5",
-          "--json",
-        ])
+        const updated = yield* opencode.spawn(["setup", "profile", "companion", "--max-per-day", "5", "--json"])
         opencode.expectExit(updated, 0)
         expect(JSON.parse(updated.stdout).proactiveFrequency).toEqual({
           maxPerDay: 5,

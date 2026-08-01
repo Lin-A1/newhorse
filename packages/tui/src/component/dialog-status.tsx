@@ -45,6 +45,12 @@ export function DialogStatus() {
             <text fg={theme.textMuted}>
               {status().tools.length} tools · {status().skills.length} skills · {status().agent.items.length} agents
             </text>
+            <text fg={theme.textMuted}>
+              Memory {status().memory.policy} · {status().memory.records} records
+              {!status().memory.availability.available
+                ? ` · ${status().memory.availability.reason?.replaceAll("_", " ") ?? "unavailable"}`
+                : ""}
+            </text>
           </box>
         )}
       </Show>

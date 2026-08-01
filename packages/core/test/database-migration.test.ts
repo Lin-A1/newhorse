@@ -13,6 +13,8 @@ import normalizeStoragePathsMigration from "@newhorse/core/database/migration/20
 import sessionMessageProjectionOrderMigration from "@newhorse/core/database/migration/20260603040000_session_message_projection_order"
 import eventSourcedSessionInputMigration from "@newhorse/core/database/migration/20260604172448_event_sourced_session_input"
 import contextEpochAgentMigration from "@newhorse/core/database/migration/20260605042240_add_context_epoch_agent"
+import addMemoryMigration from "@newhorse/core/database/migration/20260725172900_add_memory"
+import memoryLifecycleMigration from "@newhorse/core/database/migration/20260728215711_memory_lifecycle"
 import simplifyIntegrationCredentialsMigration from "@newhorse/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@newhorse/core/database/migration/20260622202450_simplify_session_input"
 import { AppNodeBuilder } from "@newhorse/core/effect/app-node-builder"
@@ -75,6 +77,23 @@ describe("DatabaseMigration", () => {
         expect(
           yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_context_epoch'`),
         ).toEqual({ name: "session_context_epoch" })
+        expect(
+          yield* db.all(
+            sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('continuity_grant', 'continuity_grant_audit') ORDER BY name`,
+          ),
+        ).toEqual([{ name: "continuity_grant" }, { name: "continuity_grant_audit" }])
+        expect(
+          yield* db.all(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('continuity_grant_source_idx', 'continuity_grant_destination_idx', 'continuity_grant_audit_idx') ORDER BY name`,
+          ),
+        ).toEqual([
+          { name: "continuity_grant_audit_idx" },
+          { name: "continuity_grant_destination_idx" },
+          { name: "continuity_grant_source_idx" },
+        ])
+        expect(yield* db.all(sql`PRAGMA foreign_key_list(continuity_grant_audit)`)).toMatchObject([
+          { table: "continuity_grant", from: "grant_id", to: "id", on_delete: "CASCADE" },
+        ])
         expect(
           yield* db.get(
             sql`SELECT name FROM pragma_table_info('session_context_epoch') WHERE name IN ('agent', 'replacement_seq', 'revision')`,
@@ -450,6 +469,54 @@ describe("DatabaseMigration", () => {
           directory: "/home/me/we\\ird",
           path: "src\\weird",
         })
+      }),
+    )
+  })
+
+  test("backfills verifiable Memory ownership and removes ownerless workspace rows", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`
+          CREATE TABLE session (
+            id text PRIMARY KEY,
+            directory text NOT NULL,
+            profile_id text
+          )
+        `)
+        yield* DatabaseMigration.applyOnly(db, [addMemoryMigration])
+        yield* db.run(
+          sql`INSERT INTO session (id, directory, profile_id) VALUES ('ses_memory_source', '/work/project', 'assistant')`,
+        )
+        yield* db.run(sql`
+          INSERT INTO memory (
+            id, workspace_id, scope, profile_id, kind, content, source_session_id,
+            provenance, sensitivity, status, time_created, time_updated
+          ) VALUES (
+            'mem_with_source', NULL, 'workspace', 'assistant', 'fact', 'owned',
+            'ses_memory_source', 'user_explicit', 'normal', 'active', 1, 1
+          ), (
+            'mem_without_source', NULL, 'workspace', NULL, 'fact', 'unowned',
+            NULL, 'user_explicit', 'normal', 'active', 1, 1
+          ), (
+            'mem_dangling_source', NULL, 'workspace', NULL, 'fact', 'dangling',
+            'ses_missing', 'user_explicit', 'normal', 'active', 1, 1
+          ), (
+            'mem_bound_workspace', 'wrk_legacy', 'workspace', NULL, 'fact', 'bound',
+            NULL, 'user_explicit', 'normal', 'active', 1, 1
+          ), (
+            'mem_global', NULL, 'user_global', NULL, 'preference', 'global',
+            NULL, 'user_explicit', 'normal', 'active', 1, 1
+          )
+        `)
+
+        yield* DatabaseMigration.applyOnly(db, [memoryLifecycleMigration])
+
+        expect(yield* db.all(sql`SELECT id, directory FROM memory ORDER BY id`)).toEqual([
+          { id: "mem_bound_workspace", directory: null },
+          { id: "mem_global", directory: null },
+          { id: "mem_with_source", directory: "/work/project" },
+        ])
       }),
     )
   })

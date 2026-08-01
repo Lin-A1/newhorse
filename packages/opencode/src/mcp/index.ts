@@ -1073,7 +1073,11 @@ const layer = Layer.effect(
 
     const hasStoredTokens = Effect.fn("MCP.hasStoredTokens")(function* (mcpName: string) {
       const mcpConfig = yield* getMcpConfig(mcpName)
-      if (!mcpConfig || !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current) || mcpConfig.type !== "remote") {
+      if (
+        !mcpConfig ||
+        !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current) ||
+        mcpConfig.type !== "remote"
+      ) {
         return false
       }
       const auth = yield* authForCurrent
@@ -1083,7 +1087,11 @@ const layer = Layer.effect(
 
     const getAuthStatus = Effect.fn("MCP.getAuthStatus")(function* (mcpName: string) {
       const mcpConfig = yield* getMcpConfig(mcpName)
-      if (!mcpConfig || !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current) || mcpConfig.type !== "remote") {
+      if (
+        !mcpConfig ||
+        !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current) ||
+        mcpConfig.type !== "remote"
+      ) {
         return "not_authenticated"
       }
       const auth = yield* authForCurrent

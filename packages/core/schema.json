@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "9f693e9f-a036-4f41-9a0d-683cb41907bf",
-  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "id": "babb428f-0a7d-4eed-b690-2996cd87f3fd",
+  "prevIds": ["593df864-095d-4d21-b980-4053b690a4c0"],
   "ddl": [
     {
       "name": "workspace",
@@ -22,6 +22,14 @@
     },
     {
       "name": "control_account",
+      "entityType": "tables"
+    },
+    {
+      "name": "continuity_grant_audit",
+      "entityType": "tables"
+    },
+    {
+      "name": "continuity_grant",
       "entityType": "tables"
     },
     {
@@ -390,6 +398,256 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
+      "table": "continuity_grant_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "grant_id",
+      "entityType": "columns",
+      "table": "continuity_grant_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "action",
+      "entityType": "columns",
+      "table": "continuity_grant_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "continuity_grant_audit"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reason",
+      "entityType": "columns",
+      "table": "continuity_grant_audit"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "destination_session_id",
+      "entityType": "columns",
+      "table": "continuity_grant_audit"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "continuity_grant_audit"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_workspace_id",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_directory",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_profile_id",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source_session_id",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "destination_workspace_id",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "destination_directory",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "destination_profile_id",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "destination_session_id",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "purpose",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "summary",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "relationship_persistence",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_expires",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'proposed'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_approved",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_revoked",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "continuity_grant"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
       "table": "credential"
     },
     {
@@ -569,6 +827,16 @@
       "default": null,
       "generated": null,
       "name": "workspace_id",
+      "entityType": "columns",
+      "table": "memory"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "directory",
       "entityType": "columns",
       "table": "memory"
     },
@@ -1925,6 +2193,17 @@
       "table": "account_state"
     },
     {
+      "columns": ["grant_id"],
+      "tableTo": "continuity_grant",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_continuity_grant_audit_grant_id_continuity_grant_id_fk",
+      "entityType": "fks",
+      "table": "continuity_grant_audit"
+    },
+    {
       "columns": ["aggregate_id"],
       "tableTo": "event_sequence",
       "columnsTo": ["aggregate_id"],
@@ -2108,6 +2387,20 @@
     {
       "columns": ["id"],
       "nameExplicit": false,
+      "name": "continuity_grant_audit_pk",
+      "table": "continuity_grant_audit",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "continuity_grant_pk",
+      "table": "continuity_grant",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
       "name": "credential_pk",
       "table": "credential",
       "entityType": "pks"
@@ -2213,6 +2506,80 @@
     {
       "columns": [
         {
+          "value": "grant_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_created",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "continuity_grant_audit_idx",
+      "entityType": "indexes",
+      "table": "continuity_grant_audit"
+    },
+    {
+      "columns": [
+        {
+          "value": "source_session_id",
+          "isExpression": false
+        },
+        {
+          "value": "time_created",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "continuity_grant_source_idx",
+      "entityType": "indexes",
+      "table": "continuity_grant"
+    },
+    {
+      "columns": [
+        {
+          "value": "destination_session_id",
+          "isExpression": false
+        },
+        {
+          "value": "destination_workspace_id",
+          "isExpression": false
+        },
+        {
+          "value": "destination_profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "time_expires",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "continuity_grant_destination_idx",
+      "entityType": "indexes",
+      "table": "continuity_grant"
+    },
+    {
+      "columns": [
+        {
           "value": "aggregate_id",
           "isExpression": false
         },
@@ -2267,6 +2634,20 @@
     {
       "columns": [
         {
+          "value": "directory",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_directory_idx",
+      "entityType": "indexes",
+      "table": "memory"
+    },
+    {
+      "columns": [
+        {
           "value": "scope",
           "isExpression": false
         }
@@ -2289,6 +2670,66 @@
       "where": null,
       "origin": "manual",
       "name": "memory_status_idx",
+      "entityType": "indexes",
+      "table": "memory"
+    },
+    {
+      "columns": [
+        {
+          "value": "scope",
+          "isExpression": false
+        },
+        {
+          "value": "workspace_id",
+          "isExpression": false
+        },
+        {
+          "value": "directory",
+          "isExpression": false
+        },
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        },
+        {
+          "value": "time_created",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_scope_owner_profile_status_time_idx",
+      "entityType": "indexes",
+      "table": "memory"
+    },
+    {
+      "columns": [
+        {
+          "value": "kind",
+          "isExpression": false
+        },
+        {
+          "value": "profile_id",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_relationship_profile_status_idx",
       "entityType": "indexes",
       "table": "memory"
     },

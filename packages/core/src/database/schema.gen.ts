@@ -57,6 +57,40 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`continuity_grant_audit\` (
+          \`id\` text PRIMARY KEY,
+          \`grant_id\` text NOT NULL,
+          \`action\` text NOT NULL,
+          \`outcome\` text NOT NULL,
+          \`reason\` text,
+          \`destination_session_id\` text,
+          \`time_created\` integer NOT NULL,
+          CONSTRAINT \`fk_continuity_grant_audit_grant_id_continuity_grant_id_fk\` FOREIGN KEY (\`grant_id\`) REFERENCES \`continuity_grant\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`continuity_grant\` (
+          \`id\` text PRIMARY KEY,
+          \`source_workspace_id\` text,
+          \`source_directory\` text NOT NULL,
+          \`source_profile_id\` text NOT NULL,
+          \`source_session_id\` text NOT NULL,
+          \`destination_workspace_id\` text NOT NULL,
+          \`destination_directory\` text NOT NULL,
+          \`destination_profile_id\` text NOT NULL,
+          \`destination_session_id\` text NOT NULL,
+          \`purpose\` text NOT NULL,
+          \`summary\` text NOT NULL,
+          \`relationship_persistence\` integer DEFAULT false NOT NULL,
+          \`time_expires\` integer NOT NULL,
+          \`status\` text DEFAULT 'proposed' NOT NULL,
+          \`time_approved\` integer,
+          \`time_revoked\` integer,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`credential\` (
           \`id\` text PRIMARY KEY,
           \`integration_id\` text,
@@ -90,6 +124,7 @@ export default {
         CREATE TABLE \`memory\` (
           \`id\` text PRIMARY KEY,
           \`workspace_id\` text,
+          \`directory\` text,
           \`scope\` text NOT NULL,
           \`profile_id\` text,
           \`kind\` text NOT NULL,
@@ -290,11 +325,27 @@ export default {
           CONSTRAINT \`fk_session_share_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
+      yield* tx.run(
+        `CREATE INDEX \`continuity_grant_audit_idx\` ON \`continuity_grant_audit\` (\`grant_id\`,\`time_created\`,\`id\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`continuity_grant_source_idx\` ON \`continuity_grant\` (\`source_session_id\`,\`time_created\`,\`id\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`continuity_grant_destination_idx\` ON \`continuity_grant\` (\`destination_session_id\`,\`destination_workspace_id\`,\`destination_profile_id\`,\`status\`,\`time_expires\`);`,
+      )
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`memory_workspace_idx\` ON \`memory\` (\`workspace_id\`);`)
+      yield* tx.run(`CREATE INDEX \`memory_directory_idx\` ON \`memory\` (\`directory\`);`)
       yield* tx.run(`CREATE INDEX \`memory_scope_idx\` ON \`memory\` (\`scope\`);`)
       yield* tx.run(`CREATE INDEX \`memory_status_idx\` ON \`memory\` (\`status\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`memory_scope_owner_profile_status_time_idx\` ON \`memory\` (\`scope\`,\`workspace_id\`,\`directory\`,\`profile_id\`,\`status\`,\`time_created\`,\`id\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`memory_relationship_profile_status_idx\` ON \`memory\` (\`kind\`,\`profile_id\`,\`status\`);`,
+      )
       yield* tx.run(
         `CREATE UNIQUE INDEX \`permission_project_action_resource_idx\` ON \`permission\` (\`project_id\`,\`action\`,\`resource\`);`,
       )

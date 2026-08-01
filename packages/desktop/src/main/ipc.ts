@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { stat } from "node:fs/promises"
+import { stat, writeFile } from "node:fs/promises"
 import { basename } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
@@ -9,6 +9,7 @@ import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../prel
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
+import { saveTextFile } from "./save-text-file"
 import { getStore, removeStoreFileIfEmpty } from "./store"
 import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import type { UpdaterController } from "./updater-controller"
@@ -165,16 +166,11 @@ export function registerIpcHandlers(deps: Deps) {
     pickedFiles.release(event.sender.id, token)
   })
 
-  ipcMain.handle(
-    "save-file-picker",
-    async (_event: IpcMainInvokeEvent, opts?: { title?: string; defaultPath?: string }) => {
-      const result = await dialog.showSaveDialog({
-        title: opts?.title ?? "Save file",
-        defaultPath: opts?.defaultPath,
-      })
-      if (result.canceled) return null
-      return result.filePath ?? null
-    },
+  ipcMain.handle("save-text-file", (_event: IpcMainInvokeEvent, input: unknown) =>
+    saveTextFile(input, {
+      choose: (options) => dialog.showSaveDialog(options),
+      write: (path, contents) => writeFile(path, contents, "utf8"),
+    }),
   )
 
   ipcMain.on("open-link", (_event: IpcMainEvent, url: string) => {

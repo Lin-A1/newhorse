@@ -8,6 +8,7 @@ import { SkillV2 } from "@newhorse/core/skill"
 import { InstanceDisposed } from "@/server/event"
 import { Question } from "@/question"
 import { ConfigApi } from "./groups/config"
+import { ContinuityGrantApi } from "./groups/continuity-grant"
 import { ControlApi } from "./groups/control"
 import { ControlPlaneApi } from "./groups/control-plane"
 import { EventApi } from "./groups/event"
@@ -15,6 +16,7 @@ import { ExperimentalApi } from "./groups/experimental"
 import { FileApi } from "./groups/file"
 import { InstanceApi } from "./groups/instance"
 import { McpApi } from "./groups/mcp"
+import { MemoryApi } from "./groups/memory"
 import { PermissionApi } from "./groups/permission"
 import { ProjectApi } from "./groups/project"
 import { ProjectCopyApi } from "./groups/project-copy"
@@ -61,10 +63,12 @@ export const RootHttpApi = HttpApi.make("opencode-root")
 
 export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(ConfigApi)
+  .addHttpApi(ContinuityGrantApi)
   .addHttpApi(ExperimentalApi)
   .addHttpApi(FileApi)
   .addHttpApi(InstanceApi)
   .addHttpApi(McpApi)
+  .addHttpApi(MemoryApi)
   .addHttpApi(ProjectApi)
   .addHttpApi(ProjectCopyApi)
   .addHttpApi(PtyApi)

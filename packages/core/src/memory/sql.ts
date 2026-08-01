@@ -7,7 +7,7 @@ export type MemoryScope = "workspace" | "user_global"
 export type MemoryKind = "preference" | "fact" | "goal" | "event" | "relationship" | "summary"
 export type MemoryProvenance = "user_explicit" | "user_confirmed" | "model_inferred"
 export type MemorySensitivity = "normal" | "sensitive"
-export type MemoryStatus = "proposed" | "active" | "rejected" | "deleted"
+export type MemoryStatus = "proposed" | "active" | "paused" | "rejected" | "deleted"
 
 export const MemoryTable = sqliteTable(
   "memory",
@@ -15,6 +15,7 @@ export const MemoryTable = sqliteTable(
     id: text().primaryKey(),
     // Primary isolation key. Null only when scope is user_global.
     workspace_id: text().$type<WorkspaceV2.ID>(),
+    directory: text(),
     scope: text().$type<MemoryScope>().notNull(),
     profile_id: text(),
     kind: text().$type<MemoryKind>().notNull(),
@@ -30,7 +31,18 @@ export const MemoryTable = sqliteTable(
   },
   (table) => [
     index("memory_workspace_idx").on(table.workspace_id),
+    index("memory_directory_idx").on(table.directory),
     index("memory_scope_idx").on(table.scope),
     index("memory_status_idx").on(table.status),
+    index("memory_scope_owner_profile_status_time_idx").on(
+      table.scope,
+      table.workspace_id,
+      table.directory,
+      table.profile_id,
+      table.status,
+      table.time_created,
+      table.id,
+    ),
+    index("memory_relationship_profile_status_idx").on(table.kind, table.profile_id, table.status),
   ],
 )

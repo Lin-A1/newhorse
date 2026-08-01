@@ -276,10 +276,12 @@ const layer = Layer.effect(
           const store = yield* InstanceStore.Service
           return yield* store.provide(
             { directory: target.directory },
-            input.local().pipe(
-              Effect.provideService(WorkspaceRef, workspace.id),
-              Effect.provideService(WorkspaceMetadataRef, workspace),
-            ),
+            input
+              .local()
+              .pipe(
+                Effect.provideService(WorkspaceRef, workspace.id),
+                Effect.provideService(WorkspaceMetadataRef, workspace),
+              ),
           )
         }
 

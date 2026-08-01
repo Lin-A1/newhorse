@@ -2,11 +2,23 @@ import { describe, expect } from "bun:test"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Effect, Exit } from "effect"
 import { Memory, detectSensitive } from "@/memory"
-import { WorkspaceRef } from "@/effect/instance-ref"
+import { WorkspaceMetadataRef, WorkspaceRef } from "@/effect/instance-ref"
+import { MessageID } from "@/session/schema"
+import { ProjectV2 } from "@newhorse/core/project"
 import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(Memory.node))
+
+function personal<A, E, R>(effect: Effect.Effect<A, E, R>, id = "wrk_memory_personal") {
+  return effect.pipe(
+    Effect.provideService(WorkspaceMetadataRef, {
+      id: WorkspaceV2.ID.make(id),
+      type: "personal",
+      projectID: ProjectV2.ID.global,
+    }),
+  )
+}
 
 describe("Memory", () => {
   it.instance("stores explicit memory as active", () =>
@@ -49,7 +61,7 @@ describe("Memory", () => {
         content: "uses pnpm",
         provenance: "model_inferred",
       })
-      yield* memory.setStatus({ id: saved.id, status: "active" })
+      yield* memory.decide({ id: saved.id, decision: "accept" })
 
       const retrieved = yield* memory.retrieve()
       expect(retrieved.some((item) => item.id === saved.id)).toBe(true)
@@ -102,38 +114,129 @@ describe("Memory", () => {
     }),
   )
 
-  it.instance("retrieves only relationship memory for the requested profile", () =>
+  it.instance("rejects a source message without a source session", () =>
     Effect.gen(function* () {
       const memory = yield* Memory.Service
-      const companion = yield* memory.save({
-        kind: "relationship",
-        content: "likes a quiet check-in",
-        provenance: "user_explicit",
-        profileID: "companion",
-      })
-      yield* memory.save({
-        kind: "relationship",
-        content: "assistant relationship",
-        provenance: "user_explicit",
-        profileID: "assistant",
-      })
-      yield* memory.save({
-        kind: "preference",
-        content: "not relationship memory",
-        provenance: "user_explicit",
-        profileID: "companion",
-      })
-      yield* memory.save({
-        kind: "relationship",
-        content: "global relationship must not enter companion context",
-        provenance: "user_explicit",
-        profileID: "companion",
-        scope: "user_global",
-      })
+      const result = yield* memory
+        .save({
+          kind: "fact",
+          content: "unattached source",
+          provenance: "user_explicit",
+          sourceMessageID: MessageID.make("msg_unattached"),
+        })
+        .pipe(Effect.exit)
 
-      const retrieved = yield* memory.retrieve({ profileID: "companion", relationshipOnly: true })
-      expect(retrieved.map((item) => item.id)).toEqual([companion.id])
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(yield* memory.list()).toEqual([])
     }),
+  )
+
+  it.instance("retrieves only relationship memory for the requested profile", () =>
+    personal(
+      Effect.gen(function* () {
+        const memory = yield* Memory.Service
+        const companion = yield* memory.save({
+          kind: "relationship",
+          content: "likes a quiet check-in",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+        const assistant = yield* memory.save({
+          kind: "relationship",
+          content: "assistant relationship",
+          provenance: "user_explicit",
+          profileID: "assistant",
+        })
+        yield* memory.save({
+          kind: "preference",
+          content: "not relationship memory",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+
+        const rejected = yield* memory
+          .save({
+            kind: "relationship",
+            content: "global relationship must be rejected",
+            provenance: "user_explicit",
+            profileID: "companion",
+            scope: "user_global",
+          })
+          .pipe(Effect.exit)
+        expect(Exit.isFailure(rejected)).toBe(true)
+
+        expect((yield* memory.retrieve()).map((item) => item.content)).toEqual(["not relationship memory"])
+        expect((yield* memory.list()).map((item) => item.content)).toEqual(["not relationship memory"])
+        expect(yield* memory.count()).toBe(1)
+        expect((yield* memory.export()).map((item) => item.content)).toEqual(["not relationship memory"])
+        const retrieved = yield* memory.retrieve({ profileID: "companion", relationshipOnly: true })
+        expect(retrieved.map((item) => item.id)).toEqual([companion.id])
+        expect(yield* memory.forget(assistant.id, "workspace", "companion")).toBe(false)
+        expect(yield* memory.forget(companion.id, "workspace", "companion")).toBe(true)
+      }),
+    ),
+  )
+
+  it.instance("blocks relationship lifecycle operations without the matching profile", () =>
+    personal(
+      Effect.gen(function* () {
+        const memory = yield* Memory.Service
+        const active = yield* memory.save({
+          kind: "relationship",
+          content: "companion active",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+        const proposed = yield* memory.save({
+          kind: "relationship",
+          content: "companion proposal",
+          provenance: "model_inferred",
+          profileID: "companion",
+        })
+
+        expect(yield* memory.update({ id: active.id, content: "changed without profile" })).toBeUndefined()
+        expect(
+          yield* memory.update({ id: active.id, content: "changed by assistant", profileID: "assistant" }),
+        ).toBeUndefined()
+        expect(yield* memory.pause({ id: active.id, paused: true })).toBeUndefined()
+        expect(yield* memory.pause({ id: active.id, paused: true, profileID: "assistant" })).toBeUndefined()
+        expect(yield* memory.decide({ id: proposed.id, decision: "accept" })).toBeUndefined()
+        expect(yield* memory.decide({ id: proposed.id, decision: "accept", profileID: "assistant" })).toBeUndefined()
+        expect(yield* memory.forget(active.id)).toBe(false)
+        expect(yield* memory.forget(active.id, "workspace", "assistant")).toBe(false)
+
+        expect(
+          yield* memory.update({ id: active.id, content: "companion changed", profileID: "companion" }),
+        ).toMatchObject({ content: "companion changed" })
+        expect(yield* memory.pause({ id: active.id, paused: true, profileID: "companion" })).toMatchObject({
+          status: "paused",
+        })
+        expect(yield* memory.decide({ id: proposed.id, decision: "accept", profileID: "companion" })).toMatchObject({
+          status: "active",
+        })
+      }),
+    ),
+  )
+
+  it.instance("requires matching Profile authority when converting Memory to relationship", () =>
+    personal(
+      Effect.gen(function* () {
+        const memory = yield* Memory.Service
+        const ordinary = yield* memory.save({
+          kind: "preference",
+          content: "companion preference",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+
+        expect(yield* memory.update({ id: ordinary.id, kind: "relationship" })).toBeUndefined()
+        expect(yield* memory.update({ id: ordinary.id, kind: "relationship", profileID: "assistant" })).toBeUndefined()
+        expect(yield* memory.update({ id: ordinary.id, kind: "relationship", profileID: "companion" })).toMatchObject({
+          kind: "relationship",
+          profileID: "companion",
+        })
+      }),
+    ),
   )
 
   it.instance("counts records without crossing profile or workspace scope", () =>
@@ -161,10 +264,24 @@ describe("Memory", () => {
           provenance: "model_inferred",
           profileID: "companion",
         })
-        .pipe(Effect.provideService(WorkspaceRef, workspace))
+        .pipe(
+          Effect.provideService(WorkspaceRef, workspace),
+          Effect.provideService(WorkspaceMetadataRef, {
+            id: workspace,
+            type: "personal",
+            projectID: ProjectV2.ID.global,
+          }),
+        )
 
       const count = (input?: Parameters<Memory.Interface["count"]>[0]) =>
-        memory.count(input).pipe(Effect.provideService(WorkspaceRef, workspace))
+        memory.count(input).pipe(
+          Effect.provideService(WorkspaceRef, workspace),
+          Effect.provideService(WorkspaceMetadataRef, {
+            id: workspace,
+            type: "personal",
+            projectID: ProjectV2.ID.global,
+          }),
+        )
       expect(yield* count({ profileID: "assistant" })).toBe(2)
       expect(yield* count({ profileID: "companion", status: ["active"] })).toBe(1)
       expect(yield* count({ profileID: "companion" })).toBe(2)
@@ -172,6 +289,179 @@ describe("Memory", () => {
       expect(yield* memory.count({ profileID: "assistant" })).toBe(1)
       expect(yield* memory.count({ includeGlobal: false })).toBe(0)
     }),
+  )
+
+  it.instance("rejects sensitive content even when caller marks it normal", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const result = yield* memory
+        .save({
+          kind: "fact",
+          content: "token: should-never-be-stored",
+          provenance: "user_explicit",
+          sensitivity: "normal",
+        })
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(yield* memory.list()).toEqual([])
+    }),
+  )
+
+  it.instance("allows only preferences in user-global scope", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const result = yield* memory
+        .save({ kind: "fact", content: "project fact", provenance: "user_explicit", scope: "user_global" })
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(yield* memory.list()).toEqual([])
+    }),
+  )
+
+  it.instance("rejects relationship memory outside Personal scope", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const result = yield* memory
+        .save({
+          kind: "relationship",
+          content: "must remain personal",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(yield* memory.list()).toEqual([])
+    }),
+  )
+
+  it.instance("applies proposal decisions once and records confirmation", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const saved = yield* memory.save({ kind: "fact", content: "uses Bun", provenance: "model_inferred" })
+      const accepted = yield* memory.decide({ id: saved.id, decision: "accept" })
+
+      expect(accepted).toMatchObject({ status: "active", provenance: "user_confirmed" })
+      expect(yield* memory.decide({ id: saved.id, decision: "reject" })).toBeUndefined()
+    }),
+  )
+
+  it.instance("updates, pauses, resumes, and revalidates content", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const saved = yield* memory.save({ kind: "goal", content: "learn Rust", provenance: "user_explicit" })
+      const updated = yield* memory.update({
+        id: saved.id,
+        kind: "preference",
+        content: "prefers Rust examples",
+        expiresAt: Date.now() + 60_000,
+      })
+      expect(updated).toMatchObject({ kind: "preference", content: "prefers Rust examples" })
+      expect(updated!.timeUpdated).toBeGreaterThanOrEqual(saved.timeUpdated)
+
+      expect(yield* memory.pause({ id: saved.id, paused: true })).toMatchObject({ status: "paused" })
+      expect(yield* memory.retrieve()).toEqual([])
+      expect(yield* memory.pause({ id: saved.id, paused: false })).toMatchObject({ status: "active" })
+      expect(yield* memory.retrieve()).toHaveLength(1)
+
+      const rejected = yield* memory.update({ id: saved.id, content: "password: do-not-store" }).pipe(Effect.exit)
+      expect(Exit.isFailure(rejected)).toBe(true)
+      expect((yield* memory.list())[0]?.content).toBe("prefers Rust examples")
+    }),
+  )
+
+  it.instance("requires explicit global authority for mutation", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const global = yield* memory.save({
+        kind: "preference",
+        content: "answers concisely",
+        provenance: "user_explicit",
+        scope: "user_global",
+      })
+
+      expect(yield* memory.forget(global.id)).toBe(false)
+      expect(yield* memory.forget(global.id, "user_global")).toBe(true)
+    }),
+  )
+
+  it.instance("paginates with a stable descending cursor", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      yield* memory.save({ kind: "fact", content: "one", provenance: "user_explicit" })
+      yield* memory.save({ kind: "fact", content: "two", provenance: "user_explicit" })
+      yield* memory.save({ kind: "fact", content: "three", provenance: "user_explicit" })
+
+      const first = yield* memory.page({ limit: 2 })
+      const second = yield* memory.page({ limit: 2, cursor: first.nextCursor })
+      expect(first.items.map((item) => item.content)).toEqual(["three", "two"])
+      expect(first.nextCursor).toBeDefined()
+      expect(second.items.map((item) => item.content)).toEqual(["one"])
+      expect(second.nextCursor).toBeUndefined()
+    }),
+  )
+
+  it.instance("keeps list complete while page remains bounded", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      for (let index = 0; index < 51; index++) {
+        yield* memory.save({ kind: "fact", content: `record ${index}`, provenance: "user_explicit" })
+      }
+
+      expect(yield* memory.list()).toHaveLength(51)
+      const page = yield* memory.page()
+      expect(page.items).toHaveLength(50)
+      expect(page.nextCursor).toBeDefined()
+    }),
+  )
+
+  it.instance("exports only visible records and clears explicit scopes", () =>
+    personal(
+      Effect.gen(function* () {
+        const memory = yield* Memory.Service
+        yield* memory.save({
+          kind: "preference",
+          content: "workspace",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+        yield* memory.save({
+          kind: "relationship",
+          content: "relationship",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+        yield* memory.save({
+          kind: "relationship",
+          content: "assistant relationship",
+          provenance: "user_explicit",
+          profileID: "assistant",
+        })
+        yield* memory.save({
+          kind: "preference",
+          content: "global",
+          provenance: "user_explicit",
+          scope: "user_global",
+        })
+
+        expect((yield* memory.export()).map((item) => item.content).toSorted()).toEqual(["global", "workspace"])
+        expect((yield* memory.export({ profileID: "companion" })).map((item) => item.content).toSorted()).toEqual([
+          "global",
+          "relationship",
+          "workspace",
+        ])
+        expect(Exit.isFailure(yield* memory.clear({ target: "relationship" }).pipe(Effect.exit))).toBe(true)
+        expect(yield* memory.clear({ target: "relationship", profileID: "companion" })).toBe(1)
+        expect((yield* memory.export({ profileID: "assistant" })).map((item) => item.content)).toContain(
+          "assistant relationship",
+        )
+        expect(yield* memory.clear({ target: "workspace" })).toBe(2)
+        expect(yield* memory.clear({ target: "user_global" })).toBe(1)
+        expect(yield* memory.list()).toEqual([])
+      }),
+    ),
   )
 
   it.instance("clear removes workspace memory but keeps user_global preferences", () =>
@@ -185,7 +475,7 @@ describe("Memory", () => {
         scope: "user_global",
       })
 
-      yield* memory.clear()
+      yield* memory.clear({ target: "workspace" })
 
       const remaining = yield* memory.list()
       expect(remaining.map((item) => item.id)).toEqual([global.id])
@@ -200,6 +490,12 @@ describe("detectSensitive", () => {
       expect(detectSensitive("ghp_abcdefghijklmnopqrstuvwxyz12")).toBe(true)
       expect(detectSensitive("AKIAIOSFODNN7EXAMPLE")).toBe(true)
       expect(detectSensitive("4111 1111 1111 1111")).toBe(true)
+      expect(detectSensitive("ssn: 123-45-6789")).toBe(true)
+      expect(detectSensitive("passport number: AB1234567")).toBe(true)
+      expect(detectSensitive("home address: 123 Main Street, Springfield")).toBe(true)
+      expect(detectSensitive("gps: 40.7128, -74.0060")).toBe(true)
+      expect(detectSensitive("diagnosis: type 2 diabetes")).toBe(true)
+      expect(detectSensitive("allergy: penicillin")).toBe(true)
       expect(detectSensitive("-----BEGIN RSA PRIVATE KEY-----")).toBe(true)
     }),
   )

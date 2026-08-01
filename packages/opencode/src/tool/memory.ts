@@ -1,28 +1,25 @@
 import { Effect, Schema } from "effect"
 import * as Tool from "./tool"
 import DESCRIPTION from "./memory.txt"
-import { Memory, SensitiveMemoryRejected } from "@/memory"
+import { Memory, MemoryPolicyRejected, SensitiveMemoryRejected } from "@/memory"
 import { Session } from "@/session/session"
 import { Profile } from "@/profile"
 
 export const Parameters = Schema.Struct({
-  action: Schema.Literals(["list", "save", "accept", "reject", "forget"]).annotate({
+  action: Schema.Literals(["list", "save", "forget"]).annotate({
     description: "The memory operation to perform",
   }),
   content: Schema.optional(Schema.String).annotate({ description: "Content to remember (required for save)" }),
-  kind: Schema.optional(Schema.Literals(["preference", "fact", "goal", "event", "relationship", "summary"])).annotate({
+  kind: Schema.optional(Memory.Kind).annotate({
     description: "Category of the memory (required for save)",
   }),
-  provenance: Schema.optional(Schema.Literals(["user_explicit", "user_confirmed", "model_inferred"])).annotate({
-    description: "Where this memory came from (required for save)",
-  }),
-  scope: Schema.optional(Schema.Literals(["workspace", "user_global"])).annotate({
+  scope: Schema.optional(Memory.Scope).annotate({
     description: "Defaults to workspace. Use user_global only for durable cross-workspace preferences.",
   }),
-  id: Schema.optional(Schema.String).annotate({ description: "Memory id (required for accept/reject/forget)" }),
+  id: Schema.optional(Schema.String).annotate({ description: "Memory id (required for forget)" }),
 })
 
-function render(items: Memory.Info[]) {
+function render(items: ReadonlyArray<Memory.Info>) {
   if (items.length === 0) return "No memory stored."
   return items
     .map((item) => {
@@ -49,72 +46,66 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
+          const session = yield* sessions.get(ctx.sessionID)
+          const profile = yield* profiles.runtime(session.profileID ?? Profile.ID.make("assistant"))
+
           if (params.action === "list") {
-            const items = yield* memory.list()
-            return { title: `${items.length} memories`, metadata: {}, output: render(items) }
+            const page = yield* memory.page({ profileID: profile.id, limit: 50 })
+            return {
+              title: page.nextCursor ? `${page.items.length}+ memories` : `${page.items.length} memories`,
+              metadata: {},
+              output: page.nextCursor
+                ? `${render(page.items)}\n\nShowing the 50 most recent memories.`
+                : render(page.items),
+            }
           }
 
           if (params.action === "save") {
-            if (!params.content || !params.kind || !params.provenance) {
-              return yield* Effect.fail(new Error("save requires content, kind, and provenance"))
+            if (!params.content || !params.kind) {
+              return yield* Effect.fail(new Error("save requires content and kind"))
             }
-            const session = yield* sessions.get(ctx.sessionID)
-            const profile = yield* profiles.runtime(session.profileID ?? Profile.ID.make("assistant"))
             if (profile.memory === "off") return yield* Effect.fail(new Error("Memory is disabled for this profile"))
-            const autoSafe =
-              profile.memory === "auto-safe" &&
-              params.provenance === "user_explicit" &&
-              params.scope !== "user_global" &&
-              !Memory.detectSensitive(params.content)
-            if (!autoSafe) {
-              yield* ctx.ask({
-                permission: "memory",
-                patterns: ["*"],
-                always: ["*"],
-                metadata: { content: params.content, kind: params.kind, scope: params.scope ?? "workspace" },
-              })
-            }
+            yield* ctx.ask({
+              permission: "memory",
+              patterns: ["*"],
+              always: ["*"],
+              metadata: { content: params.content, kind: params.kind, scope: params.scope ?? "workspace" },
+            })
             const saved = yield* memory
               .save({
                 content: params.content,
                 kind: params.kind,
-                provenance: params.provenance,
+                provenance: "model_inferred",
                 scope: params.scope,
                 sourceSessionID: ctx.sessionID,
+                sourceMessageID: ctx.messageID,
+                profileID: profile.id,
               })
               .pipe(
-                Effect.catchTag("SensitiveMemoryRejected", (error: SensitiveMemoryRejected) =>
-                  Effect.fail(new Error(error.message)),
-                ),
+                Effect.catchTags({
+                  SensitiveMemoryRejected: (error: SensitiveMemoryRejected) => Effect.fail(new Error(error.message)),
+                  MemoryPolicyRejected: (error: MemoryPolicyRejected) => Effect.fail(new Error(error.message)),
+                }),
               )
             return {
-              title: saved.status === "proposed" ? "Memory proposed" : "Memory saved",
+              title: "Memory proposed",
               metadata: { id: saved.id, status: saved.status },
-              output: `${saved.status === "proposed" ? "Proposed" : "Saved"} [${saved.id}]: ${saved.content}`,
+              output: `Proposed [${saved.id}]: ${saved.content}`,
             }
           }
 
           if (!params.id) return yield* Effect.fail(new Error(`${params.action} requires an id`))
 
-          if (params.action === "forget") {
-            yield* ctx.ask({
-              permission: "memory",
-              patterns: ["*"],
-              always: ["*"],
-              metadata: { id: params.id, action: "forget" },
-            })
-            yield* memory.forget(params.id)
-            return { title: "Memory forgotten", metadata: { id: params.id }, output: `Deleted [${params.id}]` }
-          }
-
-          const status = params.action === "accept" ? "active" : "rejected"
-          yield* memory.setStatus({ id: params.id, status })
-          return {
-            title: `Memory ${status}`,
-            metadata: { id: params.id, status },
-            output: `Marked [${params.id}] as ${status}`,
-          }
-        }).pipe(Effect.orDie),
+          yield* ctx.ask({
+            permission: "memory",
+            patterns: ["*"],
+            always: ["*"],
+            metadata: { id: params.id, action: "forget", scope: params.scope ?? "workspace" },
+          })
+          const removed = yield* memory.forget(params.id, params.scope, profile.id)
+          if (!removed) return yield* Effect.fail(new Error(`Memory not found: ${params.id}`))
+          return { title: "Memory forgotten", metadata: { id: params.id }, output: `Deleted [${params.id}]` }
+        }),
     }
   }),
 )

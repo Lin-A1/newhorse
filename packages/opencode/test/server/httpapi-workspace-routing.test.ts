@@ -21,8 +21,12 @@ import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { WorkspaceTable } from "@newhorse/core/control-plane/workspace.sql"
 import { Database } from "@newhorse/core/database/database"
+import { Flag } from "@newhorse/core/flag/flag"
 import { Project } from "../../src/project/project"
+import { Profile } from "../../src/profile"
+import { SessionID } from "../../src/session/schema"
 import { Session } from "../../src/session/session"
+import { NotFoundError } from "../../src/storage/storage"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import {
   WorkspaceRoutingMiddleware,
@@ -222,6 +226,8 @@ const ProbeResult = Schema.Struct({
   workspaceID: Schema.optional(Schema.String),
   workspaceType: Schema.optional(Schema.String),
   workspaceProjectID: Schema.optional(Schema.String),
+  sessionID: Schema.optional(Schema.String),
+  profileID: Schema.optional(Schema.String),
 })
 
 const ProbeApi = HttpApi.make("workspace-routing-probe").add(
@@ -245,6 +251,8 @@ const routeContextResponse = Effect.gen(function* () {
     workspaceID: route.workspaceID,
     workspaceType: route.workspace?.type,
     workspaceProjectID: route.workspace?.projectID,
+    sessionID: route.sessionID,
+    profileID: route.profileID,
   }
 })
 
@@ -263,6 +271,39 @@ const serveProbe = HttpApiBuilder.layer(ProbeApi).pipe(
   HttpRouter.serve,
   Layer.build,
 )
+
+const sessionFixture = (input: {
+  id: Session.Info["id"]
+  projectID: Session.Info["projectID"]
+  workspaceID: NonNullable<Session.Info["workspaceID"]>
+  profileID: NonNullable<Session.Info["profileID"]>
+  directory: string
+}): Session.Info => ({
+  id: input.id,
+  slug: "workspace-routing-session",
+  projectID: input.projectID,
+  workspaceID: input.workspaceID,
+  profileID: input.profileID,
+  directory: input.directory,
+  title: "Workspace routing session",
+  version: "test",
+  time: { created: 1, updated: 1 },
+})
+
+const serveProbeWithSessionGet = (get: Session.Interface["get"]) =>
+  HttpApiBuilder.layer(ProbeApi).pipe(
+    Layer.provide(probeHandlers),
+    Layer.provide(workspaceRoutingTestLayer),
+    Layer.provide(Layer.mock(Session.Service)({ get })),
+    HttpRouter.serve,
+    Layer.build,
+  )
+
+const serveProbeWithSessions = (sessions: readonly Session.Info[]) =>
+  serveProbeWithSessionGet((id) => {
+    const session = sessions.find((item) => item.id === id)
+    return session ? Effect.succeed(session) : Effect.fail(new NotFoundError({ message: `Session not found: ${id}` }))
+  })
 
 describe("HttpApi workspace routing middleware", () => {
   it.live("proxies remote workspace HTTP requests through the selected workspace target", () =>
@@ -487,6 +528,8 @@ describe("HttpApi workspace routing middleware", () => {
         workspaceID: workspace.id,
         workspaceType: workspace.type,
         workspaceProjectID: workspace.projectID,
+        sessionID: null,
+        profileID: null,
       })
     }),
   )
@@ -515,6 +558,8 @@ describe("HttpApi workspace routing middleware", () => {
         workspaceID: workspace.id,
         workspaceType: workspace.type,
         workspaceProjectID: workspace.projectID,
+        sessionID: null,
+        profileID: null,
       })
     }),
   )
@@ -540,6 +585,8 @@ describe("HttpApi workspace routing middleware", () => {
         workspaceID: null,
         workspaceType: null,
         workspaceProjectID: null,
+        sessionID: null,
+        profileID: null,
       })
       expect(headerResponse.status).toBe(200)
       expect(yield* headerResponse.json).toEqual({
@@ -547,7 +594,130 @@ describe("HttpApi workspace routing middleware", () => {
         workspaceID: null,
         workspaceType: null,
         workspaceProjectID: null,
+        sessionID: null,
+        profileID: null,
       })
+    }),
+  )
+
+  it.live("uses immutable session routing instead of conflicting client hints", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const project = yield* Project.use.fromDirectory(dir)
+      const sessionDirectory = path.join(dir, ".session-workspace")
+      const conflictingDirectory = path.join(dir, ".conflicting-workspace")
+      const sessionWorkspace = yield* createLocalWorkspace({
+        projectID: project.project.id,
+        type: "session-routing-target",
+        directory: sessionDirectory,
+      })
+      const conflictingWorkspace = yield* createLocalWorkspace({
+        projectID: project.project.id,
+        type: "conflicting-routing-target",
+        directory: conflictingDirectory,
+      })
+      const profileID = Profile.ID.make("companion")
+      const session = sessionFixture({
+        id: SessionID.make("ses_workspace_routing"),
+        projectID: project.project.id,
+        workspaceID: sessionWorkspace.id,
+        profileID,
+        directory: sessionDirectory,
+      })
+
+      yield* serveProbeWithSessions([session])
+
+      const response = yield* HttpClient.get(
+        `/probe?session=${session.id}&workspace=${conflictingWorkspace.id}&directory=${encodeURIComponent(conflictingDirectory)}`,
+      )
+
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toEqual({
+        directory: sessionDirectory,
+        workspaceID: sessionWorkspace.id,
+        workspaceType: sessionWorkspace.type,
+        workspaceProjectID: sessionWorkspace.projectID,
+        sessionID: session.id,
+        profileID,
+      })
+    }),
+  )
+
+  it.live("does not trust a foreign Session inside a fixed Workspace", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const project = yield* Project.use.fromDirectory(dir)
+      const fixedWorkspaceID = WorkspaceV2.ID.make("wrk_fixed_routing")
+      const foreignWorkspaceID = WorkspaceV2.ID.make("wrk_foreign_routing")
+      const foreignDirectory = path.join(dir, ".foreign-session")
+      const queryDirectory = path.join(dir, ".fixed-query")
+      const profileID = Profile.ID.make("companion")
+      const session = sessionFixture({
+        id: SessionID.make("ses_foreign_fixed_workspace"),
+        projectID: project.project.id,
+        workspaceID: foreignWorkspaceID,
+        profileID,
+        directory: foreignDirectory,
+      })
+      const originalWorkspaceID = Flag.OPENCODE_WORKSPACE_ID
+      Flag.OPENCODE_WORKSPACE_ID = fixedWorkspaceID
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          Flag.OPENCODE_WORKSPACE_ID = originalWorkspaceID
+        }),
+      )
+
+      yield* serveProbeWithSessions([session])
+
+      const response = yield* HttpClient.get(
+        `/probe?session=${session.id}&directory=${encodeURIComponent(queryDirectory)}`,
+      )
+
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toEqual({
+        directory: queryDirectory,
+        workspaceID: fixedWorkspaceID,
+        workspaceType: null,
+        workspaceProjectID: null,
+        sessionID: null,
+        profileID: null,
+      })
+    }),
+  )
+
+  it.live("does not trust profile or session fields when session lookup fails", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const queryDirectory = path.join(dir, "query-target")
+      yield* serveProbeWithSessions([])
+
+      const response = yield* HttpClient.get(
+        `/probe?session=ses_missing&directory=${encodeURIComponent(queryDirectory)}`,
+      )
+
+      expect(response.status).toBe(200)
+      expect(yield* response.json).toEqual({
+        directory: queryDirectory,
+        workspaceID: null,
+        workspaceType: null,
+        workspaceProjectID: null,
+        sessionID: null,
+        profileID: null,
+      })
+    }),
+  )
+
+  it.live("propagates Session lookup defects instead of falling back to client routing", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const queryDirectory = path.join(dir, "query-target")
+      yield* serveProbeWithSessionGet(() => Effect.die(new Error("session database unavailable")))
+
+      const response = yield* HttpClient.get(
+        `/probe?session=ses_defect&directory=${encodeURIComponent(queryDirectory)}`,
+      )
+
+      expect(response.status).toBe(500)
     }),
   )
 
@@ -575,6 +745,8 @@ describe("HttpApi workspace routing middleware", () => {
         workspaceID: workspace.id,
         workspaceType: workspace.type,
         workspaceProjectID: workspace.projectID,
+        sessionID: null,
+        profileID: null,
       })
     }),
   )

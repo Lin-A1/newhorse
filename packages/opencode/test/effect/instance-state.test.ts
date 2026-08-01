@@ -69,8 +69,7 @@ it.live("InstanceState isolates workspaces sharing a directory", () =>
       }),
     )
 
-    const provideWorkspace = (id: string, type: string) =>
-      Effect.provideService(WorkspaceRef, WorkspaceV2.ID.make(id)),
+    const provideWorkspace = (id: string, type: string) => Effect.provideService(WorkspaceRef, WorkspaceV2.ID.make(id)),
       metadata = (id: string, type: string) =>
         Effect.provideService(WorkspaceMetadataRef, {
           id: WorkspaceV2.ID.make(id),
@@ -107,14 +106,12 @@ it.live("InstanceState invalidates every workspace entry for a directory", () =>
     const state = yield* InstanceState.make(() =>
       Effect.gen(function* () {
         const metadata = yield* WorkspaceMetadataRef
-        return yield* Effect.acquireRelease(
-          Effect.succeed(metadata?.type ?? "legacy"),
-          (type) => Effect.sync(() => seen.push(type)),
+        return yield* Effect.acquireRelease(Effect.succeed(metadata?.type ?? "legacy"), (type) =>
+          Effect.sync(() => seen.push(type)),
         )
       }),
     )
-    const provideWorkspace = (id: string, type: string) =>
-      Effect.provideService(WorkspaceRef, WorkspaceV2.ID.make(id)),
+    const provideWorkspace = (id: string, type: string) => Effect.provideService(WorkspaceRef, WorkspaceV2.ID.make(id)),
       metadata = (id: string, type: string) =>
         Effect.provideService(WorkspaceMetadataRef, {
           id: WorkspaceV2.ID.make(id),

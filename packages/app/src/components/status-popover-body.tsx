@@ -250,10 +250,7 @@ function ServerStatusList(props: { state: ServerStatusState }) {
   )
 }
 
-export function StatusPopoverBody(props: {
-  shown: Accessor<boolean>
-  workspaceID?: () => string | undefined
-}) {
+export function StatusPopoverBody(props: { shown: Accessor<boolean>; workspaceID?: () => string | undefined }) {
   const sync = useSync()
   const sdk = useSDK()
   const global = useGlobal()
@@ -461,7 +458,9 @@ export function StatusPopoverBody(props: {
                           if (!mcpToggleAllowed(name) || toggleMcp.isPending) return
                           toggleMcp.mutate({ name, workspaceID: selectedWorkspaceID() })
                         }}
-                        disabled={!mcpToggleAllowed(name) || (toggleMcp.isPending && toggleMcp.variables?.name === name)}
+                        disabled={
+                          !mcpToggleAllowed(name) || (toggleMcp.isPending && toggleMcp.variables?.name === name)
+                        }
                       >
                         <div
                           classList={{
@@ -478,9 +477,7 @@ export function StatusPopoverBody(props: {
                             <span class="text-14-regular text-text-base truncate">{name}</span>
                           </span>
                           <Show when={mcpReason(name)}>
-                            {(reason) => (
-                              <span class="text-11-regular text-text-weaker truncate">{reason()}</span>
-                            )}
+                            {(reason) => <span class="text-11-regular text-text-weaker truncate">{reason()}</span>}
                           </Show>
                           <Show when={status() === "needs_auth" && !mcpReason(name)}>
                             <span class="text-11-regular text-text-weaker truncate">

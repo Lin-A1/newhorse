@@ -79,7 +79,10 @@ function validateFlags(args: ProfileArgs) {
     return "--quiet-start, --quiet-end, and --timezone must be provided together"
   }
   if (args.timezone && !validTimezone(args.timezone)) return `Invalid IANA timezone: ${args.timezone}`
-  if (args.maxPerDay !== undefined && (!Number.isInteger(args.maxPerDay) || args.maxPerDay < 1 || args.maxPerDay > 24)) {
+  if (
+    args.maxPerDay !== undefined &&
+    (!Number.isInteger(args.maxPerDay) || args.maxPerDay < 1 || args.maxPerDay > 24)
+  ) {
     return "--max-per-day must be an integer between 1 and 24"
   }
   if (
@@ -147,7 +150,11 @@ const ProfileSetupCommand = effectCmd({
         .runtime(Profile.ID.make(id))
         .pipe(Effect.catchTag("ProfileNotFoundError", (error) => fail(error.message)))
       const name = yield* Effect.promise(() =>
-        prompts.text({ message: "Display name", initialValue: current.name, validate: (value) => (value ? undefined : "Required") }),
+        prompts.text({
+          message: "Display name",
+          initialValue: current.name,
+          validate: (value) => (value ? undefined : "Required"),
+        }),
       )
       if (prompts.isCancel(name)) throw new UI.CancelledError()
       const persona = yield* Effect.promise(() =>

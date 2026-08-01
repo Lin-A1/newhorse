@@ -101,9 +101,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const profileRuntime = Effect.fn("GlobalHttpApi.profileRuntime")(function* (ctx) {
-      return yield* profile
-        .runtime(ctx.params.profileID)
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      return yield* profile.runtime(ctx.params.profileID).pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
     })
 
     const profileUpdate = Effect.fn("GlobalHttpApi.profileUpdate")(function* (ctx) {

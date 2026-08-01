@@ -136,9 +136,9 @@ describe("util.flock", () => {
       ),
     )
 
-    expect(
-      out.map((x) => ({ code: x.code, stderr: x.stderr.toString() })),
-    ).toEqual(Array.from({ length: n }, () => ({ code: 0, stderr: "" })))
+    expect(out.map((x) => ({ code: x.code, stderr: x.stderr.toString() }))).toEqual(
+      Array.from({ length: n }, () => ({ code: 0, stderr: "" })),
+    )
 
     const lines = (await fs.readFile(done, "utf8"))
       .split("\n")

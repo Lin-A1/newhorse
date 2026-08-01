@@ -99,48 +99,54 @@ export namespace RipgrepBinary {
             const target = path.join(Global.Path.bin, `rg${process.platform === "win32" ? ".exe" : ""}`)
             if (yield* fs.isFile(target).pipe(Effect.orDie)) return target
 
-            return yield* flock.withLock(
-              Effect.gen(function* () {
-                if (yield* fs.isFile(target).pipe(Effect.orDie)) return target
+            return yield* flock
+              .withLock(
+                Effect.gen(function* () {
+                  if (yield* fs.isFile(target).pipe(Effect.orDie)) return target
 
-                const platformKey = `${process.arch}-${process.platform}` as keyof typeof PLATFORM
-                const config = PLATFORM[platformKey]
-                if (!config) throw new Error(`unsupported platform for ripgrep: ${platformKey}`)
+                  const platformKey = `${process.arch}-${process.platform}` as keyof typeof PLATFORM
+                  const config = PLATFORM[platformKey]
+                  if (!config) throw new Error(`unsupported platform for ripgrep: ${platformKey}`)
 
-                yield* Effect.gen(function* () {
-                  const entries = yield* fs.readDirectoryEntries(Global.Path.bin)
-                  yield* Effect.forEach(
-                    entries.filter((entry) => entry.type === "directory" && entry.name.startsWith("ripgrep-")),
-                    (entry) => fs.remove(path.join(Global.Path.bin, entry.name), { recursive: true }).pipe(Effect.ignore),
-                    { discard: true },
+                  yield* Effect.gen(function* () {
+                    const entries = yield* fs.readDirectoryEntries(Global.Path.bin)
+                    yield* Effect.forEach(
+                      entries.filter((entry) => entry.type === "directory" && entry.name.startsWith("ripgrep-")),
+                      (entry) =>
+                        fs.remove(path.join(Global.Path.bin, entry.name), { recursive: true }).pipe(Effect.ignore),
+                      { discard: true },
+                    )
+                  }).pipe(Effect.ignore)
+
+                  const filename = `ripgrep-${VERSION}-${config.platform}.${config.extension}`
+                  const url = `https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${filename}`
+                  const archiveDir = yield* fs.makeTempDirectoryScoped({
+                    directory: Global.Path.bin,
+                    prefix: "ripgrep-archive-",
+                  })
+                  const archive = path.join(archiveDir, filename)
+
+                  yield* Effect.logInfo("downloading ripgrep", { url })
+                  const bytes = yield* HttpClientRequest.get(url).pipe(
+                    http.execute,
+                    Effect.flatMap((response) => response.arrayBuffer),
+                    Effect.timeout("2 minutes"),
+                    Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
                   )
-                }).pipe(Effect.ignore)
+                  if (bytes.byteLength === 0) throw new Error(`failed to download ripgrep from ${url}`)
 
-                const filename = `ripgrep-${VERSION}-${config.platform}.${config.extension}`
-                const url = `https://github.com/BurntSushi/ripgrep/releases/download/${VERSION}/${filename}`
-                const archiveDir = yield* fs.makeTempDirectoryScoped({ directory: Global.Path.bin, prefix: "ripgrep-archive-" })
-                const archive = path.join(archiveDir, filename)
-
-                yield* Effect.logInfo("downloading ripgrep", { url })
-                const bytes = yield* HttpClientRequest.get(url).pipe(
-                  http.execute,
-                  Effect.flatMap((response) => response.arrayBuffer),
-                  Effect.timeout("2 minutes"),
-                  Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
-                )
-                if (bytes.byteLength === 0) throw new Error(`failed to download ripgrep from ${url}`)
-
-                yield* fs.writeWithDirs(archive, new Uint8Array(bytes))
-                const staging = path.join(archiveDir, `rg${process.platform === "win32" ? ".exe" : ""}`)
-                yield* extract(archive, config, staging)
-                yield* fs
-                  .rename(staging, target)
-                  .pipe(Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))))
-                return target
-              }),
-              `ripgrep-${VERSION}-${process.arch}-${process.platform}`,
-              Global.Path.bin,
-            ).pipe(Effect.scoped)
+                  yield* fs.writeWithDirs(archive, new Uint8Array(bytes))
+                  const staging = path.join(archiveDir, `rg${process.platform === "win32" ? ".exe" : ""}`)
+                  yield* extract(archive, config, staging)
+                  yield* fs
+                    .rename(staging, target)
+                    .pipe(Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))))
+                  return target
+                }),
+                `ripgrep-${VERSION}-${process.arch}-${process.platform}`,
+                Global.Path.bin,
+              )
+              .pipe(Effect.scoped)
           }),
         ),
       })

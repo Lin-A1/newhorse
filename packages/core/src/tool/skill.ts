@@ -34,11 +34,7 @@ export const description = [
   "The skill name must match one of the available skills in the system context.",
 ].join("\n")
 
-export const toModelOutput = (
-  skill: SkillV2.Info,
-  files: ReadonlyArray<string>,
-  arguments_: Skill.Arguments = {},
-) => {
+export const toModelOutput = (skill: SkillV2.Info, files: ReadonlyArray<string>, arguments_: Skill.Arguments = {}) => {
   const directory = path.dirname(skill.location)
   return [
     `<skill_content name="${skill.name}">`,

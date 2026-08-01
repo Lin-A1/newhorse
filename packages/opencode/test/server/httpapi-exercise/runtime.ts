@@ -8,6 +8,7 @@ export type Runtime = {
   Session: (typeof import("../../../src/session/session"))["Session"]
   Todo: (typeof import("../../../src/session/todo"))["Todo"]
   Scheduler: (typeof import("../../../src/scheduler"))["Scheduler"]
+  Memory: (typeof import("../../../src/memory"))["Memory"]
   Worktree: (typeof import("../../../src/worktree"))["Worktree"]
   Project: (typeof import("../../../src/project/project"))["Project"]
   Tui: typeof import("../../../src/server/shared/tui-control")
@@ -29,6 +30,7 @@ export function runtime() {
     const session = await import("../../../src/session/session")
     const todo = await import("../../../src/session/todo")
     const scheduler = await import("../../../src/scheduler")
+    const memory = await import("../../../src/memory")
     const worktree = await import("../../../src/worktree")
     const project = await import("../../../src/project/project")
     const tui = await import("../../../src/server/shared/tui-control")
@@ -44,6 +46,7 @@ export function runtime() {
       Session: session.Session,
       Todo: todo.Todo,
       Scheduler: scheduler.Scheduler,
+      Memory: memory.Memory,
       Worktree: worktree.Worktree,
       Project: project.Project,
       Tui: tui,

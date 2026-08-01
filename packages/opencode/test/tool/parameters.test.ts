@@ -15,6 +15,7 @@ import { Parameters as Glob } from "../../src/tool/glob"
 import { Parameters as Grep } from "../../src/tool/grep"
 import { Parameters as Invalid } from "../../src/tool/invalid"
 import { Parameters as Lsp } from "../../src/tool/lsp"
+import { Parameters as Memory } from "../../src/tool/memory"
 import { Parameters as Plan } from "../../src/tool/plan"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
@@ -43,6 +44,7 @@ describe("tool parameters", () => {
     test("grep", () => expect(toJsonSchema(Grep)).toMatchSnapshot())
     test("invalid", () => expect(toJsonSchema(Invalid)).toMatchSnapshot())
     test("lsp", () => expect(toJsonSchema(Lsp)).toMatchSnapshot())
+    test("memory", () => expect(toJsonSchema(Memory)).toMatchSnapshot())
     test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
@@ -186,6 +188,29 @@ describe("tool parameters", () => {
     })
     test("rejects unknown operation", () => {
       expect(accepts(Lsp, { operation: "bogus", filePath: "/a.ts", line: 1, character: 1 })).toBe(false)
+    })
+  })
+
+  describe("memory", () => {
+    test("accepts model-managed actions", () => {
+      expect(parse(Memory, { action: "list" })).toEqual({ action: "list" })
+      expect(parse(Memory, { action: "save", content: "prefers concise answers", kind: "preference" })).toEqual({
+        action: "save",
+        content: "prefers concise answers",
+        kind: "preference",
+      })
+    })
+    test("does not expose user decisions or provenance", () => {
+      expect(accepts(Memory, { action: "accept", id: "mem_1" })).toBe(false)
+      expect(toJsonSchema(Memory).properties).not.toHaveProperty("provenance")
+      expect(
+        parse(Memory, {
+          action: "save",
+          content: "prefers concise answers",
+          kind: "preference",
+          provenance: "user_explicit",
+        }),
+      ).toEqual({ action: "save", content: "prefers concise answers", kind: "preference" })
     })
   })
 

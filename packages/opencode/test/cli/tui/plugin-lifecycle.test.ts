@@ -95,9 +95,7 @@ test("reconciles plugins before switching workspace scope", async () => {
     },
   })
 
-  const { config, restore } = mockTuiRuntime(project.path, [
-    [project.extra.spec, { marker: project.extra.marker }],
-  ])
+  const { config, restore } = mockTuiRuntime(project.path, [[project.extra.spec, { marker: project.extra.marker }]])
   const origins = spyOn(TuiConfig, "workspacePluginOrigins").mockImplementation(async (workspace) => {
     if (workspace.type === "personal") {
       return [

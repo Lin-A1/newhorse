@@ -201,10 +201,11 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
       return attachmentPaths.get(file) ?? window.api.getPathForFile(file)
     },
 
-    async saveFilePickerDialog(opts) {
-      return window.api.saveFilePicker({
-        title: opts?.title ?? t("desktop.dialog.saveFile"),
-        defaultPath: opts?.defaultPath,
+    async saveTextFileDialog(opts) {
+      return window.api.saveTextFile({
+        title: opts.title ?? t("desktop.dialog.saveFile"),
+        defaultPath: opts.defaultPath,
+        contents: opts.contents,
       })
     },
 
@@ -255,7 +256,7 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
 
       const notification = new Notification(title, {
         body: description ?? "",
-        icon: "https://opencode.ai/favicon-96x96-v3.png",
+        icon: "./favicon-96x96-v3.png",
       })
       notification.onclick = () => {
         void window.api.showWindow()

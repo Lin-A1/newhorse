@@ -12,6 +12,8 @@ import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { SettingsProfileV2 } from "./profile"
+import { SettingsMemory } from "../settings-memory"
+import { SettingsContinuityGrants } from "../settings-continuity-grants"
 
 export const DialogSettings: Component<{
   sessionID?: string
@@ -68,6 +70,14 @@ export const DialogSettings: Component<{
                       <Icon name="models" />
                       {language.t("settings.models.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="memory">
+                      <Icon name="brain" />
+                      Memory Center
+                    </TabsV2.Trigger>
+                    <TabsV2.Trigger value="continuity">
+                      <Icon name="branch" />
+                      Continuity Grants
+                    </TabsV2.Trigger>
                     <TabsV2.Trigger value="profile">
                       <Icon name="brain" />
                       {language.t("settings.profile.title")}
@@ -96,6 +106,12 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="models" class="settings-v2-panel">
           <SettingsModelsV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="memory" class="settings-v2-panel">
+          <SettingsMemory sessionID={props.sessionID} />
+        </TabsV2.Content>
+        <TabsV2.Content value="continuity" class="settings-v2-panel">
+          <SettingsContinuityGrants sessionID={props.sessionID} />
         </TabsV2.Content>
         <TabsV2.Content value="profile" class="settings-v2-panel">
           <SettingsProfileV2 />

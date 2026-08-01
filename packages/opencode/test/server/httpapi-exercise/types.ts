@@ -7,6 +7,7 @@ import type { Worktree } from "../../../src/worktree"
 import type { MessageV2 } from "../../../src/session/message-v2"
 import type { SessionID } from "../../../src/session/schema"
 import type { Scheduler } from "../../../src/scheduler"
+import type { Memory } from "../../../src/memory"
 
 export const OpenApiMethods = ["get", "post", "put", "delete", "patch"] as const
 export const Methods = ["GET", "POST", "PUT", "DELETE", "PATCH"] as const
@@ -64,6 +65,8 @@ export type ScenarioContext = {
   todos: (sessionID: SessionID, todos: TodoInfo[]) => Effect.Effect<void>
   reminder: (input?: Partial<Scheduler.CreateInput>) => Effect.Effect<Scheduler.Info>
   reminders: () => Effect.Effect<Scheduler.Info[]>
+  memory: (input?: Partial<Memory.SaveInput>) => Effect.Effect<Memory.Info>
+  memories: () => Effect.Effect<ReadonlyArray<Memory.Info>>
   worktree: (input?: { name?: string }) => Effect.Effect<Worktree.Info>
   worktreeRemove: (directory: string) => Effect.Effect<void>
   llmText: (value: string) => Effect.Effect<void>

@@ -46,6 +46,16 @@ describe("getWorkspaceRouteSessionID", () => {
     expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_bg"))
   })
 
+  test("extracts session ID from routing query", () => {
+    const url = new URL("http://localhost/memory?session=ses_memory")
+    expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_memory"))
+  })
+
+  test("prefers path session ID over routing query", () => {
+    const url = new URL("http://localhost/session/ses_path/message?session=ses_query")
+    expect(getWorkspaceRouteSessionID(url)).toBe(SessionID.make("ses_path"))
+  })
+
   test("returns null for /session/status", () => {
     const url = new URL("http://localhost/session/status")
     expect(getWorkspaceRouteSessionID(url)).toBeNull()

@@ -617,6 +617,137 @@
       }
     },
     "/global/profile/{profileID}": {
+      "get": {
+        "tags": ["global"],
+        "operationId": "global.profile.runtime",
+        "parameters": [
+          {
+            "name": "profileID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"
+            },
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Profile runtime settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": ["assistant", "companion"]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "persona": {
+                      "type": "string"
+                    },
+                    "personaVersion": {
+                      "type": "integer"
+                    },
+                    "memory": {
+                      "type": "string",
+                      "enum": ["off", "ask", "auto-safe"]
+                    },
+                    "proactive": {
+                      "type": "boolean"
+                    },
+                    "proactivePaused": {
+                      "type": "boolean"
+                    },
+                    "quietHours": {
+                      "type": "object",
+                      "properties": {
+                        "start": {
+                          "type": "string",
+                          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                        },
+                        "end": {
+                          "type": "string",
+                          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                        },
+                        "timezone": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["start", "end", "timezone"],
+                      "additionalProperties": false
+                    },
+                    "proactiveFrequency": {
+                      "type": "object",
+                      "properties": {
+                        "maxPerDay": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 24
+                        },
+                        "minIntervalMinutes": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 1440
+                        }
+                      },
+                      "required": ["maxPerDay", "minIntervalMinutes"],
+                      "additionalProperties": false
+                    },
+                    "crisisRegion": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "kind",
+                    "name",
+                    "personaVersion",
+                    "memory",
+                    "proactive",
+                    "proactivePaused",
+                    "proactiveFrequency"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Profile runtime settings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Get editable runtime settings for one profile without exposing global configuration.",
+        "summary": "Get profile settings",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.global.profile.runtime({\n  ...\n})"
+          }
+        ]
+      },
       "patch": {
         "tags": ["global"],
         "operationId": "global.profile.update",
@@ -962,6 +1093,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1001,6 +1140,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1053,6 +1200,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1128,6 +1283,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1179,6 +1342,918 @@
         ]
       }
     },
+    "/continuity-grant": {
+      "post": {
+        "tags": ["continuityGrant"],
+        "operationId": "continuityGrant.propose",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Created continuity grant proposal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "sourceWorkspaceID": {
+                      "type": "string"
+                    },
+                    "sourceDirectory": {
+                      "type": "string"
+                    },
+                    "sourceProfileID": {
+                      "type": "string"
+                    },
+                    "sourceSessionID": {
+                      "type": "string"
+                    },
+                    "destinationWorkspaceID": {
+                      "type": "string"
+                    },
+                    "destinationDirectory": {
+                      "type": "string"
+                    },
+                    "destinationProfileID": {
+                      "type": "string"
+                    },
+                    "destinationSessionID": {
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "relationshipPersistence": {
+                      "type": "boolean"
+                    },
+                    "timeExpires": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["proposed", "active", "revoked"]
+                    },
+                    "timeApproved": {
+                      "type": "integer"
+                    },
+                    "timeRevoked": {
+                      "type": "integer"
+                    },
+                    "timeCreated": {
+                      "type": "integer"
+                    },
+                    "timeUpdated": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "sourceDirectory",
+                    "sourceProfileID",
+                    "sourceSessionID",
+                    "destinationWorkspaceID",
+                    "destinationDirectory",
+                    "destinationProfileID",
+                    "destinationSessionID",
+                    "purpose",
+                    "summary",
+                    "relationshipPersistence",
+                    "timeExpires",
+                    "status",
+                    "timeCreated",
+                    "timeUpdated"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Created continuity grant proposal"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Propose continuity grant",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "destinationSessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "timeExpires": {
+                    "type": "integer"
+                  }
+                },
+                "required": ["destinationSessionID", "purpose", "summary", "timeExpires"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.continuityGrant.propose({\n  ...\n})"
+          }
+        ]
+      },
+      "get": {
+        "tags": ["continuityGrant"],
+        "operationId": "continuityGrant.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Source session continuity grants",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "sourceWorkspaceID": {
+                        "type": "string"
+                      },
+                      "sourceDirectory": {
+                        "type": "string"
+                      },
+                      "sourceProfileID": {
+                        "type": "string"
+                      },
+                      "sourceSessionID": {
+                        "type": "string"
+                      },
+                      "destinationWorkspaceID": {
+                        "type": "string"
+                      },
+                      "destinationDirectory": {
+                        "type": "string"
+                      },
+                      "destinationProfileID": {
+                        "type": "string"
+                      },
+                      "destinationSessionID": {
+                        "type": "string"
+                      },
+                      "purpose": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "relationshipPersistence": {
+                        "type": "boolean"
+                      },
+                      "timeExpires": {
+                        "type": "integer"
+                      },
+                      "status": {
+                        "type": "string",
+                        "enum": ["proposed", "active", "revoked"]
+                      },
+                      "timeApproved": {
+                        "type": "integer"
+                      },
+                      "timeRevoked": {
+                        "type": "integer"
+                      },
+                      "timeCreated": {
+                        "type": "integer"
+                      },
+                      "timeUpdated": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "sourceDirectory",
+                      "sourceProfileID",
+                      "sourceSessionID",
+                      "destinationWorkspaceID",
+                      "destinationDirectory",
+                      "destinationProfileID",
+                      "destinationSessionID",
+                      "purpose",
+                      "summary",
+                      "relationshipPersistence",
+                      "timeExpires",
+                      "status",
+                      "timeCreated",
+                      "timeUpdated"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "Source session continuity grants"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List continuity grants",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.continuityGrant.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/continuity-grant/{grantID}": {
+      "get": {
+        "tags": ["continuityGrant"],
+        "operationId": "continuityGrant.get",
+        "parameters": [
+          {
+            "name": "grantID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Continuity grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "sourceWorkspaceID": {
+                      "type": "string"
+                    },
+                    "sourceDirectory": {
+                      "type": "string"
+                    },
+                    "sourceProfileID": {
+                      "type": "string"
+                    },
+                    "sourceSessionID": {
+                      "type": "string"
+                    },
+                    "destinationWorkspaceID": {
+                      "type": "string"
+                    },
+                    "destinationDirectory": {
+                      "type": "string"
+                    },
+                    "destinationProfileID": {
+                      "type": "string"
+                    },
+                    "destinationSessionID": {
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "relationshipPersistence": {
+                      "type": "boolean"
+                    },
+                    "timeExpires": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["proposed", "active", "revoked"]
+                    },
+                    "timeApproved": {
+                      "type": "integer"
+                    },
+                    "timeRevoked": {
+                      "type": "integer"
+                    },
+                    "timeCreated": {
+                      "type": "integer"
+                    },
+                    "timeUpdated": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "sourceDirectory",
+                    "sourceProfileID",
+                    "sourceSessionID",
+                    "destinationWorkspaceID",
+                    "destinationDirectory",
+                    "destinationProfileID",
+                    "destinationSessionID",
+                    "purpose",
+                    "summary",
+                    "relationshipPersistence",
+                    "timeExpires",
+                    "status",
+                    "timeCreated",
+                    "timeUpdated"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Continuity grant"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get continuity grant",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.continuityGrant.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/continuity-grant/{grantID}/audit": {
+      "get": {
+        "tags": ["continuityGrant"],
+        "operationId": "continuityGrant.audit",
+        "parameters": [
+          {
+            "name": "grantID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Content-free continuity grant audit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "grantID": {
+                        "type": "string"
+                      },
+                      "action": {
+                        "type": "string",
+                        "enum": ["proposed", "approved", "injected", "revoked"]
+                      },
+                      "outcome": {
+                        "type": "string"
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "destinationSessionID": {
+                        "type": "string"
+                      },
+                      "timeCreated": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["id", "grantID", "action", "outcome", "timeCreated"],
+                    "additionalProperties": false
+                  },
+                  "description": "Content-free continuity grant audit"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get continuity grant audit",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.continuityGrant.audit({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/continuity-grant/{grantID}/approve": {
+      "post": {
+        "tags": ["continuityGrant"],
+        "operationId": "continuityGrant.approve",
+        "parameters": [
+          {
+            "name": "grantID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Approved continuity grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "sourceWorkspaceID": {
+                      "type": "string"
+                    },
+                    "sourceDirectory": {
+                      "type": "string"
+                    },
+                    "sourceProfileID": {
+                      "type": "string"
+                    },
+                    "sourceSessionID": {
+                      "type": "string"
+                    },
+                    "destinationWorkspaceID": {
+                      "type": "string"
+                    },
+                    "destinationDirectory": {
+                      "type": "string"
+                    },
+                    "destinationProfileID": {
+                      "type": "string"
+                    },
+                    "destinationSessionID": {
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "relationshipPersistence": {
+                      "type": "boolean"
+                    },
+                    "timeExpires": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["proposed", "active", "revoked"]
+                    },
+                    "timeApproved": {
+                      "type": "integer"
+                    },
+                    "timeRevoked": {
+                      "type": "integer"
+                    },
+                    "timeCreated": {
+                      "type": "integer"
+                    },
+                    "timeUpdated": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "sourceDirectory",
+                    "sourceProfileID",
+                    "sourceSessionID",
+                    "destinationWorkspaceID",
+                    "destinationDirectory",
+                    "destinationProfileID",
+                    "destinationSessionID",
+                    "purpose",
+                    "summary",
+                    "relationshipPersistence",
+                    "timeExpires",
+                    "status",
+                    "timeCreated",
+                    "timeUpdated"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Approved continuity grant"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ConflictError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConflictError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Approve continuity grant",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.continuityGrant.approve({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/continuity-grant/{grantID}/revoke": {
+      "post": {
+        "tags": ["continuityGrant"],
+        "operationId": "continuityGrant.revoke",
+        "parameters": [
+          {
+            "name": "grantID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revoked continuity grant",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "sourceWorkspaceID": {
+                      "type": "string"
+                    },
+                    "sourceDirectory": {
+                      "type": "string"
+                    },
+                    "sourceProfileID": {
+                      "type": "string"
+                    },
+                    "sourceSessionID": {
+                      "type": "string"
+                    },
+                    "destinationWorkspaceID": {
+                      "type": "string"
+                    },
+                    "destinationDirectory": {
+                      "type": "string"
+                    },
+                    "destinationProfileID": {
+                      "type": "string"
+                    },
+                    "destinationSessionID": {
+                      "type": "string"
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "relationshipPersistence": {
+                      "type": "boolean"
+                    },
+                    "timeExpires": {
+                      "type": "integer"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["proposed", "active", "revoked"]
+                    },
+                    "timeApproved": {
+                      "type": "integer"
+                    },
+                    "timeRevoked": {
+                      "type": "integer"
+                    },
+                    "timeCreated": {
+                      "type": "integer"
+                    },
+                    "timeUpdated": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "sourceDirectory",
+                    "sourceProfileID",
+                    "sourceSessionID",
+                    "destinationWorkspaceID",
+                    "destinationDirectory",
+                    "destinationProfileID",
+                    "destinationSessionID",
+                    "purpose",
+                    "summary",
+                    "relationshipPersistence",
+                    "timeExpires",
+                    "status",
+                    "timeCreated",
+                    "timeUpdated"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Revoked continuity grant"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Revoke continuity grant",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.continuityGrant.revoke({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/experimental/capabilities": {
       "get": {
         "tags": ["experimental"],
@@ -1194,6 +2269,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1248,6 +2331,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1312,6 +2403,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1414,6 +2513,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1473,6 +2580,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1555,6 +2670,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1611,6 +2734,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1679,6 +2810,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1742,6 +2881,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1818,6 +2965,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1884,6 +3039,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2020,6 +3183,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -2082,6 +3253,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -2135,6 +3314,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2268,6 +3455,14 @@
             "required": false
           },
           {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
             "name": "query",
             "in": "query",
             "schema": {
@@ -2362,6 +3557,14 @@
             "required": false
           },
           {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
             "name": "query",
             "in": "query",
             "schema": {
@@ -2421,6 +3624,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2494,6 +3705,14 @@
             "required": false
           },
           {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
             "name": "path",
             "in": "query",
             "schema": {
@@ -2549,6 +3768,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2612,6 +3839,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -2662,6 +3897,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2721,6 +3964,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -2770,6 +4021,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2828,6 +4087,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -2909,6 +4176,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -2958,6 +4233,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -3048,6 +4331,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3086,6 +4377,68 @@
         ]
       }
     },
+    "/capability": {
+      "get": {
+        "tags": ["instance"],
+        "operationId": "capability.get",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Redacted capability status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapabilityCurrent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Get redacted capability availability for the current profile and workspace.",
+        "summary": "Get capability status",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.capability.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/agent": {
       "get": {
         "tags": ["instance"],
@@ -3101,6 +4454,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -3164,6 +4525,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3181,6 +4550,87 @@
                       },
                       "description": {
                         "type": "string"
+                      },
+                      "parameters": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": ["string", "number", "integer", "boolean"]
+                            },
+                            "description": {
+                              "type": "string"
+                            },
+                            "required": {
+                              "type": "boolean"
+                            },
+                            "enum": {
+                              "type": "array",
+                              "items": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["NaN"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["-Infinity"]
+                                  },
+                                  {
+                                    "type": "string",
+                                    "enum": ["Infinity", "-Infinity", "NaN"]
+                                  },
+                                  {
+                                    "type": "boolean"
+                                  }
+                                ]
+                              }
+                            },
+                            "default": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                },
+                                {
+                                  "type": "boolean"
+                                }
+                              ]
+                            }
+                          },
+                          "required": ["type"],
+                          "additionalProperties": false
+                        }
                       },
                       "location": {
                         "type": "string"
@@ -3233,6 +4683,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -3296,6 +4754,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3354,6 +4820,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3405,6 +4879,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -3509,6 +4991,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3597,6 +5087,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3673,6 +5171,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -3773,6 +5279,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3852,6 +5366,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3924,6 +5446,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -3968,6 +5498,660 @@
         ]
       }
     },
+    "/memory": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "enum": ["proposed", "active", "paused", "rejected", "deleted"]
+                  }
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "includeGlobal",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"]
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated Memory records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Memory records",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.memory.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/{memoryID}": {
+      "patch": {
+        "tags": ["memory"],
+        "operationId": "memory.update",
+        "parameters": [
+          {
+            "name": "memoryID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated Memory record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Update a Memory record",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": ["workspace", "user_global"]
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": ["preference", "fact", "goal", "event", "relationship", "summary"]
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "expiresAt": {
+                    "type": "integer"
+                  },
+                  "clearExpiry": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.memory.update({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["memory"],
+        "operationId": "memory.remove",
+        "parameters": [
+          {
+            "name": "memoryID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scope",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["workspace", "user_global"]
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memory record removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Memory record removed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Remove a Memory record",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.memory.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/{memoryID}/decision": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.decide",
+        "parameters": [
+          {
+            "name": "memoryID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decided Memory proposal",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Accept or reject a proposal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": ["workspace", "user_global"]
+                  },
+                  "decision": {
+                    "type": "string",
+                    "enum": ["accept", "reject"]
+                  }
+                },
+                "required": ["decision"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.memory.decide({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/{memoryID}/pause": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.pause",
+        "parameters": [
+          {
+            "name": "memoryID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paused or resumed Memory record",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Pause or resume Memory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string",
+                    "enum": ["workspace", "user_global"]
+                  },
+                  "paused": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["paused"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.memory.pause({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/export": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.export",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "includeGlobal",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"]
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exported visible Memory records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemoryInfo"
+                  },
+                  "description": "Exported visible Memory records"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Export Memory records",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.memory.export({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/clear": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.clear",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleared Memory records",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "cleared": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["cleared"],
+                  "additionalProperties": false,
+                  "description": "Cleared Memory records"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "BadRequest | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "summary": "Clear a Memory scope",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target": {
+                    "type": "string",
+                    "enum": ["workspace", "relationship", "user_global"]
+                  }
+                },
+                "required": ["target"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@newhorse/sdk\n\nconst client = createOpencodeClient()\nawait client.memory.clear({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/project": {
       "get": {
         "tags": ["project"],
@@ -3983,6 +6167,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -4046,6 +6238,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -4095,6 +6295,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -4157,6 +6365,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -4262,6 +6478,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -4319,6 +6543,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -4400,6 +6632,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -4471,6 +6711,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -4522,6 +6770,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -4630,6 +6886,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -4696,6 +6960,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -4809,6 +7081,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -4878,6 +7158,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -4957,6 +7245,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -5019,6 +7315,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -5125,6 +7429,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -5197,6 +7509,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -5259,6 +7579,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -5356,6 +7684,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -5433,6 +7769,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -5497,6 +7841,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -5594,6 +7946,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -5671,6 +8031,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -5789,6 +8157,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -5961,6 +8337,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -6118,6 +8502,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -6167,6 +8559,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -6285,6 +8685,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -6398,6 +8806,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -6467,6 +8883,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -6550,6 +8974,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -6624,6 +9056,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -6739,6 +9179,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -6818,6 +9266,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -6909,6 +9365,14 @@
             "required": false
           },
           {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
             "name": "messageID",
             "in": "query",
             "schema": {
@@ -6978,6 +9442,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -7091,6 +9563,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -7267,6 +9747,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -7368,6 +9856,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -7454,6 +9950,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -7555,6 +10059,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -7621,6 +10133,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -7730,6 +10250,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -7806,6 +10334,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -7889,6 +10425,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -7992,6 +10536,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -8135,6 +10687,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -8294,6 +10854,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -8434,6 +11002,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -8545,6 +11121,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -8639,6 +11223,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -8768,6 +11360,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -8864,6 +11464,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -8943,6 +11551,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -8993,6 +11609,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -9111,6 +11735,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -9193,6 +11825,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -9297,6 +11937,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -9375,6 +12023,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -9425,6 +12081,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -9485,6 +12149,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -9535,6 +12207,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -9595,6 +12275,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -9650,6 +12338,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -9700,6 +12396,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -9778,6 +12482,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -9865,6 +12577,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -9944,6 +12664,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -10039,6 +12767,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -10102,6 +12838,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -10159,6 +12903,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -10235,6 +12987,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -10286,6 +13046,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -10393,6 +13161,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -10435,6 +13211,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -10507,6 +13291,14 @@
               "type": "string"
             },
             "required": false
+          },
+          {
+            "name": "session",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -10563,6 +13355,14 @@
           },
           {
             "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "session",
             "in": "query",
             "schema": {
               "type": "string"
@@ -22857,6 +25657,42 @@
         "required": ["id", "name", "source", "env", "options", "models"],
         "additionalProperties": false
       },
+      "NotFoundError": {
+        "type": "object",
+        "required": ["name", "data"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["NotFoundError"]
+          },
+          "data": {
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ConflictError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["ConflictError"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
       "ExperimentalCapabilities": {
         "type": "object",
         "properties": {
@@ -23510,6 +26346,233 @@
         "required": ["name", "template", "hints"],
         "additionalProperties": false
       },
+      "CapabilityCurrent": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["assistant", "companion"]
+              },
+              "name": {
+                "type": "string"
+              },
+              "memory": {
+                "type": "string",
+                "enum": ["off", "ask", "auto-safe"]
+              },
+              "proactive": {
+                "type": "boolean"
+              }
+            },
+            "required": ["id", "kind", "name", "memory", "proactive"],
+            "additionalProperties": false
+          },
+          "workspace": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string",
+                "enum": ["project", "personal"]
+              },
+              "contentScope": {
+                "type": "string",
+                "enum": ["project", "personal"]
+              },
+              "source": {
+                "type": "string",
+                "enum": ["metadata", "legacy-directory"]
+              }
+            },
+            "required": ["kind", "contentScope", "source"],
+            "additionalProperties": false
+          },
+          "agent": {
+            "type": "object",
+            "properties": {
+              "default": {
+                "type": "string"
+              },
+              "current": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": ["subagent", "primary", "all"]
+                    }
+                  },
+                  "required": ["name", "mode"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["default", "current", "items"],
+            "additionalProperties": false
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "action": {
+                  "type": "string",
+                  "enum": ["allow", "deny", "ask", "conditional"]
+                }
+              },
+              "required": ["id", "action"],
+              "additionalProperties": false
+            }
+          },
+          "mcp": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["connected", "unavailable"]
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "config_disabled",
+                    "workspace_policy",
+                    "permission_denied",
+                    "authentication_required",
+                    "client_registration_required",
+                    "runtime_failed",
+                    "not_configured"
+                  ]
+                }
+              },
+              "required": ["name", "status"],
+              "additionalProperties": false
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": ["name"],
+              "additionalProperties": false
+            }
+          },
+          "plugins": {
+            "type": "object",
+            "properties": {
+              "loaded": {
+                "type": "integer"
+              }
+            },
+            "required": ["loaded"],
+            "additionalProperties": false
+          },
+          "memory": {
+            "type": "object",
+            "properties": {
+              "policy": {
+                "type": "string",
+                "enum": ["off", "ask", "auto-safe"]
+              },
+              "records": {
+                "type": "integer"
+              },
+              "availability": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "config_disabled",
+                      "workspace_policy",
+                      "permission_denied",
+                      "authentication_required",
+                      "client_registration_required",
+                      "runtime_failed",
+                      "not_configured"
+                    ]
+                  }
+                },
+                "required": ["available"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["policy", "records", "availability"],
+            "additionalProperties": false
+          },
+          "reminders": {
+            "type": "object",
+            "properties": {
+              "proactive": {
+                "type": "boolean"
+              },
+              "paused": {
+                "type": "boolean"
+              },
+              "scheduled": {
+                "type": "integer"
+              },
+              "availability": {
+                "type": "object",
+                "properties": {
+                  "available": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "enum": [
+                      "config_disabled",
+                      "workspace_policy",
+                      "permission_denied",
+                      "authentication_required",
+                      "client_registration_required",
+                      "runtime_failed",
+                      "not_configured"
+                    ]
+                  }
+                },
+                "required": ["available"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["proactive", "paused", "scheduled", "availability"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["profile", "workspace", "agent", "tools", "mcp", "skills", "plugins", "memory", "reminders"],
+        "additionalProperties": false
+      },
       "Agent": {
         "type": "object",
         "properties": {
@@ -23718,6 +26781,109 @@
           }
         },
         "required": ["_tag", "name", "message"],
+        "additionalProperties": false
+      },
+      "MemoryInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "workspaceID": {
+            "type": "string"
+          },
+          "profileID": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["workspace", "user_global"]
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["preference", "fact", "goal", "event", "relationship", "summary"]
+          },
+          "content": {
+            "type": "string"
+          },
+          "sourceSessionID": {
+            "type": "string"
+          },
+          "sourceMessageID": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string",
+            "enum": ["user_explicit", "user_confirmed", "model_inferred"]
+          },
+          "sensitivity": {
+            "type": "string",
+            "enum": ["normal", "sensitive"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["proposed", "active", "paused", "rejected", "deleted"]
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "timeCreated": {
+            "type": "integer"
+          },
+          "timeUpdated": {
+            "type": "integer"
+          },
+          "timeExpires": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "kind",
+          "content",
+          "provenance",
+          "sensitivity",
+          "status",
+          "timeCreated",
+          "timeUpdated"
+        ],
+        "additionalProperties": false
+      },
+      "MemoryPage": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemoryInfo"
+            }
+          },
+          "nextCursor": {
+            "type": "string"
+          }
+        },
+        "required": ["items"],
         "additionalProperties": false
       },
       "Project": {
@@ -24415,25 +27581,6 @@
         },
         "required": ["id", "slug", "projectID", "directory", "title", "version", "time"],
         "additionalProperties": false
-      },
-      "NotFoundError": {
-        "type": "object",
-        "required": ["name", "data"],
-        "properties": {
-          "name": {
-            "type": "string",
-            "enum": ["NotFoundError"]
-          },
-          "data": {
-            "type": "object",
-            "required": ["message"],
-            "properties": {
-              "message": {
-                "type": "string"
-              }
-            }
-          }
-        }
       },
       "Session3": {
         "type": "object",
@@ -26144,23 +29291,6 @@
           }
         },
         "required": ["text"],
-        "additionalProperties": false
-      },
-      "ConflictError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["ConflictError"]
-          },
-          "message": {
-            "type": "string"
-          },
-          "resource": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "message"],
         "additionalProperties": false
       },
       "ServiceUnavailableError": {
@@ -33253,6 +36383,87 @@
           "slash": {
             "type": "boolean"
           },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["string", "number", "integer", "boolean"]
+                },
+                "description": {
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "enum": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "default": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["NaN"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["-Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity", "-Infinity", "NaN"]
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              "required": ["type"],
+              "additionalProperties": false
+            }
+          },
           "location": {
             "type": "string"
           },
@@ -39437,6 +42648,101 @@
         "required": ["type", "url"],
         "additionalProperties": false
       },
+      "SkillV2Info1": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "slash": {
+            "type": "boolean"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["string", "number", "integer", "boolean"]
+                },
+                "description": {
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "enum": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "default": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["NaN"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["-Infinity"]
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                }
+              },
+              "required": ["type"],
+              "additionalProperties": false
+            }
+          },
+          "location": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": ["name", "location", "content"],
+        "additionalProperties": false
+      },
       "SkillV2EmbeddedSource": {
         "type": "object",
         "properties": {
@@ -39445,7 +42751,7 @@
             "enum": ["embedded"]
           },
           "skill": {
-            "$ref": "#/components/schemas/SkillV2Info"
+            "$ref": "#/components/schemas/SkillV2Info1"
           }
         },
         "required": ["type", "skill"],
@@ -39499,6 +42805,10 @@
       "description": "Experimental HttpApi config routes."
     },
     {
+      "name": "continuityGrant",
+      "description": "Explicit, minimized Assistant-to-Companion continuity grants."
+    },
+    {
       "name": "experimental",
       "description": "Experimental HttpApi read-only routes."
     },
@@ -39513,6 +42823,10 @@
     {
       "name": "mcp",
       "description": "Experimental HttpApi MCP routes."
+    },
+    {
+      "name": "memory",
+      "description": "Scoped long-term Memory management."
     },
     {
       "name": "project",

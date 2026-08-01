@@ -25,11 +25,7 @@ export const workspaceID = Effect.gen(function* () {
 
 export const directory = Effect.map(context, (ctx) => ctx.directory)
 
-function encodeKey(input: {
-  directory: string
-  workspaceID?: string
-  metadata?: WorkspaceMetadata
-}): CacheKey {
+function encodeKey(input: { directory: string; workspaceID?: string; metadata?: WorkspaceMetadata }): CacheKey {
   return JSON.stringify([
     input.directory,
     input.workspaceID,

@@ -42,7 +42,12 @@ import { ConfigPluginV1 } from "@newhorse/core/v1/config/plugin"
 import { createCommandShim } from "@newhorse/tui/plugin/command-shim"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Effect } from "effect"
-import { createPluginRuntime, type PluginRuntime, type TuiPluginHost, type TuiPluginWorkspace } from "@newhorse/tui/plugin/runtime"
+import {
+  createPluginRuntime,
+  type PluginRuntime,
+  type TuiPluginHost,
+  type TuiPluginWorkspace,
+} from "@newhorse/tui/plugin/runtime"
 
 ensureRuntimePluginSupport({ additional: keymapRuntimeModules })
 

@@ -126,7 +126,9 @@ test("keeps composer focus when a cached terminal finishes mounting", async ({ p
 
   release.resolve()
   await expect(terminal.locator("textarea")).toHaveCount(1)
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  )
   await expect(composer).toBeFocused()
 })
 
@@ -152,7 +154,9 @@ test("keeps newer composer focus while an explicit terminal open finishes", asyn
 
   release.resolve()
   await expect(terminal.locator("textarea")).toHaveCount(1)
-  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+  await page.evaluate(
+    () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+  )
   await expect(composer).toBeFocused()
 })
 

@@ -1,10 +1,9 @@
 Store and retrieve long-term memory that survives across sessions.
 
-Use action "save" only when the user explicitly asks you to remember something,
-or confirms something you proposed. Use provenance "user_explicit" when the user
-directly stated it, "user_confirmed" when they approved your suggestion, and
-"model_inferred" when you inferred it yourself — inferred entries are stored as
-proposals and must not be treated as established fact.
+Use action "save" only when the user explicitly asks you to remember something
+or when you infer durable information worth proposing. Every tool-originated save
+is stored as an untrusted proposal; only the user can accept or reject it in
+Memory Center.
 
 Use scope "user_global" only for durable personal preferences that should apply
 in every workspace. Everything else stays scoped to the current workspace.
@@ -13,8 +12,6 @@ Never save credentials, tokens, payment details, government IDs, precise
 locations, or health information. Such content is refused.
 
 Actions:
-- list: show stored and proposed memory
-- save: store a new entry
-- accept: promote a proposed entry to active
-- reject: mark a proposed entry as rejected
-- forget: permanently delete an entry
+- list: show memory visible to the current Profile
+- save: propose a new entry for user review
+- forget: permanently delete an entry visible to the current Profile
