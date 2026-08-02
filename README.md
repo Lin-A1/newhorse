@@ -159,6 +159,8 @@ bun run --cwd packages/opencode export:local --target windows-x64
 bun run --cwd packages/opencode export:local --target windows-x64 --sign ./script/sign-cli.sh
 ```
 
+The `export-cli` workflow accepts a `sign-command` input for the same hook in CI: provide a signer executable path (trusted operator), and the binary is signed before archiving so the checksum and manifest cover the signed artifact. Without a sign command, exports are unsigned.
+
 The officially exportable CLI targets are `linux-x64`, `windows-x64`, and `windows-x64-baseline`. All three have been produced and runtime-verified on target-OS runners via the `export-cli` workflow: `linux-x64` by the `validate-linux` job on an ubuntu runner (and directly on a Linux host), and `windows-x64`/`windows-x64-baseline` by the `validate-windows` job on Windows runners (`nh`/`nh.exe` answer the version and setup help). Outputs are written to `packages/opencode/dist/exports/` as a ZIP, SHA-256 checksum, and manifest. The export path does not publish npm packages, create a GitHub Release, push containers, or create tags.
 
 This is a portable CLI archive, not a signed Windows installer. Desktop installers (Windows NSIS, macOS DMG/ZIP, Linux AppImage/DEB/RPM) must be built and verified on their own operating systems; no signed or published release exists yet.

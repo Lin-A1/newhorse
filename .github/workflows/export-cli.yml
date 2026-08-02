@@ -21,6 +21,11 @@ on:
         type: string
         required: false
         default: ""
+      sign-command:
+        description: "Optional signer executable path; it is run against the binary before archiving (receives the binary path as its only argument). Trusted operators only."
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -60,10 +65,16 @@ jobs:
         env:
           EXPORT_TARGET: ${{ inputs.target }}
           EXPORT_VERSION: ${{ steps.meta.outputs.version }}
+          EXPORT_SIGN: ${{ inputs.sign-command }}
         run: |
-          bun run --cwd packages/opencode export:local \
-            --target "$EXPORT_TARGET" \
+          args=(
+            --target "$EXPORT_TARGET"
             --version "$EXPORT_VERSION"
+          )
+          if [ -n "$EXPORT_SIGN" ]; then
+            args+=(--sign "$EXPORT_SIGN")
+          fi
+          bun run --cwd packages/opencode export:local "${args[@]}"
 
       - name: Upload portable package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

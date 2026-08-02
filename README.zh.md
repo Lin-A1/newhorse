@@ -158,6 +158,8 @@ bun run --cwd packages/opencode export:local --target windows-x64
 bun run --cwd packages/opencode export:local --target windows-x64 --sign ./script/sign-cli.sh
 ```
 
+`export-cli` 工作流提供 `sign-command` 输入以在 CI 中使用同一钩子：提供签名器可执行路径（仅限可信操作者），二进制会在归档前被签名，校验和与 manifest 覆盖签名后产物；未提供签名命令则导出保持 unsigned。
+
 正式可导出的 CLI target 为 `linux-x64`、`windows-x64` 和 `windows-x64-baseline`。三者均已通过 `export-cli` 工作流在目标 OS runner 上完成产物运行时验证：`linux-x64` 由 `validate-linux` job 在 ubuntu runner 上（并直接在一台 Linux 主机上）完成；`windows-x64` 与 `windows-x64-baseline` 由 `validate-windows` job 在 Windows runner 上完成（`nh`/`nh.exe` 返回版本与 setup 帮助）。产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 校验文件和 manifest。该导出流程不会发布 npm 包、创建 GitHub Release、推送容器或创建 Git tag。
 
 这是便携 CLI 归档，不是已签名的 Windows 安装器。Desktop 安装包（Windows NSIS、macOS DMG/ZIP、Linux AppImage/DEB/RPM）需要在各自操作系统上构建和验证；目前尚不存在已签名或已发布的正式版本。
