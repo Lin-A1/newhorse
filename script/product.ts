@@ -153,10 +153,10 @@ export function targetStatuses(): TargetStatus[] {
       packageFormats: target.formats,
       note:
         target.os === "windows"
-          ? "NSIS installer; Windows portable is unsupported (unpacked dir is not portable); cross-building the NSIS exe from Linux needs the wine system package"
+          ? "NSIS installer built on a windows runner via export-desktop (2026-08-02); Windows portable is unsupported (unpacked dir is not portable); runtime smoke pending"
           : target.os === "macos"
-            ? "DMG/ZIP; signing and notarization require a macOS runner and credentials"
-              : "AppImage/DEB built on a Linux host; runtime smoke pending on a Linux runner; RPM needs the rpmbuild system package (sudo apt-get install -y rpm)",
+            ? "unsigned DMG/ZIP built on a macos runner via export-desktop (2026-08-02); signing and notarization require a macOS runner and credentials"
+              : "AppImage/DEB/RPM built on a ubuntu runner via export-desktop (2026-08-02); runtime smoke pending",
     })
   }
 

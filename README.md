@@ -61,7 +61,7 @@ Newhorse is built on the engineering foundation of [OpenCode](https://github.com
 - A single explicit content-scope policy for project/task versus personal/relationship storage and the unified Trust Policy enforcement call sites
 - Redacted capability-status diagnostics and the complete workspace policy matrix
 - The complete Companion safety evaluation matrix and relationship reset flow
-- Cross-OS portable verification (Linux runtime smoke) and Desktop installer smoke on target runners
+- Cross-OS portable CLI verification is done (export-cli validate-linux/validate-windows on target-OS runners); Desktop installer smoke on target runners remains
 - Remaining V2 adapters, migration coverage, and release maturity
 
 The repository does not describe these in-progress items as completed features.
@@ -158,7 +158,7 @@ The officially exportable CLI targets are `linux-x64`, `windows-x64`, and `windo
 
 This is a portable CLI archive, not a signed Windows installer. Desktop installers (Windows NSIS, macOS DMG/ZIP, Linux AppImage/DEB/RPM) must be built and verified on their own operating systems; no signed or published release exists yet.
 
-For desktop installers that need tools not present on a local machine, run the `export-desktop` GitHub Actions workflow (manual `workflow_dispatch`, artifact-only): the Linux job installs `rpm` on the runner and produces AppImage/DEB/RPM, the Windows job produces the NSIS installer, and the macOS job produces DMG/ZIP (signing and notarization are not performed and require a macOS runner with credentials). This is the CI path for the RPM, Windows-installer, and macOS targets; `bun run product doctor` prints the local unblocking commands.
+For desktop installers that need tools not present on a local machine, run the `export-desktop` GitHub Actions workflow (manual `workflow_dispatch`, artifact-only): the Linux job installs `rpm` on the runner and produces AppImage/DEB/RPM, the Windows job produces the NSIS installer, and the macOS job produces DMG/ZIP. All three were produced successfully on 2026-08-02; the outputs are unsigned, and signing and notarization require a macOS/Windows runner with credentials. This is the CI path for the RPM, Windows-installer, and macOS targets; `bun run product doctor` prints the local unblocking commands.
 
 **Reproducibility boundary:** the export/verify contract is deterministic in structure — the manifest schema, single-root-binary ZIP layout, and per-artifact SHA-256 checksums are consistent. The binary *payload* is not bit-for-bit reproducible across identical-input rebuilds because the Bun compiler embeds build metadata (timestamps/paths). Treat the per-artifact hash as authoritative for that build, not as a cross-rebuild fingerprint.
 

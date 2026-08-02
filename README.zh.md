@@ -61,7 +61,7 @@ Newhorse 建立在 [OpenCode](https://github.com/anomalyco/opencode) 的工程�
 - Project/Task 与 Personal/Relationship 存储之间统一、显式的 Content Scope Policy，以及统一 Trust Policy 的 enforcement 调用点迁移
 - 脱敏 Capability 状态诊断与完整 Workspace Policy 矩阵
 - 完整 Companion 安全评测矩阵与关系记忆重置流程
-- 跨 OS 便携运行验证（Linux 运行时 smoke）与目标 runner 上的 Desktop 安装包 smoke
+- 跨 OS 便携 CLI 验证已完成（export-cli 的 validate-linux/validate-windows 在目标 OS runner 上）；目标 runner 上的 Desktop 安装包 smoke 仍在闭环
 - 剩余 V2 adapters、迁移覆盖与发布成熟度
 
 仓库不会把这些进行中的工作描述为已完成功能。
@@ -158,7 +158,7 @@ bun run --cwd packages/opencode export:local --target windows-x64
 
 这是便携 CLI 归档，不是已签名的 Windows 安装器。Desktop 安装包（Windows NSIS、macOS DMG/ZIP、Linux AppImage/DEB/RPM）需要在各自操作系统上构建和验证；目前尚不存在已签名或已发布的正式版本。
 
-对于本机缺少工具的 Desktop 安装包，可运行 `export-desktop` GitHub Actions 工作流（手动 `workflow_dispatch`、仅产物）：Linux job 会在 runner 上安装 `rpm` 并产出 AppImage/DEB/RPM，Windows job 产出 NSIS 安装器，macOS job 产出 DMG/ZIP（不执行签名和 notarization，需带凭据的 macOS runner）。这是 RPM、Windows 安装器与 macOS 目标的 CI 路径；`bun run product doctor` 会打印本机解除阻塞所需的命令。
+对于本机缺少工具的 Desktop 安装包，可运行 `export-desktop` GitHub Actions 工作流（手动 `workflow_dispatch`、仅产物）：Linux job 会在 runner 上安装 `rpm` 并产出 AppImage/DEB/RPM，Windows job 产出 NSIS 安装器，macOS job 产出 DMG/ZIP。三者已于 2026-08-02 在对应 runner 上成功产出；产物均未签名，签名和 notarization 需要带凭据的 macOS/Windows runner。这是 RPM、Windows 安装器与 macOS 目标的 CI 路径；`bun run product doctor` 会打印本机解除阻塞所需的命令。
 
 ## Memory 与内容隔离
 
