@@ -153,9 +153,10 @@ bun run product export --product cli --target linux-x64 --execution local
 # 直接调用 package 脚本（产物契约相同）
 bun run --cwd packages/opencode export:local --target windows-x64
 
-# 可选签名钩子：归档前对二进制执行签名命令（命令接收二进制路径）；
-# 校验和与 manifest 覆盖签名后的二进制
-bun run --cwd packages/opencode export:local --target windows-x64 --sign ./script/sign-cli.sh
+# 可选签名钩子：归档前对二进制执行签名命令（相对路径按仓库根解析）；
+# 校验和与 manifest 覆盖签名后的二进制。script/sign-cli.sh 在未配置 Azure
+# Trusted Signing 时为 no-op。
+bun run --cwd packages/opencode export:local --target windows-x64 --sign script/sign-cli.sh
 ```
 
 `export-cli` 工作流提供 `sign-command` 输入以在 CI 中使用同一钩子：提供签名器可执行路径（仅限可信操作者），二进制会在归档前被签名，校验和与 manifest 覆盖签名后产物；未提供签名命令则导出保持 unsigned。

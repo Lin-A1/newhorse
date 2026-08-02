@@ -169,9 +169,13 @@ export async function main(args: string[]) {
 
   // Optional signing hook: the workflow passes a signer command for the target
   // platform. The command runs against the binary file in place; the archive,
-  // checksum, and manifest are then produced from the signed binary.
+  // checksum, and manifest are then produced from the signed binary. Relative
+  // signer paths resolve against the repository root so they work regardless of
+  // the process working directory.
   if (options.sign) {
-    const signProc = Bun.spawn([options.sign, binaryPath], {
+    const root = path.resolve(import.meta.dir, "..", "..", "..")
+    const signCommand = path.isAbsolute(options.sign) ? options.sign : path.resolve(root, options.sign)
+    const signProc = Bun.spawn([signCommand, binaryPath], {
       cwd: packageDir,
       stdin: "inherit",
       stdout: "inherit",

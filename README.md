@@ -154,9 +154,10 @@ bun run product export --product cli --target linux-x64 --execution local
 bun run --cwd packages/opencode export:local --target windows-x64
 
 # optional signing hook: run a signer against the binary before it is archived
-# (the command receives the binary path); the checksum and manifest then cover
-# the signed binary
-bun run --cwd packages/opencode export:local --target windows-x64 --sign ./script/sign-cli.sh
+# (relative signer paths resolve against the repository root); the checksum and
+# manifest then cover the signed binary. script/sign-cli.sh is a no-op unless
+# Azure Trusted Signing is configured.
+bun run --cwd packages/opencode export:local --target windows-x64 --sign script/sign-cli.sh
 ```
 
 The `export-cli` workflow accepts a `sign-command` input for the same hook in CI: provide a signer executable path (trusted operator), and the binary is signed before archiving so the checksum and manifest cover the signed artifact. Without a sign command, exports are unsigned.
