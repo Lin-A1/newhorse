@@ -36,6 +36,11 @@ export interface MockServerConfig {
     export?: (query: URLSearchParams) => unknown[]
     mutate?: (input: { method: string; path: string; query: URLSearchParams; body?: unknown }) => unknown
   }
+  reminder?: {
+    list: (query: URLSearchParams) => unknown[] | Promise<unknown[]>
+    audit?: (input: { reminderID: string; query: URLSearchParams }) => unknown | Promise<unknown>
+    mutate?: (input: { method: string; path: string; query: URLSearchParams; body?: unknown }) => unknown | Promise<unknown>
+  }
   continuityGrant?: {
     list: (query: URLSearchParams, headers: Record<string, string>) => unknown[] | Promise<unknown[]>
     audit?: (input: {
@@ -113,6 +118,26 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       return json(
         route,
         config.memory.mutate({ method: route.request().method(), path, query: url.searchParams, body }),
+      )
+    }
+    if (path === "/reminder" && route.request().method() === "GET") {
+      return json(route, (await config.reminder?.list(url.searchParams)) ?? [])
+    }
+    const reminderAudit = path.match(/^\/reminder\/([^/]+)\/audit$/)
+    if (reminderAudit && route.request().method() === "GET") {
+      return json(
+        route,
+        (await config.reminder?.audit?.({
+          reminderID: decodeURIComponent(reminderAudit[1]!),
+          query: url.searchParams,
+        })) ?? { items: [] },
+      )
+    }
+    if ((path === "/reminder" || /^\/reminder\/[^/]+$/.test(path)) && config.reminder?.mutate) {
+      const body = route.request().postData() ? route.request().postDataJSON() : undefined
+      return json(
+        route,
+        await config.reminder.mutate({ method: route.request().method(), path, query: url.searchParams, body }),
       )
     }
     if (path === "/continuity-grant" && route.request().method() === "GET") {

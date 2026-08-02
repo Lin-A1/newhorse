@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { EventScheduledEventDue } from "@newhorse/sdk/v2"
 import { base64Encode } from "@newhorse/core/util/encode"
-import { reminderNotification } from "./notification"
+import { reminderDeliveryKey, reminderNotification } from "./notification"
 
 const event = (sessionID?: string): EventScheduledEventDue => ({
   id: "evt_reminder",
@@ -14,6 +14,9 @@ const event = (sessionID?: string): EventScheduledEventDue => ({
     title: "Drink water",
     body: "Take a water break",
     scheduleAt: 123,
+    occurrenceAt: 123,
+    deliveryKey: "sch_reminder:123",
+    attemptCount: 1,
   },
 })
 
@@ -29,12 +32,23 @@ describe("reminder notifications", () => {
       type: "reminder",
       title: "Drink water",
       body: "Take a water break",
-      metadata: { id: "sch_reminder", eventType: "reminder" },
+      metadata: {
+        id: "sch_reminder",
+        eventType: "reminder",
+        deliveryKey: "sch_reminder:123",
+        occurrenceAt: 123,
+      },
     })
     expect(result.href).toBe(`/${base64Encode("/workspace")}/session/ses_test`)
   })
 
   test("links workspace reminders without a session to the project", () => {
     expect(reminderNotification("/workspace", event()).href).toBe(`/${base64Encode("/workspace")}`)
+  })
+
+  test("recovers the stable delivery identity from persisted notification metadata", () => {
+    const { notification } = reminderNotification("/workspace", event())
+    expect(reminderDeliveryKey(notification)).toBe("sch_reminder:123")
+    expect(reminderDeliveryKey({ ...notification, metadata: undefined })).toBeUndefined()
   })
 })

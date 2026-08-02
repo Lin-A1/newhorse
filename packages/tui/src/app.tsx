@@ -43,6 +43,7 @@ import { DialogModel } from "./component/dialog-model"
 import { useConnected } from "./component/use-connected"
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogMemory } from "./component/dialog-memory"
+import { DialogReminder } from "./component/dialog-reminder"
 import { DialogContinuityGrant } from "./component/dialog-continuity-grant"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogDebug } from "./component/dialog-debug"
@@ -60,7 +61,7 @@ import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
 import { DialogAlert } from "./ui/dialog-alert"
 import { DialogConfirm } from "./ui/dialog-confirm"
-import { ToastProvider, reminderToast, useToast } from "./ui/toast"
+import { ToastProvider, createDeliveryDeduper, reminderToast, useToast } from "./ui/toast"
 import { isDefaultTitle } from "./util/session"
 import { KVProvider, useKV } from "./context/kv"
 import * as Model from "./util/model"
@@ -386,6 +387,13 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const pluginRuntime = usePluginRuntime()
   const attention = createTuiAttention({ renderer, config: tuiConfig, kv })
   const clipboard = useClipboard()
+  const reminderDeliveryKeys = kv.get("reminder_delivery_keys.v1", [])
+  const acceptReminderDelivery = createDeliveryDeduper({
+    initial: Array.isArray(reminderDeliveryKeys)
+      ? reminderDeliveryKeys.filter((value): value is string => typeof value === "string")
+      : [],
+    onChange: (keys) => kv.set("reminder_delivery_keys.v1", keys),
+  })
 
   const api = createTuiApi(
     createTuiApiAdapters({
@@ -693,6 +701,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         slashName: "memory",
         run: () => {
           dialog.replace(() => <DialogMemory />)
+        },
+      },
+      {
+        name: "reminder.list",
+        title: "Manage reminders",
+        category: "Agent",
+        slashName: "reminders",
+        slashAliases: ["reminder"],
+        run: () => {
+          dialog.replace(() => <DialogReminder />)
         },
       },
       {
@@ -1059,7 +1077,8 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
 
   event.on("scheduled-event.due", (evt, { workspace }) => {
     const reminder = reminderToast(evt, workspace, project.workspace.current())
-    if (reminder) toast.show(reminder)
+    if (!reminder || !acceptReminderDelivery(evt.properties.deliveryKey)) return
+    toast.show(reminder)
   })
 
   event.on("session.error", (evt, { workspace }) => {

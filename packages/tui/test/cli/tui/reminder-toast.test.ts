@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { EventScheduledEventDue } from "@newhorse/sdk/v2/client"
-import { reminderToast } from "../../../src/ui/toast"
+import { createDeliveryDeduper, reminderToast } from "../../../src/ui/toast"
 
 const event: EventScheduledEventDue = {
   id: "evt_reminder",
@@ -13,6 +13,9 @@ const event: EventScheduledEventDue = {
     title: "Stand up",
     body: "Take a short movement break",
     scheduleAt: 123,
+    occurrenceAt: 123,
+    deliveryKey: "sch_reminder:123",
+    attemptCount: 1,
   },
 }
 
@@ -28,5 +31,17 @@ describe("reminder toast", () => {
 
   test("ignores reminders routed to another workspace", () => {
     expect(reminderToast(event, "wrk_two", "wrk_one")).toBeUndefined()
+  })
+
+  test("deduplicates delivery keys with bounded FIFO retention", () => {
+    const changes: string[][] = []
+    const accept = createDeliveryDeduper({ limit: 2, initial: ["persisted"], onChange: (keys) => changes.push(keys) })
+    expect(accept("persisted")).toBe(false)
+    expect(accept("one")).toBe(true)
+    expect(accept("one")).toBe(false)
+    expect(accept("two")).toBe(true)
+    expect(accept("three")).toBe(true)
+    expect(accept("one")).toBe(true)
+    expect(changes.at(-1)).toEqual(["three", "one"])
   })
 })

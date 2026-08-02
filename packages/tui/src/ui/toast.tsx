@@ -27,6 +27,24 @@ export function reminderToast(
   }
 }
 
+export function createDeliveryDeduper(input: {
+  limit?: number
+  initial?: string[]
+  onChange?: (keys: string[]) => void
+} = {}) {
+  const limit = input.limit ?? 500
+  const order = (input.initial ?? []).slice(-limit)
+  const keys = new Set(order)
+  return (key: string) => {
+    if (keys.has(key)) return false
+    keys.add(key)
+    order.push(key)
+    if (order.length > limit) keys.delete(order.shift()!)
+    input.onChange?.([...order])
+    return true
+  }
+}
+
 export function Toast() {
   const toast = useToast()
   const { theme } = useTheme()

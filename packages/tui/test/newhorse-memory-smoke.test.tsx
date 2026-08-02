@@ -72,6 +72,7 @@ type TuiHarness = {
   api: TuiPluginApi
   events: ReturnType<typeof createEventSource>
   render: () => Promise<string>
+  state: string
   mockInput: Awaited<ReturnType<typeof createTestRenderer>>["mockInput"]
 }
 
@@ -81,11 +82,12 @@ async function withTui(
     events: ReturnType<typeof createEventSource>,
   ) => typeof globalThis.fetch,
   verify: (harness: TuiHarness) => Promise<void>,
+  initialKV: Record<string, unknown> = {},
 ) {
   await using root = await tmpdir()
   const state = path.join(root.path, "state")
   await mkdir(state, { recursive: true })
-  await Bun.write(path.join(state, "kv.json"), "{}")
+  await Bun.write(path.join(state, "kv.json"), JSON.stringify(initialKV))
   const setup = await createTestRenderer({ width: 100, height: 30, useThread: false, kittyKeyboard: true })
   const core = await import("@opentui/core")
   mock.module("@opentui/core", () => ({ ...core, createCliRenderer: async () => setup.renderer }))
@@ -124,6 +126,7 @@ async function withTui(
     await verify({
       api: api!,
       events,
+      state,
       mockInput: setup.mockInput,
       async render() {
         await setup.renderOnce()
@@ -370,6 +373,140 @@ test("reloads an open Memory dialog with the Session Workspace client", async ()
         }),
       ])
       expect(requests.every((request) => !new URLSearchParams(request.query).has("profileID"))).toBe(true)
+    },
+  )
+}, 20_000)
+
+test("deduplicates mounted reminder delivery across restart persistence", async () => {
+  const persistedKey = "sch_persisted:1"
+  const freshKey = "sch_fresh:2"
+  await withTui(
+    (fallback) => fallback,
+    async ({ api, events, render, state }) => {
+      await waitFor(() => api.state.ready)
+      const due = (deliveryKey: string, title: string) => ({
+        directory,
+        workspace: undefined,
+        payload: {
+          type: "scheduled-event.due" as const,
+          properties: {
+            id: deliveryKey.split(":")[0]!,
+            profileID: "assistant",
+            eventType: "reminder" as const,
+            title,
+            body: `${title} body`,
+            scheduleAt: 1,
+            occurrenceAt: 1,
+            deliveryKey,
+            attemptCount: 1,
+          },
+        },
+      })
+
+      events.emit(due(persistedKey, "Persisted duplicate"))
+      await render()
+      expect(await render()).not.toContain("Persisted duplicate")
+
+      events.emit(due(freshKey, "Fresh reminder"))
+      events.emit(due(freshKey, "Fresh reminder"))
+      await waitFor(async () => (await render()).includes("Fresh reminder"))
+      await waitFor(async () => {
+        const saved = JSON.parse(await Bun.file(path.join(state, "kv.json")).text()) as Record<string, unknown>
+        return JSON.stringify(saved["reminder_delivery_keys.v1"]) === JSON.stringify([persistedKey, freshKey])
+      })
+    },
+    { "reminder_delivery_keys.v1": [persistedKey] },
+  )
+}, 20_000)
+
+test("opens /reminders, pauses a series, and reads content-free audit through the full TUI", async () => {
+  const requests: RecordedRequest[] = []
+  const reminder = {
+    id: "sch_smoke",
+    workspaceID: "personal",
+    profileID: "companion",
+    sessionID,
+    type: "reminder",
+    title: "Daily reflection",
+    body: "Review the day",
+    scheduleAt: Date.parse("2030-01-02T03:04:00Z"),
+    timezone: "UTC",
+    recurrenceRule: "FREQ=DAILY;INTERVAL=1",
+    misfirePolicy: "catch_up_once",
+    status: "pending" as "pending" | "paused",
+    attemptCount: 0,
+    timeCreated: 1,
+    timeUpdated: 1,
+  }
+
+  await withTui(
+    (fallback) =>
+      (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = input instanceof Request ? input : new Request(input, init)
+        const url = new URL(request.url)
+        requests.push({
+          method: request.method,
+          path: url.pathname,
+          query: url.search,
+          workspace: url.searchParams.get("workspace") ?? undefined,
+          legacyWorkspace: request.headers.get("x-opencode-workspace") ?? undefined,
+        })
+        if (url.pathname === `/session/${sessionID}`) return Response.json(session)
+        if (
+          url.pathname === `/session/${sessionID}/message` ||
+          url.pathname === `/session/${sessionID}/todo` ||
+          url.pathname === `/session/${sessionID}/diff`
+        )
+          return Response.json([])
+        if (url.pathname === "/reminder" && request.method === "GET") return Response.json([reminder])
+        if (url.pathname === "/reminder/sch_smoke" && request.method === "PATCH") {
+          expect(await request.json()).toEqual({ paused: true })
+          reminder.status = "paused"
+          return Response.json(reminder)
+        }
+        if (url.pathname === "/reminder/sch_smoke/audit" && request.method === "GET")
+          return Response.json({
+            items: [
+              {
+                id: "sha_smoke",
+                eventID: reminder.id,
+                action: "delivered",
+                outcome: "success",
+                deliveryKey: "sch_smoke:1893553440000",
+                timeCreated: 2,
+              },
+            ],
+          })
+        return fallback(request)
+      }) as typeof globalThis.fetch,
+    async ({ api, render }) => {
+      api.route.navigate("session", { sessionID })
+      await waitFor(() => api.state.session.get(sessionID) !== undefined)
+      const opened = api.keymap.dispatchCommand("reminder.list")
+      if (!opened.ok) throw new Error(JSON.stringify(opened))
+      await waitFor(async () => (await render()).includes("Daily reflection"))
+      expect(await render()).toContain("Reminders")
+
+      const paused = api.keymap.dispatchCommand("dialog.reminder.pause")
+      if (!paused.ok) throw new Error(JSON.stringify(paused))
+      await waitFor(() => requests.some((request) => request.method === "PATCH" && request.path === "/reminder/sch_smoke"))
+      await waitFor(async () => (await render()).includes("paused"))
+
+      const audited = api.keymap.dispatchCommand("dialog.reminder.audit")
+      if (!audited.ok) throw new Error(JSON.stringify(audited))
+      await waitFor(() => requests.some((request) => request.path === "/reminder/sch_smoke/audit"))
+      await waitFor(async () => (await render()).includes("delivered · success"))
+      expect(await render()).toContain("sch_smoke:1893553440000")
+      const reminderRequests = requests.filter((request) => request.path.startsWith("/reminder"))
+      expect(reminderRequests.map((request) => `${request.method} ${request.path}`)).toEqual([
+        "GET /reminder",
+        "PATCH /reminder/sch_smoke",
+        "GET /reminder/sch_smoke/audit",
+      ])
+      expect(reminderRequests.every((request) => (request.workspace ?? request.legacyWorkspace) === "personal")).toBe(true)
+      expect(
+        reminderRequests.every((request) => new URLSearchParams(request.query).get("session") === sessionID),
+      ).toBe(true)
     },
   )
 }, 20_000)

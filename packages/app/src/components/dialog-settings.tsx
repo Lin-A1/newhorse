@@ -13,6 +13,7 @@ import { SettingsServers } from "./settings-servers"
 import { SettingsProfile } from "./settings-profile"
 import { SettingsMemory } from "./settings-memory"
 import { SettingsContinuityGrants } from "./settings-continuity-grants"
+import { SettingsReminders } from "./settings-reminders"
 
 export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
   const language = useLanguage()
@@ -74,6 +75,10 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="branch" />
                       Continuity Grants
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="reminders">
+                      <Icon name="task" />
+                      Reminders
+                    </Tabs.Trigger>
                     <Tabs.Trigger value="profile">
                       <Icon name="brain" />
                       {language.t("settings.profile.title")}
@@ -108,6 +113,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="continuity" class="no-scrollbar">
           <SettingsContinuityGrants />
+        </Tabs.Content>
+        <Tabs.Content value="reminders" class="no-scrollbar">
+          <SettingsReminders />
         </Tabs.Content>
         <Tabs.Content value="profile" class="no-scrollbar">
           <SettingsProfile />

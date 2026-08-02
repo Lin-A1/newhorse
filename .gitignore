@@ -26,6 +26,12 @@ target
 .scripts
 .direnv/
 
+# Local agent and analysis artifacts
+/.claude/
+/graphify-out/
+/.impeccable.md
+/packages/opencode/config.json
+
 # Local dev files
 opencode-dev
 UPCOMING_CHANGELOG.md

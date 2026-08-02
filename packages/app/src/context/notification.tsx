@@ -56,10 +56,22 @@ export function reminderNotification(
       session: sessionID,
       title: event.properties.title,
       body: event.properties.body,
-      metadata: { id: event.properties.id, eventType: event.properties.eventType },
+      metadata: {
+        id: event.properties.id,
+        eventType: event.properties.eventType,
+        deliveryKey: event.properties.deliveryKey,
+        occurrenceAt: event.properties.occurrenceAt,
+      },
     },
     href: sessionID ? legacySessionHref(directory, sessionID) : `/${base64Encode(directory)}`,
   }
+}
+
+export function reminderDeliveryKey(notification: Notification) {
+  if (notification.type !== "reminder") return
+  if (!notification.metadata || typeof notification.metadata !== "object") return
+  if (!("deliveryKey" in notification.metadata)) return
+  return typeof notification.metadata.deliveryKey === "string" ? notification.metadata.deliveryKey : undefined
 }
 
 export type Notification = TurnCompleteNotification | ErrorNotification | ReminderNotification
@@ -423,6 +435,7 @@ function createServerNotificationState(input: {
     const directory = e.name
     const time = Date.now()
     if (event.type === "scheduled-event.due") {
+      if (store.list.some((notification) => reminderDeliveryKey(notification) === event.properties.deliveryKey)) return
       const reminder = reminderNotification(directory, event, time)
       append(reminder.notification)
       void platform.notify(event.properties.title, event.properties.body, reminder.href)

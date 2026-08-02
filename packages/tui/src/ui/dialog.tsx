@@ -85,6 +85,7 @@ function init() {
   })
 
   let focus: Renderable | null
+  let revision = 0
   function refocus() {
     setTimeout(() => {
       if (!focus) return
@@ -138,6 +139,7 @@ function init() {
 
   return {
     clear() {
+      revision++
       for (const item of store.stack) {
         if (item.onClose) item.onClose()
       }
@@ -148,6 +150,7 @@ function init() {
       refocus()
     },
     replace(input: any, onClose?: () => void) {
+      revision++
       if (store.stack.length === 0) {
         focus = renderer.currentFocusedRenderable
         focus?.blur()
@@ -162,6 +165,9 @@ function init() {
           onClose,
         },
       ])
+    },
+    get revision() {
+      return revision
     },
     get stack() {
       return store.stack
