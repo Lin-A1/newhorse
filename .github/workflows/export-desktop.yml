@@ -17,6 +17,9 @@ permissions:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    env:
+      # The renderer Vite build exceeds the default V8 heap on shared runners.
+      NODE_OPTIONS: "--max-old-space-size=5120"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -48,6 +51,9 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
+    env:
+      # The renderer Vite build exceeds the default V8 heap on shared runners.
+      NODE_OPTIONS: "--max-old-space-size=5120"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -76,6 +82,8 @@ jobs:
       # Skip signing-identity discovery so this builds an unsigned DMG/ZIP;
       # electron-builder then also skips notarization (no APPLE_* credentials).
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # The renderer Vite build exceeds the default V8 heap on shared runners.
+      NODE_OPTIONS: "--max-old-space-size=5120"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
