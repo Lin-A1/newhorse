@@ -62,6 +62,7 @@ jobs:
       AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
       AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
       AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE }}
+      HAS_AZURE_SIGNING: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -69,7 +70,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Azure login (Windows signing)
-        if: secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != ''
+        if: env.HAS_AZURE_SIGNING == 'true'
         uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -97,6 +98,12 @@ jobs:
     env:
       # The renderer Vite build exceeds the default V8 heap on shared runners.
       NODE_OPTIONS: "--max-old-space-size=5120"
+      # Optional Developer ID signing + notarization; empty CSC_LINK keeps the
+      # build unsigned, and the discovery mode step below enforces that.
+      CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+      HAS_APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_PATH != '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -108,15 +115,13 @@ jobs:
       # electron-builder signs with the imported identity.
       - name: Set signing discovery mode
         shell: bash
-        env:
-          HAS_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
         run: |
-          if [ "$HAS_CERT" != "true" ]; then
+          if [ "$HAS_APPLE_CERT" != "true" ]; then
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
           fi
 
       - name: Import codesigning certificate
-        if: secrets.APPLE_CERTIFICATE != ''
+        if: env.HAS_APPLE_CERT == 'true'
         uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2.0.0
         with:
           keychain: build
@@ -124,7 +129,7 @@ jobs:
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: Setup Apple API key for notarization
-        if: secrets.APPLE_API_KEY_PATH != ''
+        if: env.HAS_APPLE_API_KEY == 'true'
         shell: bash
         run: |
           echo "${{ secrets.APPLE_API_KEY_PATH }}" > "$RUNNER_TEMP/apple-api-key.p8"
@@ -140,9 +145,6 @@ jobs:
 
       - name: Package macOS app
         shell: bash
-        env:
-          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: bun run --cwd packages/desktop package:mac
 
       - name: Upload macOS artifacts
