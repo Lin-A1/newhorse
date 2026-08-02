@@ -143,4 +143,38 @@ describe("nh setup", () => {
       }),
     60_000,
   )
+
+  cliIt.concurrent(
+    "is idempotent when the same profile setup is repeated",
+    ({ home, opencode }) =>
+      Effect.gen(function* () {
+        const args = [
+          "setup",
+          "profile",
+          "companion",
+          "--name",
+          "Idempotent",
+          "--memory",
+          "auto-safe",
+          "--json",
+        ]
+        const first = yield* opencode.spawn(args)
+        opencode.expectExit(first, 0)
+        const firstConfig = JSON.parse(first.stdout)
+
+        const second = yield* opencode.spawn(args)
+        opencode.expectExit(second, 0)
+        expect(JSON.parse(second.stdout)).toEqual(firstConfig)
+
+        const config = yield* Effect.promise(() =>
+          Bun.file(path.join(home, ".config", "newhorse", "newhorse.jsonc")).json(),
+        )
+        expect(config.profile.items.companion).toMatchObject({
+          kind: "companion",
+          name: "Idempotent",
+          memory: "auto-safe",
+        })
+      }),
+    60_000,
+  )
 })
