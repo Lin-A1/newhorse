@@ -2,10 +2,14 @@
 # present on the local machine: Linux AppImage/DEB/RPM (installs rpm on the
 # runner), Windows NSIS, and macOS DMG/ZIP.
 #
-# All outputs are UNSIGNED and are for install/launch smoke testing. Signing,
-# notarization, GitHub Releases, and publishing stay off: the Windows job signs
-# nothing without Azure Trusted Signing credentials, and the macOS job forces
-# signing-identity discovery off so electron-builder skips notarization too.
+# Signing is OPT-IN via repo secrets and is never required for the build:
+#   - Windows: signs the NSIS installer with Azure Trusted Signing when
+#     AZURE_TRUSTED_SIGNING_* (and Azure login) secrets are present; otherwise
+#     script/sign-windows.ps1 is a no-op and the installer is unsigned.
+#   - macOS: imports the Developer ID cert and notarizes when APPLE_* secrets
+#     are present; otherwise identity discovery stays off and the DMG/ZIP are
+#     unsigned.
+# No GitHub Release or publishing happens here regardless.
 name: export-desktop
 
 on:
@@ -54,11 +58,23 @@ jobs:
     env:
       # The renderer Vite build exceeds the default V8 heap on shared runners.
       NODE_OPTIONS: "--max-old-space-size=5120"
+      # Optional Azure Trusted Signing; empty values keep sign-windows.ps1 a no-op.
+      AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ secrets.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+      AZURE_TRUSTED_SIGNING_ACCOUNT_NAME: ${{ secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME }}
+      AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE: ${{ secrets.AZURE_TRUSTED_SIGNING_CERTIFICATE_PROFILE }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
+
+      - name: Azure login (Windows signing)
+        if: secrets.AZURE_TRUSTED_SIGNING_ACCOUNT_NAME != ''
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2.3.0
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Build Desktop app
         shell: bash
@@ -79,9 +95,6 @@ jobs:
   build-macos:
     runs-on: macos-latest
     env:
-      # Skip signing-identity discovery so this builds an unsigned DMG/ZIP;
-      # electron-builder then also skips notarization (no APPLE_* credentials).
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
       # The renderer Vite build exceeds the default V8 heap on shared runners.
       NODE_OPTIONS: "--max-old-space-size=5120"
     steps:
@@ -90,12 +103,46 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      # When no Developer ID cert is configured, skip identity discovery so the
+      # build stays unsigned. When a cert is present, leave discovery on so
+      # electron-builder signs with the imported identity.
+      - name: Set signing discovery mode
+        shell: bash
+        env:
+          HAS_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        run: |
+          if [ "$HAS_CERT" != "true" ]; then
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Import codesigning certificate
+        if: secrets.APPLE_CERTIFICATE != ''
+        uses: apple-actions/import-codesign-certs@8f3fb608891dd2244cdab3d69cd68c0d37a7fe93 # v2.0.0
+        with:
+          keychain: build
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+
+      - name: Setup Apple API key for notarization
+        if: secrets.APPLE_API_KEY_PATH != ''
+        shell: bash
+        run: |
+          echo "${{ secrets.APPLE_API_KEY_PATH }}" > "$RUNNER_TEMP/apple-api-key.p8"
+          {
+            echo "APPLE_API_KEY=$RUNNER_TEMP/apple-api-key.p8"
+            echo "APPLE_API_KEY_ID=${{ secrets.APPLE_API_KEY }}"
+            echo "APPLE_API_ISSUER=${{ secrets.APPLE_API_ISSUER }}"
+          } >> "$GITHUB_ENV"
+
       - name: Build Desktop app
         shell: bash
         run: bun run --cwd packages/desktop build
 
       - name: Package macOS app
         shell: bash
+        env:
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: bun run --cwd packages/desktop package:mac
 
       - name: Upload macOS artifacts

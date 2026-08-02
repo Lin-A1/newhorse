@@ -158,7 +158,7 @@ bun run --cwd packages/opencode export:local --target windows-x64
 
 这是便携 CLI 归档，不是已签名的 Windows 安装器。Desktop 安装包（Windows NSIS、macOS DMG/ZIP、Linux AppImage/DEB/RPM）需要在各自操作系统上构建和验证；目前尚不存在已签名或已发布的正式版本。
 
-对于本机缺少工具的 Desktop 安装包，可运行 `export-desktop` GitHub Actions 工作流（手动 `workflow_dispatch`、仅产物）：Linux job 会在 runner 上安装 `rpm` 并产出 AppImage/DEB/RPM，Windows job 产出 NSIS 安装器，macOS job 产出 DMG/ZIP。三者已于 2026-08-02 在对应 runner 上成功产出；产物均未签名，签名和 notarization 需要带凭据的 macOS/Windows runner。这是 RPM、Windows 安装器与 macOS 目标的 CI 路径；`bun run product doctor` 会打印本机解除阻塞所需的命令。
+对于本机缺少工具的 Desktop 安装包，可运行 `export-desktop` GitHub Actions 工作流（手动 `workflow_dispatch`、仅产物）：Linux job 会在 runner 上安装 `rpm` 并产出 AppImage/DEB/RPM，Windows job 产出 NSIS 安装器，macOS job 产出 DMG/ZIP。三者已于 2026-08-02 在对应 runner 上成功产出。签名通过仓库 secrets 可选开启：存在 `AZURE_TRUSTED_SIGNING_*`（及 Azure login）secrets 时 Windows job 用 Azure Trusted Signing 签名；存在 `APPLE_CERTIFICATE`/`APPLE_API_KEY*` secrets 时 macOS job 签名并 notarize；无凭据则产出 unsigned 安装包。这是 RPM、Windows 安装器与 macOS 目标的 CI 路径；`bun run product doctor` 会打印本机解除阻塞所需的命令。
 
 ## Memory 与内容隔离
 

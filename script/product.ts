@@ -153,9 +153,9 @@ export function targetStatuses(): TargetStatus[] {
       packageFormats: target.formats,
       note:
         target.os === "windows"
-          ? "NSIS installer built on a windows runner via export-desktop (2026-08-02); Windows portable is unsupported (unpacked dir is not portable); runtime smoke pending"
+          ? "NSIS installer built on a windows runner via export-desktop (2026-08-02); Azure Trusted Signing is opt-in via secrets, otherwise unsigned; Windows portable is unsupported (unpacked dir is not portable); runtime smoke pending"
           : target.os === "macos"
-            ? "unsigned DMG/ZIP built on a macos runner via export-desktop (2026-08-02); signing and notarization require a macOS runner and credentials"
+            ? "DMG/ZIP built on a macos runner via export-desktop (2026-08-02); Developer ID + notarization are opt-in via APPLE_* secrets, otherwise unsigned"
               : "AppImage/DEB/RPM built on a ubuntu runner via export-desktop (2026-08-02); runtime smoke pending",
     })
   }
