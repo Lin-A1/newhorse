@@ -30,7 +30,15 @@ target
 /.claude/
 /graphify-out/
 /.impeccable.md
+/HANDOFF.md
 /packages/opencode/config.json
+
+# Test output (Playwright reports/traces, unit coverage)
+**/test-results/
+**/playwright-report/
+**/blob-report/
+**/playwright/.cache/
+**/coverage/
 
 # Local dev files
 opencode-dev

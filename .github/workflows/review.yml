@@ -6,10 +6,9 @@ on:
 
 jobs:
   check-guidelines:
-    if: |
-      github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/review') &&
-      contains(fromJson('["OWNER","MEMBER"]'), github.event.comment.author_association)
+    # Fork: disabled — installs the upstream opencode binary and calls
+    # opencode.ai models (Phase 6C: never route the fork to upstream install URLs).
+    if: false
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read

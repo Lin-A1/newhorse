@@ -1,6 +1,6 @@
-# Contributing to OpenCode
+# Contributing to Newhorse
 
-We want to make it easy for you to contribute to OpenCode. Here are the most common type of changes that get merged:
+Newhorse is an independent fork of [OpenCode](https://github.com/anomalyco/opencode). We want to make it easy for you to contribute. Here are the most common type of changes that get merged:
 
 - Bug fixes
 - Additional LSPs / Formatters
@@ -10,14 +10,14 @@ We want to make it easy for you to contribute to OpenCode. Here are the most com
 - Missing standard behavior
 - Documentation improvements
 
-However, any UI or core product feature must go through a design review with the core team before implementation.
+However, any UI or core product feature must go through a design review before implementation.
 
 If you are unsure if a PR would be accepted, feel free to ask a maintainer or look for issues with any of the following labels:
 
-- [`help wanted`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3Ahelp-wanted)
-- [`good first issue`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22)
-- [`bug`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3Abug)
-- [`perf`](https://github.com/anomalyco/opencode/issues?q=is%3Aopen%20is%3Aissue%20label%3A%22perf%22)
+- [`help wanted`](https://github.com/Lin-A1/newhorse/issues?q=is%3Aissue%20state%3Aopen%20label%3Ahelp-wanted)
+- [`good first issue`](https://github.com/Lin-A1/newhorse/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22)
+- [`bug`](https://github.com/Lin-A1/newhorse/issues?q=is%3Aissue%20state%3Aopen%20label%3Abug)
+- [`perf`](https://github.com/Lin-A1/newhorse/issues?q=is%3Aopen%20is%3Aissue%20label%3A%22perf%22)
 
 > [!NOTE]
 > PRs that ignore these guardrails will likely be closed.
@@ -47,38 +47,34 @@ By default, `bun dev` runs OpenCode in the `packages/opencode` directory. To run
 bun dev <directory>
 ```
 
-To run OpenCode in the root of the opencode repo itself:
+To run Newhorse in the root of the newhorse repo itself:
 
 ```bash
 bun dev .
 ```
 
-### Building a "localcode"
+### Building a portable CLI
 
-To compile a standalone executable:
-
-```bash
-./packages/opencode/script/build.ts --single
-```
-
-Then run it with:
+To compile a standalone portable binary (single executable ZIP + SHA256 + manifest):
 
 ```bash
-./packages/opencode/dist/opencode-<platform>/bin/opencode
+bun run product export --product cli --target linux-x64 --execution local
+bun run product export --product cli --target windows-x64 --execution auto
+bun run product export --product cli --target windows-x64-baseline --execution auto
 ```
 
-Replace `<platform>` with your platform (e.g., `darwin-arm64`, `linux-x64`).
+Artifacts land in `packages/opencode/dist/exports/`. The CLI binary is `nh`.
 
 - Core pieces:
-  - `packages/opencode`: OpenCode core business logic & server.
+  - `packages/opencode`: Newhorse core business logic & server.
   - `packages/opencode/src/cli/cmd/tui/`: The TUI code, written in SolidJS with [opentui](https://github.com/sst/opentui)
   - `packages/app`: The shared web UI components, written in SolidJS
   - `packages/desktop`: The native desktop app, built with Electron (wraps `packages/app`)
   - `packages/plugin`: Source for `@newhorse/plugin`
 
-### Understanding bun dev vs opencode
+### Understanding bun dev vs nh
 
-During development, `bun dev` is the local equivalent of the built `opencode` command. Both run the same CLI interface:
+During development, `bun dev` is the local equivalent of the built `nh` command. Both run the same CLI interface:
 
 ```bash
 # Development (from project root)
@@ -88,10 +84,10 @@ bun dev web              # Start server + open web interface
 bun dev <directory>      # Start TUI in specific directory
 
 # Production
-opencode --help          # Show all available commands
-opencode serve           # Start headless API server
-opencode web             # Start server + open web interface
-opencode <directory>     # Start TUI in specific directory
+nh --help                # Show all available commands
+nh serve                 # Start headless API server
+nh web                   # Start server + open web interface
+nh <directory>           # Start TUI in specific directory
 ```
 
 ### Unified product commands
@@ -114,7 +110,7 @@ Exports are incremental: a per-target input fingerprint (source, lockfile, confi
 
 ### Running the API Server
 
-To start the OpenCode headless API server:
+To start the Newhorse headless API server:
 
 ```bash
 bun dev serve
@@ -130,7 +126,7 @@ bun dev serve --port 8080
 
 To test UI changes during development:
 
-1. **First, start the OpenCode server** (see [Running the API Server](#running-the-api-server) section above)
+1. **First, start the Newhorse server** (see [Running the API Server](#running-the-api-server) section above)
 2. **Then run the web app:**
 
 ```bash
@@ -165,16 +161,16 @@ Please try to follow the [style guide](./AGENTS.md)
 
 Bun debugging is currently rough around the edges. We hope this guide helps you get set up and avoid some pain points.
 
-The most reliable way to debug OpenCode is to run it manually in a terminal via `bun run --inspect=<url> dev ...` and attach
+The most reliable way to debug Newhorse is to run it manually in a terminal via `bun run --inspect=<url> dev ...` and attach
 your debugger via that URL. Other methods can result in breakpoints being mapped incorrectly, at least in VSCode (YMMV).
 
 Caveats:
 
-- If you want to run the OpenCode TUI and have breakpoints triggered in the server code, you might need to run `bun dev spawn` instead of
+- If you want to run the Newhorse TUI and have breakpoints triggered in the server code, you might need to run `bun dev spawn` instead of
   the usual `bun dev`. This is because `bun dev` runs the server in a worker thread and breakpoints might not work there.
 - If `spawn` does not work for you, you can debug the server separately:
   - Debug server: `bun run --inspect=ws://localhost:6499/ --cwd packages/opencode ./src/index.ts serve --port 4096`,
-    then attach TUI with `opencode attach http://localhost:4096`
+    then attach TUI with `nh attach http://localhost:4096`
   - Debug TUI: `bun run --inspect=ws://localhost:6499/ --cwd packages/opencode --conditions=browser ./src/index.ts`
 
 Other tips and tricks:
@@ -268,7 +264,7 @@ These are not strictly enforced, they are just general guidelines:
 
 ## Feature Requests
 
-For net-new functionality, start with a design conversation. Open an issue describing the problem, your proposed approach (optional), and why it belongs in OpenCode. The core team will help decide whether it should move forward; please wait for that approval instead of opening a feature PR directly.
+For net-new functionality, start with a design conversation. Open an issue describing the problem, your proposed approach (optional), and why it belongs in Newhorse. A maintainer will help decide whether it should move forward; please wait for that approval instead of opening a feature PR directly.
 
 ## Trust & Vouch System
 
@@ -277,7 +273,7 @@ This project uses [vouch](https://github.com/mitchellh/vouch) to manage contribu
 ### How it works
 
 - **Vouched users** are explicitly trusted contributors.
-- **Denounced users** are explicitly blocked. Issues and pull requests from denounced users are automatically closed. If you have been denounced, you can request to be unvouched by reaching out to a maintainer on [Discord](https://opencode.ai/discord)
+- **Denounced users** are explicitly blocked. Issues and pull requests from denounced users are automatically closed. If you have been denounced, you can request to be unvouched by reaching out to a maintainer on the [issue tracker](https://github.com/Lin-A1/newhorse/issues)
 - **Everyone else** can participate normally — you don't need to be vouched to open issues or PRs.
 
 ### For maintainers

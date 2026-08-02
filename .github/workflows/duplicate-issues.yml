@@ -6,7 +6,10 @@ on:
 
 jobs:
   check-duplicates:
-    if: github.event.action == 'opened'
+    # Fork: this job installs the upstream opencode binary and calls opencode.ai
+    # models for AI triage. Newhorse has no fork-owned install source, so it is
+    # disabled (Phase 6C: never route the fork to upstream install URLs).
+    if: false
     runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read

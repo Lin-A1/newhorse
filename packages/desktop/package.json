@@ -6,7 +6,8 @@
   "license": "MIT",
   "homepage": "https://github.com/Lin-A1/newhorse",
   "author": {
-    "name": "newhorse"
+    "name": "newhorse",
+    "email": "97981434+Lin-A1@users.noreply.github.com"
   },
   "scripts": {
     "typecheck": "tsgo -b",
