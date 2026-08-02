@@ -98,10 +98,10 @@ jobs:
     env:
       # The renderer Vite build exceeds the default V8 heap on shared runners.
       NODE_OPTIONS: "--max-old-space-size=5120"
-      # Optional Developer ID signing + notarization; empty CSC_LINK keeps the
-      # build unsigned, and the discovery mode step below enforces that.
-      CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
-      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      # Optional Developer ID signing + notarization. CSC_LINK is deliberately
+      # NOT set here: an empty CSC_LINK makes electron-builder attempt signing
+      # with a blank cert and fail. The configure step below sets it only when
+      # APPLE_CERTIFICATE is present, and otherwise forces an unsigned build.
       HAS_APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
       HAS_APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_PATH != '' }}
     steps:
@@ -110,13 +110,18 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
-      # When no Developer ID cert is configured, skip identity discovery so the
-      # build stays unsigned. When a cert is present, leave discovery on so
-      # electron-builder signs with the imported identity.
-      - name: Set signing discovery mode
+      # With a Developer ID cert, export it to electron-builder and leave
+      # identity discovery on. Without one, skip discovery so the build stays
+      # unsigned.
+      - name: Configure signing environment
         shell: bash
         run: |
-          if [ "$HAS_APPLE_CERT" != "true" ]; then
+          if [ "$HAS_APPLE_CERT" == "true" ]; then
+            {
+              echo "CSC_LINK=${{ secrets.APPLE_CERTIFICATE }}"
+              echo "CSC_KEY_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+            } >> "$GITHUB_ENV"
+          else
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
           fi
 
