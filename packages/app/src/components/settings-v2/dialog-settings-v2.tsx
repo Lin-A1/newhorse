@@ -14,6 +14,7 @@ import { useDialog } from "@newhorse/ui/context/dialog"
 import { SettingsProfileV2 } from "./profile"
 import { SettingsMemory } from "../settings-memory"
 import { SettingsContinuityGrants } from "../settings-continuity-grants"
+import { SettingsCompanionPlan } from "../settings-companion-plan"
 import { SettingsReminders } from "../settings-reminders"
 
 export const DialogSettings: Component<{
@@ -83,6 +84,10 @@ export const DialogSettings: Component<{
                       <Icon name="task" />
                       Reminders
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="companion-plan">
+                      <Icon name="brain" />
+                      Companion Plan
+                    </TabsV2.Trigger>
                     <TabsV2.Trigger value="profile">
                       <Icon name="brain" />
                       {language.t("settings.profile.title")}
@@ -120,6 +125,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="reminders" class="settings-v2-panel">
           <SettingsReminders sessionID={props.sessionID} />
+        </TabsV2.Content>
+        <TabsV2.Content value="companion-plan" class="settings-v2-panel">
+          <SettingsCompanionPlan sessionID={props.sessionID} />
         </TabsV2.Content>
         <TabsV2.Content value="profile" class="settings-v2-panel">
           <SettingsProfileV2 />

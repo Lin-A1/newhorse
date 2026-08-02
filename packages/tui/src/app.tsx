@@ -45,6 +45,7 @@ import { DialogMcp } from "./component/dialog-mcp"
 import { DialogMemory } from "./component/dialog-memory"
 import { DialogReminder } from "./component/dialog-reminder"
 import { DialogContinuityGrant } from "./component/dialog-continuity-grant"
+import { DialogCompanionPlan } from "./component/dialog-companion-plan"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogDebug } from "./component/dialog-debug"
 import { DialogThemeList } from "./component/dialog-theme-list"
@@ -741,6 +742,16 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
             },
           }
           dialog.replace(() => <DialogContinuityGrant source={source} />)
+        },
+      },
+      {
+        name: "companion.plan",
+        title: "Companion Plan Review",
+        category: "Agent",
+        slashName: "companion-plan",
+        slashAliases: ["plan"],
+        run: () => {
+          dialog.replace(() => <DialogCompanionPlan />)
         },
       },
       {
