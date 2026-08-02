@@ -154,7 +154,7 @@ bun run product export --product cli --target linux-x64 --execution local
 bun run --cwd packages/opencode export:local --target windows-x64
 ```
 
-正式可导出的 CLI target 为 `linux-x64`、`windows-x64` 和 `windows-x64-baseline`。`linux-x64` 已在 Linux 主机上完成产物运行时验证（`nh --version` 返回包版本、`nh setup profile --help` 可运行）；`windows-x64` 已通过 `export-cli` 工作流的 `validate-windows` job 在 Windows runner 上完成运行时验证（`nh.exe` 返回版本与 setup 帮助）；`windows-x64-baseline` 仅有本地交叉编译与结构校验产物，其 Windows runner 验证待执行。产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 校验文件和 manifest。该导出流程不会发布 npm 包、创建 GitHub Release、推送容器或创建 Git tag。
+正式可导出的 CLI target 为 `linux-x64`、`windows-x64` 和 `windows-x64-baseline`。三者均已通过 `export-cli` 工作流在目标 OS runner 上完成产物运行时验证：`linux-x64` 由 `validate-linux` job 在 ubuntu runner 上（并直接在一台 Linux 主机上）完成；`windows-x64` 与 `windows-x64-baseline` 由 `validate-windows` job 在 Windows runner 上完成（`nh`/`nh.exe` 返回版本与 setup 帮助）。产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 校验文件和 manifest。该导出流程不会发布 npm 包、创建 GitHub Release、推送容器或创建 Git tag。
 
 这是便携 CLI 归档，不是已签名的 Windows 安装器。Desktop 安装包（Windows NSIS、macOS DMG/ZIP、Linux AppImage/DEB/RPM）需要在各自操作系统上构建和验证；目前尚不存在已签名或已发布的正式版本。
 
