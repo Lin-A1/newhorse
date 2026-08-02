@@ -28,6 +28,8 @@ describe("local CLI exporter", () => {
     ).toMatchObject({ target: "linux-x64", version: "1.18.4-phase6.20260727", skipInstall: true })
     expect(() => parseExportArgs(["--target", "darwin-x64"])).toThrow("Unsupported target")
     expect(() => parseExportArgs(["--version", "bad version"])).toThrow("Invalid version")
+    expect(parseExportArgs(["--sign", "signtool"])).toMatchObject({ sign: "signtool" })
+    expect(parseExportArgs([]).sign).toBeUndefined()
   })
 
   test("removes every release and GitHub publication variable", () => {

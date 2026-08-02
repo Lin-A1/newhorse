@@ -25,6 +25,7 @@ export function parseExportArgs(args: string[]) {
       target: { type: "string", short: "t", default: "windows-x64" },
       version: { type: "string", short: "v", default: pkg.version },
       "skip-install": { type: "boolean", default: false },
+      sign: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
     strict: true,
@@ -35,6 +36,7 @@ export function parseExportArgs(args: string[]) {
     target: parsed.target as ExportTarget,
     version: parsed.version,
     skipInstall: parsed["skip-install"],
+    sign: parsed.sign,
     help: parsed.help,
   }
 }
@@ -137,7 +139,7 @@ export function createManifest(input: {
 }
 
 export function help() {
-  return `Usage: bun run export:local [options]\n\nOptions:\n  -t, --target <target>  ${Object.keys(TARGETS).join(" | ")}\n  -v, --version <value>  Package version (default: ${pkg.version})\n      --skip-install     Skip cross-target native dependency installation\n  -h, --help             Show help\n`
+  return `Usage: bun run export:local [options]\n\nOptions:\n  -t, --target <target>  ${Object.keys(TARGETS).join(" | ")}\n  -v, --version <value>  Package version (default: ${pkg.version})\n      --sign <command>   Sign the binary with <command> before archiving (command receives the binary path)\n      --skip-install     Skip cross-target native dependency installation\n  -h, --help             Show help\n`
 }
 
 export async function main(args: string[]) {
@@ -162,8 +164,23 @@ export async function main(args: string[]) {
   if (code !== 0) throw new Error(`Build failed with exit code ${code}`)
 
   const binaryPath = path.join(packageDir, "dist", metadata.directory, "bin", metadata.binary)
-  const binary = new Uint8Array(await Bun.file(binaryPath).arrayBuffer())
+  let binary = new Uint8Array(await Bun.file(binaryPath).arrayBuffer())
   validateBinary(options.target, binary)
+
+  // Optional signing hook: the workflow passes a signer command for the target
+  // platform. The command runs against the binary file in place; the archive,
+  // checksum, and manifest are then produced from the signed binary.
+  if (options.sign) {
+    const signProc = Bun.spawn([options.sign, binaryPath], {
+      cwd: packageDir,
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    })
+    const signCode = await signProc.exited
+    if (signCode !== 0) throw new Error(`Signing failed with exit code ${signCode}`)
+    binary = new Uint8Array(await Bun.file(binaryPath).arrayBuffer())
+  }
 
   const names = artifactNames(options.target, options.version)
   const binarySha256 = sha256(binary)

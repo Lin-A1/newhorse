@@ -152,6 +152,11 @@ bun run product export --product cli --target linux-x64 --execution local
 
 # direct package script (same output contract)
 bun run --cwd packages/opencode export:local --target windows-x64
+
+# optional signing hook: run a signer against the binary before it is archived
+# (the command receives the binary path); the checksum and manifest then cover
+# the signed binary
+bun run --cwd packages/opencode export:local --target windows-x64 --sign ./script/sign-cli.sh
 ```
 
 The officially exportable CLI targets are `linux-x64`, `windows-x64`, and `windows-x64-baseline`. All three have been produced and runtime-verified on target-OS runners via the `export-cli` workflow: `linux-x64` by the `validate-linux` job on an ubuntu runner (and directly on a Linux host), and `windows-x64`/`windows-x64-baseline` by the `validate-windows` job on Windows runners (`nh`/`nh.exe` answer the version and setup help). Outputs are written to `packages/opencode/dist/exports/` as a ZIP, SHA-256 checksum, and manifest. The export path does not publish npm packages, create a GitHub Release, push containers, or create tags.

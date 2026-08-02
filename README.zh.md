@@ -152,6 +152,10 @@ bun run product export --product cli --target linux-x64 --execution local
 
 # 直接调用 package 脚本（产物契约相同）
 bun run --cwd packages/opencode export:local --target windows-x64
+
+# 可选签名钩子：归档前对二进制执行签名命令（命令接收二进制路径）；
+# 校验和与 manifest 覆盖签名后的二进制
+bun run --cwd packages/opencode export:local --target windows-x64 --sign ./script/sign-cli.sh
 ```
 
 正式可导出的 CLI target 为 `linux-x64`、`windows-x64` 和 `windows-x64-baseline`。三者均已通过 `export-cli` 工作流在目标 OS runner 上完成产物运行时验证：`linux-x64` 由 `validate-linux` job 在 ubuntu runner 上（并直接在一台 Linux 主机上）完成；`windows-x64` 与 `windows-x64-baseline` 由 `validate-windows` job 在 Windows runner 上完成（`nh`/`nh.exe` 返回版本与 setup 帮助）。产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 校验文件和 manifest。该导出流程不会发布 npm 包、创建 GitHub Release、推送容器或创建 Git tag。
