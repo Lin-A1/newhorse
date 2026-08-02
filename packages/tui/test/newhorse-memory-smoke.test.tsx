@@ -388,6 +388,7 @@ test("deduplicates mounted reminder delivery across restart persistence", async 
         directory,
         workspace: undefined,
         payload: {
+          id: `evt_${deliveryKey.replace(/[^a-zA-Z0-9]/g, "_")}`,
           type: "scheduled-event.due" as const,
           properties: {
             id: deliveryKey.split(":")[0]!,
