@@ -51,17 +51,17 @@ Newhorse 建立在 [OpenCode](https://github.com/anomalyco/opencode) 的工程�
 - 外部 MCP、Plugin 和 Skill 在 Personal Workspace 中连接或加载前执行显式 opt-in 控制
 - 基于 SQLite 的结构化记忆，具备 Workspace/Profile scope、生命周期状态、过期机制，以及需要确认的模型推断 proposal
 - 同一 Runtime 内的 Assistant 与 Companion Profile，包括 Persona 配置和受保护的 Companion 安全上下文
-- 持久提醒和显式订阅的主动消息基础，支持暂停、静默时段、频率、lease、幂等和审计
+- 持久提醒和显式订阅的主动消息基础，支持暂停、静默时段、频率、lease、幂等和审计，并已在 App 设置（legacy/v2 两种布局）与 TUI 中提供 Reminder 管理界面
+- 一个 Companion 计划审查界面，在一个页面聚合 proposed Memory、周期 Reminder 和最小化 Continuity Grant，且不读取原始 Session 历史
 - Setup 命令、强类型 Skill 参数、App/TUI 接入，以及 Linux/Windows 本地便携 CLI 导出
 - 适配 fork 的 GitHub Actions，避免在本仓库执行仅属于上游的自动化
 
 ### 仍在闭环
 
-- Project/Task 与 Personal/Relationship 存储之间统一、显式的 Content Scope Policy
+- Project/Task 与 Personal/Relationship 存储之间统一、显式的 Content Scope Policy，以及统一 Trust Policy 的 enforcement 调用点迁移
 - 脱敏 Capability 状态诊断与完整 Workspace Policy 矩阵
-- Memory 管理界面、导出、纠正和事务化按域清除
 - 完整 Companion 安全评测矩阵与关系记忆重置流程
-- 周期提醒、崩溃安全的投递去重与 Reminder 管理界面
+- 跨 OS 便携运行验证（Linux 运行时 smoke）与目标 runner 上的 Desktop 安装包 smoke
 - 剩余 V2 adapters、迁移覆盖与发布成熟度
 
 仓库不会把这些进行中的工作描述为已完成功能。
@@ -98,17 +98,67 @@ bun run typecheck
 bun test --conditions=browser --cwd packages/app
 ```
 
-## 便携 CLI 导出
+## 统一产品命令
 
-本地生成 Windows x64 便携包，并且不发布 Release：
+一个统一编排器负责查看 target、检查环境、启动 Web 入口、运行开发宿主，以及驱动构建、导出和产物校验。它只委托给现有 package 脚本，绝不重新实现打包或构建逻辑。
 
 ```bash
+bun run product targets [--json]        # 所有 target 及 configured/exportable/verified/signed/releasable 状态
+bun run product doctor [--target <id>]   # 主机与 target 就绪检查，包括仍缺失的 runner
+bun run product web [--source]           # 启动产品 Web 入口（nh web）
+bun run product dev <cli|web|desktop>    # 运行开发宿主
+bun run product build [--product cli|desktop|all] [--target <id>]
+bun run product export [--product cli|desktop|all] [--target <id>] [--execution local|ci|auto] [--force]
+bun run product verify --artifact <path> # 静态校验：存在性、大小、sha256
+```
+
+导出是增量的。编排器会为每个 target 记录输入指纹（相关源码、lockfile、配置、Bun 版本、target、version），当输入与上一次产物均未变化时跳过构建。需要强制重建时加 `--force`；修改任一指纹输入（源码改动、`bun install`、版本号变更）都会使缓存失效。
+
+状态语义刻意保持严格：
+
+- **configured** — 代码与配置存在。
+- **exportable** — 存在本地或 CI 导出路径。
+- **verified** — 产物确实在目标 OS runner 上运行过。
+- **signed** — 已完成代码签名和/或 notarization。
+- **releasable** — verified、signed 且经单独授权。
+
+无法在当前主机诚实验证的 target 会如实报告（`doctor` 会打印缺失的 runner），而不是被静默当作就绪。
+
+## 启动 Web 入口
+
+产品 Web 界面通过 CLI 启动，CLI 同时运行本地服务端：
+
+```bash
+bun run product web
+# 或从源码：
+bun run --cwd packages/opencode dev web
+```
+
+如需带热更新的 UI 开发，可运行 Vite 开发服务器（此时需要单独的服务端）：
+
+```bash
+bun run product dev web
+```
+
+`packages/web` 是营销/文档站点，不是产品 Web 界面。
+
+## 便携 CLI 导出
+
+本地生成便携包，并且不发布 Release：
+
+```bash
+# 统一入口
+bun run product export --product cli --target linux-x64 --execution local
+
+# 直接调用 package 脚本（产物契约相同）
 bun run --cwd packages/opencode export:local --target windows-x64
 ```
 
-其他支持的 target 为 `windows-x64-baseline` 和 `linux-x64`。产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 校验文件和 manifest。该导出流程不会发布 npm 包、创建 GitHub Release、推送容器或创建 Git tag。
+正式可导出的 CLI target 为 `linux-x64`、`windows-x64` 和 `windows-x64-baseline`。`linux-x64` 已在 Linux 主机上完成产物运行时验证（`nh --version` 返回包版本、`nh setup profile --help` 可运行）；`windows-x64` 与 `windows-x64-baseline` 已完成本地交叉编译与结构验证，运行时验证需在 Windows runner 上通过 `export-cli` 工作流的 `validate-windows` job 完成。产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 校验文件和 manifest。该导出流程不会发布 npm 包、创建 GitHub Release、推送容器或创建 Git tag。
 
-这是便携 CLI 归档，不是已签名的 Windows 安装器。
+这是便携 CLI 归档，不是已签名的 Windows 安装器。Desktop 安装包（Windows NSIS、macOS DMG/ZIP、Linux AppImage/DEB/RPM）需要在各自操作系统上构建和验证；目前尚不存在已签名或已发布的正式版本。
+
+对于本机缺少工具的 Desktop 安装包，可运行 `export-desktop` GitHub Actions 工作流（手动 `workflow_dispatch`、仅产物）：Linux job 会在 runner 上安装 `rpm` 并产出 AppImage/DEB/RPM，Windows job 产出 NSIS 安装器，macOS job 产出 DMG/ZIP（不执行签名和 notarization，需带凭据的 macOS runner）。这是 RPM、Windows 安装器与 macOS 目标的 CI 路径；`bun run product doctor` 会打印本机解除阻塞所需的命令。
 
 ## Memory 与内容隔离
 

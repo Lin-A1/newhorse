@@ -51,17 +51,17 @@ Newhorse is built on the engineering foundation of [OpenCode](https://github.com
 - Personal-workspace opt-in controls applied before external MCP, plugin, and skill loading
 - Structured SQLite memory with workspace/profile scoping, lifecycle states, expiration, and model-inferred proposals that require confirmation
 - Assistant and Companion profiles on one runtime, including persona configuration and protected Companion safety context
-- Persistent reminders and opt-in proactive messages with pause, quiet-hours, frequency, lease, idempotency, and audit foundations
+- Persistent reminders and opt-in proactive messages with pause, quiet-hours, frequency, lease, idempotency, and audit foundations, plus reminder management in App settings (legacy and v2 layouts) and the TUI
+- A companion plan review surface that aggregates proposed memory, scheduled reminders, and minimized continuity grants in one place without reading raw session history
 - Setup commands, typed skill parameters, App/TUI integration, and local portable CLI export for Linux and Windows
 - Fork-safe GitHub Actions that avoid upstream-only automation on this repository
 
 ### Still being closed out
 
-- A single explicit content-scope policy for project/task versus personal/relationship storage
+- A single explicit content-scope policy for project/task versus personal/relationship storage and the unified Trust Policy enforcement call sites
 - Redacted capability-status diagnostics and the complete workspace policy matrix
-- Memory management UI, export, correction, and transactional scope clearing
 - The complete Companion safety evaluation matrix and relationship reset flow
-- Recurring reminders, crash-safe delivery deduplication, and reminder management UI
+- Cross-OS portable verification (Linux runtime smoke) and Desktop installer smoke on target runners
 - Remaining V2 adapters, migration coverage, and release maturity
 
 The repository does not describe these in-progress items as completed features.
@@ -98,17 +98,69 @@ Some frontend tests require browser conditions:
 bun test --conditions=browser --cwd packages/app
 ```
 
-## Portable CLI export
+## Unified product commands
 
-Create a local portable Windows x64 package without publishing a release:
+A single orchestrator inspects targets, checks the environment, starts the Web entry, runs development hosts, and drives builds, exports, and artifact verification. It only delegates to the existing package scripts and never re-implements bundling or packaging.
 
 ```bash
+bun run product targets [--json]        # every target with configured/exportable/verified/signed/releasable status
+bun run product doctor [--target <id>]   # host + target readiness, including which runners are still required
+bun run product web [--source]           # start the product Web entry (nh web)
+bun run product dev <cli|web|desktop>    # run a development host
+bun run product build [--product cli|desktop|all] [--target <id>]
+bun run product export [--product cli|desktop|all] [--target <id>] [--execution local|ci|auto] [--force]
+bun run product verify --artifact <path> # static checks: existence, size, sha256
+```
+
+Exports are incremental. The orchestrator records an input fingerprint (relevant source, lockfile, config, Bun version, target, version) per target and skips the build when inputs and the previous artifacts are unchanged. Pass `--force` to rebuild regardless, or change any of the fingerprinted inputs (a source edit, `bun install`, a version bump) to invalidate the cache.
+
+Status values are intentionally strict:
+
+- **configured** — code and configuration exist.
+- **exportable** — a local or CI export path exists.
+- **verified** — the artifact actually ran on a target-OS runner.
+- **signed** — code-signed and/or notarized.
+- **releasable** — verified, signed, and separately authorized.
+
+Targets that cannot be honestly verified on this host are reported as such (`doctor` prints the missing runner) instead of being silently treated as ready.
+
+## Run the Web entry
+
+The product Web UI is started with the CLI, which also runs the local server:
+
+```bash
+bun run product web
+# or, from source:
+bun run --cwd packages/opencode dev web
+```
+
+For UI development with hot reload, run the Vite dev server (this requires a separate server):
+
+```bash
+bun run product dev web
+```
+
+`packages/web` is the marketing/documentation site, not the product Web UI.
+
+## Portable CLI export
+
+Create a local portable package without publishing a release:
+
+```bash
+# unified entry
+bun run product export --product cli --target linux-x64 --execution local
+
+# direct package script (same output contract)
 bun run --cwd packages/opencode export:local --target windows-x64
 ```
 
-Other supported targets are `windows-x64-baseline` and `linux-x64`. Outputs are written to `packages/opencode/dist/exports/` as a ZIP, SHA-256 checksum, and manifest. The export path does not publish npm packages, create a GitHub Release, push containers, or create tags.
+The officially exportable CLI targets are `linux-x64`, `windows-x64`, and `windows-x64-baseline`. `linux-x64` has been produced and runtime-verified on a Linux host (`nh --version` answers the package version and `nh setup profile --help` runs); `windows-x64` and `windows-x64-baseline` have been cross-compiled and structure-verified locally, with runtime verification pending on a Windows runner via the `export-cli` workflow's `validate-windows` job. Outputs are written to `packages/opencode/dist/exports/` as a ZIP, SHA-256 checksum, and manifest. The export path does not publish npm packages, create a GitHub Release, push containers, or create tags.
 
-This is a portable CLI archive, not a signed Windows installer.
+This is a portable CLI archive, not a signed Windows installer. Desktop installers (Windows NSIS, macOS DMG/ZIP, Linux AppImage/DEB/RPM) must be built and verified on their own operating systems; no signed or published release exists yet.
+
+For desktop installers that need tools not present on a local machine, run the `export-desktop` GitHub Actions workflow (manual `workflow_dispatch`, artifact-only): the Linux job installs `rpm` on the runner and produces AppImage/DEB/RPM, the Windows job produces the NSIS installer, and the macOS job produces DMG/ZIP (signing and notarization are not performed and require a macOS runner with credentials). This is the CI path for the RPM, Windows-installer, and macOS targets; `bun run product doctor` prints the local unblocking commands.
+
+**Reproducibility boundary:** the export/verify contract is deterministic in structure — the manifest schema, single-root-binary ZIP layout, and per-artifact SHA-256 checksums are consistent. The binary *payload* is not bit-for-bit reproducible across identical-input rebuilds because the Bun compiler embeds build metadata (timestamps/paths). Treat the per-artifact hash as authoritative for that build, not as a cross-rebuild fingerprint.
 
 ## Memory and content isolation
 

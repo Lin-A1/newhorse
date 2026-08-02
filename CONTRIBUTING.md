@@ -94,6 +94,24 @@ opencode web             # Start server + open web interface
 opencode <directory>     # Start TUI in specific directory
 ```
 
+### Unified product commands
+
+This fork (Newhorse) ships a single orchestrator for targets, environment checks, Web startup, development hosts, builds, exports, and artifact verification. It delegates to the existing package scripts and never re-implements bundling:
+
+```bash
+bun run product targets [--json]        # every target + configured/exportable/verified/signed/releasable
+bun run product doctor [--target <id>]   # host + target readiness, incl. missing runners
+bun run product web [--source]           # product Web entry (nh web)
+bun run product dev <cli|web|desktop>    # run a development host
+bun run product build [--product cli|desktop|all] [--target <id>]
+bun run product export [--product cli|desktop|all] [--target <id>] [--execution local|ci|auto] [--force]
+bun run product verify --artifact <path> # static checks: existence, size, sha256 (+ .sha256 match)
+```
+
+Exports are incremental: a per-target input fingerprint (source, lockfile, config, Bun version, target, version) is recorded, and unchanged inputs with existing artifacts skip the build. `--force` rebuilds regardless.
+
+`bun run product targets` is the single source of truth for which targets are configured, exportable, verified, signed, and releasable. A target is only `verified` after it ran on a target-OS runner; a target is only `releasable` when verified, signed, and separately authorized. Never relabel unpacked Electron directories as Windows portable artifacts.
+
 ### Running the API Server
 
 To start the OpenCode headless API server:
