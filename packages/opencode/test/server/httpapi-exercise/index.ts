@@ -425,6 +425,57 @@ const scenarios: Scenario[] = [
       }),
     ),
   http.protected
+    .get("/continuity-grant", "continuityGrant.list")
+    .seeded((ctx) => ctx.session({ title: "Continuity source" }))
+    .at((ctx) => ({ path: `/continuity-grant?session=${ctx.state.id}`, headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/continuity-grant", "continuityGrant.propose")
+    .seeded((ctx) => ctx.session({ title: "Continuity proposal source" }))
+    .at((ctx) => ({
+      path: `/continuity-grant?session=${ctx.state.id}`,
+      headers: ctx.headers(),
+      body: {
+        destinationSessionID: "ses_httpapi_missing",
+        purpose: "HTTP API coverage",
+        summary: "Minimized continuity summary",
+        timeExpires: Date.now() + 60_000,
+      },
+    }))
+    .status(400),
+  http.protected
+    .get("/continuity-grant/{grantID}", "continuityGrant.get")
+    .seeded((ctx) => ctx.session({ title: "Continuity get source" }))
+    .at((ctx) => ({
+      path: `${route("/continuity-grant/{grantID}", { grantID: "cgr_httpapi_missing" })}?session=${ctx.state.id}`,
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .get("/continuity-grant/{grantID}/audit", "continuityGrant.audit")
+    .seeded((ctx) => ctx.session({ title: "Continuity audit source" }))
+    .at((ctx) => ({
+      path: `${route("/continuity-grant/{grantID}/audit", { grantID: "cgr_httpapi_missing" })}?session=${ctx.state.id}`,
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/continuity-grant/{grantID}/approve", "continuityGrant.approve")
+    .seeded((ctx) => ctx.session({ title: "Continuity approval source" }))
+    .at((ctx) => ({
+      path: `${route("/continuity-grant/{grantID}/approve", { grantID: "cgr_httpapi_missing" })}?session=${ctx.state.id}`,
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/continuity-grant/{grantID}/revoke", "continuityGrant.revoke")
+    .seeded((ctx) => ctx.session({ title: "Continuity revoke source" }))
+    .at((ctx) => ({
+      path: `${route("/continuity-grant/{grantID}/revoke", { grantID: "cgr_httpapi_missing" })}?session=${ctx.state.id}`,
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
     .get("/reminder", "reminder.list")
     .seeded((ctx) => ctx.reminder({ title: "List reminder" }))
     .json(200, (body, ctx) => {
@@ -441,7 +492,6 @@ const scenarios: Scenario[] = [
       path: "/reminder",
       headers: ctx.headers(),
       body: {
-        profileID: "assistant",
         title: "Created over HTTP",
         body: "Persistent HTTP reminder",
         scheduleAt: Date.now() + 60_000,
@@ -478,6 +528,18 @@ const scenarios: Scenario[] = [
         )
       }),
     ),
+  http.protected
+    .get("/reminder/{reminderID}/audit", "reminder.audit")
+    .seeded((ctx) => ctx.reminder({ title: "Audit reminder" }))
+    .at((ctx) => ({
+      path: route("/reminder/{reminderID}/audit", { reminderID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      array(body.items)
+      check(body.items.some((item) => isRecord(item) && item.action === "created"), "reminder audit should include creation")
+    }),
   http.protected
     .delete("/reminder/{reminderID}", "reminder.cancel")
     .mutating()

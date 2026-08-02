@@ -14,7 +14,12 @@ import sessionMessageProjectionOrderMigration from "@newhorse/core/database/migr
 import eventSourcedSessionInputMigration from "@newhorse/core/database/migration/20260604172448_event_sourced_session_input"
 import contextEpochAgentMigration from "@newhorse/core/database/migration/20260605042240_add_context_epoch_agent"
 import addMemoryMigration from "@newhorse/core/database/migration/20260725172900_add_memory"
+import addScheduledEventMigration from "@newhorse/core/database/migration/20260727010000_add_scheduled_event"
 import memoryLifecycleMigration from "@newhorse/core/database/migration/20260728215711_memory_lifecycle"
+import schedulerReliableDeliveryMigration from "@newhorse/core/database/migration/20260801103914_scheduler_reliable_delivery"
+import schedulerDeliveryEligibilityMigration from "@newhorse/core/database/migration/20260801104307_scheduler_delivery_eligibility"
+import schedulerDirectoryScopeMigration from "@newhorse/core/database/migration/20260801110000_scheduler_directory_scope"
+import schedulerEligibleIndexMigration from "@newhorse/core/database/migration/20260801111000_scheduler_eligible_index"
 import simplifyIntegrationCredentialsMigration from "@newhorse/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@newhorse/core/database/migration/20260622202450_simplify_session_input"
 import { AppNodeBuilder } from "@newhorse/core/effect/app-node-builder"
@@ -517,6 +522,78 @@ describe("DatabaseMigration", () => {
           { id: "mem_global", directory: null },
           { id: "mem_with_source", directory: "/work/project" },
         ])
+      }),
+    )
+  })
+
+  test("upgrades existing reminders to fenced outbox delivery without losing data", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* DatabaseMigration.applyOnly(db, [addScheduledEventMigration])
+        yield* db.run(sql`
+          INSERT INTO scheduled_event (
+            id, idempotency_key, directory, profile_id, type, title, body,
+            schedule_at, timezone, status, attempt_count, time_created, time_updated
+          ) VALUES (
+            'sch_existing', 'shared', '/one', 'assistant', 'reminder', 'Existing', 'Keep me',
+            100, 'UTC', 'pending', 0, 1, 1
+          )
+        `)
+
+        yield* DatabaseMigration.applyOnly(db, [
+          schedulerReliableDeliveryMigration,
+          schedulerDeliveryEligibilityMigration,
+          schedulerDirectoryScopeMigration,
+          schedulerEligibleIndexMigration,
+        ])
+
+        expect(
+          yield* db.get(sql`
+            SELECT title, body, schedule_at AS scheduleAt, eligible_at AS eligibleAt,
+              misfire_policy AS misfirePolicy, lease_token AS leaseToken
+            FROM scheduled_event WHERE id = 'sch_existing'
+          `),
+        ).toEqual({
+          title: "Existing",
+          body: "Keep me",
+          scheduleAt: 100,
+          eligibleAt: 0,
+          misfirePolicy: "catch_up_once",
+          leaseToken: 0,
+        })
+        expect(
+          yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'scheduled_event_delivery'`),
+        ).toEqual({ name: "scheduled_event_delivery" })
+
+        expect(
+          yield* db.all(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('scheduled_event_delivery_occurrence_idx', 'scheduled_event_delivery_key_idx', 'scheduled_event_delivery_available_idx', 'scheduled_event_delivery_lease_idx') ORDER BY name`,
+          ),
+        ).toEqual([
+          { name: "scheduled_event_delivery_available_idx" },
+          { name: "scheduled_event_delivery_key_idx" },
+          { name: "scheduled_event_delivery_lease_idx" },
+          { name: "scheduled_event_delivery_occurrence_idx" },
+        ])
+        expect(yield* db.all(sql`PRAGMA index_info(scheduled_event_due_idx)`)).toMatchObject([
+          { seqno: 0, name: "status" },
+          { seqno: 1, name: "eligible_at" },
+        ])
+        expect(yield* db.all(sql`PRAGMA foreign_key_list(scheduled_event_delivery)`)).toMatchObject([
+          { table: "scheduled_event", from: "event_id", to: "id", on_delete: "RESTRICT" },
+        ])
+
+        yield* db.run(sql`
+          INSERT INTO scheduled_event (
+            id, idempotency_key, directory, profile_id, type, title, body,
+            schedule_at, eligible_at, timezone, status, attempt_count, time_created, time_updated
+          ) VALUES (
+            'sch_other_directory', 'shared', '/two', 'assistant', 'reminder', 'Other', 'Separate scope',
+            100, 100, 'UTC', 'pending', 0, 1, 1
+          )
+        `)
+        expect(yield* db.get(sql`SELECT count(*) AS count FROM scheduled_event`)).toEqual({ count: 2 })
       }),
     )
   })

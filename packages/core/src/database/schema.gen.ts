@@ -185,8 +185,37 @@ export default {
           \`action\` text NOT NULL,
           \`outcome\` text NOT NULL,
           \`reason\` text,
+          \`occurrence_at\` integer,
+          \`delivery_key\` text,
           \`time_created\` integer NOT NULL,
           CONSTRAINT \`fk_scheduled_event_audit_event_id_scheduled_event_id_fk\` FOREIGN KEY (\`event_id\`) REFERENCES \`scheduled_event\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`scheduled_event_delivery\` (
+          \`id\` text PRIMARY KEY,
+          \`event_id\` text NOT NULL,
+          \`occurrence_at\` integer NOT NULL,
+          \`delivery_key\` text NOT NULL,
+          \`workspace_id\` text,
+          \`directory\` text NOT NULL,
+          \`profile_id\` text NOT NULL,
+          \`session_id\` text,
+          \`event_type\` text NOT NULL,
+          \`title\` text NOT NULL,
+          \`body\` text NOT NULL,
+          \`status\` text DEFAULT 'pending' NOT NULL,
+          \`available_at\` integer NOT NULL,
+          \`attempt_count\` integer DEFAULT 0 NOT NULL,
+          \`max_attempts\` integer NOT NULL,
+          \`lease_owner\` text,
+          \`lease_token\` integer DEFAULT 0 NOT NULL,
+          \`lease_expires_at\` integer,
+          \`last_error\` text,
+          \`time_delivered\` integer,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          CONSTRAINT \`fk_scheduled_event_delivery_event_id_scheduled_event_id_fk\` FOREIGN KEY (\`event_id\`) REFERENCES \`scheduled_event\`(\`id\`) ON DELETE RESTRICT
         );
       `)
       yield* tx.run(`
@@ -201,9 +230,14 @@ export default {
           \`title\` text NOT NULL,
           \`body\` text NOT NULL,
           \`schedule_at\` integer NOT NULL,
+          \`eligible_at\` integer DEFAULT 0 NOT NULL,
           \`timezone\` text NOT NULL,
+          \`recurrence_rule\` text,
+          \`recurrence_anchor_at\` integer,
+          \`misfire_policy\` text DEFAULT 'catch_up_once' NOT NULL,
           \`status\` text DEFAULT 'pending' NOT NULL,
           \`lease_owner\` text,
+          \`lease_token\` integer DEFAULT 0 NOT NULL,
           \`lease_expires_at\` integer,
           \`attempt_count\` integer DEFAULT 0 NOT NULL,
           \`last_error\` text,
@@ -352,12 +386,24 @@ export default {
       yield* tx.run(
         `CREATE INDEX \`scheduled_event_audit_event_idx\` ON \`scheduled_event_audit\` (\`event_id\`,\`time_created\`);`,
       )
-      yield* tx.run(`CREATE INDEX \`scheduled_event_due_idx\` ON \`scheduled_event\` (\`status\`,\`schedule_at\`);`)
+      yield* tx.run(
+        `CREATE UNIQUE INDEX \`scheduled_event_delivery_occurrence_idx\` ON \`scheduled_event_delivery\` (\`event_id\`,\`occurrence_at\`);`,
+      )
+      yield* tx.run(
+        `CREATE UNIQUE INDEX \`scheduled_event_delivery_key_idx\` ON \`scheduled_event_delivery\` (\`delivery_key\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`scheduled_event_delivery_available_idx\` ON \`scheduled_event_delivery\` (\`status\`,\`available_at\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`scheduled_event_delivery_lease_idx\` ON \`scheduled_event_delivery\` (\`lease_expires_at\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`scheduled_event_due_idx\` ON \`scheduled_event\` (\`status\`,\`eligible_at\`);`)
       yield* tx.run(`CREATE INDEX \`scheduled_event_lease_idx\` ON \`scheduled_event\` (\`lease_expires_at\`);`)
       yield* tx.run(`CREATE INDEX \`scheduled_event_workspace_idx\` ON \`scheduled_event\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`scheduled_event_profile_idx\` ON \`scheduled_event\` (\`profile_id\`);`)
       yield* tx.run(
-        `CREATE UNIQUE INDEX \`scheduled_event_idempotency_idx\` ON \`scheduled_event\` (\`idempotency_key\`,\`profile_id\`,coalesce("workspace_id", ''));`,
+        `CREATE UNIQUE INDEX \`scheduled_event_idempotency_idx\` ON \`scheduled_event\` (\`idempotency_key\`,\`profile_id\`,coalesce("workspace_id", "directory"));`,
       )
       yield* tx.run(
         `CREATE INDEX \`message_session_time_created_id_idx\` ON \`message\` (\`session_id\`,\`time_created\`,\`id\`);`,

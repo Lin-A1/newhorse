@@ -1600,6 +1600,9 @@ export type GlobalEvent = {
           title: string
           body: string
           scheduleAt: number
+          occurrenceAt: number
+          deliveryKey: string
+          attemptCount: number
         }
       }
     | {
@@ -6733,6 +6736,9 @@ export type ScheduledEventDue = {
     title: string
     body: string
     scheduleAt: number
+    occurrenceAt: number
+    deliveryKey: string
+    attemptCount: number
   }
 }
 
@@ -7713,6 +7719,9 @@ export type EventScheduledEventDue = {
     title: string
     body: string
     scheduleAt: number
+    occurrenceAt: number
+    deliveryKey: string
+    attemptCount: number
   }
 }
 
@@ -10999,7 +11008,9 @@ export type ReminderListResponses = {
     body: string
     scheduleAt: number
     timezone: string
-    status: "pending" | "paused" | "delivered" | "cancelled" | "failed"
+    recurrenceRule?: string
+    misfirePolicy: "catch_up_once" | "skip"
+    status: "pending" | "paused" | "dispatching" | "delivered" | "cancelled" | "failed"
     attemptCount: number
     lastError?: string
     lastFiredAt?: number
@@ -11012,13 +11023,13 @@ export type ReminderListResponse = ReminderListResponses[keyof ReminderListRespo
 
 export type ReminderCreateData = {
   body?: {
-    profileID: string
-    sessionID?: string
     type?: "reminder" | "check_in" | "follow_up"
     title: string
     body: string
     scheduleAt: number
     timezone: string
+    recurrenceRule?: string
+    misfirePolicy?: "catch_up_once" | "skip"
   }
   path?: never
   query?: {
@@ -11052,7 +11063,9 @@ export type ReminderCreateResponses = {
     body: string
     scheduleAt: number
     timezone: string
-    status: "pending" | "paused" | "delivered" | "cancelled" | "failed"
+    recurrenceRule?: string
+    misfirePolicy: "catch_up_once" | "skip"
+    status: "pending" | "paused" | "dispatching" | "delivered" | "cancelled" | "failed"
     attemptCount: number
     lastError?: string
     lastFiredAt?: number
@@ -11100,6 +11113,9 @@ export type ReminderUpdateData = {
     body?: string
     scheduleAt?: number
     timezone?: string
+    recurrenceRule?: string
+    clearRecurrence?: boolean
+    misfirePolicy?: "catch_up_once" | "skip"
     paused?: boolean
   }
   path: {
@@ -11136,7 +11152,9 @@ export type ReminderUpdateResponses = {
     body: string
     scheduleAt: number
     timezone: string
-    status: "pending" | "paused" | "delivered" | "cancelled" | "failed"
+    recurrenceRule?: string
+    misfirePolicy: "catch_up_once" | "skip"
+    status: "pending" | "paused" | "dispatching" | "delivered" | "cancelled" | "failed"
     attemptCount: number
     lastError?: string
     lastFiredAt?: number
@@ -11146,6 +11164,68 @@ export type ReminderUpdateResponses = {
 }
 
 export type ReminderUpdateResponse = ReminderUpdateResponses[keyof ReminderUpdateResponses]
+
+export type ReminderAuditData = {
+  body?: never
+  path: {
+    reminderID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+    limit?: string
+    cursor?: string
+  }
+  url: "/reminder/{reminderID}/audit"
+}
+
+export type ReminderAuditErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ReminderAuditError = ReminderAuditErrors[keyof ReminderAuditErrors]
+
+export type ReminderAuditResponses = {
+  /**
+   * Content-minimized reminder audit page
+   */
+  200: {
+    items: Array<{
+      id: string
+      eventID: string
+      action:
+        | "created"
+        | "updated"
+        | "paused"
+        | "resumed"
+        | "cancelled"
+        | "claimed"
+        | "deferred"
+        | "staged"
+        | "skipped"
+        | "delivered"
+        | "failed"
+        | "recovered"
+        | "retry_scheduled"
+      outcome: string
+      reason?: string
+      occurrenceAt?: number
+      deliveryKey?: string
+      timeCreated: number
+    }>
+    nextCursor?: string
+  }
+}
+
+export type ReminderAuditResponse = ReminderAuditResponses[keyof ReminderAuditResponses]
 
 export type SessionListData = {
   body?: never

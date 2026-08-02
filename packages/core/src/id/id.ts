@@ -14,6 +14,7 @@ const prefixes = {
   memory: "mem",
   scheduledEvent: "sch",
   scheduledEventAudit: "sha",
+  scheduledEventDelivery: "sdl",
   continuityGrant: "cgr",
   continuityGrantAudit: "cga",
 } as const

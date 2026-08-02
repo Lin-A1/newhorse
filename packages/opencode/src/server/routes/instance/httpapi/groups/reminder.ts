@@ -3,19 +3,23 @@ import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
-import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
+import {
+  WorkspaceRoutingMiddleware,
+  WorkspaceRoutingQuery,
+  WorkspaceRoutingQueryFields,
+} from "../middleware/workspace-routing"
 import { described } from "./metadata"
 
 const root = "/reminder"
 
 const Create = Schema.Struct({
-  profileID: Schema.String,
-  sessionID: Schema.optional(Schema.String),
   type: Schema.optional(Scheduler.Type),
   title: Schema.String,
   body: Schema.String,
   scheduleAt: Schema.Int,
   timezone: Schema.String,
+  recurrenceRule: Schema.optional(Schema.String),
+  misfirePolicy: Schema.optional(Schema.Literals(["catch_up_once", "skip"])),
 })
 
 const Update = Schema.Struct({
@@ -23,7 +27,16 @@ const Update = Schema.Struct({
   body: Schema.optional(Schema.String),
   scheduleAt: Schema.optional(Schema.Int),
   timezone: Schema.optional(Schema.String),
+  recurrenceRule: Schema.optional(Schema.String),
+  clearRecurrence: Schema.optional(Schema.Boolean),
+  misfirePolicy: Schema.optional(Schema.Literals(["catch_up_once", "skip"])),
   paused: Schema.optional(Schema.Boolean),
+})
+
+const AuditQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  limit: Schema.optional(Schema.String),
+  cursor: Schema.optional(Schema.String),
 })
 
 export const ReminderApi = HttpApi.make("reminder").add(
@@ -46,6 +59,12 @@ export const ReminderApi = HttpApi.make("reminder").add(
         success: described(Scheduler.Info, "Updated reminder"),
         error: HttpApiError.BadRequest,
       }).annotateMerge(OpenApi.annotations({ identifier: "reminder.update", summary: "Update reminder" })),
+      HttpApiEndpoint.get("audit", `${root}/:reminderID/audit`, {
+        params: { reminderID: Scheduler.ID },
+        query: AuditQuery,
+        success: described(Scheduler.AuditPage, "Content-minimized reminder audit page"),
+        error: HttpApiError.NotFound,
+      }).annotateMerge(OpenApi.annotations({ identifier: "reminder.audit", summary: "Get reminder audit" })),
       HttpApiEndpoint.delete("cancel", `${root}/:reminderID`, {
         params: { reminderID: Scheduler.ID },
         query: WorkspaceRoutingQuery,

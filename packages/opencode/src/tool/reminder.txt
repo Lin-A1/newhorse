@@ -1,9 +1,9 @@
 Create and manage user-requested reminders that persist across sessions.
 
 Actions:
-- create: requires title, body, scheduleAt (Unix milliseconds), and timezone
+- create: requires title, body, scheduleAt (Unix milliseconds), and timezone; optional recurrenceRule supports only FREQ=DAILY or FREQ=WEEKLY with INTERVAL=1..365, plus misfirePolicy catch_up_once or skip
 - list: show reminders in the current workspace
-- update: requires id and any fields to change; paused=true pauses, paused=false resumes
+- update: requires id and any fields to change; paused=true pauses future occurrences, paused=false resumes; clearRecurrence=true makes the reminder one-shot
 - cancel: permanently cancels future delivery
 
 Use type "reminder" for a reminder explicitly requested by the user. Use

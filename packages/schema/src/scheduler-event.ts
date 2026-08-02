@@ -15,6 +15,9 @@ export const Due = Event.define({
     title: Schema.String,
     body: Schema.String,
     scheduleAt: Schema.Int,
+    occurrenceAt: Schema.Int,
+    deliveryKey: Schema.String,
+    attemptCount: Schema.Int,
   },
 })
 

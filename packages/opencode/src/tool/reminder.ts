@@ -13,6 +13,9 @@ export const Parameters = Schema.Struct({
   body: Schema.optional(Schema.String),
   scheduleAt: Schema.optional(Schema.Int),
   timezone: Schema.optional(Schema.String),
+  recurrenceRule: Schema.optional(Schema.String),
+  clearRecurrence: Schema.optional(Schema.Boolean),
+  misfirePolicy: Schema.optional(Schema.Literals(["catch_up_once", "skip"])),
   paused: Schema.optional(Schema.Boolean),
 })
 
@@ -73,6 +76,8 @@ export const ReminderTool = Tool.define<
                 body: params.body,
                 scheduleAt: params.scheduleAt,
                 timezone: params.timezone,
+                recurrenceRule: params.recurrenceRule ?? undefined,
+                misfirePolicy: params.misfirePolicy,
               })
               .pipe(Effect.mapError((error) => new Error(error.message)))
             return {
@@ -91,7 +96,8 @@ export const ReminderTool = Tool.define<
           })
 
           if (params.action === "cancel") {
-            yield* scheduler.cancel(params.id)
+            const cancelled = yield* scheduler.cancel(params.id)
+            if (!cancelled) return yield* Effect.fail(new Error(`Reminder not found or no longer cancellable: ${params.id}`))
             return {
               title: "Reminder cancelled",
               metadata: { id: params.id, status: "cancelled" },
@@ -105,6 +111,8 @@ export const ReminderTool = Tool.define<
             body: params.body,
             scheduleAt: params.scheduleAt,
             timezone: params.timezone,
+            recurrenceRule: params.clearRecurrence ? null : params.recurrenceRule,
+            misfirePolicy: params.misfirePolicy,
             paused: params.paused,
           })
           if (!updated) return yield* Effect.fail(new Error(`Reminder not found or no longer editable: ${params.id}`))

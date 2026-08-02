@@ -211,6 +211,8 @@ import type {
   QuestionReplyErrors,
   QuestionReplyResponses,
   QuestionV2Reply,
+  ReminderAuditErrors,
+  ReminderAuditResponses,
   ReminderCancelErrors,
   ReminderCancelResponses,
   ReminderCreateErrors,
@@ -4243,13 +4245,13 @@ export class Reminder extends HeyApiClient {
       directory?: string
       workspace?: string
       session?: string
-      profileID?: string
-      sessionID?: string
       type?: "reminder" | "check_in" | "follow_up"
       title?: string
       body?: string
       scheduleAt?: number
       timezone?: string
+      recurrenceRule?: string
+      misfirePolicy?: "catch_up_once" | "skip"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4261,13 +4263,13 @@ export class Reminder extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "query", key: "session" },
-            { in: "body", key: "profileID" },
-            { in: "body", key: "sessionID" },
             { in: "body", key: "type" },
             { in: "body", key: "title" },
             { in: "body", key: "body" },
             { in: "body", key: "scheduleAt" },
             { in: "body", key: "timezone" },
+            { in: "body", key: "recurrenceRule" },
+            { in: "body", key: "misfirePolicy" },
           ],
         },
       ],
@@ -4329,6 +4331,9 @@ export class Reminder extends HeyApiClient {
       body?: string
       scheduleAt?: number
       timezone?: string
+      recurrenceRule?: string
+      clearRecurrence?: boolean
+      misfirePolicy?: "catch_up_once" | "skip"
       paused?: boolean
     },
     options?: Options<never, ThrowOnError>,
@@ -4346,6 +4351,9 @@ export class Reminder extends HeyApiClient {
             { in: "body", key: "body" },
             { in: "body", key: "scheduleAt" },
             { in: "body", key: "timezone" },
+            { in: "body", key: "recurrenceRule" },
+            { in: "body", key: "clearRecurrence" },
+            { in: "body", key: "misfirePolicy" },
             { in: "body", key: "paused" },
           ],
         },
@@ -4360,6 +4368,42 @@ export class Reminder extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Get reminder audit
+   */
+  public audit<ThrowOnError extends boolean = false>(
+    parameters: {
+      reminderID: string
+      directory?: string
+      workspace?: string
+      session?: string
+      limit?: string
+      cursor?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "reminderID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "cursor" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ReminderAuditResponses, ReminderAuditErrors, ThrowOnError>({
+      url: "/reminder/{reminderID}/audit",
+      ...options,
+      ...params,
     })
   }
 }

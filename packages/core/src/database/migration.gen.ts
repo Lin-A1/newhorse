@@ -45,5 +45,9 @@ export const migrations = (
     import("./migration/20260727010000_add_scheduled_event"),
     import("./migration/20260728215711_memory_lifecycle"),
     import("./migration/20260730133911_add_continuity_grant"),
+    import("./migration/20260801103914_scheduler_reliable_delivery"),
+    import("./migration/20260801104307_scheduler_delivery_eligibility"),
+    import("./migration/20260801110000_scheduler_directory_scope"),
+    import("./migration/20260801111000_scheduler_eligible_index"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
