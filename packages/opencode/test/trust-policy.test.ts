@@ -63,4 +63,78 @@ describe("TrustPolicy", () => {
       }),
     ).toEqual({ decision: "allow", reason: "same_scope" })
   })
+
+  test("applies opt-in gating to tool load and MCP connect, not just extensions", () => {
+    expect(TrustPolicy.decideContentFlow({ action: "tool.load", source: "personal", destination: "personal" })).toEqual({
+      decision: "deny",
+      reason: "extension_personal_opt_in_required",
+    })
+    expect(
+      TrustPolicy.decideContentFlow({ action: "mcp.connect", source: "project", destination: "personal", personalOptIn: true }),
+    ).toEqual({ decision: "allow", reason: "same_scope" })
+    expect(
+      TrustPolicy.decideContentFlow({ action: "mcp.connect", source: "project", destination: "project", personalOptIn: true }),
+    ).toEqual({ decision: "allow", reason: "same_scope" })
+  })
+
+  test("applies opt-in gating to skill loading in personal scope", () => {
+    expect(TrustPolicy.decideContentFlow({ action: "skill.load", source: "personal", destination: "personal" })).toEqual({
+      decision: "deny",
+      reason: "extension_personal_opt_in_required",
+    })
+    expect(
+      TrustPolicy.decideContentFlow({ action: "skill.load", source: "personal", destination: "personal", personalOptIn: true }),
+    ).toEqual({ decision: "allow", reason: "same_scope" })
+    expect(
+      TrustPolicy.decideContentFlow({ action: "skill.load", source: "project", destination: "project" }),
+    ).toEqual({ decision: "allow", reason: "same_scope" })
+  })
+
+  test("denies reminder and skill flows that cross into relationship scope", () => {
+    expect(
+      TrustPolicy.decideContentFlow({ action: "reminder.deliver", source: "personal", destination: "relationship" }),
+    ).toEqual({ decision: "allow", reason: "relationship_personal_only" })
+    expect(
+      TrustPolicy.decideContentFlow({ action: "skill.load", source: "project", destination: "relationship" }),
+    ).toEqual({ decision: "deny", reason: "relationship_personal_only" })
+  })
+
+  test("user configuration can only tighten, never relax, a platform decision", () => {
+    expect(TrustPolicy.applyUserPolicy("allow", undefined)).toBe("allow")
+    expect(TrustPolicy.applyUserPolicy("allow", "ask")).toBe("ask")
+    expect(TrustPolicy.applyUserPolicy("allow", "deny")).toBe("deny")
+    expect(TrustPolicy.applyUserPolicy("ask", "deny")).toBe("deny")
+    expect(TrustPolicy.applyUserPolicy("deny", "allow")).toBe("deny")
+    expect(TrustPolicy.applyUserPolicy("deny", "ask")).toBe("deny")
+    expect(TrustPolicy.applyUserPolicy("deny", undefined)).toBe("deny")
+  })
+
+  test("audit records are content-free and carry minimal opaque identifiers", () => {
+    const event = TrustPolicy.auditDecision({
+      id: "pol_audit_1",
+      time: 1000,
+      action: "memory.save",
+      source: "project",
+      destination: "user_global",
+      decision: "deny",
+      reason: "user_global_preference_only",
+      actor: "ses_opaque",
+    })
+    expect(event).toEqual({
+      id: "pol_audit_1",
+      time: 1000,
+      action: "memory.save",
+      source: "project",
+      destination: "user_global",
+      decision: "deny",
+      reason: "user_global_preference_only",
+      actor: "ses_opaque",
+    })
+    const serialized = JSON.stringify(event)
+    expect(serialized).not.toContain("content")
+    expect(serialized).not.toContain("secret")
+    expect(serialized).not.toContain("summary")
+    expect(serialized).not.toContain("purpose")
+    expect(serialized).not.toContain("token")
+  })
 })

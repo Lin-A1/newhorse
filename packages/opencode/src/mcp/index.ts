@@ -30,6 +30,7 @@ import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
+import { TrustPolicy } from "@/trust-policy"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@newhorse/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
@@ -150,7 +151,13 @@ function isMcpConfigured(entry: McpEntry): entry is ConfigMCPV1.Info {
 // Personal workspaces opt in per server rather than inheriting project
 // tooling, so an unrelated MCP server never sees personal content.
 function isAllowedInWorkspace(entry: ConfigMCPV1.Info, policy: WorkspacePolicy.Info) {
-  return WorkspacePolicy.allowsPersonalOptIn(policy, entry.personal === true)
+  const flow = TrustPolicy.decideContentFlow({
+    action: "mcp.connect",
+    source: policy.contentScope,
+    destination: policy.contentScope,
+    personalOptIn: entry.personal === true,
+  })
+  return flow.decision === "allow"
 }
 
 function remoteURL(value: string) {

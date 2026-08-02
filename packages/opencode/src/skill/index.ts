@@ -18,6 +18,7 @@ import { Discovery } from "./discovery"
 import { isRecord } from "@/util/record"
 import { escapeHtml } from "@/util/html"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
+import { TrustPolicy } from "@/trust-policy"
 import { Skill as SkillSchema } from "@newhorse/schema/skill"
 
 const CLAUDE_EXTERNAL_DIR = ".claude"
@@ -203,7 +204,13 @@ const discoverSkills = Effect.fnUntraced(function* (
   const state: ScanState = { matches: new Set(), dirs: new Set() }
   const cfg = yield* config.get()
   const policy = yield* WorkspacePolicy.current
-  const allowExternal = WorkspacePolicy.allowsPersonalOptIn(policy, cfg.skills?.personal === true)
+  const flow = TrustPolicy.decideContentFlow({
+    action: "skill.load",
+    source: policy.contentScope,
+    destination: policy.contentScope,
+    personalOptIn: cfg.skills?.personal === true,
+  })
+  const allowExternal = flow.decision === "allow"
 
   const externalDirs: string[] = []
   if (allowExternal && !disableExternalSkills) {

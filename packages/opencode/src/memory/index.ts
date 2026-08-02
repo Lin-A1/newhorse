@@ -15,6 +15,7 @@ import type { SessionSchema } from "@newhorse/core/session/schema"
 import { Identifier } from "@newhorse/core/id/id"
 import { InstanceState } from "@/effect/instance-state"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
+import { TrustPolicy } from "@/trust-policy"
 import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 
@@ -94,6 +95,7 @@ export class MemoryPolicyRejected extends Schema.TaggedErrorClass<MemoryPolicyRe
     "relationship_personal_only",
     "profile_required",
     "empty_content",
+    "workspace_policy",
     "source_scope_mismatch",
     "source_message_mismatch",
   ]),
@@ -236,25 +238,38 @@ const layer = Layer.effect(
       if (input.sensitivity === "sensitive" || detectSensitive(input.content)) {
         return yield* new SensitiveMemoryRejected()
       }
-      if (input.scope === "user_global" && input.kind !== "preference") {
+      // Content-flow is decided by the central TrustPolicy matrix using only
+      // trusted Workspace metadata and the memory scope/kind. The destination
+      // scope is derived here, never accepted from the caller as authority.
+      const destination: TrustPolicy.ContentScope =
+        input.scope === "user_global"
+          ? "user_global"
+          : input.kind === "relationship"
+            ? "relationship"
+            : input.policy.contentScope
+      const flow = TrustPolicy.decideContentFlow({
+        action: "memory.save",
+        source: input.policy.contentScope,
+        destination,
+        kind: input.kind,
+      })
+      if (flow.decision !== "allow") {
+        const reason =
+          flow.reason === "user_global_preference_only"
+            ? "global_preference_only"
+            : flow.reason === "relationship_personal_only"
+              ? "relationship_personal_only"
+              : "workspace_policy"
         return yield* new MemoryPolicyRejected({
-          reason: "global_preference_only",
-          message: "User-global memory stores preferences only",
+          reason,
+          message: "Memory save is not permitted by the content-flow policy",
         })
       }
-      if (input.kind === "relationship") {
-        if (input.scope !== "workspace" || input.policy.contentScope !== "personal") {
-          return yield* new MemoryPolicyRejected({
-            reason: "relationship_personal_only",
-            message: "Relationship memory is restricted to Personal workspaces",
-          })
-        }
-        if (!input.profileID) {
-          return yield* new MemoryPolicyRejected({
-            reason: "profile_required",
-            message: "Relationship memory requires a profile",
-          })
-        }
+      if (input.kind === "relationship" && !input.profileID) {
+        return yield* new MemoryPolicyRejected({
+          reason: "profile_required",
+          message: "Relationship memory requires a profile",
+        })
       }
     })
 
