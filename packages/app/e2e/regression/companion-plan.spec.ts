@@ -19,7 +19,7 @@ type PlanRequest = {
   profileID?: string
 }
 
-test("reviews and acts on Memory, Reminders, and Continuity grants in legacy settings", async ({ page }) => {
+test("reviews and acts on Memory, Reminders, and Continuity grants in settings", async ({ page }) => {
   const requests: PlanRequest[] = []
   let proposals = [
     memory("mem_accept", "Proposal to accept", "proposed"),
@@ -124,9 +124,17 @@ test("reviews and acts on Memory, Reminders, and Continuity grants in legacy set
       forbiddenRequests.push(path)
   })
 
-  await page.getByRole("button", { name: "Settings" }).click()
-  const settings = page.locator(".settings-dialog")
-  await expect(settings).toBeVisible()
+  // Open settings robustly: the legacy banner exposes a "Settings" button, the
+  // v2 layout opens via Ctrl+,. The layout-classification race can land CI on
+  // either, so fall back from the button to the shortcut.
+  const settingsButton = page.getByRole("button", { name: "Settings" })
+  await settingsButton.click({ timeout: 5_000 }).catch(() =>
+    page.keyboard.press(process.platform === "darwin" ? "Meta+," : "Control+,"),
+  )
+  // Match the legacy or v2 dialog; both expose the Companion Plan tab and render
+  // the same sections.
+  const settings = page.locator(".settings-dialog, .settings-v2-dialog")
+  await expect(settings.first()).toBeVisible()
   monitor = true
   await settings.getByRole("tab", { name: "Companion Plan" }).click()
 

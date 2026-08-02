@@ -93,7 +93,7 @@ test("redirects a draft to the legacy new-session route and shows scoped capabil
   await page.keyboard.press("Escape")
   const configBaseline = globalConfigRequests
   await page.getByRole("button", { name: "Settings" }).click()
-  await page.getByRole("tab", { name: "Companion" }).click()
+  await page.getByRole("tab", { name: "Companion", exact: true }).click()
   await expect(page.getByRole("textbox", { name: /persona/i })).toHaveValue("Warm and concise")
   expect(profileRuntimeRequests).toBe(1)
   expect(globalConfigRequests).toBe(configBaseline)

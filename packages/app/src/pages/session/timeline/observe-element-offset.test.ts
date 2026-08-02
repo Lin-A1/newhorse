@@ -45,14 +45,14 @@ test("reports a divergent native offset once and ignores equal offsets and unrel
 
   route.remove()
   document.body.append(route)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await frames(3)
-  expect(calls).toEqual([[0, false]])
+  await waitForCalls(calls, [[0, false]])
 
   route.remove()
   document.body.append(route)
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await frames(3)
+  // After the offset is cached a reconnect must not report again; hold the
+  // window long enough that a stray duplicate would have surfaced.
+  await new Promise((resolve) => setTimeout(resolve, 100))
+  await frames(4)
   expect(calls).toEqual([[0, false]])
 
   cleanup?.()
@@ -195,5 +195,18 @@ test("cleanup cancels reconnect checks and delegated offset observation", async 
 async function frames(count: number) {
   for (let index = 0; index < count; index++) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+}
+
+async function waitForCalls(calls: [number, boolean][], expected: [number, boolean][], timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs
+  for (;;) {
+    try {
+      expect(calls).toEqual(expected)
+      return
+    } catch (error) {
+      if (Date.now() >= deadline) throw error
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
   }
 }
