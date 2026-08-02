@@ -76,10 +76,12 @@ export const EXPORTABLE_CLI_TARGETS = new Set(["linux-x64", "windows-x64", "wind
  *
  * linux-x64 was runtime-verified on this Linux host (2026-08-02): the exported
  * binary answered `nh --version` -> 1.18.4 and `nh setup profile --help`.
- * Windows targets have cross-compiled, structure-checked artifacts only; runtime
- * verification is pending on a Windows runner via export-cli `validate-windows`.
+ * windows-x64 was runtime-verified on a windows-latest runner via the export-cli
+ * `validate-windows` job (2026-08-02): nh.exe answered the expected version and
+ * setup profile --help. windows-x64-baseline has a cross-compiled, structure-checked
+ * artifact only; its Windows-runner validation is pending.
  */
-export const VERIFIED_CLI_TARGETS = new Set(["linux-x64"])
+export const VERIFIED_CLI_TARGETS = new Set(["linux-x64", "windows-x64"])
 
 export const DESKTOP_TARGETS: DesktopTarget[] = [
   { id: "desktop-linux", os: "linux", packageCommand: "package:linux", formats: ["AppImage", "DEB", "RPM"] },
