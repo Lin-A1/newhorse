@@ -7,8 +7,6 @@ import { isRecord } from "@/util/record"
 
 export type Err = ReturnType<NamedError["toObject"]>
 
-export const GO_UPSELL_MESSAGE = "Free usage exceeded, subscribe to Go"
-export const GO_UPSELL_URL = "https://opencode.ai/go"
 export type RetryReason = "free_tier_limit" | "account_rate_limit" | (string & {})
 
 export type Retryable = {
@@ -65,7 +63,7 @@ export function delay(attempt: number, error?: SessionV1.APIError) {
   return cap(Math.min(RETRY_INITIAL_DELAY * Math.pow(RETRY_BACKOFF_FACTOR, attempt - 1), RETRY_MAX_DELAY_NO_HEADERS))
 }
 
-export function retryable(error: Err, provider: string) {
+export function retryable(error: Err, provider: string): Retryable | undefined {
   // context overflow errors should not be retried
   if (SessionV1.ContextOverflowError.isInstance(error)) return undefined
   if (SessionV1.APIError.isInstance(error)) {
@@ -74,21 +72,10 @@ export function retryable(error: Err, provider: string) {
     // even when the provider SDK doesn't explicitly mark them as retryable.
     if (!error.data.isRetryable && !(status !== undefined && status >= 500)) return undefined
     if (error.data.responseBody?.includes("FreeUsageLimitError")) {
-      return {
-        message: GO_UPSELL_MESSAGE,
-        action: {
-          reason: "free_tier_limit",
-          provider,
-          title: "Free limit reached",
-          message: "Subscribe to OpenCode Go for reliable access to the best open-source models, starting at $5/month.",
-          label: "subscribe",
-          link: GO_UPSELL_URL,
-        },
-      }
+      return { message: "Free usage exceeded" }
     }
     if (error.data.responseBody?.includes("GoUsageLimitError")) {
       const body = parseJSON(error.data.responseBody)
-      const workspace = str(body?.metadata?.workspace)
       const limitName = str(body?.metadata?.limitName)
       const retryAfter = num(error.data.responseHeaders?.["retry-after"])
       const resetIn = iife(() => {
@@ -104,20 +91,8 @@ export function retryable(error: Err, provider: string) {
         return minutes > 0 ? unit(minutes, "minute") : "less than a minute"
       })
 
-      const message = `${limitName ? `${limitName} usage limit` : "Usage limit"} reached. It will reset in ${resetIn}. To continue using this model now, enable usage from your available balance`
-
-      const link = `https://opencode.ai/workspace/${workspace}/go`
-      return {
-        message: `${message} - ${link}`,
-        action: {
-          reason: "account_rate_limit",
-          provider,
-          title: "Go limit reached",
-          message,
-          label: "open settings",
-          link,
-        },
-      }
+      const message = `${limitName ? `${limitName} usage limit` : "Usage limit"} reached. It will reset in ${resetIn}.`
+      return { message }
     }
     return { message: error.data.message.includes("Overloaded") ? "Provider is overloaded" : error.data.message }
   }

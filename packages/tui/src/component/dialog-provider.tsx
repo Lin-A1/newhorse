@@ -17,12 +17,21 @@ import { useBindings } from "../keymap"
 import { useClipboard } from "../context/clipboard"
 
 const PROVIDER_PRIORITY: Record<string, number> = {
-  opencode: 0,
-  "opencode-go": 1,
-  openai: 2,
-  "github-copilot": 3,
-  anthropic: 4,
-  google: 5,
+  deepseek: 0,
+  moonshotai: 1,
+  zhipuai: 2,
+  alibaba: 3,
+  minimax: 4,
+  stepfun: 5,
+  "tencent-token-plan": 6,
+  zai: 7,
+  modelscope: 8,
+  siliconflow: 9,
+  opencode: 10,
+  openai: 11,
+  "github-copilot": 12,
+  anthropic: 13,
+  google: 14,
 }
 
 const CUSTOM_PROVIDER_OPTION_VALUE = "__opencode_custom_provider__"
@@ -62,7 +71,6 @@ export function providerOptions(list: { id: string; name: string }[]): ProviderO
           opencode: "(Recommended)",
           anthropic: "(API key)",
           openai: "(ChatGPT Plus/Pro or API key)",
-          "opencode-go": "Low cost subscription for everyone",
         }[provider.id],
         category: provider.id in PROVIDER_PRIORITY ? "Popular" : "Providers",
       })),
@@ -376,17 +384,6 @@ function ApiMethod(props: ApiMethodProps) {
               </text>
               <text fg={theme.text}>
                 Go to <span style={{ fg: theme.primary }}>https://opencode.ai/zen</span> to get a key
-              </text>
-            </box>
-          ),
-          "opencode-go": (
-            <box gap={1}>
-              <text fg={theme.textMuted}>
-                OpenCode Go is a $10 per month subscription that provides reliable access to popular open coding models
-                with generous usage limits.
-              </text>
-              <text fg={theme.text}>
-                Go to <span style={{ fg: theme.primary }}>https://opencode.ai/go</span> and enable OpenCode Go
               </text>
             </box>
           ),

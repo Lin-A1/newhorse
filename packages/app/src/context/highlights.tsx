@@ -7,7 +7,9 @@ import { useSettings } from "@/context/settings"
 import { persisted } from "@/utils/persist"
 import { DialogReleaseNotes, type Highlight } from "@/components/dialog-release-notes"
 
-const CHANGELOG_URL = "https://opencode.ai/changelog.json"
+// Newhorse has no release-changelog feed; leave unset so the "What's New"
+// dialog never fetches the upstream opencode changelog.
+const CHANGELOG_URL: string | undefined = undefined
 
 type Store = {
   version?: string
@@ -166,6 +168,11 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
 
     const start = (previous: string) => {
       if (!settings.general.releaseNotes()) {
+        markSeen()
+        return
+      }
+
+      if (!CHANGELOG_URL) {
         markSeen()
         return
       }

@@ -33,7 +33,9 @@ describe("Ripgrep", () => {
           }),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       ),
-    60_000,
+    // Windows first runs download and PowerShell-extract the ripgrep archive;
+    // under runner contention that can exceed the default window.
+    180_000,
   )
 
   it.live(

@@ -4,10 +4,9 @@
   "version": "1.18.4",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://opencode.ai",
+  "homepage": "https://github.com/Lin-A1/newhorse",
   "author": {
-    "name": "newhorse",
-    "email": "hello@opencode.ai"
+    "name": "newhorse"
   },
   "scripts": {
     "typecheck": "tsgo -b",
