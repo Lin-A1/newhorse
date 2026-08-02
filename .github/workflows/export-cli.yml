@@ -1,3 +1,7 @@
+# Artifact-only CI path for a portable CLI package: cross-compiles on a Linux
+# runner, then runtime-validates the artifact on a target-OS runner
+# (validate-windows for nh.exe on Windows, validate-linux for nh on Linux).
+# This creates no GitHub Release and publishes nothing.
 name: export-cli
 
 on:
@@ -107,3 +111,35 @@ jobs:
             throw "Expected version ${{ needs.build.outputs.version }}, got $version"
           }
           & .\extracted\nh.exe setup profile --help | Out-Null
+
+  validate-linux:
+    if: startsWith(inputs.target, 'linux-')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download portable package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: package
+
+      - name: Validate archive and executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="package/${{ needs.build.outputs.artifact }}.zip"
+          expected=$(awk '{print $1}' "$archive.sha256")
+          actual=$(sha256sum "$archive" | awk '{print $1}')
+          if [ "$actual" != "$expected" ]; then echo "SHA-256 mismatch" >&2; exit 1; fi
+          count=$(unzip -Z1 "$archive" | wc -l)
+          root=$(unzip -Z1 "$archive" | head -1)
+          if [ "$count" -ne 1 ] || [ "$root" != "nh" ]; then
+            echo "Archive must contain exactly root-level nh" >&2; exit 1
+          fi
+          unzip -q -o "$archive" -d extracted
+          chmod +x extracted/nh
+          version=$(./extracted/nh --version | tr -d '[:space:]')
+          if [ "$version" != "${{ needs.build.outputs.version }}" ]; then
+            echo "Expected version ${{ needs.build.outputs.version }}, got $version" >&2; exit 1
+          fi
+          ./extracted/nh setup profile --help >/dev/null

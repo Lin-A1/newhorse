@@ -1,0 +1,101 @@
+# Artifact-only CI path for desktop installers that need tools or an OS not
+# present on the local machine: Linux AppImage/DEB/RPM (installs rpm on the
+# runner), Windows NSIS, and macOS DMG/ZIP.
+#
+# All outputs are UNSIGNED and are for install/launch smoke testing. Signing,
+# notarization, GitHub Releases, and publishing stay off: the Windows job signs
+# nothing without Azure Trusted Signing credentials, and the macOS job forces
+# signing-identity discovery off so electron-builder skips notarization too.
+name: export-desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Install RPM packaging tooling
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Build Desktop app
+        shell: bash
+        run: bun run --cwd packages/desktop build
+
+      - name: Package Linux installers
+        shell: bash
+        run: bun run --cwd packages/desktop package:linux
+
+      - name: Upload Linux installers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: newhorse-desktop-linux-installers
+          path: |
+            packages/desktop/dist/*.AppImage
+            packages/desktop/dist/*.deb
+            packages/desktop/dist/*.rpm
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Build Desktop app
+        shell: bash
+        run: bun run --cwd packages/desktop build
+
+      - name: Package Windows installer
+        shell: bash
+        run: bun run --cwd packages/desktop package:win
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: newhorse-desktop-windows-installer
+          path: packages/desktop/dist/*.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  build-macos:
+    runs-on: macos-latest
+    env:
+      # Skip signing-identity discovery so this builds an unsigned DMG/ZIP;
+      # electron-builder then also skips notarization (no APPLE_* credentials).
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Build Desktop app
+        shell: bash
+        run: bun run --cwd packages/desktop build
+
+      - name: Package macOS app
+        shell: bash
+        run: bun run --cwd packages/desktop package:mac
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: newhorse-desktop-macos
+          path: |
+            packages/desktop/dist/*.dmg
+            packages/desktop/dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
