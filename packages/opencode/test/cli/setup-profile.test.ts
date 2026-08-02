@@ -108,6 +108,29 @@ describe("nh setup", () => {
   )
 
   cliIt.concurrent(
+    "rejects malformed quiet hour values before writing profile config",
+    ({ home, opencode }) =>
+      Effect.gen(function* () {
+        const result = yield* opencode.spawn([
+          "setup",
+          "profile",
+          "companion",
+          "--quiet-start",
+          "25:00",
+          "--quiet-end",
+          "07:00",
+          "--timezone",
+          "UTC",
+        ])
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr).toContain("Invalid quiet hours start: 25:00")
+        expect(
+          yield* Effect.promise(() => Bun.file(path.join(home, ".config", "newhorse", "newhorse.jsonc")).exists()),
+        ).toBe(false)
+      }),
+    60_000,
+  )
+  cliIt.concurrent(
     "reuses the MCP add workflow",
     ({ home, opencode }) =>
       Effect.gen(function* () {

@@ -73,11 +73,17 @@ function hasConfiguration(args: ProfileArgs) {
   ].some((value) => value !== undefined)
 }
 
+function validQuietTime(value: string) {
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)
+}
+
 function validateFlags(args: ProfileArgs) {
   const quiet = [args.quietStart, args.quietEnd, args.timezone]
   if (quiet.some((value) => value !== undefined) && quiet.some((value) => value === undefined)) {
     return "--quiet-start, --quiet-end, and --timezone must be provided together"
   }
+  if (args.quietStart && !validQuietTime(args.quietStart)) return `Invalid quiet hours start: ${args.quietStart}`
+  if (args.quietEnd && !validQuietTime(args.quietEnd)) return `Invalid quiet hours end: ${args.quietEnd}`
   if (args.timezone && !validTimezone(args.timezone)) return `Invalid IANA timezone: ${args.timezone}`
   if (
     args.maxPerDay !== undefined &&
