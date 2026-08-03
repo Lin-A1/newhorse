@@ -5,6 +5,7 @@ import { define } from "@newhorse/plugin/v2/effect/plugin"
 import type { CredentialValue } from "@newhorse/sdk/v2/types"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { EventV2 } from "../../event"
+import { env } from "../../flag/flag"
 import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
@@ -164,7 +165,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
 
       const item = catalog.provider.get(ProviderV2.ID.opencode)
       if (!item) return
-      const hasKey = Boolean(process.env.OPENCODE_API_KEY || connected || item.provider.request.body.apiKey)
+      const hasKey = Boolean(env("OPENCODE_API_KEY") || connected || item.provider.request.body.apiKey)
       catalog.provider.update(item.provider.id, (provider) => {
         if (!hasKey) provider.request.body.apiKey = "public"
       })

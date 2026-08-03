@@ -61,7 +61,7 @@ Newhorse 建立在 [OpenCode](https://github.com/anomalyco/opencode) 的工程�
 - App/Desktop/TUI 前台宿主恢复：启动时有界恢复+轮询、退出时释放 lease、本地 delivery-key 幂等（叠放在现有 scheduler/outbox 机制之上，不装 resident daemon）
 - Content-Free Trust Policy 审计持久化，以及将剩余生产边界（memory retrieve、continuity、reminder、capability）接入共享决策服务；用户配置收紧已实现但尚未在运行时调用
 - Companion Plan 本地化（i18n）、content-free 审计展示与 TUI mounted smoke
-- 扩展兼容矩阵、幂等迁移/规范优先级测试，以及计划中的 `NH_` 环境变量前缀
+- 扩展兼容矩阵、幂等迁移/规范优先级测试
 - 目标 OS runner 上的 Desktop 安装包 runtime smoke（AppImage/DEB/RPM、NSIS、DMG/ZIP 已产出；签名保持 opt-in/关闭）
 
 仓库不会把这些进行中的工作描述为已完成功能。
@@ -186,7 +186,7 @@ Assistant 与 Companion 是同一智能系统中的体验 Profile，可以兼容
 
 ## 配置兼容
 
-Newhorse 配置写入项目目录或用户主目录下的 `.newhorse/`，并仍读取旧 `.opencode/` 目录以保持兼容。运行时当前沿用上游 `OPENCODE_*` 环境变量名；计划中的 `NH_` 前缀是文档化的后续工作（见开发交接方案，该方案有意不纳入仓库）。
+Newhorse 配置写入项目目录或用户主目录下的 `.newhorse/`，并仍读取旧 `.opencode/` 目录以保持兼容。运行时环境变量同时支持 `NH_*` 前缀（优先）与上游 `OPENCODE_*` 名称（回退），例如 `NH_DB`/`OPENCODE_DB`。
 
 ## 与 OpenCode 的关系
 

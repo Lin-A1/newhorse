@@ -14,6 +14,7 @@
 import fs from "fs"
 import path from "path"
 import { Global } from "@newhorse/core/global"
+import { env } from "@newhorse/core/flag/flag"
 
 export type Trace = {
   write(type: string, data?: unknown): void
@@ -55,7 +56,7 @@ export function trace(): Trace | undefined {
     return state || undefined
   }
 
-  if (!process.env.OPENCODE_DIRECT_TRACE) {
+  if (!env("OPENCODE_DIRECT_TRACE")) {
     state = false
     return undefined
   }

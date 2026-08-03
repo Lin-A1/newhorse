@@ -1,4 +1,6 @@
-const enabled = process.env.OPENCODE_ACP_PROFILE === "1"
+import { truthy } from "@newhorse/core/flag/flag"
+
+const enabled = truthy("OPENCODE_ACP_PROFILE")
 const started = performance.now()
 
 export function mark(name: string, fields?: Record<string, string | number | boolean | undefined>) {

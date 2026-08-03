@@ -1,4 +1,5 @@
 import { LayerNode } from "@newhorse/core/effect/layer-node"
+import { env } from "@newhorse/core/flag/flag"
 import path from "path"
 import { Effect, Layer, Record, Result, Schema, Context } from "effect"
 import { NonNegativeInt } from "@newhorse/core/schema"
@@ -56,9 +57,9 @@ const layer = Layer.effect(
     const decode = Schema.decodeUnknownOption(Info)
 
     const all = Effect.fn("Auth.all")(function* () {
-      if (process.env.OPENCODE_AUTH_CONTENT) {
+      if (env("OPENCODE_AUTH_CONTENT")) {
         try {
-          return JSON.parse(process.env.OPENCODE_AUTH_CONTENT)
+          return JSON.parse(env("OPENCODE_AUTH_CONTENT")!)
         } catch (err) {}
       }
 

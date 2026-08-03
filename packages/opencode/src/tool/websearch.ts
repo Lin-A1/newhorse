@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect"
+import { env } from "@newhorse/core/flag/flag"
 import { HttpClient } from "effect/unstable/http"
 import * as Tool from "./tool"
 import * as McpWebSearch from "./mcp-websearch"
@@ -28,7 +29,7 @@ const WebSearchProviderSchema = Schema.Literals(["exa", "parallel"])
 export type WebSearchProvider = Schema.Schema.Type<typeof WebSearchProviderSchema>
 
 export function selectWebSearchProvider(sessionID: string, flags = { exa: false, parallel: false }): WebSearchProvider {
-  const override = process.env.OPENCODE_WEBSEARCH_PROVIDER
+  const override = env("OPENCODE_WEBSEARCH_PROVIDER")
   if (override === "exa" || override === "parallel") return override
   if (flags.parallel) return "parallel"
   if (flags.exa) return "exa"

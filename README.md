@@ -61,7 +61,7 @@ Newhorse is built on the engineering foundation of [OpenCode](https://github.com
 - Foreground host recovery for App/Desktop/TUI: bounded recovery + polling on startup, lease release on shutdown, and local delivery-key idempotency layered on the existing scheduler/outbox machinery (no resident daemon)
 - Content-free Trust Policy audit persistence, the remaining production boundaries (memory retrieve, continuity, reminder, capability) wired to the shared decision service, and user-config tightening applied at runtime (currently implemented but not called)
 - Companion Plan localization (i18n), content-free audit display, and a TUI mounted smoke
-- Extension compatibility matrix, idempotent migration / canonical-precedence tests, and the planned `NH_` environment-variable prefix
+- Extension compatibility matrix, idempotent migration / canonical-precedence tests
 - Desktop installer runtime smoke on target-OS runners (AppImage/DEB/RPM, NSIS, DMG/ZIP are produced; signing stays opt-in/off)
 
 The repository does not describe these in-progress items as completed features.
@@ -189,7 +189,7 @@ Assistant and Companion are experience profiles within the same intelligent syst
 
 ## Configuration compatibility
 
-Newhorse configuration writes to `.newhorse/` in the project or home directory, and legacy `.opencode/` paths are still read for compatibility. The runtime currently keeps the upstream `OPENCODE_*` environment-variable names; the planned `NH_` prefix is a documented follow-up (see the developer handoff, which is intentionally not part of the repository).
+Newhorse configuration writes to `.newhorse/` in the project or home directory, and legacy `.opencode/` paths are still read for compatibility. Runtime environment variables accept both the `NH_*` prefix (preferred) and the upstream `OPENCODE_*` names (fallback), e.g. `NH_DB` / `OPENCODE_DB`.
 
 ## Relationship to OpenCode
 

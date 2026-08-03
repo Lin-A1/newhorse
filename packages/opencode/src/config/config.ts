@@ -495,9 +495,9 @@ const layer = Layer.effect(
           yield* mergePluginOrigins(dir, list)
         }
 
-        if (process.env.OPENCODE_CONFIG_CONTENT) {
+        if (Flag.OPENCODE_CONFIG_CONTENT) {
           const source = "OPENCODE_CONFIG_CONTENT"
-          const next = yield* loadConfig(process.env.OPENCODE_CONFIG_CONTENT, {
+          const next = yield* loadConfig(Flag.OPENCODE_CONFIG_CONTENT!, {
             dir: ctx.directory,
             source,
           })
