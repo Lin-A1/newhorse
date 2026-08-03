@@ -18,7 +18,7 @@ import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import type { PermissionV1 } from "@newhorse/core/v1/permission"
 import { TrustPolicy } from "@/trust-policy"
 import { and, desc, eq, gt, inArray, isNull, like, lt, ne, or, sql } from "drizzle-orm"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Ref, Schema } from "effect"
 
 export const Scope = Schema.Literals(["workspace", "user_global"])
 export const Kind = Schema.Literals(["preference", "fact", "goal", "event", "relationship", "summary"])
@@ -131,6 +131,11 @@ function escapeLike(value: string) {
 
 const DEFAULT_STATUSES: MemoryStatus[] = ["proposed", "active", "paused"]
 
+// Bounded, host-owned lifecycle maintenance. Expiry/pruning run opportunistically
+// from read paths but at most once per interval, and never as a resident daemon.
+const MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000
+const MEMORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
+
 export interface Interface {
   readonly save: (input: SaveInput) => Effect.Effect<Info, SensitiveMemoryRejected | MemoryPolicyRejected>
   readonly page: (input?: QueryInput) => Effect.Effect<Page>
@@ -151,6 +156,7 @@ export interface Interface {
     limit?: number
     userRuleset?: PermissionV1.Ruleset
   }) => Effect.Effect<ReadonlyArray<Info>>
+  readonly maintain: () => Effect.Effect<{ expired: number; pruned: number }>
   readonly update: (
     input: UpdateInput,
   ) => Effect.Effect<Info | undefined, SensitiveMemoryRejected | MemoryPolicyRejected>
@@ -181,6 +187,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const trustPolicy = yield* TrustPolicy.Service
+    const lastMaintain = yield* Ref.make(Date.now())
 
     const decode = (row: typeof MemoryTable.$inferSelect): Info => ({
       id: row.id,
@@ -207,6 +214,41 @@ const layer = Layer.effect(
         directory: instance.directory,
         policy: yield* WorkspacePolicy.current,
       }
+    })
+
+    const maintainInternal = Effect.fn("Memory.maintain")(function* (now: number) {
+      // Expire rows whose time_expires has passed: they must no longer surface
+      // in any read path, so demote them to deleted (excluded from page/list).
+      const expired = yield* db
+        .update(MemoryTable)
+        .set({ status: "deleted" as const, time_updated: now })
+        .where(and(inArray(MemoryTable.status, ["active", "proposed"]), lt(MemoryTable.time_expires, now)))
+        .returning({ id: MemoryTable.id })
+        .all()
+        .pipe(Effect.orDie)
+      // Prune rejected/deleted rows older than the retention window.
+      const pruned = yield* db
+        .delete(MemoryTable)
+        .where(
+          and(inArray(MemoryTable.status, ["rejected", "deleted"]), lt(MemoryTable.time_created, now - MEMORY_RETENTION_MS)),
+        )
+        .returning({ id: MemoryTable.id })
+        .all()
+        .pipe(Effect.orDie)
+      return { expired: expired.length, pruned: pruned.length }
+    })
+
+    // Throttled opportunistic maintenance from read paths. Never a daemon: it
+    // runs at most once per interval per process, piggybacked on a real read.
+    const maintainIfDue = Effect.fnUntraced(function* () {
+      const now = Date.now()
+      if (now - (yield* Ref.get(lastMaintain)) < MAINTENANCE_INTERVAL_MS) return
+      yield* Ref.set(lastMaintain, now)
+      yield* maintainInternal(now).pipe(Effect.ignore)
+    })
+
+    const maintain: Interface["maintain"] = Effect.fn("Memory.maintain")(function* () {
+      return yield* maintainInternal(Date.now())
     })
 
     const globalFilter = and(
@@ -396,6 +438,7 @@ const layer = Layer.effect(
     })
 
     const page: Interface["page"] = Effect.fn("Memory.page")(function* (input) {
+      yield* maintainIfDue()
       const limit = Math.min(Math.max(input?.limit ?? 50, 1), 100)
       const rows = yield* db
         .select()
@@ -411,6 +454,7 @@ const layer = Layer.effect(
     })
 
     const list: Interface["list"] = Effect.fn("Memory.list")(function* (input) {
+      yield* maintainIfDue()
       const rows = yield* db
         .select()
         .from(MemoryTable)
@@ -422,6 +466,7 @@ const layer = Layer.effect(
     })
 
     const count: Interface["count"] = Effect.fn("Memory.count")(function* (input) {
+      yield* maintainIfDue()
       const row = yield* db
         .select({ count: sql<number>`count(*)` })
         .from(MemoryTable)
@@ -433,6 +478,7 @@ const layer = Layer.effect(
 
     const retrieve: Interface["retrieve"] = Effect.fn("Memory.retrieve")(function* (input) {
       const owner = yield* context
+      yield* maintainIfDue()
       if (input?.relationshipOnly && (owner.policy.contentScope !== "personal" || !input.profileID)) return []
       const destination: TrustPolicy.ContentScope = input?.relationshipOnly
         ? "relationship"
@@ -471,6 +517,7 @@ const layer = Layer.effect(
 
     const search: Interface["search"] = Effect.fn("Memory.search")(function* (input) {
       const owner = yield* context
+      yield* maintainIfDue()
       const query = input?.query?.trim()
       if (!query) return []
       if (input?.relationshipOnly && (owner.policy.contentScope !== "personal" || !input.profileID)) return []
@@ -665,6 +712,7 @@ const layer = Layer.effect(
       count,
       retrieve,
       search,
+      maintain,
       update,
       decide,
       pause,

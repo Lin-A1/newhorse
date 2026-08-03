@@ -6,7 +6,7 @@ import { Session } from "@/session/session"
 import { Profile } from "@/profile"
 
 export const Parameters = Schema.Struct({
-  action: Schema.Literals(["list", "search", "save", "forget"]).annotate({
+  action: Schema.Literals(["list", "search", "save", "forget", "consolidate", "archive"]).annotate({
     description: "The memory operation to perform",
   }),
   content: Schema.optional(Schema.String).annotate({ description: "Content to remember (required for save)" }),
@@ -18,6 +18,9 @@ export const Parameters = Schema.Struct({
   }),
   query: Schema.optional(Schema.String).annotate({
     description: "Search text to find relevant memories (required for search)",
+  }),
+  ids: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Memory ids to archive after consolidation (required for archive)",
   }),
   id: Schema.optional(Schema.String).annotate({ description: "Memory id (required for forget)" }),
 })
@@ -77,6 +80,47 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
               title: `${found.length} relevant memories`,
               metadata: {},
               output: found.length === 0 ? "No relevant memories found." : render(found),
+            }
+          }
+
+          if (params.action === "consolidate") {
+            const items = (yield* memory.list({ status: ["active"], profileID: profile.id })).filter((item) =>
+              ["fact", "event", "preference"].includes(item.kind),
+            )
+            if (items.length === 0) {
+              return {
+                title: "Nothing to consolidate",
+                metadata: {},
+                output: "No active facts, events, or preferences to consolidate.",
+              }
+            }
+            return {
+              title: `${items.length} memories ready to consolidate`,
+              metadata: {},
+              output:
+                `Consolidate these ${items.length} memories into one concise summary:\n\n${render(items)}\n\n` +
+                `Write a "summary" memory (action: save, kind: summary) with the distilled facts, ` +
+                `then archive each source with action: archive, ids: [${items.map((item) => item.id).join(", ")}].`,
+            }
+          }
+
+          if (params.action === "archive") {
+            if (!params.ids?.length) return yield* Effect.fail(new Error("archive requires ids"))
+            yield* ctx.ask({
+              permission: "memory",
+              patterns: ["*"],
+              always: ["*"],
+              metadata: { ids: params.ids, action: "archive" },
+            })
+            let archived = 0
+            for (const id of params.ids) {
+              const paused = yield* memory.pause({ id, scope: params.scope, paused: true, profileID: profile.id })
+              if (paused) archived += 1
+            }
+            return {
+              title: `${archived} memories archived`,
+              metadata: {},
+              output: archived === 0 ? "No memories were archived." : `Archived ${archived} memories.`,
             }
           }
 

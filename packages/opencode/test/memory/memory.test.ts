@@ -114,6 +114,26 @@ describe("Memory", () => {
     }),
   )
 
+  it.instance("maintain expires past-dated rows", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      yield* memory.save({
+        kind: "event",
+        content: "standup at 10",
+        provenance: "user_explicit",
+        expiresAt: Date.now() - 1000,
+      })
+
+      // Before maintain the expired row is still listed (just not retrieved).
+      expect((yield* memory.list()).length).toBe(1)
+      const result = yield* memory.maintain()
+      expect(result.expired).toBe(1)
+      // After maintain it is demoted to deleted and no longer surfaces.
+      expect(yield* memory.list()).toEqual([])
+      expect(yield* memory.count()).toBe(0)
+    }),
+  )
+
   it.instance("rejects a source message without a source session", () =>
     Effect.gen(function* () {
       const memory = yield* Memory.Service
