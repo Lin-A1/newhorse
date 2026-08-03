@@ -58,11 +58,10 @@ Newhorse is built on the engineering foundation of [OpenCode](https://github.com
 
 ### Still being closed out
 
-- Foreground host recovery for App/Desktop/TUI: bounded recovery + polling on startup, lease release on shutdown, and local delivery-key idempotency layered on the existing scheduler/outbox machinery (no resident daemon)
-- Content-free Trust Policy audit persistence, the remaining production boundaries (memory retrieve, continuity, reminder, capability) wired to the shared decision service, and user-config tightening applied at runtime (currently implemented but not called)
-- Companion Plan localization (i18n), content-free audit display, and a TUI mounted smoke
-- Extension compatibility matrix, idempotent migration / canonical-precedence tests
-- Desktop installer runtime smoke on target-OS runners (AppImage/DEB/RPM, NSIS, DMG/ZIP are produced; signing stays opt-in/off)
+- Companion Plan / daily entry: the unified "Today / Companion" daily view is still being designed; the related copy is not yet fully routed through i18n
+- Desktop installer runtime smoke on target-OS runners (AppImage/DEB/RPM, NSIS, DMG/ZIP are produced; signing stays opt-in/off; GitHub Actions quota is limited)
+
+The central Trust Policy (content-flow decisions, user tightening, content-free audit), the `/policy-audit` endpoint, the extension compatibility matrix, idempotent migration tests, and the `NH_` environment-variable prefix are implemented.
 
 The repository does not describe these in-progress items as completed features.
 

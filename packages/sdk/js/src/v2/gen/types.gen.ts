@@ -2314,6 +2314,13 @@ export type McpResource = {
   client: string
 }
 
+export type PersonalWorkspace = {
+  id: string
+  name: string
+  directory: string
+  notes: number
+}
+
 export type Symbol = {
   name: string
   kind: number
@@ -2645,6 +2652,43 @@ export type PermissionNotFoundError = {
   _tag: "PermissionNotFoundError"
   requestID: string
   message: string
+}
+
+export type PolicyAudit = {
+  id: string
+  time: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  action:
+    | "memory.save"
+    | "memory.retrieve"
+    | "memory.propose"
+    | "continuity.propose"
+    | "continuity.approve"
+    | "continuity.inject"
+    | "continuity.revoke"
+    | "reminder.create"
+    | "reminder.deliver"
+    | "extension.load"
+    | "tool.load"
+    | "skill.load"
+    | "mcp.connect"
+    | "capability.explain"
+  source: "project" | "personal" | "user_global" | "relationship"
+  destination: "project" | "personal" | "user_global" | "relationship"
+  decision: "allow" | "ask" | "deny"
+  reason:
+    | "same_scope"
+    | "user_global_preference_only"
+    | "relationship_personal_only"
+    | "project_to_personal_requires_grant"
+    | "personal_to_project_requires_grant"
+    | "extension_personal_opt_in_required"
+    | "workspace_policy"
+  actor: string
+}
+
+export type PolicyAuditPage = {
+  items: Array<PolicyAudit>
+  nextCursor?: string
 }
 
 export type ProviderAuthMethod = {
@@ -9108,6 +9152,37 @@ export type ExperimentalResourceListResponses = {
 export type ExperimentalResourceListResponse =
   ExperimentalResourceListResponses[keyof ExperimentalResourceListResponses]
 
+export type ExperimentalWorkspacePersonalData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/experimental/workspace/personal"
+}
+
+export type ExperimentalWorkspacePersonalErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalWorkspacePersonalError =
+  ExperimentalWorkspacePersonalErrors[keyof ExperimentalWorkspacePersonalErrors]
+
+export type ExperimentalWorkspacePersonalResponses = {
+  /**
+   * Personal workspaces
+   */
+  200: Array<PersonalWorkspace>
+}
+
+export type ExperimentalWorkspacePersonalResponse =
+  ExperimentalWorkspacePersonalResponses[keyof ExperimentalWorkspacePersonalResponses]
+
 export type FindTextData = {
   body?: never
   path?: never
@@ -10832,6 +10907,37 @@ export type PermissionReplyResponses = {
 
 export type PermissionReplyResponse = PermissionReplyResponses[keyof PermissionReplyResponses]
 
+export type PolicyAuditListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+    limit?: string
+    cursor?: string
+  }
+  url: "/policy-audit"
+}
+
+export type PolicyAuditListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PolicyAuditListError = PolicyAuditListErrors[keyof PolicyAuditListErrors]
+
+export type PolicyAuditListResponses = {
+  /**
+   * Content-free policy audit page
+   */
+  200: PolicyAuditPage
+}
+
+export type PolicyAuditListResponse = PolicyAuditListResponses[keyof PolicyAuditListResponses]
+
 export type ProviderListData = {
   body?: never
   path?: never
@@ -11414,6 +11520,7 @@ export type SessionUpdateData = {
       [key: string]: unknown
     }
     permission?: PermissionRuleset
+    profileID?: string
     time?: {
       archived?: number
     }

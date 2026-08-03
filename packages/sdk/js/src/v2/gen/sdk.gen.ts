@@ -66,6 +66,8 @@ import type {
   ExperimentalWorkspaceCreateResponses,
   ExperimentalWorkspaceListErrors,
   ExperimentalWorkspaceListResponses,
+  ExperimentalWorkspacePersonalErrors,
+  ExperimentalWorkspacePersonalResponses,
   ExperimentalWorkspaceRemoveErrors,
   ExperimentalWorkspaceRemoveResponses,
   ExperimentalWorkspaceStatusErrors,
@@ -166,6 +168,8 @@ import type {
   PermissionRuleset,
   PermissionV2Reply,
   PermissionV2Source,
+  PolicyAuditListErrors,
+  PolicyAuditListResponses,
   ProjectCommands,
   ProjectCurrentErrors,
   ProjectCurrentResponses,
@@ -986,53 +990,6 @@ export class Resource extends HeyApiClient {
   }
 }
 
-export class ProjectCopy extends HeyApiClient {
-  /**
-   * Generate project copy name
-   *
-   * Generate a short name for a project copy from task context.
-   */
-  public generateName<ThrowOnError extends boolean = false>(
-    parameters: {
-      projectID: string
-      directory?: string
-      workspace?: string
-      session?: string
-      context?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "projectID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "session" },
-            { in: "body", key: "context" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      ExperimentalProjectCopyGenerateNameResponses,
-      ExperimentalProjectCopyGenerateNameErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/project/{projectID}/copy/generate-name",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
 export class Adapter extends HeyApiClient {
   /**
    * List workspace adapters
@@ -1072,6 +1029,42 @@ export class Adapter extends HeyApiClient {
 }
 
 export class Workspace extends HeyApiClient {
+  /**
+   * List personal workspaces
+   *
+   * List the user's Personal workspaces with their directory and note counts.
+   */
+  public personal<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      session?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalWorkspacePersonalResponses,
+      ExperimentalWorkspacePersonalErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/workspace/personal",
+      ...options,
+      ...params,
+    })
+  }
+
   /**
    * List workspaces
    *
@@ -1320,6 +1313,53 @@ export class Workspace extends HeyApiClient {
   }
 }
 
+export class ProjectCopy extends HeyApiClient {
+  /**
+   * Generate project copy name
+   *
+   * Generate a short name for a project copy from task context.
+   */
+  public generateName<ThrowOnError extends boolean = false>(
+    parameters: {
+      projectID: string
+      directory?: string
+      workspace?: string
+      session?: string
+      context?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "projectID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+            { in: "body", key: "context" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalProjectCopyGenerateNameResponses,
+      ExperimentalProjectCopyGenerateNameErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/project/{projectID}/copy/generate-name",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Experimental extends HeyApiClient {
   private _controlPlane?: ControlPlane
   get controlPlane(): ControlPlane {
@@ -1346,14 +1386,14 @@ export class Experimental extends HeyApiClient {
     return (this._resource ??= new Resource({ client: this.client }))
   }
 
-  private _projectCopy?: ProjectCopy
-  get projectCopy(): ProjectCopy {
-    return (this._projectCopy ??= new ProjectCopy({ client: this.client }))
-  }
-
   private _workspace?: Workspace
   get workspace(): Workspace {
     return (this._workspace ??= new Workspace({ client: this.client }))
+  }
+
+  private _projectCopy?: ProjectCopy
+  get projectCopy(): ProjectCopy {
+    return (this._projectCopy ??= new ProjectCopy({ client: this.client }))
   }
 }
 
@@ -4037,6 +4077,42 @@ export class Permission extends HeyApiClient {
   }
 }
 
+export class PolicyAudit extends HeyApiClient {
+  /**
+   * List content-flow policy audit records
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      session?: string
+      limit?: string
+      cursor?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "cursor" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<PolicyAuditListResponses, PolicyAuditListErrors, ThrowOnError>({
+      url: "/policy-audit",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Oauth extends HeyApiClient {
   /**
    * Start OAuth authorization
@@ -4628,6 +4704,7 @@ export class Session2 extends HeyApiClient {
         [key: string]: unknown
       }
       permission?: PermissionRuleset
+      profileID?: string
       time?: {
         archived?: number
       }
@@ -4646,6 +4723,7 @@ export class Session2 extends HeyApiClient {
             { in: "body", key: "title" },
             { in: "body", key: "metadata" },
             { in: "body", key: "permission" },
+            { in: "body", key: "profileID" },
             { in: "body", key: "time" },
           ],
         },
@@ -8337,6 +8415,11 @@ export class OpencodeClient extends HeyApiClient {
   private _permission?: Permission
   get permission(): Permission {
     return (this._permission ??= new Permission({ client: this.client }))
+  }
+
+  private _policyAudit?: PolicyAudit
+  get policyAudit(): PolicyAudit {
+    return (this._policyAudit ??= new PolicyAudit({ client: this.client }))
   }
 
   private _provider?: Provider

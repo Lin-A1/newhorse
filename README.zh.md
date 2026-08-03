@@ -58,11 +58,10 @@ Newhorse 建立在 [OpenCode](https://github.com/anomalyco/opencode) 的工程�
 
 ### 仍在闭环
 
-- App/Desktop/TUI 前台宿主恢复：启动时有界恢复+轮询、退出时释放 lease、本地 delivery-key 幂等（叠放在现有 scheduler/outbox 机制之上，不装 resident daemon）
-- Content-Free Trust Policy 审计持久化，以及将剩余生产边界（memory retrieve、continuity、reminder、capability）接入共享决策服务；用户配置收紧已实现但尚未在运行时调用
-- Companion Plan 本地化（i18n）、content-free 审计展示与 TUI mounted smoke
-- 扩展兼容矩阵、幂等迁移/规范优先级测试
-- 目标 OS runner 上的 Desktop 安装包 runtime smoke（AppImage/DEB/RPM、NSIS、DMG/ZIP 已产出；签名保持 opt-in/关闭）
+- Companion Plan / 每日入口：统一的 "Today / Companion" 每日视图仍在设计中；相关文案尚未全量接入 i18n
+- 目标 OS runner 上的 Desktop 安装包 runtime smoke（AppImage/DEB/RPM、NSIS、DMG/ZIP 已产出；签名保持 opt-in/关闭；GitHub Actions 配额受限）
+
+Central Trust Policy（内容流决策 + 用户收紧 + content-free 审计）、`/policy-audit` 端点、扩展兼容矩阵、幂等迁移测试与 `NH_` 环境变量前缀均已实现。
 
 仓库不会把这些进行中的工作描述为已完成功能。
 
