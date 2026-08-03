@@ -6,6 +6,15 @@ import { SessionID } from "@/session/schema"
 import { Worktree } from "@/worktree"
 import { NonNegativeInt } from "@newhorse/core/schema"
 import { Schema } from "effect"
+
+export const PersonalWorkspace = Schema.Struct({
+  id: Schema.String,
+  name: Schema.String,
+  directory: Schema.String,
+  notes: Schema.Int,
+}).annotate({ identifier: "PersonalWorkspace" })
+export const PersonalWorkspaceList = Schema.Array(PersonalWorkspace)
+
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
@@ -99,6 +108,7 @@ export const ExperimentalPaths = {
   session: "/experimental/session",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
+  workspacePersonal: "/experimental/workspace/personal",
 } as const
 
 export const ExperimentalApi = HttpApi.make("experimental")
@@ -253,6 +263,16 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "experimental.resource.list",
             summary: "Get MCP resources",
             description: "Get all available MCP resources from connected servers. Optionally filter by name.",
+          }),
+        ),
+        HttpApiEndpoint.get("workspacePersonal", ExperimentalPaths.workspacePersonal, {
+          query: WorkspaceRoutingQuery,
+          success: described(PersonalWorkspaceList, "Personal workspaces"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.workspace.personal",
+            summary: "List personal workspaces",
+            description: "List the user's Personal workspaces with their directory and note counts.",
           }),
         ),
       )

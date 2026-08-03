@@ -11,6 +11,10 @@ import type { SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
+import { Database } from "@newhorse/core/database/database"
+import { WorkspaceTable } from "@newhorse/core/control-plane/workspace.sql"
+import { MemoryTable } from "@newhorse/core/memory/sql"
+import { eq, sql } from "drizzle-orm"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
@@ -35,6 +39,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const sessions = yield* Session.Service
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
+    const { db } = yield* Database.Service
 
     const capabilities = Effect.fn("ExperimentalHttpApi.capabilities")(function* () {
       return { backgroundSubagents: flags.experimentalBackgroundSubagents }
@@ -175,6 +180,29 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* mcp.resources()
     })
 
+    const workspacePersonal = Effect.fn("ExperimentalHttpApi.workspacePersonal")(function* () {
+      const rows = yield* db
+        .select()
+        .from(WorkspaceTable)
+        .where(eq(WorkspaceTable.type, "personal"))
+        .all()
+        .pipe(Effect.orDie)
+      return yield* Effect.forEach(
+        rows,
+        (row) =>
+          Effect.gen(function* () {
+            const count = yield* db
+              .select({ count: sql<number>`count(*)` })
+              .from(MemoryTable)
+              .where(eq(MemoryTable.workspace_id, row.id))
+              .get()
+              .pipe(Effect.orDie)
+            return { id: row.id, name: row.name, directory: row.directory ?? "", notes: count?.count ?? 0 }
+          }),
+        { concurrency: "unbounded" },
+      )
+    })
+
     return handlers
       .handle("capabilities", capabilities)
       .handle("console", getConsole)
@@ -189,5 +217,6 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("session", session)
       .handle("sessionBackground", sessionBackground)
       .handle("resource", resource)
+      .handle("workspacePersonal", workspacePersonal)
   }),
 )

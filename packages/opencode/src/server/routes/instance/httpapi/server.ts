@@ -9,6 +9,8 @@ import { Agent } from "@/agent/agent"
 import { Capability } from "@/capability"
 import { ContinuityGrant } from "@/continuity-grant"
 import { Memory } from "@/memory"
+import { TrustPolicy } from "@/trust-policy"
+import { PolicyAuditStore } from "@/trust-policy/policy-audit"
 import { Auth } from "@/auth"
 import { BackgroundJob } from "@/background/job"
 import { Command } from "@/command"
@@ -97,6 +99,7 @@ import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
 import { mcpHandlers } from "./handlers/mcp"
 import { memoryHandlers } from "./handlers/memory"
+import { policyAuditHandlers } from "./handlers/policy-audit"
 import { permissionHandlers } from "./handlers/permission"
 import { projectHandlers } from "./handlers/project"
 import { projectCopyHandlers } from "./handlers/project-copy"
@@ -168,6 +171,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     instanceHandlers,
     mcpHandlers,
     memoryHandlers,
+    policyAuditHandlers,
     projectHandlers,
     projectCopyHandlers,
     ptyHandlers,
@@ -242,6 +246,8 @@ const app = LayerNode.group([
   Capability.node,
   ContinuityGrant.node,
   Memory.node,
+  TrustPolicy.node,
+  PolicyAuditStore.node,
   Skill.node,
   Discovery.node,
   Question.node,

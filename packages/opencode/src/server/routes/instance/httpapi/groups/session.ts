@@ -1,5 +1,6 @@
 import { PermissionV1 } from "@newhorse/core/v1/permission"
 import { Permission } from "@/permission"
+import { Profile } from "@/profile"
 import { SessionV1 } from "@newhorse/core/v1/session"
 
 import { Session } from "@/session/session"
@@ -50,6 +51,7 @@ export const UpdatePayload = Schema.Struct({
   title: Schema.optional(Schema.String),
   metadata: Schema.optional(Session.Metadata),
   permission: Schema.optional(PermissionV1.Ruleset),
+  profileID: Schema.optional(Profile.ID),
   time: Schema.optional(
     Schema.Struct({
       archived: Schema.optional(Session.ArchivedTimestamp),

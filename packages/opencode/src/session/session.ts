@@ -443,6 +443,7 @@ export interface Interface {
     time: number
   }) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: PermissionV1.Ruleset }) => Effect.Effect<void>
+  readonly setProfile: (input: { sessionID: SessionID; profileID: Profile.ID }) => Effect.Effect<void>
   readonly setRevert: (input: {
     sessionID: SessionID
     revert: Info["revert"]
@@ -809,6 +810,17 @@ const layer: Layer.Layer<
       )
     })
 
+    const setProfile = Effect.fn("Session.setProfile")(function* (input: {
+      sessionID: SessionID
+      profileID: Profile.ID
+    }) {
+      // Validate against the trusted profile registry; client-supplied fields are
+      // never authority. Switching re-routes memory/reminder/capability/continuity
+      // content scope because those read the session's profile at runtime.
+      yield* profiles.get(input.profileID).pipe(Effect.orDie)
+      yield* patch(input.sessionID, { profileID: input.profileID, time: { updated: Date.now() } }).pipe(Effect.orDie)
+    })
+
     const setRevert = Effect.fn("Session.setRevert")(function* (input: {
       sessionID: SessionID
       revert: Info["revert"]
@@ -941,6 +953,7 @@ const layer: Layer.Layer<
       setMetadata,
       setAgentModel,
       setPermission,
+      setProfile,
       setRevert,
       clearRevert,
       setSummary,

@@ -18,6 +18,7 @@ import { InstanceApi } from "./groups/instance"
 import { McpApi } from "./groups/mcp"
 import { MemoryApi } from "./groups/memory"
 import { PermissionApi } from "./groups/permission"
+import { PolicyAuditApi } from "./groups/policy-audit"
 import { ProjectApi } from "./groups/project"
 import { ProjectCopyApi } from "./groups/project-copy"
 import { ProviderApi } from "./groups/provider"
@@ -74,6 +75,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(PtyApi)
   .addHttpApi(QuestionApi)
   .addHttpApi(PermissionApi)
+  .addHttpApi(PolicyAuditApi)
   .addHttpApi(ProviderApi)
   .addHttpApi(ReminderApi)
   .addHttpApi(SessionApi)

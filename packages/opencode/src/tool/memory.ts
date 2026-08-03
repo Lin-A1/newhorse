@@ -6,7 +6,7 @@ import { Session } from "@/session/session"
 import { Profile } from "@/profile"
 
 export const Parameters = Schema.Struct({
-  action: Schema.Literals(["list", "search", "save", "forget", "consolidate", "archive"]).annotate({
+  action: Schema.Literals(["list", "search", "save", "forget", "consolidate", "archive", "clear"]).annotate({
     description: "The memory operation to perform",
   }),
   content: Schema.optional(Schema.String).annotate({ description: "Content to remember (required for save)" }),
@@ -18,6 +18,9 @@ export const Parameters = Schema.Struct({
   }),
   query: Schema.optional(Schema.String).annotate({
     description: "Search text to find relevant memories (required for search)",
+  }),
+  target: Schema.optional(Schema.Literals(["workspace", "relationship", "user_global"])).annotate({
+    description: "Scope to clear (defaults to workspace; relationship only in a Personal workspace)",
   }),
   ids: Schema.optional(Schema.Array(Schema.String)).annotate({
     description: "Memory ids to archive after consolidation (required for archive)",
@@ -156,6 +159,27 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
               title: "Memory proposed",
               metadata: { id: saved.id, status: saved.status },
               output: `Proposed [${saved.id}]: ${saved.content}`,
+            }
+          }
+
+          if (params.action === "clear") {
+            yield* ctx.ask({
+              permission: "memory",
+              patterns: ["*"],
+              always: ["*"],
+              metadata: { action: "clear", target: params.target ?? "workspace" },
+            })
+            const cleared = yield* memory
+              .clear({ target: params.target, profileID: profile.id })
+              .pipe(
+                Effect.catchTags({
+                  MemoryPolicyRejected: (error: MemoryPolicyRejected) => Effect.fail(new Error(error.message)),
+                }),
+              )
+            return {
+              title: `${cleared} memories cleared`,
+              metadata: {},
+              output: `Cleared ${cleared} memories from ${params.target ?? "workspace"}.`,
             }
           }
 
