@@ -177,6 +177,30 @@ describe("Memory", () => {
     ),
   )
 
+  it.instance("searches relationship memory content", () =>
+    personal(
+      Effect.gen(function* () {
+        const memory = yield* Memory.Service
+        yield* memory.save({
+          kind: "relationship",
+          content: "prefers a quiet evening walk",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+        yield* memory.save({
+          kind: "relationship",
+          content: "enjoys strong coffee",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+        const found = yield* memory.search({ query: "walk", profileID: "companion", relationshipOnly: true })
+        expect(found.map((item) => item.content)).toEqual(["prefers a quiet evening walk"])
+        expect((yield* memory.search({ query: "walk", profileID: "companion", relationshipOnly: true, limit: 10 })).length).toBe(1)
+        expect((yield* memory.search({ query: "nothing-here" })).length).toBe(0)
+      }),
+    ),
+  )
+
   it.instance("blocks relationship lifecycle operations without the matching profile", () =>
     personal(
       Effect.gen(function* () {

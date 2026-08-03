@@ -93,6 +93,15 @@ const COMPANION_SAFETY_SYSTEM_PROMPT = `Companion safety requirements:
 - Treat credible self-harm, suicide, harm-to-others, abuse, coercion, exploitation, or immediate-danger signals as safety-critical. Prioritize immediate safety, encourage contacting local emergency or crisis services and a trusted person who can help now, and do not promise secrecy about imminent danger or abuse.
 - Use configured regional crisis information only as context, never as certainty. If suitable regional resources are unavailable or cannot be verified, say so, do not invent contact details, and give the general fallback: contact local emergency services, a local crisis service, or a trusted nearby person.`
 
+function memoryRecallQuery(message: { parts: readonly { type: string; text?: string }[] } | undefined): string {
+  if (!message) return ""
+  return message.parts
+    .filter((part): part is { type: "text"; text: string } => part.type === "text" && !!part.text)
+    .map((part) => part.text)
+    .join(" ")
+    .slice(0, 500)
+}
+
 function companionContext(input: {
   persona?: string
   memories: string[]
@@ -1302,7 +1311,26 @@ const layer = Layer.effect(
             ])
             const [relationshipMemories, continuityContext] = yield* Effect.all([
               profile.kind === "companion" && profile.memory !== "off"
-                ? memory.retrieve({ profileID: profile.id, relationshipOnly: true, limit: 20 })
+                ? Effect.gen(function* () {
+                    const query = memoryRecallQuery(lastUserMsg)
+                    const found = yield* memory.search({
+                      query,
+                      profileID: profile.id,
+                      relationshipOnly: true,
+                      limit: 5,
+                      userRuleset: session.permission,
+                    })
+                    if (found.length > 0) return found
+                    // No keyword match: fall back to the most recent relationship
+                    // memories so the Companion still has some context. Relevance
+                    // first, recency second — never the full history.
+                    return yield* memory.retrieve({
+                      profileID: profile.id,
+                      relationshipOnly: true,
+                      limit: 5,
+                      userRuleset: session.permission,
+                    })
+                  })
                 : Effect.succeed([]),
               profile.kind === "companion" && session.workspaceID
                 ? continuity.takeForPrompt({

@@ -6,15 +6,18 @@ import { Session } from "@/session/session"
 import { Profile } from "@/profile"
 
 export const Parameters = Schema.Struct({
-  action: Schema.Literals(["list", "save", "forget"]).annotate({
+  action: Schema.Literals(["list", "search", "save", "forget"]).annotate({
     description: "The memory operation to perform",
   }),
   content: Schema.optional(Schema.String).annotate({ description: "Content to remember (required for save)" }),
   kind: Schema.optional(Memory.Kind).annotate({
-    description: "Category of the memory (required for save)",
+    description: "Category of the memory (required for save, optional filter for search)",
   }),
   scope: Schema.optional(Memory.Scope).annotate({
     description: "Defaults to workspace. Use user_global only for durable cross-workspace preferences.",
+  }),
+  query: Schema.optional(Schema.String).annotate({
+    description: "Search text to find relevant memories (required for search)",
   }),
   id: Schema.optional(Schema.String).annotate({ description: "Memory id (required for forget)" }),
 })
@@ -57,6 +60,23 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
               output: page.nextCursor
                 ? `${render(page.items)}\n\nShowing the 50 most recent memories.`
                 : render(page.items),
+            }
+          }
+
+          if (params.action === "search") {
+            if (!params.query) return yield* Effect.fail(new Error("search requires a query"))
+            const found = yield* memory.search({
+              query: params.query,
+              kind: params.kind,
+              profileID: profile.id,
+              relationshipOnly: profile.kind === "companion",
+              userRuleset: session.permission,
+              limit: 10,
+            })
+            return {
+              title: `${found.length} relevant memories`,
+              metadata: {},
+              output: found.length === 0 ? "No relevant memories found." : render(found),
             }
           }
 

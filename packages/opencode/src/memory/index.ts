@@ -17,7 +17,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import type { PermissionV1 } from "@newhorse/core/v1/permission"
 import { TrustPolicy } from "@/trust-policy"
-import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
+import { and, desc, eq, gt, inArray, isNull, like, lt, ne, or, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 
 export const Scope = Schema.Literals(["workspace", "user_global"])
@@ -125,6 +125,10 @@ export function detectSensitive(content: string): boolean {
   return SENSITIVE_PATTERNS.some((pattern) => pattern.test(content))
 }
 
+function escapeLike(value: string) {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`)
+}
+
 const DEFAULT_STATUSES: MemoryStatus[] = ["proposed", "active", "paused"]
 
 export interface Interface {
@@ -136,6 +140,15 @@ export interface Interface {
     limit?: number
     profileID?: string
     relationshipOnly?: boolean
+    userRuleset?: PermissionV1.Ruleset
+  }) => Effect.Effect<ReadonlyArray<Info>>
+  readonly search: (input?: {
+    query?: string
+    kind?: MemoryKind
+    status?: MemoryStatus[]
+    profileID?: string
+    relationshipOnly?: boolean
+    limit?: number
     userRuleset?: PermissionV1.Ruleset
   }) => Effect.Effect<ReadonlyArray<Info>>
   readonly update: (
@@ -456,6 +469,48 @@ const layer = Layer.effect(
       return rows.map(decode)
     })
 
+    const search: Interface["search"] = Effect.fn("Memory.search")(function* (input) {
+      const owner = yield* context
+      const query = input?.query?.trim()
+      if (!query) return []
+      if (input?.relationshipOnly && (owner.policy.contentScope !== "personal" || !input.profileID)) return []
+      const destination: TrustPolicy.ContentScope = input?.relationshipOnly
+        ? "relationship"
+        : owner.policy.contentScope
+      const flow = yield* trustPolicy.decide({
+        action: "memory.retrieve",
+        source: owner.policy.contentScope,
+        destination,
+        userRuleset: input?.userRuleset,
+        actor: input?.profileID ?? "memory",
+      })
+      if (flow.decision === "deny") return []
+      const conditions = [
+        visibleFilter(owner, !input?.relationshipOnly),
+        inArray(MemoryTable.status, input?.status ?? ["active"]),
+        or(isNull(MemoryTable.time_expires), gt(MemoryTable.time_expires, Date.now())),
+        like(MemoryTable.content, `%${escapeLike(query)}%`),
+      ]
+      if (input?.kind) conditions.push(eq(MemoryTable.kind, input.kind))
+      if (input?.relationshipOnly) {
+        conditions.push(eq(MemoryTable.kind, "relationship"), eq(MemoryTable.profile_id, input.profileID!))
+      } else {
+        conditions.push(relationshipProfileFilter(input?.profileID))
+        if (input?.profileID) {
+          conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
+        }
+      }
+      const rows = yield* db
+        .select()
+        .from(MemoryTable)
+        .where(and(...conditions))
+        .orderBy(desc(MemoryTable.id))
+        .limit(Math.min(Math.max(input?.limit ?? 10, 1), 50))
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map(decode)
+    })
+
     const update: Interface["update"] = Effect.fn("Memory.update")(function* (input) {
       const owner = yield* context
       const scope = input.scope ?? "workspace"
@@ -609,6 +664,7 @@ const layer = Layer.effect(
       list,
       count,
       retrieve,
+      search,
       update,
       decide,
       pause,

@@ -12,6 +12,7 @@ import { ProviderTransform } from "@/provider/transform"
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
+import PROMPT_RECALL from "./prompt/recall.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
 import { Permission } from "@/permission"
@@ -69,6 +70,7 @@ const ENFORCED_PERMISSION: Record<string, Record<string, "allow" | "ask" | "deny
   researcher: { ...READONLY_DENY },
   writer: { bash: "deny", task: "deny" },
   self: { ...READONLY_DENY },
+  recall: { ...READONLY_DENY },
 }
 
 const ENFORCED_RULESET = Object.fromEntries(
@@ -246,6 +248,22 @@ const layer = Layer.effect(
             ),
             description: `Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.`,
             prompt: PROMPT_EXPLORE,
+            options: {},
+            mode: "subagent",
+            native: true,
+          },
+          recall: {
+            name: "recall",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                memory: "allow",
+              }),
+              user,
+            ),
+            description: `Fast agent specialized for recalling stored memories. Use this when you need to retrieve durable facts, preferences, goals, events, or relationship notes from the user's memory ("wiki") relevant to the current conversation. It searches the memory store and returns a condensed digest of only the facts actually present.`,
+            prompt: PROMPT_RECALL,
             options: {},
             mode: "subagent",
             native: true,
