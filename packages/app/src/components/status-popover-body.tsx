@@ -330,7 +330,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean>; workspaceID
   const lspItems = createMemo(() => sync().data.lsp ?? [])
   const lspCount = createMemo(() => lspItems().length)
   const pluginCount = createMemo(() => capability.value?.plugins.loaded ?? 0)
-  const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "opencode.json"))
+  const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "newhorse.json"))
 
   return (
     <div class="flex items-center gap-1 w-[360px] rounded-xl shadow-[var(--shadow-lg-border-base)]">

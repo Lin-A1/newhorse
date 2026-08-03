@@ -140,12 +140,12 @@ export const dict = {
   "provider.connect.apiKey.placeholder": "API key",
   "provider.connect.apiKey.required": "API key is required",
   "provider.connect.opencodeZen.line1":
-    "OpenCode Zen gives you access to a curated set of reliable optimized models for coding agents.",
+    "Models gateway gives you access to a curated set of reliable optimized models for coding agents.",
   "provider.connect.opencodeZen.line2":
     "With a single API key you'll get access to models such as Claude, GPT, Gemini, GLM and more.",
-  "provider.connect.opencodeZen.visit.prefix": "Visit ",
-  "provider.connect.opencodeZen.visit.link": "opencode.ai/zen",
-  "provider.connect.opencodeZen.visit.suffix": " to collect your API key.",
+  "provider.connect.opencodeZen.visit.prefix": "",
+  "provider.connect.opencodeZen.visit.link": "",
+  "provider.connect.opencodeZen.visit.suffix": "",
   "provider.connect.oauth.code.visit.prefix": "Visit ",
   "provider.connect.oauth.code.visit.link": "this link",
   "provider.connect.oauth.code.visit.suffix":
