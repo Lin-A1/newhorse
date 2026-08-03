@@ -20,6 +20,7 @@ import schedulerReliableDeliveryMigration from "@newhorse/core/database/migratio
 import schedulerDeliveryEligibilityMigration from "@newhorse/core/database/migration/20260801104307_scheduler_delivery_eligibility"
 import schedulerDirectoryScopeMigration from "@newhorse/core/database/migration/20260801110000_scheduler_directory_scope"
 import schedulerEligibleIndexMigration from "@newhorse/core/database/migration/20260801111000_scheduler_eligible_index"
+import policyAuditMigration from "@newhorse/core/database/migration/20260803180919_misty_gargoyle"
 import simplifyIntegrationCredentialsMigration from "@newhorse/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@newhorse/core/database/migration/20260622202450_simplify_session_input"
 import { AppNodeBuilder } from "@newhorse/core/effect/app-node-builder"
@@ -87,6 +88,14 @@ describe("DatabaseMigration", () => {
             sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('continuity_grant', 'continuity_grant_audit') ORDER BY name`,
           ),
         ).toEqual([{ name: "continuity_grant" }, { name: "continuity_grant_audit" }])
+        expect(
+          yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'policy_audit'`),
+        ).toEqual({ name: "policy_audit" })
+        expect(
+          yield* db.all(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('policy_audit_time_idx', 'policy_audit_action_idx') ORDER BY name`,
+          ),
+        ).toEqual([{ name: "policy_audit_action_idx" }, { name: "policy_audit_time_idx" }])
         expect(
           yield* db.all(
             sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('continuity_grant_source_idx', 'continuity_grant_destination_idx', 'continuity_grant_audit_idx') ORDER BY name`,
@@ -521,6 +530,32 @@ describe("DatabaseMigration", () => {
           { id: "mem_bound_workspace", directory: null },
           { id: "mem_global", directory: null },
           { id: "mem_with_source", directory: "/work/project" },
+        ])
+      }),
+    )
+  })
+
+  test("applies the policy_audit migration once and replays idempotently", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE session (id text PRIMARY KEY)`)
+
+        yield* DatabaseMigration.applyOnly(db, [policyAuditMigration])
+
+        expect(
+          yield* db.get(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'policy_audit'`),
+        ).toEqual({ name: "policy_audit" })
+        expect(
+          yield* db.all(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('policy_audit_time_idx', 'policy_audit_action_idx') ORDER BY name`,
+          ),
+        ).toEqual([{ name: "policy_audit_action_idx" }, { name: "policy_audit_time_idx" }])
+
+        // Second replay is a no-op and must not error on the existing table.
+        yield* DatabaseMigration.applyOnly(db, [policyAuditMigration])
+        expect(yield* db.all(sql`SELECT id FROM migration ORDER BY id`)).toEqual([
+          { id: policyAuditMigration.id },
         ])
       }),
     )
