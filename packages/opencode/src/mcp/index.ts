@@ -30,6 +30,7 @@ import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
+import type { PermissionV1 } from "@newhorse/core/v1/permission"
 import { TrustPolicy } from "@/trust-policy"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@newhorse/core/cross-spawn-spawner"
@@ -150,14 +151,19 @@ function isMcpConfigured(entry: McpEntry): entry is ConfigMCPV1.Info {
 
 // Personal workspaces opt in per server rather than inheriting project
 // tooling, so an unrelated MCP server never sees personal content.
-function isAllowedInWorkspace(entry: ConfigMCPV1.Info, policy: WorkspacePolicy.Info) {
+function isAllowedInWorkspace(
+  entry: ConfigMCPV1.Info,
+  policy: WorkspacePolicy.Info,
+  userRuleset?: PermissionV1.Ruleset,
+) {
   const flow = TrustPolicy.decideContentFlow({
     action: "mcp.connect",
     source: policy.contentScope,
     destination: policy.contentScope,
     personalOptIn: entry.personal === true,
   })
-  return flow.decision === "allow"
+  const decision = TrustPolicy.applyUserPolicy(flow.decision, TrustPolicy.userDecision(userRuleset, "mcp.connect"))
+  return decision === "allow"
 }
 
 function remoteURL(value: string) {
@@ -254,6 +260,7 @@ const layer = Layer.effect(
     const baseAuth = yield* McpAuth.Service
     const events = yield* EventV2Bridge.Service
     const browser = yield* McpBrowser.Service
+    const trustPolicy = yield* TrustPolicy.Service
 
     const authContext = Effect.fnUntraced(function* () {
       const ctx = yield* InstanceState.context
@@ -587,7 +594,14 @@ const layer = Layer.effect(
                 return
               }
 
-              if (!isAllowedInWorkspace(mcp, policy)) {
+              const flow = yield* trustPolicy.decide({
+                action: "mcp.connect",
+                source: policy.contentScope,
+                destination: policy.contentScope,
+                personalOptIn: mcp.personal === true,
+                actor: "mcp",
+              })
+              if (flow.decision !== "allow") {
                 s.status[key] = { status: "disabled", reason: "personal_workspace" }
                 return
               }
@@ -708,7 +722,7 @@ const layer = Layer.effect(
     const createAndStore = Effect.fn("MCP.createAndStore")(function* (name: string, mcp: ConfigMCPV1.Info) {
       const s = yield* InstanceState.get(state)
       const policy = yield* WorkspacePolicy.current
-      if (!isAllowedInWorkspace(mcp, policy)) {
+      if (!isAllowedInWorkspace(mcp, policy, undefined)) {
         s.status[name] = { status: "disabled", reason: "personal_workspace" }
         return s.status[name]
       }
@@ -897,7 +911,7 @@ const layer = Layer.effect(
     const requireAllowedMcpConfig = Effect.fnUntraced(function* (mcpName: string) {
       const mcpConfig = yield* requireMcpConfig(mcpName)
       const policy = yield* WorkspacePolicy.current
-      if (!isAllowedInWorkspace(mcpConfig, policy)) return yield* new NotFoundError({ name: mcpName })
+      if (!isAllowedInWorkspace(mcpConfig, policy, undefined)) return yield* new NotFoundError({ name: mcpName })
       return mcpConfig
     })
 
@@ -1051,7 +1065,7 @@ const layer = Layer.effect(
 
     const removeAuth = Effect.fn("MCP.removeAuth")(function* (mcpName: string) {
       const mcpConfig = yield* getMcpConfig(mcpName)
-      if (mcpConfig && !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current)) return
+      if (mcpConfig && !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current, undefined)) return
       const auth = yield* authForCurrent
       yield* auth.remove(mcpName)
       const key = yield* pendingKey(mcpName)
@@ -1082,7 +1096,7 @@ const layer = Layer.effect(
       const mcpConfig = yield* getMcpConfig(mcpName)
       if (
         !mcpConfig ||
-        !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current) ||
+        !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current, undefined) ||
         mcpConfig.type !== "remote"
       ) {
         return false
@@ -1096,7 +1110,7 @@ const layer = Layer.effect(
       const mcpConfig = yield* getMcpConfig(mcpName)
       if (
         !mcpConfig ||
-        !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current) ||
+        !isAllowedInWorkspace(mcpConfig, yield* WorkspacePolicy.current, undefined) ||
         mcpConfig.type !== "remote"
       ) {
         return "not_authenticated"
@@ -1139,7 +1153,7 @@ export type AuthStatus = "authenticated" | "expired" | "not_authenticated"
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [CrossSpawnSpawner.node, McpAuth.node, EventV2Bridge.node, Config.node, McpBrowser.node],
+  deps: [CrossSpawnSpawner.node, McpAuth.node, EventV2Bridge.node, Config.node, McpBrowser.node, TrustPolicy.node],
 })
 
 export * as MCP from "."

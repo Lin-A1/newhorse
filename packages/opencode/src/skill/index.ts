@@ -193,6 +193,7 @@ const scan = Effect.fnUntraced(function* (
 
 const discoverSkills = Effect.fnUntraced(function* (
   config: Config.Interface,
+  trustPolicy: TrustPolicy.Interface,
   discovery: Discovery.Interface,
   fsys: FSUtil.Interface,
   global: Global.Interface,
@@ -204,11 +205,12 @@ const discoverSkills = Effect.fnUntraced(function* (
   const state: ScanState = { matches: new Set(), dirs: new Set() }
   const cfg = yield* config.get()
   const policy = yield* WorkspacePolicy.current
-  const flow = TrustPolicy.decideContentFlow({
+  const flow = yield* trustPolicy.decide({
     action: "skill.load",
     source: policy.contentScope,
     destination: policy.contentScope,
     personalOptIn: cfg.skills?.personal === true,
+    actor: "skill",
   })
   const allowExternal = flow.decision === "allow"
 
@@ -283,6 +285,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const discovery = yield* Discovery.Service
     const config = yield* Config.Service
+    const trustPolicy = yield* TrustPolicy.Service
     const events = yield* EventV2Bridge.Service
     const fsys = yield* FSUtil.Service
     const global = yield* Global.Service
@@ -291,6 +294,7 @@ const layer = Layer.effect(
       Effect.fn("Skill.discovery")(function* (ctx) {
         return yield* discoverSkills(
           config,
+          trustPolicy,
           discovery,
           fsys,
           global,
@@ -379,7 +383,7 @@ export function fmt(list: Info[], opts: { verbose: boolean }) {
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Discovery.node, Config.node, EventV2Bridge.node, FSUtil.node, Global.node, RuntimeFlags.node],
+  deps: [Discovery.node, Config.node, EventV2Bridge.node, FSUtil.node, Global.node, RuntimeFlags.node, TrustPolicy.node],
 })
 
 export * as Skill from "."

@@ -1,41 +1,14 @@
-import { Schema } from "effect"
-import type { WorkspacePolicy } from "@/control-plane/workspace-policy"
+import { LayerNode } from "@newhorse/core/effect/layer-node"
+import { Identifier } from "@newhorse/core/id/id"
+import { Wildcard } from "@newhorse/core/util/wildcard"
+import type { PermissionV1 } from "@newhorse/core/v1/permission"
+import { Context, Effect, Layer } from "effect"
+import { PolicyAuditStore } from "./policy-audit"
+import type { Action, ContentScope, Decision, PolicyAudit, Reason } from "./policy-audit"
 
-export const Decision = Schema.Literals(["allow", "ask", "deny"])
-export type Decision = Schema.Schema.Type<typeof Decision>
-
-export const Reason = Schema.Literals([
-  "same_scope",
-  "user_global_preference_only",
-  "relationship_personal_only",
-  "project_to_personal_requires_grant",
-  "personal_to_project_requires_grant",
-  "extension_personal_opt_in_required",
-  "workspace_policy",
-])
-export type Reason = Schema.Schema.Type<typeof Reason>
-
-export const Action = Schema.Literals([
-  "memory.save",
-  "memory.retrieve",
-  "memory.propose",
-  "continuity.propose",
-  "continuity.approve",
-  "continuity.inject",
-  "continuity.revoke",
-  "reminder.create",
-  "reminder.deliver",
-  "extension.load",
-  "tool.load",
-  "skill.load",
-  "mcp.connect",
-  "capability.explain",
-])
-export type Action = Schema.Schema.Type<typeof Action>
-
-export type ContentScope = WorkspacePolicy.Kind | "user_global" | "relationship"
-export const ContentScopeSchema = Schema.Literals(["project", "personal", "user_global", "relationship"])
-export type ContentScopeSchema = Schema.Schema.Type<typeof ContentScopeSchema>
+export { PolicyAuditStore } from "./policy-audit"
+export { Action, ContentScopeSchema, Decision, Page, PolicyAudit, Reason } from "./policy-audit"
+export type { ContentScope } from "./policy-audit"
 
 export type ContentFlowInput = {
   action: Action
@@ -100,21 +73,21 @@ export function applyUserPolicy(base: Decision, user: Decision | undefined): Dec
 }
 
 /**
- * Content-free policy audit record. It never carries Memory content, Reminder
- * bodies, Continuity purpose/summary, prompt text, file paths, headers, env, or
- * secrets. `actor` is a minimal, opaque identifier only.
+ * Map the user's configured permission ruleset to a tightening decision for a
+ * content-flow action. Only a wildcard `"*"` rule on the exact action name
+ * applies (e.g. `permission: { "memory.save": "deny" }`). A user `allow` never
+ * tightens and returns `undefined`.
  */
-export const PolicyAudit = Schema.Struct({
-  id: Schema.String,
-  time: Schema.Number,
-  action: Action,
-  source: ContentScopeSchema,
-  destination: ContentScopeSchema,
-  decision: Decision,
-  reason: Reason,
-  actor: Schema.String,
-})
-export type PolicyAudit = Schema.Schema.Type<typeof PolicyAudit>
+export function userDecision(ruleset: PermissionV1.Ruleset | undefined, action: Action): Decision | undefined {
+  if (!ruleset || ruleset.length === 0) return undefined
+  const rule = ruleset.findLast(
+    (item) => Wildcard.match(action, item.permission) && Wildcard.match("*", item.pattern),
+  )
+  if (!rule) return undefined
+  if (rule.action === "deny") return "deny"
+  if (rule.action === "ask") return "ask"
+  return undefined
+}
 
 export function auditDecision(input: {
   id: string
@@ -137,5 +110,66 @@ export function auditDecision(input: {
     actor: input.actor,
   }
 }
+
+export interface DecideInput {
+  action: Action
+  source: ContentScope
+  destination: ContentScope
+  kind?: string
+  personalOptIn?: boolean
+  userRuleset?: PermissionV1.Ruleset
+  actor: string
+}
+
+export interface Interface {
+  readonly decide: (input: DecideInput) => Effect.Effect<Result>
+}
+
+export class Service extends Context.Service<Service, Interface>()("@newhorse/TrustPolicy") {}
+
+const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const audits = yield* PolicyAuditStore.Service
+
+    const decide: Interface["decide"] = Effect.fn("TrustPolicy.decide")(function* (input) {
+      const flow = decideContentFlow({
+        action: input.action,
+        source: input.source,
+        destination: input.destination,
+        kind: input.kind,
+        personalOptIn: input.personalOptIn,
+      })
+      const decision = applyUserPolicy(flow.decision, userDecision(input.userRuleset, input.action))
+      // Memory retrieval happens on the hot prompt path; skip auditing the
+      // routine same-scope read so the content-free trail stays meaningful.
+      const shouldAudit = !(
+        input.action === "memory.retrieve" && decision === "allow" && flow.reason === "same_scope"
+      )
+      if (shouldAudit) {
+        yield* audits.record(
+          auditDecision({
+            id: Identifier.ascending("policyAudit"),
+            action: input.action,
+            source: input.source,
+            destination: input.destination,
+            decision,
+            reason: flow.reason,
+            actor: input.actor,
+          }),
+        )
+      }
+      return { decision, reason: flow.reason }
+    })
+
+    return Service.of({ decide })
+  }),
+)
+
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [PolicyAuditStore.node],
+})
 
 export * as TrustPolicy from "./index"

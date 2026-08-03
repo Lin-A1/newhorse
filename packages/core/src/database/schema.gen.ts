@@ -359,6 +359,18 @@ export default {
           CONSTRAINT \`fk_session_share_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
+      yield* tx.run(`
+        CREATE TABLE \`policy_audit\` (
+          \`id\` text PRIMARY KEY,
+          \`time\` integer NOT NULL,
+          \`action\` text NOT NULL,
+          \`source\` text NOT NULL,
+          \`destination\` text NOT NULL,
+          \`decision\` text NOT NULL,
+          \`reason\` text NOT NULL,
+          \`actor\` text NOT NULL
+        );
+      `)
       yield* tx.run(
         `CREATE INDEX \`continuity_grant_audit_idx\` ON \`continuity_grant_audit\` (\`grant_id\`,\`time_created\`,\`id\`);`,
       )
@@ -434,6 +446,8 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_profile_idx\` ON \`session\` (\`profile_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
+      yield* tx.run(`CREATE INDEX \`policy_audit_time_idx\` ON \`policy_audit\` (\`time\`);`)
+      yield* tx.run(`CREATE INDEX \`policy_audit_action_idx\` ON \`policy_audit\` (\`action\`,\`time\`);`)
     })
   },
 } satisfies Omit<DatabaseMigration.Migration, "id">

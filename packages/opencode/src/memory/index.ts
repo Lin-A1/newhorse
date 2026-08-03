@@ -15,6 +15,7 @@ import type { SessionSchema } from "@newhorse/core/session/schema"
 import { Identifier } from "@newhorse/core/id/id"
 import { InstanceState } from "@/effect/instance-state"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
+import type { PermissionV1 } from "@newhorse/core/v1/permission"
 import { TrustPolicy } from "@/trust-policy"
 import { and, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
@@ -61,6 +62,8 @@ export interface SaveInput {
   sourceMessageID?: MessageID
   profileID?: string
   expiresAt?: number
+  /** User permission ruleset for content-flow tightening (optional). */
+  userRuleset?: PermissionV1.Ruleset
 }
 
 export interface QueryInput {
@@ -78,6 +81,8 @@ export interface UpdateInput {
   content?: string
   expiresAt?: number | null
   profileID?: string
+  /** User permission ruleset for content-flow tightening (optional). */
+  userRuleset?: PermissionV1.Ruleset
 }
 
 export class SensitiveMemoryRejected extends Schema.TaggedErrorClass<SensitiveMemoryRejected>()(
@@ -131,6 +136,7 @@ export interface Interface {
     limit?: number
     profileID?: string
     relationshipOnly?: boolean
+    userRuleset?: PermissionV1.Ruleset
   }) => Effect.Effect<ReadonlyArray<Info>>
   readonly update: (
     input: UpdateInput,
@@ -161,6 +167,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const trustPolicy = yield* TrustPolicy.Service
 
     const decode = (row: typeof MemoryTable.$inferSelect): Info => ({
       id: row.id,
@@ -231,6 +238,7 @@ const layer = Layer.effect(
       profileID?: string
       policy: WorkspacePolicy.Info
       sensitivity?: MemorySensitivity
+      userRuleset?: PermissionV1.Ruleset
     }) {
       if (!input.content.trim()) {
         return yield* new MemoryPolicyRejected({ reason: "empty_content", message: "Memory content cannot be empty" })
@@ -247,11 +255,13 @@ const layer = Layer.effect(
           : input.kind === "relationship"
             ? "relationship"
             : input.policy.contentScope
-      const flow = TrustPolicy.decideContentFlow({
+      const flow = yield* trustPolicy.decide({
         action: "memory.save",
         source: input.policy.contentScope,
         destination,
         kind: input.kind,
+        userRuleset: input.userRuleset,
+        actor: input.profileID ?? "memory",
       })
       if (flow.decision !== "allow") {
         const reason =
@@ -331,6 +341,7 @@ const layer = Layer.effect(
         profileID,
         policy: owner.policy,
         sensitivity: input.sensitivity,
+        userRuleset: input.userRuleset,
       })
 
       const now = Date.now()
@@ -410,6 +421,17 @@ const layer = Layer.effect(
     const retrieve: Interface["retrieve"] = Effect.fn("Memory.retrieve")(function* (input) {
       const owner = yield* context
       if (input?.relationshipOnly && (owner.policy.contentScope !== "personal" || !input.profileID)) return []
+      const destination: TrustPolicy.ContentScope = input?.relationshipOnly
+        ? "relationship"
+        : owner.policy.contentScope
+      const flow = yield* trustPolicy.decide({
+        action: "memory.retrieve",
+        source: owner.policy.contentScope,
+        destination,
+        userRuleset: input?.userRuleset,
+        actor: input?.profileID ?? "memory",
+      })
+      if (flow.decision === "deny") return []
       const conditions = [
         visibleFilter(owner, !input?.relationshipOnly),
         eq(MemoryTable.status, "active"),
@@ -454,6 +476,7 @@ const layer = Layer.effect(
         profileID: current.profile_id ?? undefined,
         policy: owner.policy,
         sensitivity: current.sensitivity,
+        userRuleset: input.userRuleset,
       })
       const row = yield* db
         .update(MemoryTable)
@@ -596,6 +619,10 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer, deps: [Database.node] })
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [Database.node, TrustPolicy.node],
+})
 
 export * as Memory from "./index"

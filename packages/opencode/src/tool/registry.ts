@@ -24,6 +24,8 @@ import { Scheduler } from "@/scheduler"
 import { Profile } from "@/profile"
 import * as Tool from "./tool"
 import { Config } from "@/config/config"
+import { TrustPolicy } from "@/trust-policy"
+import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@newhorse/plugin"
 import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
 import { Schema } from "effect"
@@ -95,6 +97,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const config = yield* Config.Service
     const plugin = yield* Plugin.Service
+    const trustPolicy = yield* TrustPolicy.Service
     const agents = yield* Agent.Service
     const sessions = yield* Session.Service
     const capability = yield* Capability.Service
@@ -127,6 +130,25 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
         const custom: Tool.Def[] = []
+
+        const policy = yield* WorkspacePolicy.current
+        const configInfo = yield* config.get()
+        const userRuleset = Permission.fromConfig(configInfo.permission ?? {})
+        const toolAllowed = Effect.fnUntraced(function* (id: string) {
+          const flow = yield* trustPolicy.decide({
+            action: "tool.load",
+            source: policy.contentScope,
+            destination: policy.contentScope,
+            // In a Personal workspace the config layer already filtered plugin
+            // and tool sources to opted-in or personal-local ones, so reaching
+            // this point is the opt-in; the boundary here audits the load and
+            // applies the user's tightening policy.
+            personalOptIn: policy.contentScope === "personal",
+            userRuleset,
+            actor: id,
+          })
+          return flow.decision === "allow"
+        })
 
         function fromPlugin(id: string, def: ToolDefinition): Tool.Def {
           // Plugin tools still expose Zod args publicly; keep that compatibility
@@ -198,6 +220,7 @@ const layer = Layer.effect(
           const mod = yield* Effect.promise(() => import(pathToFileURL(match).href))
           for (const [id, def] of Object.entries(mod)) {
             if (!isPluginTool(def)) continue
+            if (!(yield* toolAllowed(id))) continue
             custom.push(fromPlugin(id === "default" ? namespace : `${namespace}_${id}`, def))
           }
         }
@@ -205,6 +228,7 @@ const layer = Layer.effect(
         const plugins = yield* plugin.list()
         for (const p of plugins) {
           for (const [id, def] of Object.entries(p.tool ?? {})) {
+            if (!(yield* toolAllowed(id))) continue
             custom.push(fromPlugin(id, def))
           }
         }
@@ -453,6 +477,7 @@ export const node = LayerNode.make({
   layer,
   deps: [
     Config.node,
+    TrustPolicy.node,
     Plugin.node,
     Question.node,
     Todo.node,

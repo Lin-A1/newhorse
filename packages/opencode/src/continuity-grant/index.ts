@@ -13,6 +13,7 @@ import type { WorkspaceV2 } from "@newhorse/core/workspace"
 import { and, asc, eq, gt } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Profile } from "@/profile"
+import { TrustPolicy } from "@/trust-policy"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 
 export const ID = Schema.String.pipe(Schema.brand("ContinuityGrant.ID"))
@@ -168,6 +169,7 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const profiles = yield* Profile.Service
+    const trustPolicy = yield* TrustPolicy.Service
 
     const auditValues = (
       grantID: string,
@@ -291,6 +293,43 @@ const layer = Layer.effect(
                   error: new Rejected({
                     reason: "destination_not_personal",
                     message: "Companion continuity is restricted to a Personal workspace",
+                  }),
+                }
+
+              // Content-flow: the assistant's work scope may only bridge into
+              // the Companion's personal scope through an approved grant. A
+              // platform/user "deny" blocks the proposal outright; "ask" is the
+              // normal state and resolves when the user approves the grant.
+              const sourceWorkspace = source.workspaceID
+                ? yield* tx
+                    .select()
+                    .from(WorkspaceTable)
+                    .where(eq(WorkspaceTable.id, source.workspaceID))
+                    .get()
+                : undefined
+              const sourcePolicy = sourceWorkspace
+                ? WorkspacePolicy.resolve({
+                    metadata: {
+                      id: sourceWorkspace.id,
+                      type: sourceWorkspace.type,
+                      projectID: sourceWorkspace.project_id,
+                      directory: sourceWorkspace.directory,
+                    },
+                    directory: source.directory,
+                  })
+                : undefined
+              const flow = yield* trustPolicy.decide({
+                action: "continuity.propose",
+                source: sourcePolicy?.contentScope ?? "project",
+                destination: "personal",
+                actor: source.profileID ?? "continuity",
+              })
+              if (flow.decision === "deny")
+                return {
+                  type: "error" as const,
+                  error: new Rejected({
+                    reason: "workspace_policy",
+                    message: "Continuity proposal is not permitted by the content-flow policy",
                   }),
                 }
 
@@ -522,7 +561,7 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer,
-  deps: [Database.node, Profile.node],
+  deps: [Database.node, Profile.node, TrustPolicy.node],
 })
 
 export * as ContinuityGrant from "./index"

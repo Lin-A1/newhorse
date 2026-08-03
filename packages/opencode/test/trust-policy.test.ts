@@ -137,4 +137,29 @@ describe("TrustPolicy", () => {
     expect(serialized).not.toContain("purpose")
     expect(serialized).not.toContain("token")
   })
+
+  test("userDecision maps a wildcard user rule to a tightening decision", () => {
+    const ruleset = [
+      { permission: "memory.save", pattern: "*", action: "deny" as const },
+      { permission: "mcp.connect", pattern: "*", action: "ask" as const },
+      { permission: "memory.retrieve", pattern: "workspace", action: "deny" as const },
+    ]
+    expect(TrustPolicy.userDecision(ruleset, "memory.save")).toBe("deny")
+    expect(TrustPolicy.userDecision(ruleset, "mcp.connect")).toBe("ask")
+    // A path-scoped rule is not a content-flow tightening.
+    expect(TrustPolicy.userDecision(ruleset, "memory.retrieve")).toBeUndefined()
+    // A user "allow" never tightens.
+    expect(TrustPolicy.userDecision([{ permission: "skill.load", pattern: "*", action: "allow" }], "skill.load")).toBeUndefined()
+    expect(TrustPolicy.userDecision(undefined, "memory.save")).toBeUndefined()
+  })
+
+  test("decideContentFlow ask tightens under a deny user rule and stays allow otherwise", () => {
+    const base = TrustPolicy.decideContentFlow({ action: "continuity.propose", source: "project", destination: "personal" })
+    expect(base.decision).toBe("ask")
+    const tightened = TrustPolicy.applyUserPolicy(
+      base.decision,
+      TrustPolicy.userDecision([{ permission: "continuity.propose", pattern: "*", action: "deny" }], "continuity.propose"),
+    )
+    expect(tightened).toBe("deny")
+  })
 })

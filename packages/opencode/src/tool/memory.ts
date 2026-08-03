@@ -80,6 +80,7 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
                 sourceSessionID: ctx.sessionID,
                 sourceMessageID: ctx.messageID,
                 profileID: profile.id,
+                userRuleset: session.permission,
               })
               .pipe(
                 Effect.catchTags({

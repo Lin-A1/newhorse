@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "9de46aca-c517-4cb7-a118-7c7a3ec3080c",
+  "id": "43d0f2d4-ef10-4592-b6a2-c330ac905463",
   "prevIds": [
-    "12b9632e-7d53-4f7d-9d59-fd9ebdd7de9e"
+    "9de46aca-c517-4cb7-a118-7c7a3ec3080c"
   ],
   "ddl": [
     {
@@ -104,6 +104,10 @@
     },
     {
       "name": "session_share",
+      "entityType": "tables"
+    },
+    {
+      "name": "policy_audit",
       "entityType": "tables"
     },
     {
@@ -2467,6 +2471,86 @@
       "table": "session_share"
     },
     {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "policy_audit"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time",
+      "entityType": "columns",
+      "table": "policy_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "action",
+      "entityType": "columns",
+      "table": "policy_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "policy_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "destination",
+      "entityType": "columns",
+      "table": "policy_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "decision",
+      "entityType": "columns",
+      "table": "policy_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "reason",
+      "entityType": "columns",
+      "table": "policy_audit"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actor",
+      "entityType": "columns",
+      "table": "policy_audit"
+    },
+    {
       "columns": [
         "project_id"
       ],
@@ -2936,6 +3020,15 @@
     },
     {
       "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "policy_audit_pk",
+      "table": "policy_audit",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         {
           "value": "grant_id",
           "isExpression": false
@@ -3275,7 +3368,7 @@
           "isExpression": false
         },
         {
-          "value": "schedule_at",
+          "value": "eligible_at",
           "isExpression": false
         }
       ],
@@ -3339,7 +3432,7 @@
           "isExpression": false
         },
         {
-          "value": "coalesce(\"workspace_id\", '')",
+          "value": "coalesce(\"workspace_id\", \"directory\")",
           "isExpression": true
         }
       ],
@@ -3611,6 +3704,38 @@
       "name": "todo_session_idx",
       "entityType": "indexes",
       "table": "todo"
+    },
+    {
+      "columns": [
+        {
+          "value": "time",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "policy_audit_time_idx",
+      "entityType": "indexes",
+      "table": "policy_audit"
+    },
+    {
+      "columns": [
+        {
+          "value": "action",
+          "isExpression": false
+        },
+        {
+          "value": "time",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "policy_audit_action_idx",
+      "entityType": "indexes",
+      "table": "policy_audit"
     }
   ],
   "renames": []

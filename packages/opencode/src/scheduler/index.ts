@@ -17,6 +17,8 @@ import { AbsolutePath } from "@newhorse/core/schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { Profile } from "@/profile"
+import { TrustPolicy } from "@/trust-policy"
+import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import { normalizeRule, nextOccurrence, occurrencesAfter } from "./recurrence"
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm"
 import { Context, Duration, Effect, Layer, Ref, Schedule, Schema } from "effect"
@@ -115,6 +117,10 @@ export class ProactiveDisabled extends Schema.TaggedErrorClass<ProactiveDisabled
   message: Schema.String,
 }) {}
 
+export class PolicyRejected extends Schema.TaggedErrorClass<PolicyRejected>()("Scheduler.PolicyRejected", {
+  message: Schema.String,
+}) {}
+
 export class InvalidSchedule extends Schema.TaggedErrorClass<InvalidSchedule>()("Scheduler.InvalidSchedule", {
   message: Schema.String,
 }) {}
@@ -125,7 +131,7 @@ export interface QueryInput {
 }
 
 export interface Interface {
-  readonly create: (input: CreateInput) => Effect.Effect<Info, ProactiveDisabled | InvalidSchedule>
+  readonly create: (input: CreateInput) => Effect.Effect<Info, ProactiveDisabled | InvalidSchedule | PolicyRejected>
   readonly list: (input?: QueryInput) => Effect.Effect<Info[]>
   readonly count: (input?: QueryInput) => Effect.Effect<number>
   readonly update: (input: UpdateInput) => Effect.Effect<Info | undefined, InvalidSchedule>
@@ -195,6 +201,7 @@ const layer = Layer.effect(
     const { db } = yield* Database.Service
     const events = yield* EventV2Bridge.Service
     const profiles = yield* Profile.Service
+    const trustPolicy = yield* TrustPolicy.Service
     const owner = randomUUID()
 
     type SeriesRow = typeof ScheduledEventTable.$inferSelect
@@ -274,6 +281,17 @@ const layer = Layer.effect(
           profileID: input.profileID,
           message: "Proactive messages are not enabled for this profile",
         })
+      }
+      const policy = yield* WorkspacePolicy.current
+      const destination: TrustPolicy.ContentScope = profile.kind === "companion" ? "personal" : policy.contentScope
+      const flow = yield* trustPolicy.decide({
+        action: "reminder.create",
+        source: policy.contentScope,
+        destination,
+        actor: input.profileID ?? "reminder",
+      })
+      if (flow.decision === "deny") {
+        return yield* new PolicyRejected({ message: "Reminder creation is not permitted by the content-flow policy" })
       }
       const now = Date.now()
       const schedule = normalizeSchedule(input)
@@ -1157,6 +1175,17 @@ const layer = Layer.effect(
             yield* cancelDeliveryForPolicy(row, now)
             return false
           }
+          const deliverScope: TrustPolicy.ContentScope = profile?.kind === "companion" ? "personal" : "project"
+          const flow = yield* trustPolicy.decide({
+            action: "reminder.deliver",
+            source: deliverScope,
+            destination: deliverScope,
+            actor: row.profile_id ?? "reminder",
+          })
+          if (flow.decision === "deny") {
+            yield* cancelDeliveryForPolicy(row, now)
+            return false
+          }
           const attemptCount = row.attempt_count
           const leaseLost = yield* Ref.make(false)
       yield* Effect.sleep(Duration.millis(LEASE_MS / 3)).pipe(
@@ -1259,6 +1288,10 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = LayerNode.make({ service: Service, layer, deps: [Database.node, EventV2Bridge.node, Profile.node] })
+export const node = LayerNode.make({
+  service: Service,
+  layer,
+  deps: [Database.node, EventV2Bridge.node, Profile.node, TrustPolicy.node],
+})
 
 export * as Scheduler from "./index"

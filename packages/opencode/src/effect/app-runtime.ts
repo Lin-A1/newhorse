@@ -55,6 +55,7 @@ import { Scheduler } from "@/scheduler"
 import { Profile } from "@/profile"
 import { Capability } from "@/capability"
 import { Memory } from "@/memory"
+import { TrustPolicy } from "@/trust-policy"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { AppNodeBuilderV1 } from "./app-node-builder-v1"
 import { SessionProjector } from "@newhorse/core/session/projector"
@@ -79,6 +80,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Discovery.node,
     Question.node,
     Permission.node,
+    TrustPolicy.node,
     Todo.node,
     Session.node,
     SessionProjector.node,

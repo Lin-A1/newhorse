@@ -17,6 +17,7 @@ const prefixes = {
   scheduledEventDelivery: "sdl",
   continuityGrant: "cgr",
   continuityGrantAudit: "cga",
+  policyAudit: "plc",
 } as const
 
 export function ascending(prefix: keyof typeof prefixes, given?: string) {
