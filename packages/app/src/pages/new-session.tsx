@@ -111,6 +111,13 @@ export default function NewSessionPage() {
   )
   const profiles = createMemo(() => (profileState()?.items ?? []) as ProfileOption[])
   const selectedProfileID = createMemo(() => store.profileID ?? profileState()?.active)
+  // Coding chrome (project/workspace/git) only makes sense for Assistant
+  // sessions. Companion sessions are personal: they route to the personal
+  // workspace without a project/worktree/branch choice.
+  const isAssistantProfile = createMemo(() => {
+    const profile = profiles().find((p) => p.id === selectedProfileID())
+    return !selectedProfileID() || profile?.kind !== "companion"
+  })
   const selectedWorkspace = createMemo(() => {
     const value = store.workspace
     if (!value?.startsWith("workspace:")) return
@@ -143,16 +150,16 @@ export default function NewSessionPage() {
       return inputController()
     },
     get newSessionWorktree() {
-      return store.workspace ? "main" : newSessionWorktree()
+      return !isAssistantProfile() ? undefined : store.workspace ? "main" : newSessionWorktree()
     },
     get newSessionWorkspaceID() {
-      return selectedWorkspace()?.id
+      return isAssistantProfile() ? selectedWorkspace()?.id : undefined
     },
     get newSessionWorkspaceType() {
-      return selectedAdapter()
+      return isAssistantProfile() ? selectedAdapter() : undefined
     },
     get newSessionWorkspaceDirectory() {
-      return selectedWorkspace()?.directory ?? undefined
+      return isAssistantProfile() ? (selectedWorkspace()?.directory ?? undefined) : undefined
     },
     get newSessionProfileID() {
       return selectedProfileID()
@@ -226,10 +233,26 @@ export default function NewSessionPage() {
               <div class={NEW_SESSION_CONTENT_WIDTH}>
                 <div class="flex flex-col gap-8">
                   <PromptInputV2Composer controller={promptInputV2Controller} />
-                  <Show when={projectController.empty()}>
+                  <Show when={isAssistantProfile() && projectController.empty()}>
                     <PromptProjectAddButton controller={projectController} />
                   </Show>
-                  <Show when={projectController.selected()}>
+                  <Show when={selectedProfileID() && profiles().length > 0}>
+                    <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
+                      <PromptProfileSelector
+                        value={selectedProfileID()!}
+                        profiles={profiles()}
+                        onChange={(value) => {
+                          const profile = profiles().find((p) => p.id === value)
+                          setStore("profileID", value)
+                          // Companion sessions are personal: never carry a
+                          // project/workspace/branch from the Assistant flow.
+                          if (profile?.kind === "companion") setStore({ workspace: undefined, worktree: undefined })
+                        }}
+                        onDone={promptInputV2Controller.restoreFocus}
+                      />
+                    </div>
+                  </Show>
+                  <Show when={isAssistantProfile() && projectController.selected()}>
                     <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
                       <PromptProjectSelector controller={projectController} placement="bottom" />
                       <Show
@@ -258,14 +281,6 @@ export default function NewSessionPage() {
                           }}
                           onDone={promptInputV2Controller.restoreFocus}
                         />
-                        <Show when={selectedProfileID() && profiles().length > 0}>
-                          <PromptProfileSelector
-                            value={selectedProfileID()!}
-                            profiles={profiles()}
-                            onChange={(value) => setStore("profileID", value)}
-                            onDone={promptInputV2Controller.restoreFocus}
-                          />
-                        </Show>
                       </Show>
                     </div>
                   </Show>
