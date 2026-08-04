@@ -274,6 +274,24 @@ export const SettingsGeneral: Component = () => {
             />
           </div>
         </SettingsRow>
+        <SettingsRow
+          title="Default download folder"
+          description="Files you save or download (e.g. Memory exports) default to this folder. Leave empty to use the system default."
+        >
+          <div class="w-full sm:w-[220px]">
+            <TextField
+              data-action="settings-general-download-path"
+              hideLabel
+              type="text"
+              value={settings.general.downloadPath()}
+              onChange={(value) => settings.general.setDownloadPath(value)}
+              placeholder="e.g. C:\\Users\\you\\Downloads"
+              spellcheck={false}
+              autocorrect="off"
+              class="text-12-regular"
+            />
+          </div>
+        </SettingsRow>
       </SettingsList>
     </div>
   )

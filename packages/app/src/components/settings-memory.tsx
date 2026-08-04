@@ -8,12 +8,14 @@ import { formatServerError } from "@/utils/server-errors"
 import { usePlatform } from "@/context/platform"
 import { exportMemory } from "./settings-memory-export"
 import { useMemoryCenterState, type MemoryKind } from "./settings-memory-state"
+import { useSettings } from "@/context/settings"
 
 const kinds: MemoryKind[] = ["preference", "fact", "goal", "event", "relationship", "summary"]
 
 export function SettingsMemory(props: { sessionID?: string }) {
   const memory = useMemoryCenterState(props.sessionID)
   const platform = usePlatform()
+  const settings = useSettings()
   const [editing, setEditing] = createSignal<string>()
   const [content, setContent] = createSignal("")
   const [kind, setKind] = createSignal<MemoryKind>("preference")
@@ -50,7 +52,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
 
   const exportRecords = async () => {
     const records = await memory.exportRecords()
-    await exportMemory(records, platform, downloadJson)
+    await exportMemory(records, platform, downloadJson, new Date(), settings.general.downloadPath())
   }
 
   return (

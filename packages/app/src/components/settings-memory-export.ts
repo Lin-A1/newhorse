@@ -6,11 +6,13 @@ export async function exportMemory(
   platform: Pick<Platform, "saveTextFileDialog">,
   download: (input: { filename: string; contents: string }) => void,
   date = new Date(),
+  downloadPath = "",
 ) {
   const filename = `newhorse-memory-${date.toISOString().slice(0, 10)}.json`
   const contents = JSON.stringify(records, null, 2)
   if (platform.saveTextFileDialog) {
-    await platform.saveTextFileDialog({ title: "Export Memory", defaultPath: filename, contents })
+    const defaultPath = downloadPath ? `${downloadPath}/${filename}` : filename
+    await platform.saveTextFileDialog({ title: "Export Memory", defaultPath, contents })
     return
   }
   download({ filename, contents })

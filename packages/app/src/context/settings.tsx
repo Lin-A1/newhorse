@@ -38,6 +38,8 @@ export interface Settings {
     layoutTransitionEligible?: boolean
     newInterfaceNoticeDismissed?: boolean
     shouldDisplayTabsToast?: boolean
+    /** Default directory for file saves/downloads (desktop only). */
+    downloadPath?: string
   }
   appearance: {
     fontSize: number
@@ -185,6 +187,7 @@ const defaultSettings: Settings = {
     editToolPartsExpanded: false,
     showCustomAgents: false,
     mobileTitlebarPosition: "top",
+    downloadPath: "",
   },
   appearance: {
     fontSize: 14,
@@ -402,6 +405,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setMobileTitlebarPosition(value: "top" | "bottom") {
           setStore("general", "mobileTitlebarPosition", value)
+        },
+        downloadPath: withFallback(() => store.general?.downloadPath, defaultSettings.general.downloadPath),
+        setDownloadPath(value: string) {
+          setStore("general", "downloadPath", value)
         },
         newLayoutDesigns,
         setNewLayoutDesigns(value: boolean) {
