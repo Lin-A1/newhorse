@@ -1062,4 +1062,10 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Dauerhaftes Projekticon konnte nicht erstellt werden",
   "error.childStore.storeCreateFailed": "Speicher konnte nicht erstellt werden",
   "terminal.connectionLost.abnormalClose": "WebSocket abnormal geschlossen: {{code}}",
+
+
+  "newSession.mode.assistant": "Assistant",
+  "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
+  "newSession.mode.companion": "Companion",
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
 } satisfies Partial<Record<Keys, string>>

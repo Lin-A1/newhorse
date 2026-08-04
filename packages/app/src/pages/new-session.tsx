@@ -27,8 +27,8 @@ import { useComposerCommands } from "@/pages/session/use-composer-commands"
 import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
 import {
   PromptGitStatus,
-  PromptProfileSelector,
   PromptWorkspaceSelector,
+  PromptProfileCards,
   type ProfileOption,
   type WorkspaceAdapterOption,
   type WorkspaceOption,
@@ -232,25 +232,22 @@ export default function NewSessionPage() {
             <NewSessionDesignView>
               <div class={NEW_SESSION_CONTENT_WIDTH}>
                 <div class="flex flex-col gap-8">
+                  <Show when={selectedProfileID() && profiles().length > 0}>
+                    <PromptProfileCards
+                      value={selectedProfileID()!}
+                      profiles={profiles()}
+                      onChange={(value) => {
+                        const profile = profiles().find((p) => p.id === value)
+                        setStore("profileID", value)
+                        // Companion sessions are personal: never carry a
+                        // project/workspace/branch from the Assistant flow.
+                        if (profile?.kind === "companion") setStore({ workspace: undefined, worktree: undefined })
+                      }}
+                    />
+                  </Show>
                   <PromptInputV2Composer controller={promptInputV2Controller} />
                   <Show when={isAssistantProfile() && projectController.empty()}>
                     <PromptProjectAddButton controller={projectController} />
-                  </Show>
-                  <Show when={selectedProfileID() && profiles().length > 0}>
-                    <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">
-                      <PromptProfileSelector
-                        value={selectedProfileID()!}
-                        profiles={profiles()}
-                        onChange={(value) => {
-                          const profile = profiles().find((p) => p.id === value)
-                          setStore("profileID", value)
-                          // Companion sessions are personal: never carry a
-                          // project/workspace/branch from the Assistant flow.
-                          if (profile?.kind === "companion") setStore({ workspace: undefined, worktree: undefined })
-                        }}
-                        onDone={promptInputV2Controller.restoreFocus}
-                      />
-                    </div>
                   </Show>
                   <Show when={isAssistantProfile() && projectController.selected()}>
                     <div class="flex min-h-7 min-w-0 flex-col items-center justify-center gap-0 text-v2-text-text-faint sm:flex-row">

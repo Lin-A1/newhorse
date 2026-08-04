@@ -1033,4 +1033,10 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "فشل إنشاء أيقونة المشروع الدائمة",
   "error.childStore.storeCreateFailed": "فشل إنشاء المخزن",
   "terminal.connectionLost.abnormalClose": "تم إغلاق WebSocket بشكل غير طبيعي: {{code}}",
+
+
+  "newSession.mode.assistant": "Assistant",
+  "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
+  "newSession.mode.companion": "Companion",
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
 }

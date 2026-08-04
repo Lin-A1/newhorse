@@ -1128,4 +1128,10 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Не удалось создать постоянный значок проекта",
   "error.childStore.storeCreateFailed": "Не удалось создать хранилище",
   "terminal.connectionLost.abnormalClose": "WebSocket закрыт аварийно: {{code}}",
+
+
+  "newSession.mode.assistant": "Assistant",
+  "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
+  "newSession.mode.companion": "Companion",
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
 }

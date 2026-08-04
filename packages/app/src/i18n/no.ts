@@ -1136,4 +1136,10 @@ export const dict = {
   "settings.general.row.pinchZoom.description": "Tillat knipebevegelser på styreflaten og Ctrl-rulling for å zoome",
   "settings.updates.action.downloading": "Laster ned...",
   "settings.updates.action.installing": "Installerer...",
+
+
+  "newSession.mode.assistant": "Assistant",
+  "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
+  "newSession.mode.companion": "Companion",
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
 } satisfies Partial<Record<Keys, string>>

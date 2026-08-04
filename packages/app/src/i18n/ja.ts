@@ -1041,4 +1041,10 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "永続プロジェクトアイコンの作成に失敗しました",
   "error.childStore.storeCreateFailed": "ストアの作成に失敗しました",
   "terminal.connectionLost.abnormalClose": "WebSocket が異常終了しました: {{code}}",
+
+
+  "newSession.mode.assistant": "Assistant",
+  "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
+  "newSession.mode.companion": "Companion",
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
 }

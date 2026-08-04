@@ -76,6 +76,70 @@ export function PromptProfileSelector(props: {
   )
 }
 
+export function PromptProfileCards(props: {
+  value: string
+  profiles: ProfileOption[]
+  onChange: (value: string) => void
+}) {
+  const language = useLanguage()
+  return (
+    <div class="grid w-full max-w-md grid-cols-1 gap-3 sm:grid-cols-2">
+      <For each={props.profiles}>
+        {(profile) => {
+          const selected = profile.id === props.value
+          const assistant = profile.kind === "assistant"
+          return (
+            <button
+              type="button"
+              data-profile-card={profile.kind}
+              role="radio"
+              aria-checked={selected}
+              onClick={() => props.onChange(profile.id)}
+              class={`group relative flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-border-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-v2-surface-surface-1 ${
+                selected
+                  ? "border-v2-border-border-focus bg-v2-surface-surface-2"
+                  : "border-v2-border-border-default bg-v2-surface-surface-1 hover:border-v2-border-border-strong hover:bg-v2-overlay-simple-overlay-hover"
+              }`}
+            >
+              <span class="flex w-full items-center gap-3">
+                <span
+                  class={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-v2-text-text-base ${
+                    selected ? "bg-v2-surface-surface-3" : "bg-v2-surface-surface-2"
+                  }`}
+                >
+                  <Icon name={assistant ? "terminal" : "brain"} />
+                </span>
+                <span class="flex min-w-0 flex-1 flex-col">
+                  <span class="text-14-semibold text-v2-text-text-base">
+                    {assistant
+                      ? language.t("newSession.mode.assistant")
+                      : language.t("newSession.mode.companion")}
+                  </span>
+                </span>
+                <span
+                  class={`flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                    selected
+                      ? "border-v2-border-border-focus bg-v2-text-text-base text-v2-surface-surface-1"
+                      : "border-v2-border-border-default bg-transparent text-transparent"
+                  }`}
+                  aria-hidden="true"
+                >
+                  <Icon name="check" size="small" />
+                </span>
+              </span>
+              <span class="text-12-regular text-v2-text-text-muted">
+                {assistant
+                  ? language.t("newSession.mode.assistant.description")
+                  : language.t("newSession.mode.companion.description")}
+              </span>
+            </button>
+          )
+        }}
+      </For>
+    </div>
+  )
+}
+
 export function PromptWorkspaceSelector(props: {
   value: string
   projectRoot: string
