@@ -45,11 +45,20 @@ export function parseRecurrenceRule(rule?: string): { recurrence: ReminderRecurr
   }
 }
 
-export function recurrenceSummary(rule?: string) {
+export function recurrenceSummary(
+  t: (key: string, params?: Record<string, string | number | boolean>) => string,
+  rule?: string,
+) {
   const parsed = parseRecurrenceRule(rule)
-  if (parsed.recurrence === "once") return "One-shot"
-  const unit = parsed.recurrence === "daily" ? "day" : "week"
-  return parsed.interval === 1 ? `Every ${unit}` : `Every ${parsed.interval} ${unit}s`
+  if (parsed.recurrence === "once") return t("settings.reminders.recurrenceSummary.once")
+  if (parsed.recurrence === "daily") {
+    return parsed.interval === 1
+      ? t("settings.reminders.recurrenceSummary.everyDay")
+      : t("settings.reminders.recurrenceSummary.everyNdays", { count: parsed.interval })
+  }
+  return parsed.interval === 1
+    ? t("settings.reminders.recurrenceSummary.everyWeek")
+    : t("settings.reminders.recurrenceSummary.everyNweeks", { count: parsed.interval })
 }
 
 export function parseSchedule(value: string, timezone: string) {

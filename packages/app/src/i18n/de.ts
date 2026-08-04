@@ -824,6 +824,13 @@ export const dict = {
   "settings.reminders.editor.recurrence.once": "One-shot",
   "settings.reminders.editor.recurrence.daily": "Daily",
   "settings.reminders.editor.recurrence.weekly": "Weekly",
+
+  "settings.reminders.recurrenceSummary.once": "One-shot",
+  "settings.reminders.recurrenceSummary.everyDay": "Every day",
+  "settings.reminders.recurrenceSummary.everyNdays": "Every {{count}} days",
+  "settings.reminders.recurrenceSummary.everyWeek": "Every week",
+  "settings.reminders.recurrenceSummary.everyNweeks": "Every {{count}} weeks",
+
   "settings.reminders.editor.misfire.catchUpOnce": "Catch up once",
   "settings.reminders.editor.misfire.skip": "Skip missed",
   "settings.reminders.editor.pauseFuture": "Pause future generation",

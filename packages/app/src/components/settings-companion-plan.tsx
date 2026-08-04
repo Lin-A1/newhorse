@@ -115,7 +115,7 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                       </div>
                       <p class="text-11-regular text-text-weak">
                         {reminderStatusLabel(language.t, item.status)} · {formatNominalTime(item.scheduleAt, item.timezone)} ·{" "}
-                        {recurrenceSummary(item.recurrenceRule)}
+                        {recurrenceSummary(language.t, item.recurrenceRule)}
                       </p>
                       <div class="flex flex-wrap gap-2">
                         <Button

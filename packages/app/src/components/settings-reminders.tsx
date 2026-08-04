@@ -197,7 +197,7 @@ export function SettingsReminders(props: { sessionID?: string }) {
                         <span>{language.t("settings.reminders.profile", { id: item.profileID })}</span>
                         <span>{reminderTypeLabel(language.t, item.type)}</span>
                       </div>
-                      <span class="text-11-regular text-text-weaker">{recurrenceSummary(item.recurrenceRule)}</span>
+                      <span class="text-11-regular text-text-weaker">{recurrenceSummary(language.t, item.recurrenceRule)}</span>
                     </div>
 
                     <Show when={editing() === item.id}>
@@ -223,7 +223,7 @@ export function SettingsReminders(props: { sessionID?: string }) {
                         <dt class="text-text-weak">{language.t("settings.reminders.editor.timezone")}</dt>
                         <dd class="text-text-base">{item.timezone}</dd>
                         <dt class="text-text-weak">{language.t("settings.reminders.editor.recurrence")}</dt>
-                        <dd class="text-text-base">{recurrenceSummary(item.recurrenceRule)}</dd>
+                        <dd class="text-text-base">{recurrenceSummary(language.t, item.recurrenceRule)}</dd>
                         <dt class="text-text-weak">{language.t("settings.reminders.editor.misfirePolicy")}</dt>
                         <dd class="text-text-base">{misfireLabel(language.t, item.misfirePolicy)}</dd>
                       </dl>

@@ -33,6 +33,17 @@ function reminder(
   }
 }
 
+const t = (key: string, params?: Record<string, string | number | boolean>) => {
+  const map: Record<string, string> = {
+    "settings.reminders.recurrenceSummary.once": "One-shot",
+    "settings.reminders.recurrenceSummary.everyDay": "Every day",
+    "settings.reminders.recurrenceSummary.everyNdays": `Every ${params?.count ?? "N"} days`,
+    "settings.reminders.recurrenceSummary.everyWeek": "Every week",
+    "settings.reminders.recurrenceSummary.everyNweeks": `Every ${params?.count ?? "N"} weeks`,
+  }
+  return map[key] ?? key
+}
+
 describe("Reminder recurrence helpers", () => {
   test("builds one-shot, daily, and weekly recurrence rules", () => {
     expect(recurrenceRule("once", 1)).toBeUndefined()
@@ -45,9 +56,9 @@ describe("Reminder recurrence helpers", () => {
     expect(parseRecurrenceRule()).toEqual({ recurrence: "once", interval: 1 })
     expect(parseRecurrenceRule("FREQ=DAILY;INTERVAL=4")).toEqual({ recurrence: "daily", interval: 4 })
     expect(parseRecurrenceRule("INTERVAL=2;FREQ=WEEKLY")).toEqual({ recurrence: "weekly", interval: 2 })
-    expect(recurrenceSummary()).toBe("One-shot")
-    expect(recurrenceSummary("FREQ=DAILY;INTERVAL=1")).toBe("Every day")
-    expect(recurrenceSummary("FREQ=WEEKLY;INTERVAL=3")).toBe("Every 3 weeks")
+    expect(recurrenceSummary(t)).toBe("One-shot")
+    expect(recurrenceSummary(t, "FREQ=DAILY;INTERVAL=1")).toBe("Every day")
+    expect(recurrenceSummary(t, "FREQ=WEEKLY;INTERVAL=3")).toBe("Every 3 weeks")
   })
 })
 
