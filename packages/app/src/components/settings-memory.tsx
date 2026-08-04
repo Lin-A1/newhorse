@@ -8,10 +8,38 @@ import { formatServerError } from "@/utils/server-errors"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { exportMemory } from "./settings-memory-export"
-import { useMemoryCenterState, type MemoryKind } from "./settings-memory-state"
+import { useMemoryCenterState, type MemoryKind, type MemoryScope, type MemoryStatus } from "./settings-memory-state"
 import { useSettings } from "@/context/settings"
 
 const kinds: MemoryKind[] = ["preference", "fact", "goal", "event", "relationship", "summary"]
+
+export function memoryKindLabel(
+  t: (key: string, params?: Record<string, string | number | boolean>) => string,
+  value: MemoryKind,
+) {
+  return t(`settings.memory.kind.${value}`)
+}
+
+export function memoryScopeLabel(
+  t: (key: string, params?: Record<string, string | number | boolean>) => string,
+  value: MemoryScope,
+) {
+  return t(`settings.memory.scope.${value}`)
+}
+
+export function memoryStatusLabel(
+  t: (key: string, params?: Record<string, string | number | boolean>) => string,
+  value: MemoryStatus,
+) {
+  return t(`settings.memory.status.${value}`)
+}
+
+export function memoryProvenanceLabel(
+  t: (key: string, params?: Record<string, string | number | boolean>) => string,
+  value: MemoryInfo["provenance"],
+) {
+  return t(`settings.memory.provenance.${value}`)
+}
 
 export function SettingsMemory(props: { sessionID?: string }) {
   const language = useLanguage()
@@ -48,7 +76,13 @@ export function SettingsMemory(props: { sessionID?: string }) {
   }
 
   const confirmClear = (target: "workspace" | "relationship" | "user_global") => {
-    if (!window.confirm(language.t("settings.memory.clear.confirm", { target: target.replace("_", "-") }))) return
+    const label =
+      target === "user_global"
+        ? language.t("settings.memory.scope.user_global")
+        : target === "relationship"
+          ? language.t("settings.memory.clear.relationship")
+          : memoryScopeLabel(language.t, target)
+    if (!window.confirm(language.t("settings.memory.clear.confirm", { target: label }))) return
     void memory.clear(target).catch(fail)
   }
 
@@ -82,10 +116,10 @@ export function SettingsMemory(props: { sessionID?: string }) {
                 <article class="flex flex-col gap-3 rounded-lg bg-surface-base p-4" data-memory-id={item.id}>
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex flex-wrap gap-2 text-11-regular text-text-weak">
-                      <span>{item.kind}</span>
-                      <span>{item.status}</span>
-                      <span>{item.scope.replace("_", "-")}</span>
-                      <span>{item.provenance.replace("_", " ")}</span>
+                      <span>{memoryKindLabel(language.t, item.kind)}</span>
+                      <span>{memoryStatusLabel(language.t, item.status)}</span>
+                      <span>{memoryScopeLabel(language.t, item.scope)}</span>
+                      <span>{memoryProvenanceLabel(language.t, item.provenance)}</span>
                     </div>
                     <span class="text-11-regular text-text-weaker">{source(item, language.t)}</span>
                   </div>
@@ -100,7 +134,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
                         <Select
                           options={kinds}
                           current={kind()}
-                          label={(value) => value}
+                          label={(value) => memoryKindLabel(language.t, value)}
                           onSelect={(value) => value && setKind(value)}
                           variant="secondary"
                           size="small"

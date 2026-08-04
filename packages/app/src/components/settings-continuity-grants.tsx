@@ -65,7 +65,7 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                     >
                       <div class="flex flex-wrap items-center justify-between gap-2">
                         <div class="flex flex-wrap gap-2 text-11-regular text-text-weak">
-                          <span>{status()}</span>
+                          <span>{language.t(`settings.continuity.status.${status()}`)}</span>
                           <span>{language.t("settings.continuity.sourceProfile", { id: item.sourceProfileID })}</span>
                           <span>{language.t("settings.continuity.destinationProfile", { id: item.destinationProfileID })}</span>
                           <span>
@@ -75,7 +75,7 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                           </span>
                         </div>
                         <span class="text-11-regular text-text-weaker">
-                          {language.t("settings.continuity.expires", { time: new Date(item.timeExpires).toISOString() })}
+                          {language.t("settings.continuity.expires", { time: formatDate(item.timeExpires) })}
                         </span>
                       </div>
 
@@ -146,11 +146,11 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                           >
                             {(event) => (
                               <div class="text-12-regular text-text-weak">
-                                <span>{new Date(event.timeCreated).toISOString()}</span>
+                                <span>{formatDate(event.timeCreated)}</span>
                                 <span> · {event.action}</span>
                                 <span> · {event.outcome}</span>
                                 <Show when={event.destinationSessionID}>
-                                  <span> · destination {event.destinationSessionID}</span>
+                                  <span> · {language.t("settings.audit.destination", { id: event.destinationSessionID! })}</span>
                                 </Show>
                               </div>
                             )}
@@ -167,4 +167,8 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
       </div>
     </div>
   )
+}
+
+function formatDate(value: number) {
+  return new Date(value).toLocaleString()
 }

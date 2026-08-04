@@ -6,6 +6,8 @@ import { useLanguage } from "@/context/language"
 import { effectiveContinuityStatus } from "./settings-continuity-grants-state"
 import { useCompanionPlanReviewState } from "./settings-companion-plan-state"
 import { formatNominalTime, recurrenceSummary } from "./settings-reminders-helpers"
+import { memoryKindLabel, memoryScopeLabel } from "./settings-memory"
+import { reminderStatusLabel } from "./settings-reminders"
 
 export function SettingsCompanionPlan(props: { sessionID?: string }) {
   const language = useLanguage()
@@ -57,7 +59,7 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                       data-companion-plan-memory-id={item.id}
                     >
                       <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.content}</p>
-                      <p class="text-11-regular text-text-weak">{item.kind} · {item.scope}</p>
+                      <p class="text-11-regular text-text-weak">{memoryKindLabel(language.t, item.kind)} · {memoryScopeLabel(language.t, item.scope)}</p>
                       <div class="flex flex-wrap gap-2">
                         <Button
                           size="small"
@@ -112,7 +114,7 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                         <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.body}</p>
                       </div>
                       <p class="text-11-regular text-text-weak">
-                        {item.status} · {formatNominalTime(item.scheduleAt, item.timezone)} ·{" "}
+                        {reminderStatusLabel(language.t, item.status)} · {formatNominalTime(item.scheduleAt, item.timezone)} ·{" "}
                         {recurrenceSummary(item.recurrenceRule)}
                       </p>
                       <div class="flex flex-wrap gap-2">
@@ -181,7 +183,7 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                             <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.summary}</p>
                           </div>
                           <p class="text-11-regular text-text-weak">
-                            {status()} · expires {new Date(item.timeExpires).toLocaleString()}
+                            {language.t(`settings.continuity.status.${status()}`)} · {language.t("settings.continuity.expires", { time: formatDate(item.timeExpires) })}
                           </p>
                           <div class="flex flex-wrap gap-2">
                             <Button
@@ -218,4 +220,8 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
       </div>
     </div>
   )
+}
+
+function formatDate(value: number) {
+  return new Date(value).toLocaleString()
 }

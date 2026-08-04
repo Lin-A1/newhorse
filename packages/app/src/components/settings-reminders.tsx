@@ -193,7 +193,7 @@ export function SettingsReminders(props: { sessionID?: string }) {
                   <article class="flex flex-col gap-3 rounded-lg bg-surface-base p-4" data-reminder-id={item.id}>
                     <div class="flex flex-wrap items-center justify-between gap-2">
                       <div class="flex flex-wrap gap-2 text-11-regular text-text-weak">
-                        <span>{item.status}</span>
+                        <span>{reminderStatusLabel(language.t, item.status)}</span>
                         <span>{language.t("settings.reminders.profile", { id: item.profileID })}</span>
                         <span>{reminderTypeLabel(language.t, item.type)}</span>
                       </div>
@@ -272,7 +272,11 @@ export function SettingsReminders(props: { sessionID?: string }) {
                             <For each={page().items}>
                               {(entry) => (
                                 <div data-reminder-audit-id={entry.id}>
-                                  {new Date(entry.timeCreated).toISOString()} · {entry.action} · {entry.outcome}
+                                  {language.t("settings.audit.action", {
+                                    time: formatDate(entry.timeCreated),
+                                    action: entry.action,
+                                    outcome: entry.outcome,
+                                  })}
                                   {entry.deliveryKey ? ` · ${entry.deliveryKey}` : ""}
                                 </div>
                               )}
@@ -427,12 +431,25 @@ function ReminderEditor(props: {
   )
 }
 
+function formatDate(value: number) {
+  return new Date(value).toLocaleString()
+}
+
 function reminderTypeLabel(
   t: (key: string, params?: Record<string, string | number | boolean>) => string,
   value: ReminderInfo["type"],
 ) {
-  return value.replace("_", " ")
+  return t(`settings.reminders.type.${value}`)
 }
+
+function reminderStatusLabel(
+  t: (key: string, params?: Record<string, string | number | boolean>) => string,
+  value: ReminderInfo["status"],
+) {
+  return t(`settings.reminders.status.${value}`)
+}
+
+export { reminderStatusLabel }
 
 function recurrenceLabel(
   t: (key: string, params?: Record<string, string | number | boolean>) => string,
