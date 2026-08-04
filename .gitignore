@@ -46,3 +46,6 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+
+# Build-time generated embedded web UI (regenerated from packages/app dist)
+packages/opencode/opencode-web-ui.gen.ts
