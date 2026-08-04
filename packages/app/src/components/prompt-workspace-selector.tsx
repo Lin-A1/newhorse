@@ -83,7 +83,7 @@ export function PromptProfileCards(props: {
 }) {
   const language = useLanguage()
   return (
-    <div class="grid w-full max-w-md grid-cols-1 gap-3 sm:grid-cols-2">
+    <div class="grid w-full max-w-md grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label={language.t("command.category.agent")}>
       <For each={props.profiles}>
         {(profile) => {
           const selected = profile.id === props.value
@@ -95,15 +95,15 @@ export function PromptProfileCards(props: {
               role="radio"
               aria-checked={selected}
               onClick={() => props.onChange(profile.id)}
-              class={`group relative flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-border-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-v2-surface-surface-1 ${
+              class={`group relative flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-border-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-v2-surface-surface-1 ${
                 selected
-                  ? "border-v2-border-border-focus bg-v2-surface-surface-2"
+                  ? "border-v2-border-border-focus bg-v2-surface-surface-2 shadow-sm"
                   : "border-v2-border-border-default bg-v2-surface-surface-1 hover:border-v2-border-border-strong hover:bg-v2-overlay-simple-overlay-hover"
               }`}
             >
               <span class="flex w-full items-center gap-3">
                 <span
-                  class={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-v2-text-text-base ${
+                  class={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-v2-text-text-base transition-colors ${
                     selected ? "bg-v2-surface-surface-3" : "bg-v2-surface-surface-2"
                   }`}
                 >
@@ -119,8 +119,8 @@ export function PromptProfileCards(props: {
                 <span
                   class={`flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
                     selected
-                      ? "border-v2-border-border-focus bg-v2-text-text-base text-v2-surface-surface-1"
-                      : "border-v2-border-border-default bg-transparent text-transparent"
+                      ? "border-v2-text-text-base bg-v2-text-text-base text-v2-surface-surface-1"
+                      : "border-v2-border-border-default bg-transparent text-transparent group-hover:border-v2-border-border-strong"
                   }`}
                   aria-hidden="true"
                 >

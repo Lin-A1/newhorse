@@ -603,7 +603,7 @@ export const dict = {
   "home.sessions.group.today": "今天",
   "home.sessions.group.yesterday": "昨天",
   "home.sessions.group.older": "更早",
-  "home.providerTip": "連接 75 個以上的供應商，使用 Claude、GPT、Gemini 等其他模型",
+  "home.providerTip": "Connect providers to use DeepSeek, Qwen, Claude, GPT, and more",
 
   "session.tab.session": "工作階段",
   "session.tab.review": "審查",
@@ -1100,5 +1100,7 @@ export const dict = {
   "newSession.mode.assistant": "Assistant",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "Companion",
-  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day.",
+
+  "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
 } satisfies Partial<Record<Keys, string>>

@@ -607,7 +607,7 @@ export const dict = {
   "home.sessions.group.today": "วันนี้",
   "home.sessions.group.yesterday": "เมื่อวาน",
   "home.sessions.group.older": "ก่อนหน้านี้",
-  "home.providerTip": "เชื่อมต่อกับผู้ให้บริการกว่า 75 รายเพื่อใช้โมเดลอื่นๆ รวมถึง Claude, GPT, Gemini และอีกมากมาย",
+  "home.providerTip": "Connect providers to use DeepSeek, Qwen, Claude, GPT, and more",
 
   "session.tab.session": "เซสชัน",
   "session.tab.review": "ตรวจสอบ",
@@ -1117,5 +1117,7 @@ export const dict = {
   "newSession.mode.assistant": "Assistant",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "Companion",
-  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day.",
+
+  "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
 }

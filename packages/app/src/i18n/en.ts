@@ -244,6 +244,7 @@ export const dict = {
   "prompt.placeholder.shell": "Enter shell command... {{example}}",
   "prompt.placeholder.normal": 'Ask anything... "{{example}}"',
   "prompt.placeholder.simple": "Ask anything...",
+  "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
   "prompt.placeholder.summarizeComments": "Summarize comments…",
   "prompt.placeholder.summarizeComment": "Summarize comment…",
   "prompt.mode.shell": "Shell",
@@ -630,7 +631,7 @@ export const dict = {
   "home.sessions.group.today": "Today",
   "home.sessions.group.yesterday": "Yesterday",
   "home.sessions.group.older": "Older",
-  "home.providerTip": "Connect to 75+ providers to use other models, including Claude, GPT, Gemini, etc",
+  "home.providerTip": "Connect providers to use DeepSeek, Qwen, Claude, GPT, and more",
 
   "session.tab.session": "Session",
   "session.tab.review": "Review",

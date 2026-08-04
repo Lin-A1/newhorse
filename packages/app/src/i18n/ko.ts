@@ -984,7 +984,7 @@ export const dict = {
   "home.sessions.group.today": "오늘",
   "home.sessions.group.yesterday": "어제",
   "home.sessions.group.older": "이전",
-  "home.providerTip": "75개 이상의 제공업체에 연결하여 Claude, GPT, Gemini 등의 다른 모델을 사용하세요",
+  "home.providerTip": "Connect providers to use DeepSeek, Qwen, Claude, GPT, and more",
 
   "session.tab.unknown": "알 수 없는 세션",
   "session.error.notFound": "이 세션을 찾을 수 없습니다",
@@ -1045,5 +1045,7 @@ export const dict = {
   "newSession.mode.assistant": "Assistant",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "Companion",
-  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day.",
+
+  "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
 }

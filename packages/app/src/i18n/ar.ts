@@ -556,7 +556,7 @@ export const dict = {
   "home.sessions.group.today": "اليوم",
   "home.sessions.group.yesterday": "أمس",
   "home.sessions.group.older": "الأقدم",
-  "home.providerTip": "اتصل بأكثر من 75 مزودًا لاستخدام نماذج أخرى، بما فيها Claude وGPT وGemini وغيرها",
+  "home.providerTip": "Connect providers to use DeepSeek, Qwen, Claude, GPT, and more",
   "session.tab.session": "جلسة",
   "session.tab.review": "مراجعة",
   "session.tab.context": "سياق",
@@ -1038,5 +1038,7 @@ export const dict = {
   "newSession.mode.assistant": "Assistant",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "Companion",
-  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day.",
+
+  "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
 }

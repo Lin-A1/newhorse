@@ -747,7 +747,12 @@ export function NewHome() {
               >
                 <Show
                   when={groups().length > 0}
-                  fallback={<HomeSessionsEmpty onNewSession={newSessionProject() ? openNewSession : undefined} />}
+                  fallback={
+                    <HomeSessionsEmpty
+                      onNewSession={newSessionProject() ? openNewSession : undefined}
+                      onAddProject={focusedServer() ? () => void chooseProject(focusedServer()!) : undefined}
+                    />
+                  }
                 >
                   <div ref={sessionHeaderOpacity.setContentRef} class="flex flex-col pt-3 pr-3 pb-16">
                     <For each={groups()}>
@@ -1735,7 +1740,7 @@ function HomeSessionRow(props: {
   )
 }
 
-function HomeSessionsEmpty(props: { onNewSession?: () => void }) {
+function HomeSessionsEmpty(props: { onNewSession?: () => void; onAddProject?: () => void }) {
   const language = useLanguage()
   return (
     <div class="flex min-h-full flex-col items-center gap-4 px-6 pt-[52px] text-center">
@@ -1749,6 +1754,19 @@ function HomeSessionsEmpty(props: { onNewSession?: () => void }) {
         {(onNewSession) => (
           <ButtonV2 data-action="home-new-session" variant="neutral" size="normal" icon="edit" onClick={onNewSession()}>
             {language.t("command.session.new")}
+          </ButtonV2>
+        )}
+      </Show>
+      <Show when={!props.onNewSession && props.onAddProject}>
+        {(onAddProject) => (
+          <ButtonV2
+            data-action="home-add-project"
+            variant="neutral"
+            size="normal"
+            icon="plus"
+            onClick={onAddProject()}
+          >
+            {language.t("command.project.open")}
           </ButtonV2>
         )}
       </Show>

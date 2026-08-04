@@ -616,7 +616,7 @@ export const dict = {
   "home.sessions.group.today": "Bugün",
   "home.sessions.group.yesterday": "Dün",
   "home.sessions.group.older": "Daha eski",
-  "home.providerTip": "Claude, GPT, Gemini ve diğer modelleri kullanmak için 75'ten fazla sağlayıcıya bağlanın",
+  "home.providerTip": "Connect providers to use DeepSeek, Qwen, Claude, GPT, and more",
 
   "session.tab.session": "Oturum",
   "session.tab.review": "İnceleme",
@@ -1136,5 +1136,7 @@ export const dict = {
   "newSession.mode.assistant": "Assistant",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "Companion",
-  "newSession.mode.companion.description": "Personal, memory-aware help for your day."
+  "newSession.mode.companion.description": "Personal, memory-aware help for your day.",
+
+  "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
 } satisfies Partial<Record<Keys, string>>

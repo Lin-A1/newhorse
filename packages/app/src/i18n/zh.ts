@@ -265,6 +265,7 @@ export const dict = {
   "prompt.placeholder.shell": "输入 shell 命令... {{example}}",
   "prompt.placeholder.normal": '随便问点什么... "{{example}}"',
   "prompt.placeholder.simple": "随便问点什么...",
+  "prompt.placeholder.design": "输入问题，/ 查看命令，@ 添加上下文...",
   "prompt.placeholder.summarizeComments": "总结评论…",
   "prompt.placeholder.summarizeComment": "总结该评论…",
   "prompt.mode.shell": "Shell",
@@ -608,7 +609,7 @@ export const dict = {
   "home.sessions.group.today": "今天",
   "home.sessions.group.yesterday": "昨天",
   "home.sessions.group.older": "更早",
-  "home.providerTip": "连接 75 个以上的提供商，使用 Claude、GPT、Gemini 等其他模型",
+  "home.providerTip": "连接提供商以使用 DeepSeek、通义千问、Claude、GPT 等更多模型",
 
   "session.tab.session": "会话",
   "session.tab.review": "审查",
