@@ -5,6 +5,7 @@ import { TextField } from "@newhorse/ui/text-field"
 import { For, Show, createSignal } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { formatServerError } from "@/utils/server-errors"
+import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { exportMemory } from "./settings-memory-export"
 import { useMemoryCenterState, type MemoryKind } from "./settings-memory-state"
@@ -13,6 +14,7 @@ import { useSettings } from "@/context/settings"
 const kinds: MemoryKind[] = ["preference", "fact", "goal", "event", "relationship", "summary"]
 
 export function SettingsMemory(props: { sessionID?: string }) {
+  const language = useLanguage()
   const memory = useMemoryCenterState(props.sessionID)
   const platform = usePlatform()
   const settings = useSettings()
@@ -24,8 +26,8 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const fail = (error: unknown) =>
     showToast({
       variant: "error",
-      title: "Memory request failed",
-      description: formatServerError(error, undefined, "Unknown Memory error"),
+      title: language.t("settings.memory.title"),
+      description: formatServerError(error, undefined, language.t("common.requestFailed")),
     })
 
   const startEdit = (item: MemoryInfo) => {
@@ -38,7 +40,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const save = async (item: MemoryInfo) => {
     const value = expires()
     const time = value ? new Date(value).getTime() : null
-    if (value && !Number.isFinite(time)) return fail(new Error("Expiry must be a valid date and time"))
+    if (value && !Number.isFinite(time)) return fail(new Error(language.t("settings.memory.error.invalidExpiry")))
     await memory
       .update(item, { content: content(), kind: kind(), expiresAt: time })
       .then(() => setEditing(undefined))
@@ -46,7 +48,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
   }
 
   const confirmClear = (target: "workspace" | "relationship" | "user_global") => {
-    if (!window.confirm(`Clear ${target.replace("_", "-")} memory? This cannot be undone.`)) return
+    if (!window.confirm(language.t("settings.memory.clear.confirm", { target: target.replace("_", "-") }))) return
     void memory.clear(target).catch(fail)
   }
 
@@ -60,20 +62,20 @@ export function SettingsMemory(props: { sessionID?: string }) {
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex items-center justify-between gap-4 pt-6 pb-8 max-w-[720px]">
           <div>
-            <h2 class="text-16-medium text-text-strong">Memory Center</h2>
-            <p class="text-12-regular text-text-weak">Review and manage Memory in the current content scope.</p>
+            <h2 class="text-16-medium text-text-strong">{language.t("settings.memory.title")}</h2>
+            <p class="text-12-regular text-text-weak">{language.t("settings.memory.description")}</p>
           </div>
           <Button size="small" disabled={memory.loading()} onClick={() => void exportRecords().catch(fail)}>
-            Export
+            {language.t("common.export")}
           </Button>
         </div>
       </div>
 
       <div class="flex flex-col gap-4 max-w-[720px]">
-        <Show when={!memory.loading()} fallback={<div>Loading Memory…</div>}>
+        <Show when={!memory.loading()} fallback={<div>{language.t("settings.memory.loading")}</div>}>
           <Show
             when={memory.state.items.length > 0}
-            fallback={<div class="text-14-regular text-text-weak">No Memory records.</div>}
+            fallback={<div class="text-14-regular text-text-weak">{language.t("settings.memory.empty")}</div>}
           >
             <For each={memory.state.items}>
               {(item) => (
@@ -85,7 +87,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
                       <span>{item.scope.replace("_", "-")}</span>
                       <span>{item.provenance.replace("_", " ")}</span>
                     </div>
-                    <span class="text-11-regular text-text-weaker">{source(item)}</span>
+                    <span class="text-11-regular text-text-weaker">{source(item, language.t)}</span>
                   </div>
 
                   <Show
@@ -93,7 +95,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
                     fallback={<p class="whitespace-pre-wrap text-14-regular text-text-base">{item.content}</p>}
                   >
                     <div class="flex flex-col gap-2">
-                      <TextField multiline value={content()} onChange={setContent} aria-label="Memory content" />
+                      <TextField multiline value={content()} onChange={setContent} aria-label={language.t("settings.memory.content")} />
                       <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <Select
                           options={kinds}
@@ -102,13 +104,13 @@ export function SettingsMemory(props: { sessionID?: string }) {
                           onSelect={(value) => value && setKind(value)}
                           variant="secondary"
                           size="small"
-                          triggerProps={{ "aria-label": "Memory kind" }}
+                          triggerProps={{ "aria-label": language.t("settings.memory.kind") }}
                         />
                         <TextField
                           type="datetime-local"
                           value={expires()}
                           onChange={setExpires}
-                          aria-label="Memory expiry"
+                          aria-label={language.t("settings.memory.expiry")}
                         />
                       </div>
                     </div>
@@ -121,29 +123,29 @@ export function SettingsMemory(props: { sessionID?: string }) {
                         disabled={!!memory.state.mutating}
                         onClick={() => void memory.decide(item, "accept").catch(fail)}
                       >
-                        Accept
+                        {language.t("common.accept")}
                       </Button>
                       <Button
                         size="small"
                         disabled={!!memory.state.mutating}
                         onClick={() => void memory.decide(item, "reject").catch(fail)}
                       >
-                        Reject
+                        {language.t("common.reject")}
                       </Button>
                     </Show>
                     <Show
                       when={editing() === item.id}
                       fallback={
                         <Button size="small" disabled={!!memory.state.mutating} onClick={() => startEdit(item)}>
-                          Edit
+                          {language.t("common.edit")}
                         </Button>
                       }
                     >
                       <Button size="small" disabled={!!memory.state.mutating} onClick={() => void save(item)}>
-                        Save
+                        {language.t("common.save")}
                       </Button>
                       <Button size="small" onClick={() => setEditing(undefined)}>
-                        Cancel
+                        {language.t("common.cancel")}
                       </Button>
                     </Show>
                     <Show when={item.status === "active" || item.status === "paused"}>
@@ -152,18 +154,18 @@ export function SettingsMemory(props: { sessionID?: string }) {
                         disabled={!!memory.state.mutating}
                         onClick={() => void memory.pause(item, item.status === "active").catch(fail)}
                       >
-                        {item.status === "active" ? "Pause" : "Resume"}
+                        {item.status === "active" ? language.t("common.pause") : language.t("common.resume")}
                       </Button>
                     </Show>
                     <Button
                       size="small"
                       disabled={!!memory.state.mutating}
                       onClick={() => {
-                        if (!window.confirm("Delete this Memory record?")) return
+                        if (!window.confirm(language.t("settings.memory.delete.confirm"))) return
                         void memory.remove(item).catch(fail)
                       }}
                     >
-                      Delete
+                      {language.t("common.delete")}
                     </Button>
                   </div>
                 </article>
@@ -173,21 +175,21 @@ export function SettingsMemory(props: { sessionID?: string }) {
 
           <Show when={memory.state.nextCursor}>
             <Button disabled={memory.state.loadingMore} onClick={() => void memory.loadMore().catch(fail)}>
-              Load more
+              {language.t("common.loadMore")}
             </Button>
           </Show>
 
           <div class="flex flex-wrap gap-2 border-t border-border-weak-base pt-4">
             <Button size="small" onClick={() => confirmClear("workspace")}>
-              Clear workspace
+              {language.t("settings.memory.clear.workspace")}
             </Button>
             <Show when={memory.contentScope() === "personal"}>
               <Button size="small" onClick={() => confirmClear("relationship")}>
-                Reset relationship
+                {language.t("settings.memory.clear.relationship")}
               </Button>
             </Show>
             <Button size="small" onClick={() => confirmClear("user_global")}>
-              Clear global preferences
+              {language.t("settings.memory.clear.global")}
             </Button>
           </div>
         </Show>
@@ -206,10 +208,10 @@ function downloadJson(input: { filename: string; contents: string }) {
   URL.revokeObjectURL(url)
 }
 
-function source(item: MemoryInfo) {
-  if (item.sourceMessageID) return `message ${item.sourceMessageID}`
-  if (item.sourceSessionID) return `session ${item.sourceSessionID}`
-  return "direct"
+function source(item: MemoryInfo, t: (key: string, params?: Record<string, string | number | boolean>) => string) {
+  if (item.sourceMessageID) return t("settings.memory.source.message", { id: item.sourceMessageID })
+  if (item.sourceSessionID) return t("settings.memory.source.session", { id: item.sourceSessionID })
+  return t("settings.memory.source.direct")
 }
 
 function localDateTime(value: number) {

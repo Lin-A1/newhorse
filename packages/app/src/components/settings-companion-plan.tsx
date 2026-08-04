@@ -2,17 +2,19 @@ import { For, Show } from "solid-js"
 import { Button } from "@newhorse/ui/button"
 import { formatServerError } from "@/utils/server-errors"
 import { showToast } from "@/utils/toast"
+import { useLanguage } from "@/context/language"
 import { effectiveContinuityStatus } from "./settings-continuity-grants-state"
 import { useCompanionPlanReviewState } from "./settings-companion-plan-state"
 import { formatNominalTime, recurrenceSummary } from "./settings-reminders-helpers"
 
 export function SettingsCompanionPlan(props: { sessionID?: string }) {
+  const language = useLanguage()
   const plan = useCompanionPlanReviewState(props.sessionID)
   const fail = (error: unknown) =>
     showToast({
       variant: "error",
-      title: "Companion plan request failed",
-      description: formatServerError(error, undefined, "Unknown Companion plan error"),
+      title: language.t("settings.companionPlan.title"),
+      description: formatServerError(error, undefined, language.t("common.requestFailed")),
     })
   const refresh = () => void plan.refreshAll().catch(fail)
 
@@ -20,35 +22,33 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
     <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="flex flex-col gap-6 py-8">
         <section class="flex flex-col gap-2">
-          <h2 class="text-16-medium text-text-strong">Companion Plan Review</h2>
-          <p class="text-12-regular text-text-weak">
-            Review proposed Memory, scheduled Reminders, and minimized Continuity grants in one place.
-          </p>
+          <h2 class="text-16-medium text-text-strong">{language.t("settings.companionPlan.title")}</h2>
+          <p class="text-12-regular text-text-weak">{language.t("settings.companionPlan.description")}</p>
           <div class="rounded-lg border border-border-weak-base bg-surface-subtle-base p-3 text-12-regular text-text-weak">
-            Uses minimized continuity only. Does not read raw history. Does not automatically persist relationship Memory.
+            {language.t("settings.companionPlan.disclaimer")}
           </div>
           <Button size="small" onClick={refresh} disabled={plan.loading()}>
-            Refresh plan
+            {language.t("settings.companionPlan.refresh")}
           </Button>
         </section>
 
         <section class="flex flex-col gap-3" data-companion-plan-section="memory">
-          <h3 class="text-16-medium text-text-strong">Memory proposals</h3>
+          <h3 class="text-16-medium text-text-strong">{language.t("settings.companionPlan.memory.title")}</h3>
           <Show
             when={!plan.memory.ready.error}
             fallback={
               <div class="flex items-center gap-3 text-12-regular text-text-weak">
-                <span>Memory proposals unavailable.</span>
+                <span>{language.t("settings.companionPlan.memory.unavailable")}</span>
                 <Button size="small" onClick={refresh}>
-                  Retry
+                  {language.t("common.retry")}
                 </Button>
               </div>
             }
           >
-            <Show when={!plan.memory.loading()} fallback={<div class="text-12-regular text-text-weak">Loading plan…</div>}>
+            <Show when={!plan.memory.loading()} fallback={<div class="text-12-regular text-text-weak">{language.t("settings.companionPlan.loading")}</div>}>
               <Show
                 when={plan.memoryProposals().length > 0}
-                fallback={<p class="text-12-regular text-text-weak">No proposed Memory.</p>}
+                fallback={<p class="text-12-regular text-text-weak">{language.t("settings.companionPlan.memory.empty")}</p>}
               >
                 <For each={plan.memoryProposals()}>
                   {(item) => (
@@ -64,7 +64,7 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                           disabled={!!plan.memory.state.mutating}
                           onClick={() => void plan.memory.decide(item, "accept").catch(fail)}
                         >
-                          Accept
+                          {language.t("common.accept")}
                         </Button>
                         <Button
                           size="small"
@@ -72,7 +72,7 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                           disabled={!!plan.memory.state.mutating}
                           onClick={() => void plan.memory.decide(item, "reject").catch(fail)}
                         >
-                          Reject
+                          {language.t("common.reject")}
                         </Button>
                       </div>
                     </article>
@@ -84,22 +84,22 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
         </section>
 
         <section class="flex flex-col gap-3" data-companion-plan-section="reminders">
-          <h3 class="text-16-medium text-text-strong">Reminders</h3>
+          <h3 class="text-16-medium text-text-strong">{language.t("settings.companionPlan.reminders.title")}</h3>
           <Show
             when={!plan.reminders.error()}
             fallback={
               <div class="flex items-center gap-3 text-12-regular text-text-weak">
-                <span>Reminders unavailable.</span>
+                <span>{language.t("settings.companionPlan.reminders.unavailable")}</span>
                 <Button size="small" onClick={refresh}>
-                  Retry
+                  {language.t("common.retry")}
                 </Button>
               </div>
             }
           >
-            <Show when={!plan.reminders.loading()} fallback={<div class="text-12-regular text-text-weak">Loading plan…</div>}>
+            <Show when={!plan.reminders.loading()} fallback={<div class="text-12-regular text-text-weak">{language.t("settings.companionPlan.loading")}</div>}>
               <Show
                 when={plan.activeReminders().length > 0}
-                fallback={<p class="text-12-regular text-text-weak">No active recurring Reminders.</p>}
+                fallback={<p class="text-12-regular text-text-weak">{language.t("settings.companionPlan.reminders.empty")}</p>}
               >
                 <For each={plan.activeReminders()}>
                   {(item) => (
@@ -121,18 +121,18 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                           disabled={!!plan.reminders.state.mutating}
                           onClick={() => void plan.reminders.pause(item, item.status !== "paused").catch(fail)}
                         >
-                          {item.status === "paused" ? "Resume" : "Pause"}
+                          {item.status === "paused" ? language.t("common.resume") : language.t("common.pause")}
                         </Button>
                         <Button
                           size="small"
                           variant="secondary"
                           disabled={!!plan.reminders.state.mutating}
                           onClick={() => {
-                            if (!window.confirm("Cancel this reminder? Future delivery or recurrence will stop.")) return
+                            if (!window.confirm(language.t("settings.reminders.cancel.confirm"))) return
                             void plan.reminders.cancel(item).catch(fail)
                           }}
                         >
-                          Cancel
+                          {language.t("common.cancel")}
                         </Button>
                       </div>
                     </article>
@@ -144,29 +144,29 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
         </section>
 
         <section class="flex flex-col gap-3" data-companion-plan-section="continuity">
-          <h3 class="text-16-medium text-text-strong">Continuity grants</h3>
+          <h3 class="text-16-medium text-text-strong">{language.t("settings.companionPlan.continuity.title")}</h3>
           <Show
             when={plan.continuity.available()}
-            fallback={<p class="text-12-regular text-text-weak">Open settings from a source session to review grants.</p>}
+            fallback={<p class="text-12-regular text-text-weak">{language.t("settings.companionPlan.continuity.unavailable")}</p>}
           >
             <Show
               when={!plan.continuity.ready.error}
               fallback={
                 <div class="flex items-center gap-3 text-12-regular text-text-weak">
-                  <span>Continuity grants unavailable.</span>
+                  <span>{language.t("settings.companionPlan.continuity.unavailable")}</span>
                   <Button size="small" onClick={refresh}>
-                    Retry
+                    {language.t("common.retry")}
                   </Button>
                 </div>
               }
             >
               <Show
                 when={!plan.continuity.loading()}
-                fallback={<div class="text-12-regular text-text-weak">Loading plan…</div>}
+                fallback={<div class="text-12-regular text-text-weak">{language.t("settings.companionPlan.loading")}</div>}
               >
                 <Show
                   when={plan.continuityGrants().length > 0}
-                  fallback={<p class="text-12-regular text-text-weak">No Continuity grants for this source session.</p>}
+                  fallback={<p class="text-12-regular text-text-weak">{language.t("settings.companionPlan.continuity.empty")}</p>}
                 >
                   <For each={plan.continuityGrants()}>
                     {(item) => {
@@ -188,25 +188,22 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                               size="small"
                               disabled={!!plan.continuity.state.mutating || status() !== "proposed"}
                               onClick={() => {
-                                if (
-                                  !window.confirm("Approve this minimized handoff for the destination Companion session?")
-                                )
-                                  return
+                                if (!window.confirm(language.t("settings.companionPlan.approve.confirm"))) return
                                 void plan.continuity.approve(item).catch(fail)
                               }}
                             >
-                              Approve
+                              {language.t("common.approve")}
                             </Button>
                             <Button
                               size="small"
                               variant="secondary"
                               disabled={!!plan.continuity.state.mutating || status() === "revoked" || status() === "expired"}
                               onClick={() => {
-                                if (!window.confirm("Revoke this continuity grant immediately?")) return
+                                if (!window.confirm(language.t("settings.companionPlan.revoke.confirm"))) return
                                 void plan.continuity.revoke(item).catch(fail)
                               }}
                             >
-                              Revoke
+                              {language.t("common.revoke")}
                             </Button>
                           </div>
                         </article>

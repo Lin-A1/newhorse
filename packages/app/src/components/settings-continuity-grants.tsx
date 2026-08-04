@@ -2,6 +2,7 @@ import { Button } from "@newhorse/ui/button"
 import { For, Show, createSignal } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { formatServerError } from "@/utils/server-errors"
+import { useLanguage } from "@/context/language"
 import {
   effectiveContinuityStatus,
   useContinuityGrantState,
@@ -9,6 +10,7 @@ import {
 } from "./settings-continuity-grants-state"
 
 export function SettingsContinuityGrants(props: { sessionID?: string }) {
+  const language = useLanguage()
   const grants = useContinuityGrantState(props.sessionID)
   const [expanded, setExpanded] = createSignal<string>()
   let auditRequest = 0
@@ -16,8 +18,8 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
   const fail = (error: unknown) =>
     showToast({
       variant: "error",
-      title: "Continuity request failed",
-      description: formatServerError(error, undefined, "Unknown Continuity error"),
+      title: language.t("settings.continuity.title"),
+      description: formatServerError(error, undefined, language.t("common.requestFailed")),
     })
 
   const audit = async (item: ContinuityGrantInfo) => {
@@ -32,13 +34,11 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex items-center justify-between gap-4 pt-6 pb-8 max-w-[720px]">
           <div>
-            <h2 class="text-16-medium text-text-strong">Continuity Grants</h2>
-            <p class="text-12-regular text-text-weak">
-              Review minimized Assistant-to-Companion handoffs owned by the current source session.
-            </p>
+            <h2 class="text-16-medium text-text-strong">{language.t("settings.continuity.title")}</h2>
+            <p class="text-12-regular text-text-weak">{language.t("settings.continuity.description")}</p>
           </div>
           <Button size="small" disabled={grants.loading()} onClick={() => void grants.refresh().catch(fail)}>
-            Refresh
+            {language.t("common.refresh")}
           </Button>
         </div>
       </div>
@@ -47,13 +47,13 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
         <Show
           when={grants.available()}
           fallback={
-            <div class="text-14-regular text-text-weak">Open settings from a source session to manage grants.</div>
+            <div class="text-14-regular text-text-weak">{language.t("settings.continuity.unavailable")}</div>
           }
         >
-          <Show when={!grants.loading()} fallback={<div>Loading Continuity grants…</div>}>
+          <Show when={!grants.loading()} fallback={<div>{language.t("settings.continuity.loading")}</div>}>
             <Show
               when={grants.state.items.length > 0}
-              fallback={<div class="text-14-regular text-text-weak">No Continuity grants for this source session.</div>}
+              fallback={<div class="text-14-regular text-text-weak">{language.t("settings.continuity.empty")}</div>}
             >
               <For each={grants.state.items}>
                 {(item) => {
@@ -66,36 +66,36 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                       <div class="flex flex-wrap items-center justify-between gap-2">
                         <div class="flex flex-wrap gap-2 text-11-regular text-text-weak">
                           <span>{status()}</span>
-                          <span>source {item.sourceProfileID}</span>
-                          <span>destination {item.destinationProfileID}</span>
+                          <span>{language.t("settings.continuity.sourceProfile", { id: item.sourceProfileID })}</span>
+                          <span>{language.t("settings.continuity.destinationProfile", { id: item.destinationProfileID })}</span>
                           <span>
                             {item.relationshipPersistence
-                              ? "relationship persistence enabled"
-                              : "not persisted to relationship Memory"}
+                              ? language.t("settings.continuity.relationshipPersistence.enabled")
+                              : language.t("settings.continuity.relationshipPersistence.disabled")}
                           </span>
                         </div>
                         <span class="text-11-regular text-text-weaker">
-                          expires {new Date(item.timeExpires).toISOString()}
+                          {language.t("settings.continuity.expires", { time: new Date(item.timeExpires).toISOString() })}
                         </span>
                       </div>
 
                       <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-12-regular">
-                        <dt class="text-text-weak">Source session</dt>
+                        <dt class="text-text-weak">{language.t("settings.continuity.sourceSession")}</dt>
                         <dd class="break-all text-text-base">{item.sourceSessionID}</dd>
-                        <dt class="text-text-weak">Source workspace</dt>
-                        <dd class="break-all text-text-base">{item.sourceWorkspaceID ?? "unbound"}</dd>
-                        <dt class="text-text-weak">Destination session</dt>
+                        <dt class="text-text-weak">{language.t("settings.continuity.sourceWorkspace")}</dt>
+                        <dd class="break-all text-text-base">{item.sourceWorkspaceID ?? language.t("common.unknown")}</dd>
+                        <dt class="text-text-weak">{language.t("settings.continuity.destinationSession")}</dt>
                         <dd class="break-all text-text-base">{item.destinationSessionID}</dd>
-                        <dt class="text-text-weak">Destination workspace</dt>
+                        <dt class="text-text-weak">{language.t("settings.continuity.destinationWorkspace")}</dt>
                         <dd class="break-all text-text-base">{item.destinationWorkspaceID}</dd>
                       </dl>
 
                       <div>
-                        <div class="text-11-medium text-text-weak">Purpose</div>
+                        <div class="text-11-medium text-text-weak">{language.t("settings.continuity.purpose")}</div>
                         <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.purpose}</p>
                       </div>
                       <div>
-                        <div class="text-11-medium text-text-weak">Minimized summary</div>
+                        <div class="text-11-medium text-text-weak">{language.t("settings.continuity.summary")}</div>
                         <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.summary}</p>
                       </div>
 
@@ -105,14 +105,11 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                             size="small"
                             disabled={!!grants.state.mutating}
                             onClick={() => {
-                              if (
-                                !window.confirm("Approve this minimized handoff for the destination Companion session?")
-                              )
-                                return
+                              if (!window.confirm(language.t("settings.continuity.approve.confirm"))) return
                               void grants.approve(item).catch(fail)
                             }}
                           >
-                            Approve
+                            {language.t("common.approve")}
                           </Button>
                         </Show>
                         <Show when={status() !== "revoked" && status() !== "expired"}>
@@ -120,11 +117,11 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                             size="small"
                             disabled={!!grants.state.mutating}
                             onClick={() => {
-                              if (!window.confirm("Revoke this continuity grant immediately?")) return
+                              if (!window.confirm(language.t("settings.continuity.revoke.confirm"))) return
                               void grants.revoke(item).catch(fail)
                             }}
                           >
-                            Revoke
+                            {language.t("common.revoke")}
                           </Button>
                         </Show>
                         <Button
@@ -132,7 +129,9 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                           disabled={grants.state.loadingAudit === item.id}
                           onClick={() => void audit(item).catch(fail)}
                         >
-                          {expanded() === item.id ? "Hide audit" : "View audit"}
+                          {expanded() === item.id
+                            ? language.t("settings.memory.audit.hide")
+                            : language.t("settings.memory.audit.view")}
                         </Button>
                       </div>
 
@@ -143,7 +142,7 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                         >
                           <For
                             each={grants.state.audit[item.id]}
-                            fallback={<div class="text-12-regular text-text-weak">No audit events.</div>}
+                            fallback={<div class="text-12-regular text-text-weak">{language.t("settings.continuity.audit.empty")}</div>}
                           >
                             {(event) => (
                               <div class="text-12-regular text-text-weak">

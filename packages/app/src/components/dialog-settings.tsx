@@ -71,27 +71,27 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                     </Tabs.Trigger>
                     <Tabs.Trigger value="memory">
                       <Icon name="brain" />
-                      Memory Center
+                      {language.t("settings.tab.memory")}
                     </Tabs.Trigger>
                     <Tabs.Trigger value="continuity">
                       <Icon name="branch" />
-                      Continuity Grants
+                      {language.t("settings.tab.continuity")}
                     </Tabs.Trigger>
                     <Tabs.Trigger value="reminders">
                       <Icon name="task" />
-                      Reminders
+                      {language.t("settings.tab.reminders")}
                     </Tabs.Trigger>
                     <Tabs.Trigger value="companion-plan">
-                      <Icon name="brain" />
-                      Companion Plan
+                      <Icon name="glasses" />
+                      {language.t("settings.tab.companionPlan")}
                     </Tabs.Trigger>
                     <Tabs.Trigger value="profile">
                       <Icon name="brain" />
                       {language.t("settings.profile.title")}
                     </Tabs.Trigger>
                     <Tabs.Trigger value="skills-mcp">
-                      <Icon name="brain" />
-                      Skills &amp; MCP
+                      <Icon name="mcp" />
+                      {language.t("settings.tab.skillsMcp")}
                     </Tabs.Trigger>
                   </div>
                 </div>

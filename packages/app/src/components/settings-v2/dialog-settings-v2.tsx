@@ -75,27 +75,27 @@ export const DialogSettings: Component<{
                     </TabsV2.Trigger>
                     <TabsV2.Trigger value="memory">
                       <Icon name="brain" />
-                      Memory Center
+                      {language.t("settings.tab.memory")}
                     </TabsV2.Trigger>
                     <TabsV2.Trigger value="continuity">
                       <Icon name="branch" />
-                      Continuity Grants
+                      {language.t("settings.tab.continuity")}
                     </TabsV2.Trigger>
                     <TabsV2.Trigger value="reminders">
                       <Icon name="task" />
-                      Reminders
+                      {language.t("settings.tab.reminders")}
                     </TabsV2.Trigger>
                     <TabsV2.Trigger value="companion-plan">
-                      <Icon name="brain" />
-                      Companion Plan
+                      <Icon name="glasses" />
+                      {language.t("settings.tab.companionPlan")}
                     </TabsV2.Trigger>
                     <TabsV2.Trigger value="profile">
                       <Icon name="brain" />
                       {language.t("settings.profile.title")}
                     </TabsV2.Trigger>
                     <TabsV2.Trigger value="skills-mcp">
-                      <Icon name="brain" />
-                      Skills &amp; MCP
+                      <Icon name="mcp" />
+                      {language.t("settings.tab.skillsMcp")}
                     </TabsV2.Trigger>
                   </div>
                 </div>
