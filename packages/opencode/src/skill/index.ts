@@ -12,6 +12,7 @@ import { FSUtil } from "@newhorse/core/fs-util"
 import { Config } from "@/config/config"
 import { FrontmatterError } from "@newhorse/core/v1/config/error"
 import { ConfigMarkdown } from "@/config/markdown"
+import { parse } from "@newhorse/core/config/markdown"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@newhorse/core/util/glob"
 import { Discovery } from "./discovery"
@@ -83,6 +84,10 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Ski
   }
 }
 
+export class InvalidSkill extends Schema.TaggedErrorClass<InvalidSkill>()("Skill.InvalidSkill", {
+  message: Schema.String,
+}) {}
+
 type State = {
   skills: Record<string, Info>
   dirs: Set<string>
@@ -104,6 +109,7 @@ export interface Interface {
   readonly all: () => Effect.Effect<Info[]>
   readonly dirs: () => Effect.Effect<string[]>
   readonly available: (agent?: Agent.Info) => Effect.Effect<Info[]>
+  readonly import: (input: { content: string }) => Effect.Effect<Info, InvalidSkill>
 }
 
 const add = Effect.fnUntraced(function* (state: State, match: string, events: EventV2Bridge.Service["Service"]) {
@@ -349,7 +355,36 @@ const layer = Layer.effect(
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })
 
-    return Service.of({ get, require, all, dirs, available })
+    const importSkill: Interface["import"] = Effect.fn("Skill.import")(function* (input: { content: string }) {
+      const md = yield* Effect.try({
+        try: () => parse(input.content),
+        catch: (error) => error,
+      }).pipe(
+        Effect.catch(
+          Effect.fnUntraced(function* (error) {
+            return yield* new InvalidSkill({
+              message: error instanceof Error ? error.message : "Invalid skill file",
+            })
+          }),
+        ),
+      )
+      if (!isSkillFrontmatter(md.data)) {
+        return yield* new InvalidSkill({ message: "Skill file must have a name in its frontmatter" })
+      }
+      const name = md.data.name
+      if (!/^[a-zA-Z0-9_-]+$/.test(name) || name.length > 64) {
+        return yield* new InvalidSkill({ message: "Skill name must be letters, numbers, dashes, or underscores" })
+      }
+      // Install into the user's global config skills directory so the normal
+      // `{skill,skills}/**/SKILL.md` scan picks it up on the next instance.
+      const file = path.join(global.config, "skills", name, "SKILL.md")
+      yield* fsys.writeWithDirs(file, input.content).pipe(Effect.orDie)
+      const s = yield* InstanceState.get(state)
+      yield* add(s, file, events)
+      return s.skills[name] ?? { name, description: md.data.description, location: file, content: input.content }
+    })
+
+    return Service.of({ get, require, all, dirs, available, import: importSkill })
   }),
 )
 

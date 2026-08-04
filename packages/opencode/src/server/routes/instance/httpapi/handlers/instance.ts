@@ -9,7 +9,7 @@ import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { ToolRegistry } from "@/tool/registry"
 import { Effect } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
@@ -93,6 +93,12 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* skill.all()
     })
 
+    const skillImport = Effect.fn("InstanceHttpApi.skillImport")(function* (ctx: { payload: { content: string } }) {
+      return yield* skill.import({ content: ctx.payload.content }).pipe(
+        Effect.mapError(() => new HttpApiError.BadRequest({})),
+      )
+    })
+
     const getLsp = Effect.fn("InstanceHttpApi.lsp")(function* () {
       return yield* lsp.status()
     })
@@ -113,6 +119,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("capability", getCapability)
       .handle("agent", getAgent)
       .handle("skill", getSkill)
+      .handle("skillImport", skillImport)
       .handle("lsp", getLsp)
       .handle("formatter", getFormatter)
   }),

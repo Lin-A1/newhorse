@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
-import { Effect, Layer } from "effect"
+import { Effect, Exit, Layer } from "effect"
 import { Skill } from "../../src/skill"
 import { Discovery } from "../../src/skill/discovery"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
@@ -628,5 +628,35 @@ description: A skill in the .opencode/skills directory.
         }),
       { git: true },
     ),
+  )
+
+  it.instance("imports a skill file into the user's skills directory", () =>
+    Effect.gen(function* () {
+      const skill = yield* Skill.Service
+      const content = `---
+name: import-test-skill
+description: An imported test skill
+---
+
+# Import Test Skill
+
+Imported via .skill file.
+`
+      const imported = yield* skill.import({ content })
+      expect(imported.name).toBe("import-test-skill")
+      expect((yield* skill.all()).some((item) => item.name === "import-test-skill")).toBe(true)
+      yield* Effect.promise(() =>
+        fs.rm(path.join(Global.Path.config, "skills", "import-test-skill"), { recursive: true, force: true }),
+      )
+    }),
+  )
+
+  it.instance("rejects a skill file without a valid name", () =>
+    Effect.gen(function* () {
+      const skill = yield* Skill.Service
+      const invalid = yield* skill.import({ content: "# no frontmatter here" }).pipe(Effect.exit)
+      expect(Exit.isFailure(invalid)).toBe(true)
+      if (Exit.isSuccess(invalid)) throw new Error("expected failure")
+    }),
   )
 })

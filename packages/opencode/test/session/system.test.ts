@@ -77,6 +77,7 @@ const it = testEffect(
           all: () => Effect.succeed(skills),
           dirs: () => Effect.succeed([]),
           available: () => Effect.succeed(skills),
+          import: () => Effect.fail(new Skill.InvalidSkill({ message: "import disabled in test" })),
         }),
       ),
     ],

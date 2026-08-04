@@ -15,6 +15,7 @@ import { SettingsMemory } from "./settings-memory"
 import { SettingsContinuityGrants } from "./settings-continuity-grants"
 import { SettingsCompanionPlan } from "./settings-companion-plan"
 import { SettingsReminders } from "./settings-reminders"
+import { SettingsSkillsMcp } from "./settings-skills-mcp"
 
 export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
   const language = useLanguage()
@@ -88,6 +89,10 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="brain" />
                       {language.t("settings.profile.title")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="skills-mcp">
+                      <Icon name="brain" />
+                      Skills &amp; MCP
+                    </Tabs.Trigger>
                   </div>
                 </div>
               </div>
@@ -127,6 +132,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="profile" class="no-scrollbar">
           <SettingsProfile />
+        </Tabs.Content>
+        <Tabs.Content value="skills-mcp" class="no-scrollbar">
+          <SettingsSkillsMcp />
         </Tabs.Content>
       </Tabs>
     </Dialog>

@@ -6,7 +6,7 @@ import { LSP } from "@/lsp/lsp"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
@@ -23,6 +23,10 @@ const PathInfo = Schema.Struct({
   worktree: Schema.String,
   directory: Schema.String,
 }).annotate({ identifier: "Path" })
+
+export const SkillImportPayload = Schema.Struct({
+  content: Schema.String,
+})
 
 export const VcsDiffQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -53,6 +57,7 @@ export const InstancePaths = {
   capability: "/capability",
   agent: "/agent",
   skill: "/skill",
+  skillImport: "/skill/import",
   lsp: "/lsp",
   formatter: "/formatter",
 } as const
@@ -176,6 +181,18 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "app.skills",
             summary: "List skills",
             description: "Get a list of all available skills in the newhorse system.",
+          }),
+        ),
+        HttpApiEndpoint.post("skillImport", InstancePaths.skillImport, {
+          query: WorkspaceRoutingQuery,
+          payload: SkillImportPayload,
+          success: described(Skill.Info, "Imported skill"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "skill.import",
+            summary: "Import a skill from a .skill file",
+            description: "Import a skill file (markdown with frontmatter) into the user's skills directory.",
           }),
         ),
         HttpApiEndpoint.get("lsp", InstancePaths.lsp, {

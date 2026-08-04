@@ -9720,6 +9720,51 @@ export type AppSkillsResponses = {
 
 export type AppSkillsResponse = AppSkillsResponses[keyof AppSkillsResponses]
 
+export type SkillImportData = {
+  body?: {
+    content: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/skill/import"
+}
+
+export type SkillImportErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type SkillImportError = SkillImportErrors[keyof SkillImportErrors]
+
+export type SkillImportResponses = {
+  /**
+   * Imported skill
+   */
+  200: {
+    name: string
+    description?: string
+    parameters?: {
+      [key: string]: {
+        type: "string" | "number" | "integer" | "boolean"
+        description?: string
+        required?: boolean
+        enum?: Array<string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean>
+        default?: string | number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | boolean
+      }
+    }
+    location: string
+    content: string
+  }
+}
+
+export type SkillImportResponse = SkillImportResponses[keyof SkillImportResponses]
+
 export type LspStatusData = {
   body?: never
   path?: never

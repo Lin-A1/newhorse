@@ -16,6 +16,7 @@ import { SettingsMemory } from "../settings-memory"
 import { SettingsContinuityGrants } from "../settings-continuity-grants"
 import { SettingsCompanionPlan } from "../settings-companion-plan"
 import { SettingsReminders } from "../settings-reminders"
+import { SettingsSkillsMcp } from "../settings-skills-mcp"
 
 export const DialogSettings: Component<{
   sessionID?: string
@@ -92,6 +93,10 @@ export const DialogSettings: Component<{
                       <Icon name="brain" />
                       {language.t("settings.profile.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="skills-mcp">
+                      <Icon name="brain" />
+                      Skills &amp; MCP
+                    </TabsV2.Trigger>
                   </div>
                 </div>
               </div>
@@ -131,6 +136,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="profile" class="settings-v2-panel">
           <SettingsProfileV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="skills-mcp" class="settings-v2-panel">
+          <SettingsSkillsMcp />
         </TabsV2.Content>
       </TabsV2>
     </Dialog>
