@@ -139,7 +139,7 @@ bun run --cwd packages/opencode dev web
 bun run product dev web
 ```
 
-`packages/web` 是营销/文档站点，不是产品 Web 界面。
+`packages/web` 是营销/文档站点，不是产品 Web 界面。它已从上游 opencode 品牌改写为 newhorse：安装命令指向本仓库源码构建（`git clone https://github.com/Lin-A1/newhorse`），不再跳转或安装上游 opencode。
 
 ## 便携 CLI 导出
 

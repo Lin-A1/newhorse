@@ -139,7 +139,7 @@ For UI development with hot reload, run the Vite dev server (this requires a sep
 bun run product dev web
 ```
 
-`packages/web` is the marketing/documentation site, not the product Web UI.
+`packages/web` is the marketing/documentation site, not the product Web UI. It has been rewritten from the upstream opencode brand to newhorse: install commands point at source builds from this repo (`git clone https://github.com/Lin-A1/newhorse`), and it no longer links to or installs the upstream opencode.
 
 ## Portable CLI export
 
