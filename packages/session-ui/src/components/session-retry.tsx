@@ -49,6 +49,7 @@ export function SessionRetry(props: { status: SessionStatus; show?: boolean }) {
     if (!line) return i18n.t("ui.sessionTurn.retry.attempt", { attempt: current.attempt })
     return i18n.t("ui.sessionTurn.retry.attemptLine", { line, attempt: current.attempt })
   })
+  const action = createMemo(() => retry()?.action)
 
   return (
     <Show when={retry() && (props.show ?? true)}>
@@ -65,6 +66,21 @@ export function SessionRetry(props: { status: SessionStatus; show?: boolean }) {
                 </Tooltip>
               </Show>
               <Show when={info()}>{(line) => <div data-slot="session-turn-retry-info">{line()}</div>}</Show>
+              <Show when={action()}>
+                {(act) => (
+                  <div class="mt-1 flex flex-wrap items-center gap-1.5 text-12-regular">
+                    <span>{act().message}</span>
+                    <Show
+                      when={act().link}
+                      fallback={<span class="font-medium text-error">{act().label}</span>}
+                    >
+                      <a class="font-medium underline" href={act().link} target="_blank" rel="noreferrer">
+                        {act().label}
+                      </a>
+                    </Show>
+                  </div>
+                )}
+              </Show>
             </div>
           </div>
         </Card>

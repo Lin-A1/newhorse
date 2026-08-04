@@ -86,6 +86,20 @@ describe("session.retry.delay", () => {
     expect(SessionRetry.delay(1, error)).toBe(SessionRetry.RETRY_MAX_DELAY)
   })
 
+  test("caps free-tier limit retries to 30 seconds regardless of retry-after", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "Free usage exceeded",
+        isRetryable: true,
+        statusCode: 429,
+        responseHeaders: { "retry-after": "65342" },
+        responseBody: JSON.stringify({ type: "error", error: { type: "FreeUsageLimitError" } }),
+      }).toObject(),
+    )
+    expect(SessionRetry.delay(1, error)).toBe(30000)
+    expect(SessionRetry.delay(10, error)).toBe(30000)
+  })
+
   it.instance("policy updates retry status and increments attempts", () =>
     Effect.gen(function* () {
       const sessionID = SessionID.make("session-retry-test")
@@ -254,7 +268,7 @@ describe("session.retry.retryable", () => {
     expect(retryable).toEqual({ message: "Response decompression failed" })
   })
 
-  test("reports free usage limits without an upsell action", () => {
+  test("reports free usage limits with a switch-model action", () => {
     const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
       new SessionV1.APIError({
         message: "Free usage exceeded",
@@ -267,7 +281,16 @@ describe("session.retry.retryable", () => {
       }).toObject(),
     )
 
-    expect(SessionRetry.retryable(error, "opencode")).toEqual({ message: "Free usage exceeded" })
+    expect(SessionRetry.retryable(error, "opencode")).toEqual({
+      message: "Free usage exceeded. Switch to a paid model or wait for the free quota to reset.",
+      action: {
+        reason: "free_tier_limit",
+        provider: "opencode",
+        title: "Free usage exceeded",
+        message: "The free model quota is exhausted. Switch to a paid model or wait for the quota to reset.",
+        label: "Switch model",
+      },
+    })
   })
 
   test("reports Go subscription limits as a plain retry message", () => {

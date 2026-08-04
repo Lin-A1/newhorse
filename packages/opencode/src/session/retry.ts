@@ -26,12 +26,23 @@ export const RETRY_BACKOFF_FACTOR = 2
 export const RETRY_MAX_DELAY_NO_HEADERS = 30_000 // 30 seconds
 export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for setTimeout
 
+// Free-tier quota exhaustion is not resolved by waiting hours. Keep the retry
+// short and bounded so the user sees a live, actionable state instead of a
+// day-long countdown loop.
+export const FREE_TIER_RETRY_DELAY = 30_000 // 30 seconds
+export const FREE_TIER_MAX_ATTEMPTS = 5
+
 function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)
 }
 
+function isFreeTierLimit(error?: SessionV1.APIError) {
+  return !!error?.data.responseBody?.includes("FreeUsageLimitError")
+}
+
 export function delay(attempt: number, error?: SessionV1.APIError) {
   if (error) {
+    if (isFreeTierLimit(error)) return FREE_TIER_RETRY_DELAY
     const headers = error.data.responseHeaders
     if (headers) {
       const retryAfterMs = headers["retry-after-ms"]
@@ -72,7 +83,16 @@ export function retryable(error: Err, provider: string): Retryable | undefined {
     // even when the provider SDK doesn't explicitly mark them as retryable.
     if (!error.data.isRetryable && !(status !== undefined && status >= 500)) return undefined
     if (error.data.responseBody?.includes("FreeUsageLimitError")) {
-      return { message: "Free usage exceeded" }
+      return {
+        message: "Free usage exceeded. Switch to a paid model or wait for the free quota to reset.",
+        action: {
+          reason: "free_tier_limit",
+          provider,
+          title: "Free usage exceeded",
+          message: "The free model quota is exhausted. Switch to a paid model or wait for the quota to reset.",
+          label: "Switch model",
+        },
+      }
     }
     if (error.data.responseBody?.includes("GoUsageLimitError")) {
       const body = parseJSON(error.data.responseBody)
@@ -158,8 +178,12 @@ export function policy(opts: {
       const error = opts.parse(meta.input)
       const retry = retryable(error, opts.provider)
       if (!retry) return Cause.done(meta.attempt)
+      const apiError = SessionV1.APIError.isInstance(error) ? error : undefined
+      // Give up free-tier retries after a short bounded window so the user
+      // gets a terminal error instead of an endless "attempt #1" loop.
+      if (isFreeTierLimit(apiError) && meta.attempt >= FREE_TIER_MAX_ATTEMPTS) return Cause.done(meta.attempt)
       return Effect.gen(function* () {
-        const wait = delay(meta.attempt, SessionV1.APIError.isInstance(error) ? error : undefined)
+        const wait = delay(meta.attempt, apiError)
         const now = yield* Clock.currentTimeMillis
         yield* opts.set({
           attempt: meta.attempt,
