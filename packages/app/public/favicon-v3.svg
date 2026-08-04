@@ -1,1 +1,8 @@
-../../ui/src/assets/favicon/favicon-v3.svg
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <rect x="2" y="2" width="96" height="96" rx="20" fill="#222a42"/>
+  <g fill="#ebeff6">
+    <polygon points="56,12 50,24 30,30 16,42 8,50 4,60 14,58 24,64 34,66 46,60 56,64 66,56 74,62 78,44 72,30 66,22 62,14"/>
+    <polygon points="56,12 50,24 60,26 62,16"/>
+  </g>
+  <ellipse cx="44" cy="60" rx="5" ry="4" fill="#637aff"/>
+</svg>
