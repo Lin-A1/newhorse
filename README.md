@@ -59,7 +59,7 @@ Newhorse is built on the engineering foundation of [OpenCode](https://github.com
 ### Still being closed out
 
 - Companion Plan / daily entry: the unified "Today / Companion" daily view is still being designed; the related copy is not yet fully routed through i18n
-- Desktop installer runtime smoke on target-OS runners (AppImage/DEB/RPM, NSIS, DMG/ZIP are produced; signing stays opt-in/off; GitHub Actions quota is limited)
+- Desktop installer runtime smoke: Linux (AppImage/DEB/RPM) verified launching on a LAN Ubuntu 24.04 host (2026-08-04); Windows NSIS / macOS DMG+ZIP still need their target-OS runner (signing stays opt-in/off; GitHub Actions quota is limited)
 
 The central Trust Policy (content-flow decisions, user tightening, content-free audit), the `/policy-audit` endpoint, the extension compatibility matrix, idempotent migration tests, and the `NH_` environment-variable prefix are implemented.
 

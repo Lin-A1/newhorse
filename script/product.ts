@@ -90,7 +90,7 @@ export const DESKTOP_TARGETS: DesktopTarget[] = [
 ]
 
 /** Desktop packaging must run on the target OS; no local cross-packaging promise. */
-export const VERIFIED_DESKTOP_TARGETS = new Set<string>()
+export const VERIFIED_DESKTOP_TARGETS = new Set(["desktop-linux"])
 
 export type TargetStatus = {
   id: string
@@ -156,7 +156,7 @@ export function targetStatuses(): TargetStatus[] {
           ? "NSIS installer built on a windows runner via export-desktop (2026-08-02); Azure Trusted Signing is opt-in via secrets, otherwise unsigned; Windows portable is unsupported (unpacked dir is not portable); runtime smoke pending"
           : target.os === "macos"
             ? "DMG/ZIP built on a macos runner via export-desktop (2026-08-02); Developer ID + notarization are opt-in via APPLE_* secrets, otherwise unsigned"
-              : "AppImage/DEB/RPM built on a ubuntu runner via export-desktop (2026-08-02); runtime smoke pending",
+              : "AppImage/DEB/RPM built on a ubuntu runner via export-desktop (2026-08-02); runtime smoke passed on a LAN Ubuntu 24.04 host (2026-08-04, all three formats launch under xvfb)",
     })
   }
 

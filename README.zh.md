@@ -59,7 +59,7 @@ Newhorse 建立在 [OpenCode](https://github.com/anomalyco/opencode) 的工程�
 ### 仍在闭环
 
 - Companion Plan / 每日入口：统一的 "Today / Companion" 每日视图仍在设计中；相关文案尚未全量接入 i18n
-- 目标 OS runner 上的 Desktop 安装包 runtime smoke（AppImage/DEB/RPM、NSIS、DMG/ZIP 已产出；签名保持 opt-in/关闭；GitHub Actions 配额受限）
+- Desktop 安装包 runtime smoke：Linux（AppImage/DEB/RPM）已在局域网 Ubuntu 24.04 主机验证可启动（2026-08-04）；Windows NSIS / macOS DMG+ZIP 仍需各自目标 OS runner 验证（签名保持 opt-in/关闭；GitHub Actions 配额受限）
 
 Central Trust Policy（内容流决策 + 用户收紧 + content-free 审计）、`/policy-audit` 端点、扩展兼容矩阵、幂等迁移测试与 `NH_` 环境变量前缀均已实现。
 
