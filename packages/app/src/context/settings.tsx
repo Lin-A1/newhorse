@@ -40,6 +40,8 @@ export interface Settings {
     shouldDisplayTabsToast?: boolean
     /** Default directory for file saves/downloads (desktop only). */
     downloadPath?: string
+    /** Font language priority: put CJK fonts first for Chinese UI. */
+    fontLanguage?: "system" | "zh" | "en"
   }
   appearance: {
     fontSize: number
@@ -188,6 +190,7 @@ const defaultSettings: Settings = {
     showCustomAgents: false,
     mobileTitlebarPosition: "top",
     downloadPath: "",
+    fontLanguage: "system",
   },
   appearance: {
     fontSize: 14,
@@ -409,6 +412,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         downloadPath: withFallback(() => store.general?.downloadPath, defaultSettings.general.downloadPath),
         setDownloadPath(value: string) {
           setStore("general", "downloadPath", value)
+        },
+        fontLanguage: withFallback(() => store.general?.fontLanguage, defaultSettings.general.fontLanguage),
+        setFontLanguage(value: "system" | "zh" | "en") {
+          setStore("general", "fontLanguage", value)
         },
         newLayoutDesigns,
         setNewLayoutDesigns(value: boolean) {

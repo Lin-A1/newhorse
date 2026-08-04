@@ -292,6 +292,26 @@ export const SettingsGeneral: Component = () => {
             />
           </div>
         </SettingsRow>
+        <SettingsRow
+          title="Font language priority"
+          description="Prefer Chinese or Latin fonts. System keeps the platform default with Chinese fallback."
+        >
+          <div data-action="settings-general-font-language" class="flex flex-wrap gap-1.5">
+            {(["system", "zh", "en"] as const).map((value) => (
+              <button
+                type="button"
+                class={`rounded-sm px-2 py-1 text-12-regular ${
+                  settings.general.fontLanguage() === value
+                    ? "bg-border-strong text-text-strong"
+                    : "bg-surface-subtle text-text-weak"
+                }`}
+                onClick={() => settings.general.setFontLanguage(value)}
+              >
+                {value === "system" ? "System" : value === "zh" ? "中文优先" : "English first"}
+              </button>
+            ))}
+          </div>
+        </SettingsRow>
       </SettingsList>
     </div>
   )

@@ -275,6 +275,19 @@ function BodyDesignClass() {
     document.body.classList.toggle("font-[440]", enabled)
   })
 
+  createRenderEffect(() => {
+    if (typeof document === "undefined") return
+    // Chinese-priority UI: put CJK fonts ahead of Latin in the sans stack.
+    if (settings.general.fontLanguage() === "zh") {
+      document.documentElement.style.setProperty(
+        "--font-family-sans",
+        '"PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif',
+      )
+    } else {
+      document.documentElement.style.removeProperty("--font-family-sans")
+    }
+  })
+
   return null
 }
 

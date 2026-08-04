@@ -1,8 +1,13 @@
 :root {
-  --font-family-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Latin-first stack with CJK fallbacks so Chinese text always renders
+     (Windows: Microsoft YaHei; macOS: PingFang SC; Linux: Noto Sans CJK SC). */
+  --font-family-sans:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+    "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
   --font-family-sans--font-feature-settings: normal;
   --font-family-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", "Sarasa Mono SC",
+    "Noto Sans Mono CJK SC", monospace;
   --font-family-mono--font-feature-settings: normal;
 
   --font-size-small: 13px;
