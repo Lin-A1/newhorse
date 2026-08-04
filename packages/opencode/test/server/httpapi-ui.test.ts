@@ -184,7 +184,7 @@ function responseText(response: Response) {
 }
 
 describe("HttpApi UI fallback", () => {
-  it.live("serves the web UI through the HTTP API app", () =>
+  it.live("serves a local newhorse placeholder when the embedded web UI is disabled", () =>
     Effect.gen(function* () {
       let proxiedUrl: string | undefined
 
@@ -200,12 +200,14 @@ describe("HttpApi UI fallback", () => {
 
       expect(response.status).toBe(200)
       expect(response.headers.get("content-type")).toContain("text/html")
-      expect(yield* responseText(response)).toBe("<html>opencode</html>")
-      expect(proxiedUrl).toBe("https://app.opencode.ai/")
+      const text = yield* responseText(response)
+      expect(text).toContain("newhorse")
+      expect(text).not.toContain("opencode")
+      expect(proxiedUrl).toBeUndefined()
     }),
   )
 
-  it.live("strips upstream transfer encoding headers from proxied assets", () =>
+  it.live("does not proxy assets to an upstream host when the embedded UI is disabled", () =>
     Effect.gen(function* () {
       let proxiedUrl: string | undefined
 
@@ -227,16 +229,7 @@ describe("HttpApi UI fallback", () => {
               HttpClient.make((request) => {
                 proxiedUrl = request.url
                 return Effect.succeed(
-                  HttpClientResponse.fromWeb(
-                    request,
-                    new Response("console.log('ok')", {
-                      headers: {
-                        "content-encoding": "br",
-                        "content-length": "999",
-                        "content-type": "text/javascript",
-                      },
-                    }),
-                  ),
+                  HttpClientResponse.fromWeb(request, new Response("console.log('ok')")),
                 )
               }),
             ),
@@ -246,18 +239,16 @@ describe("HttpApi UI fallback", () => {
       )
 
       expect(response.status).toBe(200)
-      expect(proxiedUrl).toBe("https://app.opencode.ai/assets/app.js")
-      expect(response.headers.get("content-encoding")).toBeNull()
-      expect(response.headers.get("content-length")).not.toBe("999")
-      expect(response.headers.get("content-type")).toContain("text/javascript")
-      expect(yield* responseText(response)).toBe("console.log('ok')")
+      expect(proxiedUrl).toBeUndefined()
+      const text = yield* responseText(response)
+      expect(text).toContain("newhorse")
+      expect(text).not.toContain("opencode")
     }),
   )
 
-  // Regression for #25698 (Ope): upstream `transfer-encoding: chunked` was
-  // forwarded through the proxy while the proxy itself re-frames the body,
-  // causing browsers to fail with `ERR_INVALID_CHUNKED_ENCODING`.
-  it.live("strips upstream transfer-encoding header from proxied assets", () =>
+  // When the embedded web UI is unavailable, the server serves a local newhorse
+  // placeholder instead of proxying the web UI to the upstream opencode app.
+  it.live("serves a local newhorse placeholder instead of proxying to upstream", () =>
     Effect.gen(function* () {
       const response = yield* Effect.gen(function* () {
         const fs = yield* FSUtil.Service
@@ -276,15 +267,7 @@ describe("HttpApi UI fallback", () => {
               HttpClient.HttpClient,
               HttpClient.make((request) =>
                 Effect.succeed(
-                  HttpClientResponse.fromWeb(
-                    request,
-                    new Response("<html>opencode</html>", {
-                      headers: {
-                        "transfer-encoding": "chunked",
-                        "content-type": "text/html",
-                      },
-                    }),
-                  ),
+                  HttpClientResponse.fromWeb(request, new Response("unreachable upstream")),
                 ),
               ),
             ),
@@ -294,8 +277,9 @@ describe("HttpApi UI fallback", () => {
       )
 
       expect(response.status).toBe(200)
-      expect(response.headers.get("transfer-encoding")).toBeNull()
-      expect(yield* responseText(response)).toBe("<html>opencode</html>")
+      const text = yield* responseText(response)
+      expect(text).toContain("newhorse")
+      expect(text).not.toContain("opencode")
     }),
   )
 
@@ -388,7 +372,9 @@ describe("HttpApi UI fallback", () => {
       }).request(`/?auth_token=${btoa("opencode:secret")}`)
 
       expect(response.status).toBe(200)
-      expect(yield* responseText(response)).toBe("<html>opencode</html>")
+      const text = yield* responseText(response)
+      expect(text).toContain("newhorse")
+      expect(text).not.toContain("opencode")
     }),
   )
 
