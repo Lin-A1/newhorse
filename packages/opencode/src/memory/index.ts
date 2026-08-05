@@ -536,8 +536,16 @@ const layer = Layer.effect(
         visibleFilter(owner, !input?.relationshipOnly),
         inArray(MemoryTable.status, input?.status ?? ["active"]),
         or(isNull(MemoryTable.time_expires), gt(MemoryTable.time_expires, Date.now())),
-        like(MemoryTable.content, `%${escapeLike(query)}%`),
       ]
+      // Tokenize the query: match any keyword (OR) instead of requiring the
+      // whole query to be a substring — "weekend hiking plan" should surface a
+      // memory about "hiking" even without the full phrase.
+      const terms = query.split(/\s+/).filter(Boolean)
+      if (terms.length === 1) {
+        conditions.push(like(MemoryTable.content, `%${escapeLike(query)}%`))
+      } else {
+        conditions.push(or(...terms.map((term) => like(MemoryTable.content, `%${escapeLike(term)}%`))))
+      }
       if (input?.kind) conditions.push(eq(MemoryTable.kind, input.kind))
       if (input?.relationshipOnly) {
         conditions.push(eq(MemoryTable.kind, "relationship"), eq(MemoryTable.profile_id, input.profileID!))
