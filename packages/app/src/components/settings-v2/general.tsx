@@ -8,7 +8,7 @@ import { useTheme, type ColorScheme } from "@newhorse/ui/theme/context"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
-import { usePlatform } from "@/context/platform"
+import { usePlatform, type DisplayBackend } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { useUpdaterAction } from "../updater-action"
@@ -118,6 +118,7 @@ export const SettingsGeneralV2: Component<{
     permission.disableAutoAccept(props.sessionID, value)
   }
   const desktop = createMemo(() => platform.platform === "desktop")
+  const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
 
@@ -135,6 +136,20 @@ export const SettingsGeneralV2: Component<{
     () => Promise.resolve(platform.getPinchZoomEnabled?.() ?? false).catch(() => false),
     { initialValue: false },
   )
+
+  const [displayBackend, { refetch: refetchDisplayBackend }] = createResource(
+    () => (linux() && platform.getDisplayBackend ? true : false),
+    () => Promise.resolve(platform.getDisplayBackend?.() ?? null).catch(() => null as DisplayBackend | null),
+    { initialValue: null as DisplayBackend | null },
+  )
+
+  const onDisplayBackendChange = (checked: boolean) => {
+    const update = platform.setDisplayBackend?.(checked ? "wayland" : "auto")
+    if (!update) return
+    void update.finally(() => {
+      void refetchDisplayBackend()
+    })
+  }
 
   onMount(() => {
     void theme.loadThemes()
@@ -228,19 +243,64 @@ export const SettingsGeneralV2: Component<{
   })
 
   const InterfaceSection = () => (
-    <LayoutTransitionToggle
-      title={language.t("settings.general.row.newInterface.title")}
-      badge={language.t("settings.general.row.newInterface.badge")}
-      description={language.t("settings.general.row.newInterface.description")}
-      checked={settings.general.newLayoutDesigns()}
-      onChange={(checked) => {
-        settings.general.setNewLayoutDesigns(checked)
-        if (checked) return
-        void import("@/components/dialog-settings").then((module) => {
-          void dialog.show(() => <module.DialogSettings />)
-        })
-      }}
-    />
+    <>
+      <LayoutTransitionToggle
+        title={language.t("settings.general.row.newInterface.title")}
+        badge={language.t("settings.general.row.newInterface.badge")}
+        description={language.t("settings.general.row.newInterface.description")}
+        checked={settings.general.newLayoutDesigns()}
+        onChange={(checked) => {
+          settings.general.setNewLayoutDesigns(checked)
+          if (checked) return
+          void import("@/components/dialog-settings").then((module) => {
+            void dialog.show(() => <module.DialogSettings />)
+          })
+        }}
+      />
+      <div class="settings-v2-section">
+        <SettingsListV2>
+          <SettingsRowV2
+            title={language.t("settings.general.row.downloadPath.title")}
+            description={language.t("settings.general.row.downloadPath.description")}
+          >
+            <div class="w-full sm:w-[220px]">
+              <TextInputV2
+                data-action="settings-general-download-path"
+                type="text"
+                appearance="base"
+                value={settings.general.downloadPath()}
+                onInput={(event) => settings.general.setDownloadPath(event.currentTarget.value)}
+                placeholder={language.t("settings.general.row.downloadPath.placeholder")}
+                spellcheck={false}
+                autocorrect="off"
+                aria-label={language.t("settings.general.row.downloadPath.title")}
+              />
+            </div>
+          </SettingsRowV2>
+          <SettingsRowV2
+            title={language.t("settings.general.row.fontLanguage.title")}
+            description={language.t("settings.general.row.fontLanguage.description")}
+          >
+            <div data-action="settings-general-font-language" class="flex flex-wrap gap-1.5">
+              {(["system", "zh", "en"] as const).map((value) => (
+                <ButtonV2
+                  type="button"
+                  size="small"
+                  variant={settings.general.fontLanguage() === value ? "contrast" : "ghost-muted"}
+                  onClick={() => settings.general.setFontLanguage(value)}
+                >
+                  {value === "system"
+                    ? language.t("settings.general.row.fontLanguage.system")
+                    : value === "zh"
+                      ? language.t("settings.general.row.fontLanguage.zh")
+                      : language.t("settings.general.row.fontLanguage.en")}
+                </ButtonV2>
+              ))}
+            </div>
+          </SettingsRowV2>
+        </SettingsListV2>
+      </div>
+    </>
   )
 
   const InterfaceNoticeSection = () => (
@@ -368,6 +428,18 @@ export const SettingsGeneralV2: Component<{
             <Switch
               checked={settings.general.showFileTree()}
               onChange={(checked) => settings.general.setShowFileTree(checked)}
+            />
+          </div>
+        </SettingsRowV2>
+
+        <SettingsRowV2
+          title={language.t("settings.general.row.showNavigation.title")}
+          description={language.t("settings.general.row.showNavigation.description")}
+        >
+          <div data-action="settings-show-navigation">
+            <Switch
+              checked={settings.general.showNavigation()}
+              onChange={(checked) => settings.general.setShowNavigation(checked)}
             />
           </div>
         </SettingsRowV2>
@@ -676,6 +748,17 @@ export const SettingsGeneralV2: Component<{
               <Switch checked={pinchZoom.latest} onChange={onPinchZoomChange} />
             </div>
           </SettingsRowV2>
+
+          <Show when={linux()}>
+            <SettingsRowV2
+              title={language.t("settings.general.row.wayland.title")}
+              description={language.t("settings.general.row.wayland.description")}
+            >
+              <div data-action="settings-wayland">
+                <Switch checked={displayBackend.latest === "wayland"} onChange={onDisplayBackendChange} />
+              </div>
+            </SettingsRowV2>
+          </Show>
         </SettingsListV2>
       </div>
     </Show>
