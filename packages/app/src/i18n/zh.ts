@@ -1419,5 +1419,5 @@ export const dict = {
   "newSession.mode.assistant": "助手",
   "newSession.mode.assistant.description": "跨项目编写、编辑和运行代码。",
   "newSession.mode.companion": "伙伴",
-  "newSession.mode.companion.description": "面向日常生活的个人化、记忆感知的帮助。",
+  "newSession.mode.companion.description": "你的生活伙伴 — 记住你、设置提醒、接着你手头的事继续。",
 } satisfies Partial<Record<Keys, string>>

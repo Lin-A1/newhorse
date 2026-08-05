@@ -1362,7 +1362,7 @@ export const dict = {
   "newSession.mode.assistant": "Assistant",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "Companion",
-  "newSession.mode.companion.description": "Personal, memory-aware help for your day.",
+  "newSession.mode.companion.description": "Your daily companion — remembers you, sets reminders, and picks up where you left off.",
 
   "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
 }
