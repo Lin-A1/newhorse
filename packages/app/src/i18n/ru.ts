@@ -1258,6 +1258,8 @@ export const dict = {
   "settings.providers.tag.custom": "Пользовательский",
   "settings.providers.tag.other": "Другое",
   "settings.profile.title": "Companion",
+  "settings.profile.section.identity": "Identity",
+  "settings.profile.section.care": "Active care",
   "settings.profile.persona.title": "Persona",
   "settings.profile.persona.description":
     "Define the Companion's tone and interaction style. Safety requirements remain protected.",

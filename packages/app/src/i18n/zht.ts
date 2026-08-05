@@ -1233,6 +1233,8 @@ export const dict = {
   "settings.providers.tag.custom": "自訂",
   "settings.providers.tag.other": "其他",
   "settings.profile.title": "陪伴助理",
+  "settings.profile.section.identity": "身份",
+  "settings.profile.section.care": "主动关怀",
   "settings.profile.persona.title": "角色設定",
   "settings.profile.persona.description": "設定陪伴助理的語氣與互動風格，安全約束始終受保護。",
   "settings.profile.memory.title": "記憶",

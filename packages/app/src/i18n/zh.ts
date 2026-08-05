@@ -1318,6 +1318,8 @@ export const dict = {
   "common.time.hoursAgo.short": "{{count}}小时前",
   "common.time.daysAgo.short": "{{count}}天前",
   "settings.profile.title": "伙伴",
+  "settings.profile.section.identity": "身份",
+  "settings.profile.section.care": "主动关怀",
   "settings.profile.persona.title": "角色设定",
   "settings.profile.persona.description": "设定伙伴的语气与互动风格，安全约束始终受保护。",
   "settings.profile.memory.title": "记忆",

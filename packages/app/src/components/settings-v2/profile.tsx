@@ -26,6 +26,7 @@ export const SettingsProfileV2: Component = () => {
         <Show when={!profile.state.loading} fallback={<div>{language.t("common.loading")}</div>}>
           <div class="settings-v2-section">
             <SettingsListV2>
+              <div class="px-4 pt-4 text-13-medium text-text-weak">{language.t("settings.profile.section.identity")}</div>
               <div class="p-4 border-b border-border-weak-base">
                 <div class="flex flex-col gap-1 pb-3">
                   <span class="text-14-medium text-text-strong">{language.t("settings.profile.persona.title")}</span>
@@ -52,6 +53,7 @@ export const SettingsProfileV2: Component = () => {
                   onSelect={(value) => value && profile.setState("memory", value)}
                 />
               </SettingsRowV2>
+              <div class="px-4 pt-4 text-13-medium text-text-weak">{language.t("settings.profile.section.care")}</div>
               <SettingsRowV2
                 title={language.t("settings.profile.proactive.title")}
                 description={language.t("settings.profile.proactive.description")}
