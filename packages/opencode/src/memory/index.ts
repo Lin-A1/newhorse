@@ -551,7 +551,7 @@ const layer = Layer.effect(
         .select()
         .from(MemoryTable)
         .where(and(...conditions))
-        .orderBy(desc(MemoryTable.id))
+        .orderBy(sql`instr(${MemoryTable.content}, ${query})`, desc(MemoryTable.time_updated))
         .limit(Math.min(Math.max(input?.limit ?? 10, 1), 50))
         .all()
         .pipe(Effect.orDie)
