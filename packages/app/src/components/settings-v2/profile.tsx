@@ -1,4 +1,5 @@
 import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
+import { Spinner } from "@newhorse/ui/spinner"
 import { SelectV2 } from "@newhorse/ui/v2/select-v2"
 import { TextInputV2 } from "@newhorse/ui/v2/text-input-v2"
 import { TextareaV2 } from "@newhorse/ui/v2/textarea-v2"
@@ -133,7 +134,7 @@ export const SettingsProfileV2: Component = () => {
             </SettingsListV2>
             <div class="flex justify-end pt-4">
               <ButtonV2 variant="contrast" disabled={profile.state.saving} onClick={() => void profile.save()}>
-                {language.t("common.save")}
+                {profile.state.saving ? <Spinner class="size-3.5" /> : language.t("common.save")}
               </ButtonV2>
             </div>
           </div>

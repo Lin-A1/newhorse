@@ -1,4 +1,5 @@
 import { Button } from "@newhorse/ui/button"
+import { Spinner } from "@newhorse/ui/spinner"
 import { For, Show, createSignal } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { formatServerError } from "@/utils/server-errors"
@@ -102,7 +103,10 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                         <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.summary}</p>
                       </div>
 
-                      <div class="flex flex-wrap gap-2">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <Show when={grants.state.mutating === item.id}>
+                          <Spinner class="size-3.5 shrink-0 text-text-weak" />
+                        </Show>
                         <Show when={status() === "proposed"}>
                           <Button
                             size="small"

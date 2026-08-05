@@ -1,4 +1,5 @@
 import { Button } from "@newhorse/ui/button"
+import { Spinner } from "@newhorse/ui/spinner"
 import { Select } from "@newhorse/ui/select"
 import { Switch } from "@newhorse/ui/switch"
 import { TextField } from "@newhorse/ui/text-field"
@@ -235,7 +236,10 @@ export function SettingsReminders(props: { sessionID?: string }) {
                           {language.t("settings.reminders.lastError", { error: item.lastError ?? "" })}
                         </p>
                       </Show>
-                      <div class="flex flex-wrap gap-2">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <Show when={reminders.state.mutating === item.id}>
+                          <Spinner class="size-3.5 shrink-0 text-text-weak" />
+                        </Show>
                         <Button size="small" disabled={!!reminders.state.mutating} onClick={() => beginEdit(item)}>
                           {language.t("common.edit")}
                         </Button>

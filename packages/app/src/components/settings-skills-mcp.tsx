@@ -1,4 +1,9 @@
 import { Button } from "@newhorse/ui/button"
+import { Dialog } from "@newhorse/ui/dialog"
+import { Icon } from "@newhorse/ui/icon"
+import { Select } from "@newhorse/ui/select"
+import { TextField } from "@newhorse/ui/text-field"
+import { useDialog } from "@newhorse/ui/context/dialog"
 import type { McpStatus } from "@newhorse/sdk/v2"
 import { For, Show, createResource, createSignal } from "solid-js"
 import { useServerSDK } from "@/context/server-sdk"
@@ -24,13 +29,29 @@ function mcpStatusInfo(
         label: t("settings.skillsMcp.status.unavailable"),
         detail: t("settings.skillsMcp.status.clientRegistrationRequired"),
       }
+    default:
+      return { label: t("settings.skillsMcp.status.unavailable") }
   }
+}
+
+function skillSource(location: string): { remote: boolean; label: string } {
+  if (/^https?:\/\//i.test(location)) {
+    try {
+      return { remote: true, label: new URL(location).host }
+    } catch {
+      return { remote: true, label: location }
+    }
+  }
+  const parts = location.replace(/\\/g, "/").split("/").filter(Boolean)
+  return { remote: false, label: parts[parts.length - 1] ?? location }
 }
 
 export function SettingsSkillsMcp() {
   const language = useLanguage()
   const serverSDK = useServerSDK()
+  const dialog = useDialog()
   const [importing, setImporting] = createSignal(false)
+  let skillFileInput: HTMLInputElement | undefined
 
   const client = () => serverSDK().client
 
@@ -88,26 +109,33 @@ export function SettingsSkillsMcp() {
             <Button size="small" onClick={refresh} disabled={skills.loading || mcp.loading}>
               {language.t("common.refresh")}
             </Button>
-            <label class="cursor-pointer">
-              <Button size="small" variant="primary" disabled={importing()} onClick={() => {}}>
-                {importing() ? language.t("common.importing") : language.t("settings.skillsMcp.import", { file: skillFile })}
-              </Button>
-              <input
-                type="file"
-                accept=".skill,.md,.markdown,text/markdown"
-                class="hidden"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0]
-                  event.currentTarget.value = ""
-                  if (file) void importSkill(file)
-                }}
-              />
-            </label>
+            <Button
+              size="small"
+              variant="primary"
+              disabled={importing()}
+              onClick={() => skillFileInput?.click()}
+            >
+              {importing() ? language.t("common.importing") : language.t("settings.skillsMcp.import", { file: skillFile })}
+            </Button>
+            <input
+              ref={(el) => (skillFileInput = el)}
+              type="file"
+              accept=".skill,.md,.markdown,text/markdown"
+              class="hidden"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0]
+                event.currentTarget.value = ""
+                if (file) void importSkill(file)
+              }}
+            />
           </div>
         </section>
 
         <section class="flex flex-col gap-3" data-settings-section="skills">
-          <h3 class="text-16-medium text-text-strong">{language.t("settings.skillsMcp.skills.title")}</h3>
+          <div class="flex flex-col gap-1">
+            <h3 class="text-16-medium text-text-strong">{language.t("settings.skillsMcp.skills.title")}</h3>
+            <p class="text-12-regular text-text-weak">{language.t("settings.skillsMcp.skills.help")}</p>
+          </div>
           <Show
             when={!skills.error}
             fallback={
@@ -126,15 +154,26 @@ export function SettingsSkillsMcp() {
               >
                 <div class="flex flex-col gap-2">
                   <For each={skills()}>
-                    {(skill) => (
-                      <article class="flex flex-col gap-1 rounded-lg bg-surface-base p-4" data-skill-name={skill.name}>
-                        <h4 class="text-14-medium text-text-strong">{skill.name}</h4>
-                        <Show when={skill.description}>
-                          <p class="whitespace-pre-wrap text-13-regular text-text-base">{skill.description}</p>
-                        </Show>
-                        <p class="text-11-regular text-text-weak">{skill.location}</p>
-                      </article>
-                    )}
+                    {(skill) => {
+                      const source = skillSource(skill.location)
+                      return (
+                        <article class="flex flex-col gap-1.5 rounded-lg bg-surface-base p-4" data-skill-name={skill.name}>
+                          <div class="flex items-center justify-between gap-2">
+                            <h4 class="text-14-medium text-text-strong">{skill.name}</h4>
+                            <span class="flex shrink-0 items-center gap-1 rounded-full bg-surface-raised-base px-2 py-0.5 text-11-regular text-text-weak">
+                              <Icon name={source.remote ? "link" : "folder"} size="small" />
+                              {source.remote
+                                ? language.t("settings.skillsMcp.skills.source.remote")
+                                : language.t("settings.skillsMcp.skills.source.local")}
+                            </span>
+                          </div>
+                          <Show when={skill.description}>
+                            <p class="whitespace-pre-wrap text-13-regular text-text-base">{skill.description}</p>
+                          </Show>
+                          <p class="truncate text-11-regular text-text-weaker">{source.label}</p>
+                        </article>
+                      )
+                    }}
                   </For>
                 </div>
               </Show>
@@ -143,7 +182,12 @@ export function SettingsSkillsMcp() {
         </section>
 
         <section class="flex flex-col gap-3" data-settings-section="mcp">
-          <h3 class="text-16-medium text-text-strong">{language.t("settings.skillsMcp.mcp.title")}</h3>
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="text-16-medium text-text-strong">{language.t("settings.skillsMcp.mcp.title")}</h3>
+            <Button size="small" variant="secondary" icon="plus" onClick={() => void dialog.show(() => <DialogAddMcp onAdded={refresh} />)}>
+              {language.t("settings.skillsMcp.mcp.add.button")}
+            </Button>
+          </div>
           <Show
             when={!mcp.error}
             fallback={
@@ -195,5 +239,91 @@ export function SettingsSkillsMcp() {
         </section>
       </div>
     </div>
+  )
+}
+
+function DialogAddMcp(props: { onAdded: () => void }) {
+  const language = useLanguage()
+  const serverSDK = useServerSDK()
+  const dialog = useDialog()
+  const [name, setName] = createSignal("")
+  const [type, setType] = createSignal<"local" | "remote">("local")
+  const [config, setConfig] = createSignal("")
+  const [adding, setAdding] = createSignal(false)
+  const [error, setError] = createSignal<string>()
+
+  const submit = async () => {
+    const trimmedName = name().trim()
+    const trimmedConfig = config().trim()
+    if (!trimmedName || !trimmedConfig) return
+    setAdding(true)
+    setError("")
+    try {
+      const mcpConfig =
+        type() === "local"
+          ? { type: "local" as const, command: trimmedConfig.split(/\s+/).filter(Boolean), environment: {} }
+          : { type: "remote" as const, url: trimmedConfig, headers: {} }
+      const res = await serverSDK().client.mcp.add({ name: trimmedName, config: mcpConfig })
+      if (!res.data) throw new Error(language.t("settings.skillsMcp.mcp.add.failed"))
+      dialog.close()
+      props.onAdded()
+    } catch (err) {
+      setError(formatServerError(err, undefined, language.t("common.requestFailed")))
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  return (
+    <Dialog title={language.t("settings.skillsMcp.mcp.add.title")}>
+      <div class="flex flex-col gap-3">
+        <TextField
+          label={language.t("settings.skillsMcp.mcp.add.name")}
+          value={name()}
+          onChange={setName}
+          placeholder="e.g. filesystem"
+        />
+        <Select
+          options={["local", "remote"] as const}
+          current={type()}
+          label={(value) =>
+            value === "local"
+              ? language.t("settings.skillsMcp.mcp.add.type.local")
+              : language.t("settings.skillsMcp.mcp.add.type.remote")
+          }
+          onSelect={(value) => value && setType(value)}
+          variant="secondary"
+          size="small"
+        />
+        <TextField
+          label={
+            type() === "local"
+              ? language.t("settings.skillsMcp.mcp.add.command")
+              : language.t("settings.skillsMcp.mcp.add.url")
+          }
+          value={config()}
+          onChange={setConfig}
+          placeholder={
+            type() === "local" ? "npx -y @modelcontextprotocol/server-filesystem" : "https://example.com/mcp"
+          }
+        />
+        <Show when={error()}>
+          <p class="text-12-regular text-negative">{error()}</p>
+        </Show>
+        <div class="flex justify-end gap-2">
+          <Button size="small" variant="ghost" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button
+            size="small"
+            variant="primary"
+            disabled={adding() || !name().trim() || !config().trim()}
+            onClick={() => void submit()}
+          >
+            {language.t("settings.skillsMcp.mcp.add.submit")}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   )
 }

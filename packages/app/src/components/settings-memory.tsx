@@ -1,5 +1,6 @@
 import type { MemoryInfo } from "@newhorse/sdk/v2"
 import { Button } from "@newhorse/ui/button"
+import { Spinner } from "@newhorse/ui/spinner"
 import { Select } from "@newhorse/ui/select"
 import { TextField } from "@newhorse/ui/text-field"
 import { For, Show, createSignal } from "solid-js"
@@ -156,7 +157,10 @@ export function SettingsMemory(props: { sessionID?: string }) {
                     </div>
                   </Show>
 
-                  <div class="flex flex-wrap gap-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Show when={memory.state.mutating === item.id}>
+                      <Spinner class="size-3.5 shrink-0 text-text-weak" />
+                    </Show>
                     <Show when={item.status === "proposed"}>
                       <Button
                         size="small"
