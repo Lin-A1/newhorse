@@ -186,6 +186,79 @@ exports[`tool parameters JSON Schema (wire shape) lsp 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) memory 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "action": {
+      "description": "The memory operation to perform",
+      "enum": [
+        "list",
+        "search",
+        "save",
+        "forget",
+        "consolidate",
+        "archive",
+        "clear",
+      ],
+      "type": "string",
+    },
+    "content": {
+      "description": "Content to remember (required for save)",
+      "type": "string",
+    },
+    "id": {
+      "description": "Memory id (required for forget)",
+      "type": "string",
+    },
+    "ids": {
+      "description": "Memory ids to archive after consolidation (required for archive)",
+      "items": {
+        "type": "string",
+      },
+      "type": "array",
+    },
+    "kind": {
+      "description": "Category of the memory (required for save, optional filter for search)",
+      "enum": [
+        "preference",
+        "fact",
+        "goal",
+        "event",
+        "relationship",
+        "summary",
+      ],
+      "type": "string",
+    },
+    "query": {
+      "description": "Search text to find relevant memories (required for search)",
+      "type": "string",
+    },
+    "scope": {
+      "description": "Defaults to workspace. Use user_global only for durable cross-workspace preferences.",
+      "enum": [
+        "workspace",
+        "user_global",
+      ],
+      "type": "string",
+    },
+    "target": {
+      "description": "Scope to clear (defaults to workspace; relationship only in a Personal workspace)",
+      "enum": [
+        "workspace",
+        "relationship",
+        "user_global",
+      ],
+      "type": "string",
+    },
+  },
+  "required": [
+    "action",
+  ],
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) plan 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -476,55 +549,6 @@ exports[`tool parameters JSON Schema (wire shape) write 1`] = `
   "required": [
     "content",
     "filePath",
-  ],
-  "type": "object",
-}
-`;
-
-exports[`tool parameters JSON Schema (wire shape) memory 1`] = `
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "properties": {
-    "action": {
-      "description": "The memory operation to perform",
-      "enum": [
-        "list",
-        "save",
-        "forget",
-      ],
-      "type": "string",
-    },
-    "content": {
-      "description": "Content to remember (required for save)",
-      "type": "string",
-    },
-    "id": {
-      "description": "Memory id (required for forget)",
-      "type": "string",
-    },
-    "kind": {
-      "description": "Category of the memory (required for save)",
-      "enum": [
-        "preference",
-        "fact",
-        "goal",
-        "event",
-        "relationship",
-        "summary",
-      ],
-      "type": "string",
-    },
-    "scope": {
-      "description": "Defaults to workspace. Use user_global only for durable cross-workspace preferences.",
-      "enum": [
-        "workspace",
-        "user_global",
-      ],
-      "type": "string",
-    },
-  },
-  "required": [
-    "action",
   ],
   "type": "object",
 }

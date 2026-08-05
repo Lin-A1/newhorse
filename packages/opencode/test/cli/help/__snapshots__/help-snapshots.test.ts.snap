@@ -122,6 +122,7 @@ Commands:
   nh debug snapshot      snapshot debugging utilities
   nh debug startup       print startup timing
   nh debug agent <name>  show agent configuration details
+  nh debug capability    show redacted capability status for the current workspace
   nh debug v2            debug v2 catalog and built-in plugins
   nh debug info          show debug information
   nh debug paths         show global paths (data, config, cache, state)
