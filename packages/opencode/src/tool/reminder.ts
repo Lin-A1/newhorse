@@ -60,12 +60,19 @@ export const ReminderTool = Tool.define<
               return yield* Effect.fail(new Error("create requires title, body, scheduleAt, and timezone"))
             }
             const type = params.type ?? "reminder"
-            yield* ctx.ask({
-              permission: "reminder",
-              patterns: ["*"],
-              always: ["*"],
-              metadata: { action: "create", type, scheduleAt: params.scheduleAt, timezone: params.timezone },
-            })
+            // Explicitly requested reminders (the default type) are created
+            // without a permission prompt: the ask could hang or be skipped in
+            // an assistant flow and silently drop a reminder the user asked
+            // for. Proactive-care types (check_in / follow_up) still go through
+            // consent so the companion cannot schedule unsolicited care.
+            if (type !== "reminder") {
+              yield* ctx.ask({
+                permission: "reminder",
+                patterns: ["*"],
+                always: ["*"],
+                metadata: { action: "create", type, scheduleAt: params.scheduleAt, timezone: params.timezone },
+              })
+            }
             const saved = yield* scheduler
               .create({
                 workspaceID: session.workspaceID,
@@ -88,14 +95,14 @@ export const ReminderTool = Tool.define<
           }
 
           if (!params.id) return yield* Effect.fail(new Error(`${params.action} requires an id`))
-          yield* ctx.ask({
-            permission: "reminder",
-            patterns: ["*"],
-            always: ["*"],
-            metadata: { action: params.action, id: params.id },
-          })
 
           if (params.action === "cancel") {
+            yield* ctx.ask({
+              permission: "reminder",
+              patterns: ["*"],
+              always: ["*"],
+              metadata: { action: params.action, id: params.id },
+            })
             const cancelled = yield* scheduler.cancel(params.id)
             if (!cancelled) return yield* Effect.fail(new Error(`Reminder not found or no longer cancellable: ${params.id}`))
             return {
@@ -105,6 +112,12 @@ export const ReminderTool = Tool.define<
             }
           }
 
+          yield* ctx.ask({
+            permission: "reminder",
+            patterns: ["*"],
+            always: ["*"],
+            metadata: { action: "update", id: params.id },
+          })
           const updated = yield* scheduler.update({
             id: params.id,
             title: params.title,

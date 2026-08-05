@@ -20,7 +20,7 @@ const it = testEffect(
 )
 
 describe("tool.reminder", () => {
-  it.instance("lists without permission and asks before every mutation", () =>
+  it.instance("creates explicit reminders without ask and asks for update and cancel", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const scheduler = yield* Scheduler.Service
@@ -53,20 +53,17 @@ describe("tool.reminder", () => {
         },
         ctx,
       )
-      expect(asked[0]).toMatchObject({
-        permission: "reminder",
-        patterns: ["*"],
-        metadata: { action: "create", type: "reminder", scheduleAt: now, timezone: "UTC" },
-      })
+      // Explicit user-requested reminders are created without a permission prompt.
+      expect(asked).toEqual([])
       const id = Scheduler.ID.make(created.metadata.id!)
       expect((yield* scheduler.list())[0]).toMatchObject({ id, title: "Drink water", status: "pending" })
 
       yield* tool.execute({ action: "update", id, paused: true }, ctx)
-      expect(asked[1]).toMatchObject({ permission: "reminder", metadata: { action: "update", id } })
+      expect(asked[0]).toMatchObject({ permission: "reminder", metadata: { action: "update", id } })
       expect((yield* scheduler.list())[0]?.status).toBe("paused")
 
       yield* tool.execute({ action: "cancel", id }, ctx)
-      expect(asked[2]).toMatchObject({ permission: "reminder", metadata: { action: "cancel", id } })
+      expect(asked[1]).toMatchObject({ permission: "reminder", metadata: { action: "cancel", id } })
       expect((yield* scheduler.list())[0]?.status).toBe("cancelled")
     }),
   )
