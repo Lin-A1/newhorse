@@ -8,10 +8,13 @@ import {
   useContinuityGrantState,
   type ContinuityGrantInfo,
 } from "./settings-continuity-grants-state"
+import { auditActionLabel, auditOutcomeLabel } from "./settings-audit-labels"
+import { useConfirm } from "./confirm-dialog"
 
 export function SettingsContinuityGrants(props: { sessionID?: string }) {
   const language = useLanguage()
   const grants = useContinuityGrantState(props.sessionID)
+  const confirm = useConfirm()
   const [expanded, setExpanded] = createSignal<string>()
   let auditRequest = 0
 
@@ -105,8 +108,14 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                             size="small"
                             disabled={!!grants.state.mutating}
                             onClick={() => {
-                              if (!window.confirm(language.t("settings.continuity.approve.confirm"))) return
-                              void grants.approve(item).catch(fail)
+                              void (async () => {
+                                const confirmed = await confirm({
+                                  title: language.t("common.approve"),
+                                  message: language.t("settings.continuity.approve.confirm"),
+                                })
+                                if (!confirmed) return
+                                void grants.approve(item).catch(fail)
+                              })()
                             }}
                           >
                             {language.t("common.approve")}
@@ -117,8 +126,14 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                             size="small"
                             disabled={!!grants.state.mutating}
                             onClick={() => {
-                              if (!window.confirm(language.t("settings.continuity.revoke.confirm"))) return
-                              void grants.revoke(item).catch(fail)
+                              void (async () => {
+                                const confirmed = await confirm({
+                                  title: language.t("common.revoke"),
+                                  message: language.t("settings.continuity.revoke.confirm"),
+                                })
+                                if (!confirmed) return
+                                void grants.revoke(item).catch(fail)
+                              })()
                             }}
                           >
                             {language.t("common.revoke")}
@@ -147,8 +162,8 @@ export function SettingsContinuityGrants(props: { sessionID?: string }) {
                             {(event) => (
                               <div class="text-12-regular text-text-weak">
                                 <span>{formatDate(event.timeCreated)}</span>
-                                <span> · {event.action}</span>
-                                <span> · {event.outcome}</span>
+                                <span> · {auditActionLabel(language.t, "continuity", event.action)}</span>
+                                <span> · {auditOutcomeLabel(language.t, event.outcome)}</span>
                                 <Show when={event.destinationSessionID}>
                                   <span> · {language.t("settings.audit.destination", { id: event.destinationSessionID! })}</span>
                                 </Show>

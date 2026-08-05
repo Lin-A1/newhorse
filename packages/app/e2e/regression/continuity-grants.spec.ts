@@ -120,8 +120,8 @@ for (const layout of ["legacy", "v2"] as const) {
     await expect(workflow).toContainText("not persisted to relationship Memory")
     await expect(settings.locator('[data-continuity-grant-id="cgr_expired"]')).toContainText("expired")
 
-    page.once("dialog", (dialog) => dialog.accept())
     await workflow.getByRole("button", { name: "Approve" }).click()
+    await page.getByRole("button", { name: "Confirm" }).click()
     await expect(workflow).toContainText("active")
 
     await workflow.getByRole("button", { name: "View audit" }).click()
@@ -131,8 +131,8 @@ for (const layout of ["legacy", "v2"] as const) {
     await expect(auditPanel).not.toContainText("Finish travel planning")
     await expect(auditPanel).not.toContainText("morning train")
 
-    page.once("dialog", (dialog) => dialog.accept())
     await workflow.getByRole("button", { name: "Revoke" }).click()
+    await page.getByRole("button", { name: "Confirm" }).click()
     await expect(workflow).toContainText("revoked")
 
     expect(requests.map((item) => `${item.method} ${item.path}`)).toEqual([

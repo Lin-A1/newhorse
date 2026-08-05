@@ -10,6 +10,7 @@ import { usePlatform } from "@/context/platform"
 import { exportMemory } from "./settings-memory-export"
 import { useMemoryCenterState, type MemoryKind, type MemoryScope, type MemoryStatus } from "./settings-memory-state"
 import { useSettings } from "@/context/settings"
+import { useConfirm } from "./confirm-dialog"
 
 const kinds: MemoryKind[] = ["preference", "fact", "goal", "event", "relationship", "summary"]
 
@@ -46,6 +47,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const memory = useMemoryCenterState(props.sessionID)
   const platform = usePlatform()
   const settings = useSettings()
+  const confirm = useConfirm()
   const [editing, setEditing] = createSignal<string>()
   const [content, setContent] = createSignal("")
   const [kind, setKind] = createSignal<MemoryKind>("preference")
@@ -75,14 +77,18 @@ export function SettingsMemory(props: { sessionID?: string }) {
       .catch(fail)
   }
 
-  const confirmClear = (target: "workspace" | "relationship" | "user_global") => {
+  const confirmClear = async (target: "workspace" | "relationship" | "user_global") => {
     const label =
       target === "user_global"
         ? language.t("settings.memory.scope.user_global")
         : target === "relationship"
           ? language.t("settings.memory.clear.relationship")
           : memoryScopeLabel(language.t, target)
-    if (!window.confirm(language.t("settings.memory.clear.confirm", { target: label }))) return
+    const confirmed = await confirm({
+      title: language.t("common.clear"),
+      message: language.t("settings.memory.clear.confirm", { target: label }),
+    })
+    if (!confirmed) return
     void memory.clear(target).catch(fail)
   }
 
@@ -195,8 +201,14 @@ export function SettingsMemory(props: { sessionID?: string }) {
                       size="small"
                       disabled={!!memory.state.mutating}
                       onClick={() => {
-                        if (!window.confirm(language.t("settings.memory.delete.confirm"))) return
-                        void memory.remove(item).catch(fail)
+                        void (async () => {
+                          const confirmed = await confirm({
+                            title: language.t("common.delete"),
+                            message: language.t("settings.memory.delete.confirm"),
+                          })
+                          if (!confirmed) return
+                          void memory.remove(item).catch(fail)
+                        })()
                       }}
                     >
                       {language.t("common.delete")}
@@ -213,19 +225,21 @@ export function SettingsMemory(props: { sessionID?: string }) {
             </Button>
           </Show>
 
-          <div class="flex flex-wrap gap-2 border-t border-border-weak-base pt-4">
-            <Button size="small" onClick={() => confirmClear("workspace")}>
-              {language.t("settings.memory.clear.workspace")}
-            </Button>
-            <Show when={memory.contentScope() === "personal"}>
-              <Button size="small" onClick={() => confirmClear("relationship")}>
-                {language.t("settings.memory.clear.relationship")}
+          <Show when={memory.state.items.length > 0}>
+            <div class="flex flex-wrap gap-2 border-t border-border-weak-base pt-4">
+              <Button size="small" onClick={() => confirmClear("workspace")}>
+                {language.t("settings.memory.clear.workspace")}
               </Button>
-            </Show>
-            <Button size="small" onClick={() => confirmClear("user_global")}>
-              {language.t("settings.memory.clear.global")}
-            </Button>
-          </div>
+              <Show when={memory.contentScope() === "personal"}>
+                <Button size="small" onClick={() => confirmClear("relationship")}>
+                  {language.t("settings.memory.clear.relationship")}
+                </Button>
+              </Show>
+              <Button size="small" onClick={() => confirmClear("user_global")}>
+                {language.t("settings.memory.clear.global")}
+              </Button>
+            </div>
+          </Show>
         </Show>
       </div>
     </div>

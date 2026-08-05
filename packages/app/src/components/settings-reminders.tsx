@@ -17,6 +17,8 @@ import {
   scheduleInput,
   type ReminderRecurrence,
 } from "./settings-reminders-helpers"
+import { auditActionLabel, auditOutcomeLabel } from "./settings-audit-labels"
+import { useConfirm } from "./confirm-dialog"
 import {
   useReminderState,
   type ReminderCreateInput,
@@ -31,6 +33,7 @@ const misfirePolicies: ReminderInfo["misfirePolicy"][] = ["catch_up_once", "skip
 export function SettingsReminders(props: { sessionID?: string }) {
   const language = useLanguage()
   const reminders = useReminderState(props.sessionID)
+  const confirm = useConfirm()
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
   const [creating, setCreating] = createSignal(false)
   const [editing, setEditing] = createSignal<string>()
@@ -255,8 +258,14 @@ export function SettingsReminders(props: { sessionID?: string }) {
                             size="small"
                             disabled={!!reminders.state.mutating}
                             onClick={() => {
-                              if (!window.confirm(language.t("settings.reminders.cancel.confirm"))) return
-                              void reminders.cancel(item).catch(fail)
+                              void (async () => {
+                                const confirmed = await confirm({
+                                  title: language.t("common.cancel"),
+                                  message: language.t("settings.reminders.cancel.confirm"),
+                                })
+                                if (!confirmed) return
+                                void reminders.cancel(item).catch(fail)
+                              })()
                             }}
                           >
                             {language.t("common.cancel")}
@@ -274,8 +283,8 @@ export function SettingsReminders(props: { sessionID?: string }) {
                                 <div data-reminder-audit-id={entry.id}>
                                   {language.t("settings.audit.action", {
                                     time: formatDate(entry.timeCreated),
-                                    action: entry.action,
-                                    outcome: entry.outcome,
+                                    action: auditActionLabel(language.t, "reminder", entry.action),
+                                    outcome: auditOutcomeLabel(language.t, entry.outcome),
                                   })}
                                   {entry.deliveryKey ? ` · ${entry.deliveryKey}` : ""}
                                 </div>

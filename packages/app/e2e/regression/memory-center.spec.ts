@@ -63,7 +63,7 @@ for (const layout of ["legacy", "v2"] as const) {
     await expect(accepted).toContainText("Proposal to accept")
     await expect(accepted).toContainText("message msg_memory_source")
     await accepted.getByRole("button", { name: "Accept" }).click()
-    await expect(accepted).toContainText("user confirmed")
+    await expect(accepted).toContainText("confirmed")
 
     const rejected = settings.locator('[data-memory-id="mem_reject"]')
     await rejected.getByRole("button", { name: "Reject" }).click()
@@ -86,20 +86,20 @@ for (const layout of ["legacy", "v2"] as const) {
     await settings.getByRole("button", { name: "Export" }).click()
     expect((await download).suggestedFilename()).toMatch(/newhorse-memory-.*\.json/)
 
-    page.once("dialog", (dialog) => dialog.accept())
     await settings.locator('[data-memory-id="mem_delete"]').getByRole("button", { name: "Delete" }).click()
+    await page.getByRole("button", { name: "Confirm" }).click()
     await expect(settings.locator('[data-memory-id="mem_delete"]')).toHaveCount(0)
 
-    page.once("dialog", (dialog) => dialog.accept())
     await settings.getByRole("button", { name: "Reset relationship" }).click()
+    await page.getByRole("button", { name: "Confirm" }).click()
     await expect(settings.locator('[data-memory-id="mem_relationship"]')).toHaveCount(0)
 
-    page.once("dialog", (dialog) => dialog.accept())
     await settings.getByRole("button", { name: "Clear global preferences" }).click()
+    await page.getByRole("button", { name: "Confirm" }).click()
     await expect(settings.locator('[data-memory-id="mem_global"]')).toHaveCount(0)
 
-    page.once("dialog", (dialog) => dialog.accept())
     await settings.getByRole("button", { name: "Clear workspace" }).click()
+    await page.getByRole("button", { name: "Confirm" }).click()
     await expect(settings.getByText("No Memory records.")).toBeVisible()
 
     expect(requests).toEqual(

@@ -137,8 +137,8 @@ for (const layout of ["legacy", "v2"] as const) {
     await settings.getByRole("button", { name: "Create", exact: true }).click()
     await expect(settings.locator('[data-reminder-id="sch_created"]')).toContainText("Created in settings")
 
-    page.once("dialog", (dialog) => dialog.accept())
     await recurring.getByRole("button", { name: "Cancel" }).click()
+    await page.getByRole("button", { name: "Confirm" }).click()
     await expect(recurring).toContainText("cancelled")
 
     expect(requests.map((request) => `${request.method} ${request.path}`)).toEqual([

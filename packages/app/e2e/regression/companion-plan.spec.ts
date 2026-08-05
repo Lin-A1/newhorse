@@ -158,8 +158,8 @@ test("reviews and acts on Memory, Reminders, and Continuity grants in settings",
   await expect(daily.getByText("paused")).toBeVisible()
   await daily.getByRole("button", { name: "Resume" }).click()
   await expect(daily.getByText("pending")).toBeVisible()
-  page.once("dialog", (dialog) => dialog.accept())
   await daily.getByRole("button", { name: "Cancel" }).click()
+  await page.getByRole("button", { name: "Confirm" }).click()
   await expect(settings.locator('[data-companion-plan-reminder-id="sch_daily"]')).toHaveCount(0)
 
   const continuitySection = settings.locator('[data-companion-plan-section="continuity"]')
@@ -170,11 +170,11 @@ test("reviews and acts on Memory, Reminders, and Continuity grants in settings",
   await expect(expired.getByText("expired")).toBeVisible()
   await expect(expired.getByRole("button", { name: "Approve" })).toBeDisabled()
 
-  page.once("dialog", (dialog) => dialog.accept())
   await workflow.getByRole("button", { name: "Approve" }).click()
+  await page.getByRole("button", { name: "Confirm" }).click()
   await expect(workflow.getByText("active")).toBeVisible()
-  page.once("dialog", (dialog) => dialog.accept())
   await workflow.getByRole("button", { name: "Revoke" }).click()
+  await page.getByRole("button", { name: "Confirm" }).click()
   await expect(workflow.getByText("revoked")).toBeVisible()
 
   expect(forbiddenRequests).toEqual([])

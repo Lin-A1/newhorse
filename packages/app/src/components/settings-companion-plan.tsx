@@ -8,10 +8,12 @@ import { useCompanionPlanReviewState } from "./settings-companion-plan-state"
 import { formatNominalTime, recurrenceSummary } from "./settings-reminders-helpers"
 import { memoryKindLabel, memoryScopeLabel } from "./settings-memory"
 import { reminderStatusLabel } from "./settings-reminders"
+import { useConfirm } from "./confirm-dialog"
 
 export function SettingsCompanionPlan(props: { sessionID?: string }) {
   const language = useLanguage()
   const plan = useCompanionPlanReviewState(props.sessionID)
+  const confirm = useConfirm()
   const fail = (error: unknown) =>
     showToast({
       variant: "error",
@@ -130,8 +132,14 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                           variant="secondary"
                           disabled={!!plan.reminders.state.mutating}
                           onClick={() => {
-                            if (!window.confirm(language.t("settings.reminders.cancel.confirm"))) return
-                            void plan.reminders.cancel(item).catch(fail)
+                            void (async () => {
+                              const confirmed = await confirm({
+                                title: language.t("common.cancel"),
+                                message: language.t("settings.reminders.cancel.confirm"),
+                              })
+                              if (!confirmed) return
+                              void plan.reminders.cancel(item).catch(fail)
+                            })()
                           }}
                         >
                           {language.t("common.cancel")}
@@ -190,8 +198,14 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                               size="small"
                               disabled={!!plan.continuity.state.mutating || status() !== "proposed"}
                               onClick={() => {
-                                if (!window.confirm(language.t("settings.companionPlan.approve.confirm"))) return
-                                void plan.continuity.approve(item).catch(fail)
+                                void (async () => {
+                                  const confirmed = await confirm({
+                                    title: language.t("common.approve"),
+                                    message: language.t("settings.companionPlan.approve.confirm"),
+                                  })
+                                  if (!confirmed) return
+                                  void plan.continuity.approve(item).catch(fail)
+                                })()
                               }}
                             >
                               {language.t("common.approve")}
@@ -201,8 +215,14 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
                               variant="secondary"
                               disabled={!!plan.continuity.state.mutating || status() === "revoked" || status() === "expired"}
                               onClick={() => {
-                                if (!window.confirm(language.t("settings.companionPlan.revoke.confirm"))) return
-                                void plan.continuity.revoke(item).catch(fail)
+                                void (async () => {
+                                  const confirmed = await confirm({
+                                    title: language.t("common.revoke"),
+                                    message: language.t("settings.companionPlan.revoke.confirm"),
+                                  })
+                                  if (!confirmed) return
+                                  void plan.continuity.revoke(item).catch(fail)
+                                })()
                               }}
                             >
                               {language.t("common.revoke")}
