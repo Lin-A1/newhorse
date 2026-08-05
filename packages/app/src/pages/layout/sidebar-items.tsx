@@ -241,6 +241,10 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             </Show>
           </div>
 
+          <Show when={props.session.profileID === "companion"}>
+            <Icon name="brain" size="small" class="shrink-0 text-v2-icon-icon-muted" />
+          </Show>
+
           <Show when={!props.level}>
             <div
               class="shrink-0 overflow-hidden transition-[width,opacity]"

@@ -61,6 +61,7 @@ import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { useLanguage } from "@/context/language"
+import { useNotification } from "@/context/notification"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { useServerSDK } from "@/context/server-sdk"
 import { usePlatform } from "@/context/platform"
@@ -277,6 +278,17 @@ export function MessageTimeline(props: {
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionID = createMemo(() => params.id)
+  const sessionProfile = createMemo(() => {
+    const id = sessionID()
+    if (!id) return undefined
+    return sync().session.get(id)?.profileID
+  })
+  const notification = useNotification()
+  const sessionReminders = createMemo(() => {
+    const id = sessionID()
+    if (!id) return []
+    return (notification.session.all(id) ?? []).filter((n) => n.type === "reminder")
+  })
   const sessionStatus = createMemo(() => {
     const id = sessionID()
     if (!id) return idle
@@ -1476,6 +1488,39 @@ export function MessageTimeline(props: {
                         onBlur={closeTitleEditor}
                       />
                     </Show>
+                  </Show>
+                  <Show when={sessionProfile()}>
+                    {(kind) => (
+                      <span
+                        class="flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-11-regular"
+                        classList={{
+                          "bg-v2-surface-surface-2 text-v2-text-text-muted": settings.general.newLayoutDesigns(),
+                          "bg-surface-raised-base text-text-weak": !settings.general.newLayoutDesigns(),
+                        }}
+                      >
+                        <Icon name={kind() === "companion" ? "brain" : "terminal"} size="small" />
+                        {kind() === "companion"
+                          ? language.t("newSession.mode.companion")
+                          : language.t("newSession.mode.assistant")}
+                      </span>
+                    )}
+                  </Show>
+                  <Show when={sessionReminders().length > 0}>
+                    <div class="flex flex-col gap-1">
+                      <For each={sessionReminders().slice(-3).reverse()}>
+                        {(reminder) => (
+                          <div class="flex items-start gap-1.5 rounded-md bg-surface-subtle px-2 py-1 text-12-regular text-text-weak">
+                            <Icon name="task" size="small" class="mt-0.5 shrink-0" />
+                            <span class="min-w-0">
+                              <span class="text-text-base">{reminder.title}</span>
+                              <Show when={reminder.body && reminder.body !== reminder.title}>
+                                <span class="text-text-weaker"> · {reminder.body}</span>
+                              </Show>
+                            </span>
+                          </div>
+                        )}
+                      </For>
+                    </div>
                   </Show>
                 </div>
               </div>
