@@ -276,41 +276,76 @@ function DialogAddMcp(props: { onAdded: () => void }) {
 
   return (
     <Dialog title={language.t("settings.skillsMcp.mcp.add.title")}>
-      <div class="flex flex-col gap-3">
-        <TextField
-          label={language.t("settings.skillsMcp.mcp.add.name")}
-          value={name()}
-          onChange={setName}
-          placeholder="e.g. filesystem"
-        />
-        <Select
-          options={["local", "remote"] as const}
-          current={type()}
-          label={(value) =>
-            value === "local"
-              ? language.t("settings.skillsMcp.mcp.add.type.local")
-              : language.t("settings.skillsMcp.mcp.add.type.remote")
-          }
-          onSelect={(value) => value && setType(value)}
-          variant="secondary"
-          size="small"
-        />
-        <TextField
-          label={
-            type() === "local"
+      <div class="flex flex-col gap-4">
+        <p class="text-12-regular text-text-weak">{language.t("settings.skillsMcp.mcp.add.description")}</p>
+
+        <div class="flex flex-col gap-1.5">
+          <span class="text-13-medium text-text-strong">{language.t("settings.skillsMcp.mcp.add.name")}</span>
+          <TextField
+            value={name()}
+            onChange={setName}
+            placeholder="e.g. filesystem"
+            aria-label={language.t("settings.skillsMcp.mcp.add.name")}
+          />
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <span class="text-13-medium text-text-strong">{language.t("settings.skillsMcp.mcp.add.type")}</span>
+          <div
+            class="flex rounded-md bg-surface-subtle p-0.5"
+            role="radiogroup"
+            aria-label={language.t("settings.skillsMcp.mcp.add.type")}
+          >
+            {(["local", "remote"] as const).map((value) => (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={type() === value}
+                class={`flex-1 rounded px-3 py-1.5 text-12-regular transition-colors ${
+                  type() === value
+                    ? "bg-surface-raised-base text-text-strong shadow-sm"
+                    : "text-text-weak hover:text-text-base"
+                }`}
+                onClick={() => setType(value)}
+              >
+                {value === "local"
+                  ? language.t("settings.skillsMcp.mcp.add.type.local")
+                  : language.t("settings.skillsMcp.mcp.add.type.remote")}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+          <span class="text-13-medium text-text-strong">
+            {type() === "local"
               ? language.t("settings.skillsMcp.mcp.add.command")
-              : language.t("settings.skillsMcp.mcp.add.url")
-          }
-          value={config()}
-          onChange={setConfig}
-          placeholder={
-            type() === "local" ? "npx -y @modelcontextprotocol/server-filesystem" : "https://example.com/mcp"
-          }
-        />
+              : language.t("settings.skillsMcp.mcp.add.url")}
+          </span>
+          <TextField
+            value={config()}
+            onChange={setConfig}
+            placeholder={
+              type() === "local" ? "npx -y @modelcontextprotocol/server-filesystem" : "https://example.com/mcp"
+            }
+            aria-label={
+              type() === "local"
+                ? language.t("settings.skillsMcp.mcp.add.command")
+                : language.t("settings.skillsMcp.mcp.add.url")
+            }
+          />
+          <p class="text-11-regular text-text-weaker">
+            {type() === "local"
+              ? language.t("settings.skillsMcp.mcp.add.command.help")
+              : language.t("settings.skillsMcp.mcp.add.url.help")}
+          </p>
+        </div>
+
         <Show when={error()}>
           <p class="text-12-regular text-negative">{error()}</p>
         </Show>
-        <div class="flex justify-end gap-2">
+
+        <div class="flex justify-end gap-2 pt-1">
           <Button size="small" variant="ghost" onClick={() => dialog.close()}>
             {language.t("common.cancel")}
           </Button>

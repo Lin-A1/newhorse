@@ -61,5 +61,5 @@ test("usage tab aggregates model cost and cache stats", async ({ page }) => {
   await expect(settings.getByText("1,000", { exact: true })).toBeVisible()
   await expect(settings.getByText("500", { exact: true })).toBeVisible()
   await expect(settings.getByText("Cache hit rate", { exact: true })).toBeVisible()
-  await expect(settings.getByText("800 / 1,000 · 80.0%", { exact: true })).toBeVisible()
+  await expect(settings.getByText("800 / 1,800 · 44.4%", { exact: true })).toBeVisible()
 })

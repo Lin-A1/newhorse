@@ -83,59 +83,71 @@ export function PromptProfileCards(props: {
 }) {
   const language = useLanguage()
   return (
-    <div class="grid w-full max-w-md grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label={language.t("command.category.agent")}>
-      <For each={props.profiles}>
-        {(profile) => {
-          const selected = profile.id === props.value
-          const assistant = profile.kind === "assistant"
-          return (
-            <button
-              type="button"
-              data-profile-card={profile.kind}
-              role="radio"
-              aria-checked={selected}
-              onClick={() => props.onChange(profile.id)}
-              class={`group relative flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-border-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-v2-surface-surface-1 ${
+    <div
+      class="grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2"
+      role="radiogroup"
+      aria-label={language.t("command.category.agent")}
+    >
+      {props.profiles.map((profile) => {
+        const selected = profile.id === props.value
+        const assistant = profile.kind === "assistant"
+        return (
+          <button
+            type="button"
+            data-profile-card={profile.kind}
+            role="radio"
+            aria-checked={selected}
+            onClick={() => props.onChange(profile.id)}
+            class={`group relative flex cursor-pointer flex-col items-start gap-2.5 overflow-hidden rounded-lg border p-3.5 text-left transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-v2-border-border-focus focus-visible:ring-offset-2 focus-visible:ring-offset-v2-surface-surface-1 active:scale-[0.99] motion-reduce:active:scale-100 ${
+              selected
+                ? "border-v2-border-border-focus bg-v2-surface-surface-2"
+                : "border-v2-border-border-default bg-v2-surface-surface-1 hover:border-v2-border-border-strong hover:bg-v2-overlay-simple-overlay-hover active:bg-v2-overlay-simple-overlay-pressed"
+            }`}
+          >
+            <span
+              aria-hidden="true"
+              class={`absolute inset-x-0 top-0 h-0.5 transition-colors duration-150 ${
                 selected
-                  ? "border-v2-border-border-focus bg-v2-surface-surface-2 shadow-sm"
-                  : "border-v2-border-border-default bg-v2-surface-surface-1 hover:border-v2-border-border-strong hover:bg-v2-overlay-simple-overlay-hover"
+                  ? "bg-v2-icon-icon-accent"
+                  : "bg-transparent group-hover:bg-v2-border-border-strong"
               }`}
-            >
-              <span class="flex w-full items-center gap-3">
-                <span
-                  class={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-v2-text-text-base transition-colors ${
-                    selected ? "bg-v2-surface-surface-3" : "bg-v2-surface-surface-2"
-                  }`}
-                >
-                  <Icon name={assistant ? "terminal" : "brain"} />
+            />
+            <span class="flex w-full items-center gap-2.5">
+              <span
+                class={`flex size-8 shrink-0 items-center justify-center rounded-md transition-colors ${
+                  selected
+                    ? "bg-v2-icon-icon-accent/15 text-v2-icon-icon-accent"
+                    : "bg-v2-surface-surface-2 text-v2-text-text-muted"
+                }`}
+              >
+                <Icon name={assistant ? "terminal" : "brain"} />
+              </span>
+              <span class="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <span class="truncate text-14-semibold text-v2-text-text-base">
+                  {assistant
+                    ? language.t("newSession.mode.assistant")
+                    : language.t("newSession.mode.companion")}
                 </span>
-                <span class="flex min-w-0 flex-1 flex-col">
-                  <span class="text-14-semibold text-v2-text-text-base">
-                    {assistant
-                      ? language.t("newSession.mode.assistant")
-                      : language.t("newSession.mode.companion")}
-                  </span>
-                </span>
                 <span
-                  class={`flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                  class={`flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors ${
                     selected
-                      ? "border-v2-text-text-base bg-v2-text-text-base text-v2-surface-surface-1"
-                      : "border-v2-border-border-default bg-transparent text-transparent group-hover:border-v2-border-border-strong"
+                      ? "border-v2-icon-icon-accent bg-v2-icon-icon-accent text-v2-surface-surface-1"
+                      : "border-v2-border-border-default bg-transparent text-transparent"
                   }`}
                   aria-hidden="true"
                 >
                   <Icon name="check" size="small" />
                 </span>
               </span>
-              <span class="text-12-regular text-v2-text-text-muted">
-                {assistant
-                  ? language.t("newSession.mode.assistant.description")
-                  : language.t("newSession.mode.companion.description")}
-              </span>
-            </button>
-          )
-        }}
-      </For>
+            </span>
+            <span class="text-12-regular leading-relaxed text-v2-text-text-muted">
+              {assistant
+                ? language.t("newSession.mode.assistant.description")
+                : language.t("newSession.mode.companion.description")}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -149,6 +161,7 @@ export function PromptWorkspaceSelector(props: {
   branch?: string
   onChange: (value: string) => void
   onDone: () => void
+  onRemoveWorkspace?: (id: string) => void
 }) {
   const language = useLanguage()
   let pending: string | undefined
@@ -226,6 +239,20 @@ export function PromptWorkspaceSelector(props: {
                     <MenuV2.Item onSelect={() => select(`workspace:${workspace.id}`)}>
                       <IconV2 name="workspace-isolated" />
                       <span class="min-w-0 flex-1 truncate">{workspace.name}</span>
+                      <Show when={props.onRemoveWorkspace}>
+                        <button
+                          type="button"
+                          class="shrink-0 rounded p-0.5 text-text-weaker hover:bg-surface-raised-base hover:text-text-base"
+                          aria-label={language.t("session.new.workspace.remove", { name: workspace.name })}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            props.onRemoveWorkspace?.(workspace.id)
+                          }}
+                        >
+                          <Icon name="trash" size="small" />
+                        </button>
+                      </Show>
                       <Show when={selected() === `workspace:${workspace.id}`}>
                         <Icon name="check" size="small" class="shrink-0" />
                       </Show>

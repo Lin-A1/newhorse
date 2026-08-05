@@ -20,6 +20,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
+import { useConfirm } from "@/components/confirm-dialog"
 import { useSettings } from "@/context/settings"
 import { createPromptInputController, createPromptProjectControls } from "@/pages/session/composer"
 import { useSessionKey } from "@/pages/session/session-layout"
@@ -83,8 +84,9 @@ export default function NewSessionPage() {
   })
   const projectControls = createPromptProjectControls()
 
-  const [store, setStore] = createStore<{ worktree?: string; workspace?: string; profileID?: string }>({})
-  const [workspaceState] = createResource(
+  const [store, setStore] = createStore<{ worktree?: string; workspace?: string }>({})
+  const [profileID, setProfileID] = createSignal<string | undefined>()
+  const [workspaceState, { refetch: refetchWorkspaces }] = createResource(
     () => sdk().directory,
     async () => {
       await sdk()
@@ -102,6 +104,19 @@ export default function NewSessionPage() {
     },
     { initialValue: { workspaces: [] as WorkspaceOption[], adapters: [] as WorkspaceAdapterOption[] } },
   )
+  const confirm = useConfirm()
+  const removeWorkspace = async (id: string) => {
+    const name = workspaceState().workspaces.find((item) => item.id === id)?.name ?? id
+    const confirmed = await confirm({
+      title: language.t("session.new.workspace.remove.title"),
+      message: language.t("session.new.workspace.remove.confirm", { name }),
+    })
+    if (!confirmed) return
+    await sdk()
+      .client.experimental.workspace.remove({ id })
+      .catch(() => undefined)
+    void refetchWorkspaces()
+  }
   const [profileState] = createResource(
     () => sdk().scope,
     () =>
@@ -110,7 +125,7 @@ export default function NewSessionPage() {
         .then((result) => result.data),
   )
   const profiles = createMemo(() => (profileState()?.items ?? []) as ProfileOption[])
-  const selectedProfileID = createMemo(() => store.profileID ?? profileState()?.active)
+  const selectedProfileID = createMemo(() => profileID() ?? profileState()?.active)
   // Coding chrome (project/workspace/git) only makes sense for Assistant
   // sessions. Companion sessions are personal: they route to the personal
   // workspace without a project/worktree/branch choice.
@@ -238,7 +253,7 @@ export default function NewSessionPage() {
                       profiles={profiles()}
                       onChange={(value) => {
                         const profile = profiles().find((p) => p.id === value)
-                        setStore("profileID", value)
+                        setProfileID(value)
                         // Companion sessions are personal: never carry a
                         // project/workspace/branch from the Assistant flow.
                         if (profile?.kind === "companion") setStore({ workspace: undefined, worktree: undefined })
@@ -277,6 +292,7 @@ export default function NewSessionPage() {
                             })
                           }}
                           onDone={promptInputV2Controller.restoreFocus}
+                          onRemoveWorkspace={removeWorkspace}
                         />
                       </Show>
                     </div>

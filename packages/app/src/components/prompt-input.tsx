@@ -703,14 +703,23 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         type: "builtin" as const,
       }))
 
-    const custom = sync().data.command.map((cmd) => ({
-      id: `custom.${cmd.name}`,
-      trigger: cmd.name,
-      title: cmd.name,
-      description: cmd.description,
-      type: "custom" as const,
-      source: cmd.source,
-    }))
+    const custom = sync().data.command.map((cmd) => {
+      // Localize built-in command names (init, review, …) when a translation
+      // exists; user-defined commands keep their own name.
+      const titleKey = `command.${cmd.name}`
+      const title = language.t(titleKey) === titleKey ? cmd.name : language.t(titleKey)
+      const descKey = `command.${cmd.name}.description`
+      const description =
+        language.t(descKey) === descKey ? cmd.description : language.t(descKey)
+      return {
+        id: `custom.${cmd.name}`,
+        trigger: cmd.name,
+        title,
+        description,
+        type: "custom" as const,
+        source: cmd.source,
+      }
+    })
 
     return [...custom, ...builtin]
   })
@@ -1663,9 +1672,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       <Select
                         size="normal"
                         options={props.controls.agents.options}
-                        current={props.controls.agents.current}
-                        onSelect={(value) => {
-                          props.controls.agents.select(value)
+                        value={(option) => option.id}
+                        label={(option) => option.label}
+                        current={props.controls.agents.options.find(
+                          (option) => option.id === props.controls.agents.current,
+                        )}
+                        onSelect={(option) => {
+                          props.controls.agents.select(option?.id)
                           restoreFocus()
                         }}
                         class="capitalize max-w-[160px] text-text-base"

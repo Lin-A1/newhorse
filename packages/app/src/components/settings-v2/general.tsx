@@ -10,6 +10,7 @@ import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
+import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
 import { useUpdaterAction } from "../updater-action"
 import {
@@ -92,30 +93,39 @@ export const SettingsGeneralV2: Component<{
   const settings = useSettings()
   const serverSync = useServerSync()
   const serverSdk = useServerSDK()
+  const sdk = useSDK()
   const mobile = createMediaQuery("(max-width: 767px)")
 
   const updater = useUpdaterAction()
 
   const dir = createMemo(() => {
-    if (!props.sessionID) return undefined
-    return serverSync().session.lineage.peek(props.sessionID)?.session.directory
+    if (props.sessionID) return serverSync().session.lineage.peek(props.sessionID)?.session.directory
+    // Outside a session context, fall back to the current project directory so
+    // the auto-accept toggle stays usable from global settings.
+    return sdk().directory
   })
   const accepting = createMemo(() => {
     const value = dir()
-    if (!value || !props.sessionID) return false
-    return permission.isAutoAccepting(props.sessionID, value)
+    if (!value) return false
+    if (props.sessionID) return permission.isAutoAccepting(props.sessionID, value)
+    return permission.isAutoAcceptingDirectory(value)
   })
 
   const toggleAccept = (checked: boolean) => {
     const value = dir()
-    if (!value || !props.sessionID) return
+    if (!value) return
 
-    if (checked) {
-      permission.enableAutoAccept(props.sessionID, value)
+    if (props.sessionID) {
+      if (checked) {
+        permission.enableAutoAccept(props.sessionID, value)
+        return
+      }
+      permission.disableAutoAccept(props.sessionID, value)
       return
     }
 
-    permission.disableAutoAccept(props.sessionID, value)
+    if (permission.isAutoAcceptingDirectory(value) === checked) return
+    permission.toggleAutoAcceptDirectory(value)
   }
   const desktop = createMemo(() => platform.platform === "desktop")
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")

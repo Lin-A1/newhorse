@@ -14,6 +14,7 @@ import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
+import { useSDK } from "@/context/sdk"
 import { useUpdaterAction } from "./updater-action"
 import {
   monoDefault,
@@ -90,11 +91,12 @@ export const SettingsGeneral: Component = () => {
   const dialog = useDialog()
   const params = useParams()
   const settings = useSettings()
+  const sdk = useSDK()
 
   const updater = useUpdaterAction()
 
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
-  const dir = createMemo(() => decode64(params.dir))
+  const dir = createMemo(() => decode64(params.dir) || sdk().directory)
   const accepting = createMemo(() => {
     const value = dir()
     if (!value) return false
@@ -275,8 +277,8 @@ export const SettingsGeneral: Component = () => {
           </div>
         </SettingsRow>
         <SettingsRow
-          title="Default download folder"
-          description="Files you save or download (e.g. Memory exports) default to this folder. Leave empty to use the system default."
+          title={language.t("settings.general.row.downloadPath.title")}
+          description={language.t("settings.general.row.downloadPath.description")}
         >
           <div class="w-full sm:w-[220px]">
             <TextField
@@ -285,7 +287,7 @@ export const SettingsGeneral: Component = () => {
               type="text"
               value={settings.general.downloadPath()}
               onChange={(value) => settings.general.setDownloadPath(value)}
-              placeholder="e.g. C:\\Users\\you\\Downloads"
+              placeholder={language.t("settings.general.row.downloadPath.placeholder")}
               spellcheck={false}
               autocorrect="off"
               class="text-12-regular"
@@ -293,8 +295,8 @@ export const SettingsGeneral: Component = () => {
           </div>
         </SettingsRow>
         <SettingsRow
-          title="Font language priority"
-          description="Prefer Chinese or Latin fonts. System keeps the platform default with Chinese fallback."
+          title={language.t("settings.general.row.fontLanguage.title")}
+          description={language.t("settings.general.row.fontLanguage.description")}
         >
           <div data-action="settings-general-font-language" class="flex flex-wrap gap-1.5">
             {(["system", "zh", "en"] as const).map((value) => (
@@ -307,7 +309,11 @@ export const SettingsGeneral: Component = () => {
                 }`}
                 onClick={() => settings.general.setFontLanguage(value)}
               >
-                {value === "system" ? "System" : value === "zh" ? "中文优先" : "English first"}
+                {value === "system"
+                  ? language.t("settings.general.row.fontLanguage.system")
+                  : value === "zh"
+                    ? language.t("settings.general.row.fontLanguage.zh")
+                    : language.t("settings.general.row.fontLanguage.en")}
               </button>
             ))}
           </div>
