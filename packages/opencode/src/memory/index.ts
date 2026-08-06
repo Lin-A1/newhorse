@@ -559,7 +559,21 @@ const layer = Layer.effect(
         .select()
         .from(MemoryTable)
         .where(and(...conditions))
-        .orderBy(sql`instr(${MemoryTable.content}, ${query})`, desc(MemoryTable.time_updated))
+        // Multi-signal ranking (mem0-inspired): memories matching more query
+        // terms rank first, then match position, then recency. A memory about
+        // "hiking" beats one about "weekend" for the query "weekend hiking".
+        .orderBy(
+          desc(
+            sql`(${sql.join(
+              terms.map((term) =>
+                sql`(case when ${MemoryTable.content} like ${`%${escapeLike(term)}%`} then 1 else 0 end)`,
+              ),
+              sql` + `,
+            )})`,
+          ),
+          sql`instr(${MemoryTable.content}, ${query})`,
+          desc(MemoryTable.time_updated),
+        )
         .limit(Math.min(Math.max(input?.limit ?? 10, 1), 50))
         .all()
         .pipe(Effect.orDie)
