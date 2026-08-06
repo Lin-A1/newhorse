@@ -10,7 +10,6 @@ import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
-import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
 import { useUpdaterAction } from "../updater-action"
 import {
@@ -93,16 +92,15 @@ export const SettingsGeneralV2: Component<{
   const settings = useSettings()
   const serverSync = useServerSync()
   const serverSdk = useServerSDK()
-  const sdk = useSDK()
   const mobile = createMediaQuery("(max-width: 767px)")
 
   const updater = useUpdaterAction()
 
   const dir = createMemo(() => {
     if (props.sessionID) return serverSync().session.lineage.peek(props.sessionID)?.session.directory
-    // Outside a session context, fall back to the current project directory so
-    // the auto-accept toggle stays usable from global settings.
-    return sdk().directory
+    // No session context (e.g. opened from global settings): the auto-accept
+    // toggle stays disabled rather than crashing on a missing SDK provider.
+    return undefined
   })
   const accepting = createMemo(() => {
     const value = dir()

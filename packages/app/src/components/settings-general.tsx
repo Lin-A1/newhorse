@@ -14,7 +14,6 @@ import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
-import { useSDK } from "@/context/sdk"
 import { useUpdaterAction } from "./updater-action"
 import {
   monoDefault,
@@ -91,12 +90,11 @@ export const SettingsGeneral: Component = () => {
   const dialog = useDialog()
   const params = useParams()
   const settings = useSettings()
-  const sdk = useSDK()
 
   const updater = useUpdaterAction()
 
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
-  const dir = createMemo(() => decode64(params.dir) || sdk().directory)
+  const dir = createMemo(() => decode64(params.dir))
   const accepting = createMemo(() => {
     const value = dir()
     if (!value) return false
