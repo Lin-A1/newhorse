@@ -1,0 +1,16 @@
+Follow points let you tell the Companion things you care about, and it will
+check them periodically and proactively tell you when something changes —
+change-driven, not time-driven.
+
+Actions:
+- create: start following something.
+  - kind is one of:
+    - topic: a subject to watch (e.g. "deepseek V4 release"); checked via web search
+    - deadline: a date to track (topic should be an ISO date like "2026-09-01")
+    - release: a repo/software to watch for new versions
+    - price: a thing to watch for price changes
+  - optional checkIntervalMinutes (default 60).
+- list: show what you're currently following.
+- remove: stop following (pass the follow id from list).
+
+Only changed results are reported — no periodic spam.

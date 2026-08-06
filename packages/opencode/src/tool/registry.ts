@@ -18,6 +18,8 @@ import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import { MemoryTool } from "./memory"
 import { ReminderTool } from "./reminder"
+import { FollowTool } from "./follow"
+import { node as followNode } from "@/follow"
 import { CapabilityTool } from "./capability"
 import { Memory } from "@/memory"
 import { Scheduler } from "@/scheduler"
@@ -123,6 +125,7 @@ const layer = Layer.effect(
     const skilltool = yield* SkillTool
     const memorytool = yield* MemoryTool
     const remindertool = yield* ReminderTool
+    const followtool = yield* FollowTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
@@ -258,6 +261,7 @@ const layer = Layer.effect(
           skill: Tool.init(skilltool),
           memory: Tool.init(memorytool),
           reminder: Tool.init(remindertool),
+          follow: Tool.init(followtool),
           capability: Tool.init(capabilityInfo),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
@@ -501,6 +505,7 @@ export const node = LayerNode.make({
     Memory.node,
     Profile.node,
     Scheduler.node,
+    followNode,
     Capability.node,
   ],
 })

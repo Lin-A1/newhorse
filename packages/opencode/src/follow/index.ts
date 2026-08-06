@@ -33,9 +33,9 @@ export interface FollowInterface {
   readonly updateLastValue: (input: { id: string; value: string | null }) => Effect.Effect<boolean>
 }
 
-export class Follow extends Context.Service<Follow, FollowInterface>()("@newhorse/Follow") {}
+export class Service extends Context.Service<Service, FollowInterface>()("@newhorse/Follow") {}
 
-export const use = serviceUse(Follow)
+export const use = serviceUse(Service)
 
 type Row = typeof FollowTable.$inferSelect
 
@@ -76,7 +76,7 @@ export const computeValueFor = (follow: FollowInfo, now = Date.now()): string | 
 }
 
 const layer = Layer.effect(
-  Follow,
+  Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
 
@@ -133,12 +133,14 @@ const layer = Layer.effect(
       return true
     })
 
-    return Follow.of({ list, create, remove, updateLastValue })
+    return Service.of({ list, create, remove, updateLastValue })
   }),
 )
 
+export * as Follow from "./index"
+
 export const node = LayerNode.make({
-  service: Follow,
+  service: Service,
   layer,
   deps: [Database.node],
 })
