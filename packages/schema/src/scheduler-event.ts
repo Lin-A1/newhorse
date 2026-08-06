@@ -11,7 +11,7 @@ export const Due = Event.define({
     workspaceID: Schema.optional(Workspace.ID),
     profileID: Schema.String,
     sessionID: Schema.optional(Schema.String),
-    eventType: Schema.Literals(["reminder", "check_in", "follow_up"]),
+    eventType: Schema.Literals(["reminder", "check_in", "follow_up", "follow"]),
     title: Schema.String,
     body: Schema.String,
     scheduleAt: Schema.Int,

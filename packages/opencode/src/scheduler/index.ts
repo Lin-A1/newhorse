@@ -17,6 +17,7 @@ import { AbsolutePath } from "@newhorse/core/schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { Profile } from "@/profile"
+import { Follow, node as followNode, computeValueFor } from "@/follow"
 import { TrustPolicy } from "@/trust-policy"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import { normalizeRule, nextOccurrence, occurrencesAfter } from "./recurrence"
@@ -201,6 +202,7 @@ const layer = Layer.effect(
     const { db } = yield* Database.Service
     const events = yield* EventV2Bridge.Service
     const profiles = yield* Profile.Service
+    const follow = yield* Follow
     const trustPolicy = yield* TrustPolicy.Service
     const owner = randomUUID()
 
@@ -360,7 +362,18 @@ const layer = Layer.effect(
     })
 
     const conditions = (workspaceID: WorkspaceV2.ID | undefined, directory: string, input?: QueryInput) => {
-      const result = [scopeFilter(workspaceID, directory)]
+      // Reminders may be created in the project workspace OR in the companion's
+      // personal scope (null workspace) within the same directory. List both so
+      // the panel shows companion-created reminders no matter which session's
+      // settings you open.
+      const scope =
+        workspaceID !== undefined
+          ? or(
+              eq(ScheduledEventTable.workspace_id, workspaceID),
+              and(isNull(ScheduledEventTable.workspace_id), eq(ScheduledEventTable.directory, directory)),
+            )
+          : and(isNull(ScheduledEventTable.workspace_id), eq(ScheduledEventTable.directory, directory))
+      const result = [scope]
       if (input?.status) result.push(inArray(ScheduledEventTable.status, input.status))
       if (input?.profileID) result.push(eq(ScheduledEventTable.profile_id, input.profileID))
       return result
@@ -1230,10 +1243,52 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
     })
 
+    const checkFollows = Effect.fn("Scheduler.checkFollows")(function* (now: number) {
+      const follows = yield* follow.list()
+      yield* Effect.forEach(
+        follows,
+        (item) =>
+          Effect.gen(function* () {
+            if (item.status !== "active") return
+            if (!item.directory) return
+            // Not due yet.
+            if (item.lastCheckedAt && now - item.lastCheckedAt < item.checkIntervalMinutes * 60_000) return
+            const value = computeValueFor(item, now)
+            // topic/release/price need a network search (auto-detection is P1
+            // deferred); deadline is computed locally.
+            if (value === null) return
+            // Change-driven: only notify when the observed value actually moved.
+            if (item.lastValue === value) return
+            yield* follow.updateLastValue({ id: item.id, value })
+            yield* events.publish(
+              SchedulerEvent.Due,
+              {
+                id: item.id,
+                eventType: "follow",
+                title: item.topic,
+                body: value,
+                scheduleAt: now,
+                occurrenceAt: now,
+                deliveryKey: `follow:${item.id}`,
+                attemptCount: 0,
+                profileID: item.profileID ?? "companion",
+              },
+              {
+                location: {
+                  directory: AbsolutePath.make(item.directory),
+                },
+              },
+            )
+          }),
+        { concurrency: "unbounded", discard: true },
+      )
+    })
+
     const tick = Effect.fn("Scheduler.tick")(function* (now = Date.now()) {
       yield* pruneAudit(now)
       yield* failExhaustedDeliveries(now)
       yield* recoverExpiredDeliveries(now)
+      yield* checkFollows(now)
       const rows = yield* claimSeries(now)
       const profileEntries = yield* Effect.forEach(
         [...new Set(rows.map((row) => row.profile_id))],
@@ -1291,7 +1346,7 @@ const layer = Layer.effect(
 export const node = LayerNode.make({
   service: Service,
   layer,
-  deps: [Database.node, EventV2Bridge.node, Profile.node, TrustPolicy.node],
+  deps: [Database.node, EventV2Bridge.node, Profile.node, TrustPolicy.node, followNode],
 })
 
 export * as Scheduler from "./index"

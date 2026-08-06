@@ -121,6 +121,23 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`follow\` (
+          \`id\` text PRIMARY KEY,
+          \`workspace_id\` text,
+          \`directory\` text,
+          \`scope\` text DEFAULT 'personal' NOT NULL,
+          \`profile_id\` text,
+          \`kind\` text NOT NULL,
+          \`topic\` text NOT NULL,
+          \`check_interval_minutes\` integer DEFAULT 60 NOT NULL,
+          \`last_value\` text,
+          \`last_checked_at\` integer,
+          \`status\` text DEFAULT 'active' NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`memory\` (
           \`id\` text PRIMARY KEY,
           \`workspace_id\` text,
@@ -382,6 +399,8 @@ export default {
       )
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
+      yield* tx.run(`CREATE INDEX \`follow_profile_idx\` ON \`follow\` (\`profile_id\`);`)
+      yield* tx.run(`CREATE INDEX \`follow_scope_status_idx\` ON \`follow\` (\`scope\`,\`status\`);`)
       yield* tx.run(`CREATE INDEX \`memory_workspace_idx\` ON \`memory\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`memory_directory_idx\` ON \`memory\` (\`directory\`);`)
       yield* tx.run(`CREATE INDEX \`memory_scope_idx\` ON \`memory\` (\`scope\`);`)
