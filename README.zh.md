@@ -1,5 +1,5 @@
 <p align="center"><strong>newhorse</strong></p>
-<p align="center">面向工作与生活的统一可编程智能体，按内容域隔离持久化数据。</p>
+<p align="center">面向软件项目、个人事务与长期关系连续性的本地优先可编程 AI 工作空间。</p>
 
 <p align="center">
   <a href="README.md">English</a> |
@@ -8,191 +8,193 @@
 
 ---
 
-## Newhorse 是什么
+## 概览
 
-Newhorse 是一个统一的可编程 AI 智能体，把 Assistant 与 Companion 能力融合在同一使用体验中。它可以处理代码、文件、命令、研究、个人事务、生活复盘和提醒，不要求用户在两个割裂的产品之间来回切换。
+Newhorse 是 [OpenCode](https://github.com/anomalyco/opencode) 的独立 fork，将编码智能体 Runtime 扩展为统一的工作与生活 AI 环境。同一套客户端/服务端 Runtime 驱动 Desktop、Web App、TUI、SDK、自动化、模型、Tool、MCP、Session 和 Workspace。
 
-Assistant 与 Companion 是可以兼容并存的体验 Profile，而不是相互隔离的应用。它们共用一套 Runtime，也可以在同一体验中配合使用。真正的硬边界是内容域：
+两个产品 Profile 共用这套 Runtime：
 
-- **工作内容**归属于具体 Project、Workspace 或任务/事务上下文。
-- **个人与关系内容**归属于 Personal 个人域。
-- **全局偏好**可在策略允许时流入工作上下文；项目内容不会流入个人或关系记忆，关系记忆也不会向外流动。
+- **Assistant** 面向项目执行：代码、文件、终端、研究、计划、任务与 Workspace。
+- **Companion** 面向个人连续性：关系感知对话、经确认的 Memory、Reminder、Follow-up 与主动计划。
 
-Profile 决定体验、Persona、记忆策略和主动能力侧重，但不能单独决定内容存到哪里。
+Profile 不是存储边界。持久内容按 Scope 与 Policy 隔离：项目内容留在项目/Workspace 上下文，个人与关系内容留在 Personal 个人域。Profile 身份本身永远不授予跨域移动内容的权限。
 
-## 产品模型
+## 核心能力
 
-Newhorse 将六类职责分开：
+### 完整的智能体工作空间
 
-- **Runtime** 提供 Session、模型、Agent、Tool、MCP、Skill、Memory 和 Scheduler。
-- **Orchestration** 让同一个入口把 Coding、Assistant 与 Companion 工作委托给多个前台或后台 Agent 组并行处理。
-- **Workspace** 标识当前项目或个人环境。
-- **Content Scope** 决定持久化信息属于哪个内容域。
-- **Policy** 控制权限、扩展加载和跨域信息流。
-- **Profile** 调整 Assistant/Companion 体验，不创建另一套 Runtime。
+- Desktop、浏览器与终端界面
+- Project Session、Git Worktree、Personal Workspace、Tab、Terminal、文件 Review、LSP 与 Command
+- 多个前台/后台 Agent 及 Tool 委托
+- MCP Server、Skill、Plugin、自定义 Command 与权限控制
+- 服务端动态模型目录，按 Provider 连接状态与可用性过滤
+- 多 Provider 认证与模型偏好，不依赖前端硬编码模型常量
 
-所有 Workspace 都保留完整编程工具。Personal Workspace 不是能力受限的笔记模式；风险动作由明确的 `ask` 和 `deny` 策略管理。
+### Assistant 与 Companion
 
-## 与 OpenCode 的差异
+- Session 对 Workspace 与 Profile 的不可变绑定
+- 每个 Server 复用唯一固定 Companion Session，跨项目时不会为每个目录新建对话
+- 可配置 Companion Persona、Quiet Hours、主动频率与安全上下文
+- 结构化 Memory proposal，具备 accept/reject/forget 生命周期
+- 持久 Reminder，支持创建、暂停、恢复、取消、lease 与幂等投递
+- Follow-up 调度与 Companion Plan，统一管理 proposed Memory、Reminder 和 Continuity Grant
+- 自动接受权限支持 Session、Lineage、Directory 优先级，并通过权限所属目录的 Client 响应
 
-Newhorse 建立在 [OpenCode](https://github.com/anomalyco/opencode) 的工程底座上，但产品方向更广。
+### 内容隔离与信任
 
-### 从 OpenCode 保留
+- 基于 SQLite 的结构化 Memory，包含 Scope、Provenance、Status、Expiration 及 Profile/Workspace 绑定
+- Project 内容不会流入 Personal 或 Relationship Memory
+- Relationship Memory 不会流入 Project 上下文
+- 只有 Policy 允许的 Global Preference 才可投影到工作域
+- Personal Workspace 保留完整编程工具；风险动作通过明确的 `ask` 与 `deny` Policy 管理，而不是删减能力
+- Personal 上下文中的外部 MCP、Plugin 与 Skill 加载受 opt-in Policy 控制
 
-- 终端与 TUI 工作流
-- 多模型供应商支持
-- 编码工具、Agent、LSP、MCP、Skill、Session、Project 和 Worktree
-- 可扩展的客户端/服务端架构
+## 架构
 
-### Newhorse 已实现
+Newhorse 将智能体产品中经常混在一起的职责拆分为：
 
-- Session 对 Workspace 与体验 Profile 的不可变绑定
-- Personal Workspace，并保留与项目 Workspace 相同的核心代码和文件能力
-- 外部 MCP、Plugin 和 Skill 在 Personal Workspace 中连接或加载前执行显式 opt-in 控制
-- 基于 SQLite 的结构化记忆，具备 Workspace/Profile scope、生命周期状态、过期机制，以及需要确认的模型推断 proposal
-- 同一 Runtime 内的 Assistant 与 Companion Profile，包括 Persona 配置和受保护的 Companion 安全上下文
-- 持久提醒和显式订阅的主动消息基础，支持暂停、静默时段、频率、lease、幂等和审计，并已在 App 设置（legacy/v2 两种布局）与 TUI 中提供 Reminder 管理界面
-- 一个 Companion 计划审查界面，在一个页面聚合 proposed Memory、周期 Reminder 和最小化 Continuity Grant，且不读取原始 Session 历史
-- Setup 命令、强类型 Skill 参数、App/TUI 接入，以及 Linux/Windows 本地便携 CLI 导出
-- 适配 fork 的 GitHub Actions，避免在本仓库执行仅属于上游的自动化
+| 层 | 职责 |
+| --- | --- |
+| Runtime | Session、Model、Agent、Tool、MCP、Skill、Memory、Scheduler |
+| Orchestration | 前台/后台 Agent 组之间的委托与协同 |
+| Workspace | Project、Worktree、Personal 环境及执行位置 |
+| Content Scope | 持久信息的归属与存储域 |
+| Policy | 权限、扩展加载与跨域信息流 |
+| Profile | Assistant/Companion 体验、Persona、Memory 行为与主动性 |
 
-### 仍在闭环
+主要 Package：
 
-- Companion Plan / 每日入口：统一的 "Today / Companion" 每日视图仍在设计中；相关文案尚未全量接入 i18n
-- Desktop 安装包 runtime smoke：Linux（AppImage/DEB/RPM）已在局域网 Ubuntu 24.04 主机验证可启动；Windows NSIS 已在本机验证静默安装 + 启动（均 2026-08-04）；macOS DMG+ZIP 仍需 macos runner 验证（签名保持 opt-in/关闭）
-
-Central Trust Policy（内容流决策 + 用户收紧 + content-free 审计）、`/policy-audit` 端点、扩展兼容矩阵、幂等迁移测试与 `NH_` 环境变量前缀均已实现。
-
-仓库不会把这些进行中的工作描述为已完成功能。
+- `packages/opencode` — CLI、Server、Runtime、Session、Tool、Worktree、Policy、Memory、Reminder 与 HTTP API
+- `packages/app` — SolidJS 产品 UI 与 Playwright 测试
+- `packages/desktop` — Electron Desktop 宿主与安装包
+- `packages/tui` — 终端界面
+- `packages/sdk/js` — 自动生成及手写的 JavaScript/TypeScript SDK
+- `packages/ui`、`packages/session-ui` — 通用 UI 与 Session 组件
+- `packages/web` — 营销/文档站点，不是产品 Web Client
 
 ## 当前状态
 
-Newhorse 正在持续开发。当前支持源码构建和便携 CLI 产物，但尚未发布包管理器版本或签名安装器。
+Newhorse 正在持续开发。当前支持源码构建、本地 Web/Desktop 开发、便携 CLI 导出和未签名 Desktop 安装包构建；尚未发布包管理器版本或已签名的公开安装器。
 
-项目正在按 Phase 逐项闭环：保留并测试已有基础，同时将安全、内容隔离、Memory 管理、主动投递和跨平台交付补齐到完整验收标准。
+主要基础能力已经落地：
+
+- Central Trust Policy 与不含内容的 Policy Audit
+- Assistant/Companion Profile 与 Personal Workspace
+- 结构化 Memory、Reminder、Follow-up、Continuity Grant 与 Companion Plan 管理
+- 服务端动态 Model/Provider Catalog
+- Legacy 与 v2 两套 Settings 布局
+- Linux 与 Windows 便携 CLI 导出
+- Windows NSIS 与 Linux Desktop 打包路径
+
+统一 Today/每日入口仍明确处于延期状态。macOS Desktop 运行验证以及生产签名/notarization 仍属于发布门槛。
+
+## 环境要求
+
+- [Bun](https://bun.sh) 1.3.x
+- Git
+- 目标平台要求的构建工具（Electron Builder 会报告缺失依赖）
 
 ## 从源码构建
-
-需要 [Bun](https://bun.sh)。
 
 ```bash
 git clone https://github.com/Lin-A1/newhorse.git
 cd newhorse
 bun install
+
+# CLI/Server 开发
 bun run --cwd packages/opencode dev
+
+# 产品 Web UI 热更新
+bun run dev:web
+
+# Electron Desktop 开发
+bun run dev:desktop
 ```
 
-仓库会主动阻止在根目录运行全套测试，请执行 package-local 检查：
-
-```bash
-bun test --cwd packages/opencode
-bun run --cwd packages/opencode typecheck
-bun run --cwd packages/app typecheck
-bun run typecheck
-```
-
-部分前端测试需要浏览器条件：
-
-```bash
-bun test --conditions=browser --cwd packages/app
-```
+产品 Web UI 由 Newhorse CLI/Server 提供服务。`packages/web` 是单独的营销与文档站点。
 
 ## 统一产品命令
 
-一个统一编排器负责查看 target、检查环境、启动 Web 入口、运行开发宿主，以及驱动构建、导出和产物校验。它只委托给现有 package 脚本，绝不重新实现打包或构建逻辑。
+根目录的产品编排器会委托现有 Package Script，并跟踪 Target 就绪状态与产物指纹：
 
 ```bash
-bun run product targets [--json]        # 所有 target 及 configured/exportable/verified/signed/releasable 状态
-bun run product doctor [--target <id>]   # 主机与 target 就绪检查，包括仍缺失的 runner
-bun run product web [--source]           # 启动产品 Web 入口（nh web）
-bun run product dev <cli|web|desktop>    # 运行开发宿主
+bun run product targets [--json]
+bun run product doctor [--target <id>]
+bun run product web [--source]
+bun run product dev <cli|web|desktop>
 bun run product build [--product cli|desktop|all] [--target <id>]
 bun run product export [--product cli|desktop|all] [--target <id>] [--execution local|ci|auto] [--force]
-bun run product verify --artifact <path> # 静态校验：存在性、大小、sha256
+bun run product verify --artifact <path>
 ```
 
-导出是增量的。编排器会为每个 target 记录输入指纹（相关源码、lockfile、配置、Bun 版本、target、version），当输入与上一次产物均未变化时跳过构建。需要强制重建时加 `--force`；修改任一指纹输入（源码改动、`bun install`、版本号变更）都会使缓存失效。
+Target 状态具有严格语义：
 
-状态语义刻意保持严格：
+- **configured** — 构建配置存在
+- **exportable** — 存在本地或 CI 导出路径
+- **verified** — 产物确实在目标操作系统运行过
+- **signed** — 已完成平台签名/notarization
+- **releasable** — 已验证、已签名并获得单独发布授权
 
-- **configured** — 代码与配置存在。
-- **exportable** — 存在本地或 CI 导出路径。
-- **verified** — 产物确实在目标 OS runner 上运行过。
-- **signed** — 已完成代码签名和/或 notarization。
-- **releasable** — verified、signed 且经单独授权。
+本地打包成功不会被自动描述为 signed 或 releasable。
 
-无法在当前主机诚实验证的 target 会如实报告（`doctor` 会打印缺失的 runner），而不是被静默当作就绪。
+## 测试
 
-## 启动 Web 入口
-
-产品 Web 界面通过 CLI 启动，CLI 同时运行本地服务端：
+仓库会主动阻止从根目录扫描测试。请在测试所属 Package 中执行：
 
 ```bash
-bun run product web
-# 或从源码：
-bun run --cwd packages/opencode dev web
+# Backend/Runtime
+bun test --cwd packages/opencode
+bun run --cwd packages/opencode typecheck
+
+# App
+bun --cwd packages/app test --preload ./happydom.ts
+bun run --cwd packages/app typecheck
+bun run --cwd packages/app typecheck:e2e
+
+# Playwright
+bun --cwd packages/app run test:e2e
+
+# 仓库级 Typecheck/Lint 编排
+bun run typecheck
+bun run lint
 ```
 
-如需带热更新的 UI 开发，可运行 Vite 开发服务器（此时需要单独的服务端）：
+部分 App 测试要求 browser condition 或 Package 自带的 Happy DOM preload；优先使用最近的 Package Script。
+
+## 打包
+
+### 便携 CLI
 
 ```bash
-bun run product dev web
+bun run product export --product cli --target windows-x64 --execution local --force
+bun run product export --product cli --target linux-x64 --execution local --force
 ```
 
-`packages/web` 是营销/文档站点，不是产品 Web 界面。它已从上游 opencode 品牌改写为 newhorse：安装命令指向本仓库源码构建（`git clone https://github.com/Lin-A1/newhorse`），不再跳转或安装上游 opencode。
+便携产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 与 Manifest。导出命令不会发布 Release、创建 Tag 或推送 Container。
 
-## 便携 CLI 导出
+### Windows Desktop 安装包
 
-本地生成便携包，并且不发布 Release：
+在 Windows 上执行：
 
-```bash
-# 统一入口
-bun run product export --product cli --target linux-x64 --execution local
-
-# 直接调用 package 脚本（产物契约相同）
-bun run --cwd packages/opencode export:local --target windows-x64
-
-# 可选签名钩子：归档前对二进制执行签名命令（相对路径按仓库根解析）；
-# 校验和与 manifest 覆盖签名后的二进制。script/sign-cli.sh 在未配置 Azure
-# Trusted Signing 时为 no-op。
-bun run --cwd packages/opencode export:local --target windows-x64 --sign script/sign-cli.sh
+```powershell
+bun run --cwd packages/desktop build
+bun run --cwd packages/desktop package:win
 ```
 
-`export-cli` 工作流提供 `sign-command` 输入以在 CI 中使用同一钩子：提供签名器可执行路径（仅限可信操作者），二进制会在归档前被签名，校验和与 manifest 覆盖签名后产物；未提供签名命令则导出保持 unsigned。
+Electron Builder 将 NSIS 安装器写入 `packages/desktop/dist/`。除非显式配置可信签名环境，否则本地安装包保持 unsigned。CI Desktop 导出通过手动触发、仅上传 Artifact 的 Workflow 提供。
 
-正式可导出的 CLI target 为 `linux-x64`、`windows-x64` 和 `windows-x64-baseline`。三者均已通过 `export-cli` 工作流在目标 OS runner 上完成产物运行时验证：`linux-x64` 由 `validate-linux` job 在 ubuntu runner 上（并直接在一台 Linux 主机上）完成；`windows-x64` 与 `windows-x64-baseline` 由 `validate-windows` job 在 Windows runner 上完成（`nh`/`nh.exe` 返回版本与 setup 帮助）。产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 校验文件和 manifest。该导出流程不会发布 npm 包、创建 GitHub Release、推送容器或创建 Git tag。
-
-这是便携 CLI 归档，不是已签名的 Windows 安装器。Desktop 安装包（Windows NSIS、macOS DMG/ZIP、Linux AppImage/DEB/RPM）需要在各自操作系统上构建和验证；目前尚不存在已签名或已发布的正式版本。
-
-对于本机缺少工具的 Desktop 安装包，可运行 `export-desktop` GitHub Actions 工作流（手动 `workflow_dispatch`、仅产物）：Linux job 会在 runner 上安装 `rpm` 并产出 AppImage/DEB/RPM，Windows job 产出 NSIS 安装器，macOS job 产出 DMG/ZIP。三者已于 2026-08-02 在对应 runner 上成功产出。签名通过仓库 secrets 可选开启：存在 `AZURE_TRUSTED_SIGNING_*`（及 Azure login）secrets 时 Windows job 用 Azure Trusted Signing 签名；存在 `APPLE_CERTIFICATE`/`APPLE_API_KEY*` secrets 时 macOS job 签名并 notarize；无凭据则产出 unsigned 安装包。这是 RPM、Windows 安装器与 macOS 目标的 CI 路径；`bun run product doctor` 会打印本机解除阻塞所需的命令。
-
-## Memory 与内容隔离
-
-Runtime 当前使用 SQLite 存储结构化 Memory。记录包含 scope、Workspace/Profile 绑定、来源、状态和过期元数据。模型推断的记录会进入 `proposed` 状态，而不是自动成为可信事实。
-
-目标存储约束比 Profile 切换更严格：
-
-- 项目和事务内容留在对应工作域。
-- 个人、生活和关系内容留在 Personal 个人域。
-- 只有策略允许的全局偏好可以跨入工作域。
-- 在加密、密钥轮换、备份和删除保证完整落地前，系统继续拒绝保存高敏信息。
-
-剩余的 Domain 强制与管理能力属于当前进行中的开发工作。
-
-## Profile 与 Runtime Agent
-
-Assistant 与 Companion 是同一智能系统中的体验 Profile，可以兼容使用。一个统一入口可以编排多个平行 Agent 组，分别处理 Coding、通用 Assistant 与 Companion 取向的工作。**build**、**plan**、**general** 等 Runtime Agent 属于另一层：它们负责执行与委托分工，不代表产品，也不决定存储域；Agent 身份本身永远不构成跨域移动内容的授权。
+构建结构与 Manifest 保持确定性，但 Bun/Electron payload 可能包含时间戳和路径，因此不保证跨构建逐位一致。应以每次产物自身的 SHA-256 为准。
 
 ## 配置兼容
 
-Newhorse 配置写入项目目录或用户主目录下的 `.newhorse/`，并仍读取旧 `.opencode/` 目录以保持兼容。运行时环境变量同时支持 `NH_*` 前缀（优先）与上游 `OPENCODE_*` 名称（回退），例如 `NH_DB`/`OPENCODE_DB`。
+Newhorse 将配置写入 Project 或用户主目录下的 `.newhorse/`。旧 `.opencode/` 路径仍可读取，以支持迁移兼容。Runtime 环境变量优先采用 `NH_*`，并在需要兼容时继续接受上游 `OPENCODE_*` 别名，例如 `NH_DB` / `OPENCODE_DB`。
 
 ## 与 OpenCode 的关系
 
-Newhorse 是 [OpenCode](https://github.com/anomalyco/opencode) 的独立 fork，并非由 OpenCode 团队开发，也未获其背书，与其没有隶属关系。Newhorse 的问题请提交到本仓库，不要提交到上游。
+Newhorse 是 [OpenCode](https://github.com/anomalyco/opencode) 的独立 fork，不由 OpenCode 团队开发、背书或提供支持。请在本仓库报告 Newhorse 问题，不要提交到上游。
 
-原始工作与本 fork 均遵循各自适用的许可条款，详见 [LICENSE](./LICENSE)。
+原项目与本 fork 均遵循各自适用的许可条款，详见 [LICENSE](./LICENSE)。
 
 ## 贡献
 
-提交 Pull Request 前请先阅读[贡献指南](./CONTRIBUTING.md)。
+提交 Pull Request 前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。测试必须按 Package 执行；不得提交凭据或内部交接文档；验证边界必须如实报告。

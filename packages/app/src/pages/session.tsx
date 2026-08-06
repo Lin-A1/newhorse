@@ -1755,8 +1755,12 @@ export default function Page() {
       if (input.manual) setFollowup("paused", input.sessionID, undefined)
       setFollowup("failed", input.sessionID, undefined)
 
+      const client =
+        item.sessionDirectory === sdk().directory
+          ? sdk().client
+          : serverSDK().createClient({ directory: item.sessionDirectory, throwOnError: true })
       const ok = await sendFollowupDraft({
-        client: sdk().client,
+        client,
         sync: sync(),
         serverSync: serverSync(),
         draft: item,

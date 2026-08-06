@@ -4,6 +4,7 @@ import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@newhorse/ui/context"
 import { useProviders } from "@/hooks/use-providers"
+import { useServerSync } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
 
 export type ModelKey = { providerID: string; modelID: string }
@@ -27,6 +28,23 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
   gate: false,
   init: (props: { directory?: Accessor<string | undefined> } = {}) => {
     const providers = useProviders(props.directory)
+    const serverSync = useServerSync()
+    const catalog = createMemo(() => {
+      const directory = props.directory?.()
+      const child = directory ? serverSync().child(directory)[0] : undefined
+      const connected = child?.provider.connected ?? serverSync().data.provider.connected
+      const source = child?.model_catalog ?? serverSync().data.model_catalog ?? []
+      const providerMap = child?.provider.all ?? serverSync().data.provider.all
+      const catalogProviders = child?.provider_catalog ?? serverSync().data.provider_catalog ?? []
+      const disabled = new Set(catalogProviders.filter((provider) => provider.disabled === true).map((provider) => provider.id))
+      const allowed = new Set(connected)
+      return source
+        .filter((model) => allowed.has(model.providerID) && !disabled.has(model.providerID))
+        .map((model) => ({
+          ...model,
+          provider: providerMap.get(model.providerID) ?? { id: model.providerID, name: model.providerID, models: {} },
+        }))
+    })
 
     const [store, setStore, _, ready] = persisted(
       Persist.global("model", ["model.v1"]),
@@ -37,14 +55,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       }),
     )
 
-    const available = createMemo(() =>
-      providers.connected().flatMap((p) =>
-        Object.values(p.models).map((m) => ({
-          ...m,
-          provider: p,
-        })),
-      ),
-    )
+    const available = createMemo(() => catalog())
 
     const release = createMemo(
       () =>

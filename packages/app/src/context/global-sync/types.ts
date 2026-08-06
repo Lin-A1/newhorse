@@ -42,6 +42,8 @@ export type State = {
   icon: string | undefined
   provider_ready: boolean
   provider: NormalizedProviderListResponse
+  model_catalog?: import("@newhorse/sdk/v2/client").Model[]
+  provider_catalog?: import("@newhorse/sdk/v2/client").ProviderV2Info[]
   config: Config
   path: Path
   session: Session[]

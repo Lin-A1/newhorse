@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import type { Agent } from "@newhorse/sdk/v2/client"
-import { directoryKey, normalizeAgentList } from "./utils"
+import type { Agent, ModelV2Info } from "@newhorse/sdk/v2/client"
+import { adaptModelCatalog, directoryKey, normalizeAgentList } from "./utils"
 
 const agent = (name = "build") =>
   ({
@@ -31,6 +31,71 @@ describe("normalizeAgentList", () => {
   test("drops invalid payloads", () => {
     expect(normalizeAgentList({ name: "AbortError" })).toEqual([])
     expect(normalizeAgentList([{ name: "build" }, agent("docs")])).toEqual([agent("docs")])
+  })
+})
+
+describe("adaptModelCatalog", () => {
+  const model = (overrides: Partial<ModelV2Info> = {}): ModelV2Info => ({
+    id: "claude-opus",
+    providerID: "anthropic",
+    family: "claude",
+    name: "Claude Opus",
+    api: { id: "anthropic", type: "aisdk", package: "@ai-sdk/anthropic", url: "https://example.test" },
+    capabilities: { tools: true, input: ["text", "image", "reasoning"], output: ["text"] },
+    request: { headers: { "x-test": "base" }, body: { temperature: 0.2 } },
+    variants: [{ id: "fast", headers: { "x-speed": "fast" }, body: { speed: "fast" } }],
+    time: { released: Date.UTC(2026, 0, 2) },
+    cost: [
+      { input: 5, output: 25, cache: { read: 0.5, write: 6.25 } },
+      {
+        tier: { type: "context", size: 200_000 },
+        input: 10,
+        output: 37.5,
+        cache: { read: 1, write: 12.5 },
+      },
+    ],
+    status: "active",
+    enabled: true,
+    limit: { context: 1_000_000, input: 900_000, output: 128_000 },
+    ...overrides,
+  })
+
+  test("maps dynamic model fields and pricing tiers", () => {
+    expect(adaptModelCatalog([model()])).toEqual([
+      expect.objectContaining({
+        id: "claude-opus",
+        providerID: "anthropic",
+        release_date: "2026-01-02T00:00:00.000Z",
+        options: { temperature: 0.2 },
+        headers: { "x-test": "base" },
+        variants: { fast: { speed: "fast" } },
+        limit: { context: 1_000_000, input: 900_000, output: 128_000 },
+        capabilities: expect.objectContaining({ reasoning: true, attachment: true, toolcall: true }),
+        cost: expect.objectContaining({
+          input: 5,
+          output: 25,
+          cache: { read: 0.5, write: 6.25 },
+          tiers: [
+            {
+              tier: { type: "context", size: 200_000 },
+              input: 10,
+              output: 37.5,
+              cache: { read: 1, write: 12.5 },
+            },
+          ],
+        }),
+      }),
+    ])
+  })
+
+  test("drops disabled and deprecated models", () => {
+    expect(
+      adaptModelCatalog([
+        model({ id: "enabled" }),
+        model({ id: "disabled", enabled: false }),
+        model({ id: "deprecated", status: "deprecated" }),
+      ]).map((item) => item.id),
+    ).toEqual(["enabled"])
   })
 })
 

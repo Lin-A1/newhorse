@@ -16,8 +16,7 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
   const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
   const valid = (model: ModelKey) => {
-    const provider = providers.all().get(model.providerID)
-    return !!provider?.models[model.modelID] && connected().has(model.providerID)
+    return !!models.find(model) && connected().has(model.providerID)
   }
 
   const configured = () => {
@@ -32,7 +31,7 @@ export function createPromptModelSelection(input: { agent: () => { model?: Model
   const fallback = () => {
     const defaults = providers.default()
     return providers.connected().flatMap((provider) => {
-      const modelID = defaults[provider.id] ?? Object.values(provider.models)[0]?.id
+      const modelID = defaults[provider.id] ?? models.list().find((model) => model.provider.id === provider.id)?.id
       return modelID ? [{ providerID: provider.id, modelID }] : []
     })[0]
   }

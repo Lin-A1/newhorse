@@ -33,6 +33,8 @@ export function createChildStoreManager(input: {
   queryOptions: QueryOptionsApi
   global: {
     provider: NormalizedProviderListResponse
+    model_catalog?: import("@newhorse/sdk/v2/client").Model[]
+    provider_catalog?: import("@newhorse/sdk/v2/client").ProviderV2Info[]
   }
 }) {
   const children: Record<string, [Store<State>, SetStoreFunction<State>]> = {}
@@ -196,6 +198,14 @@ export function createChildStoreManager(input: {
             ...input.queryOptions.providers(key),
             enabled: instanceQueriesEnabled(),
           }))
+          const modelCatalogQuery = useQuery(() => ({
+            ...input.queryOptions.modelCatalog(key),
+            enabled: instanceQueriesEnabled(),
+          }))
+          const providerCatalogQuery = useQuery(() => ({
+            ...input.queryOptions.providerCatalog(key),
+            enabled: instanceQueriesEnabled(),
+          }))
           const referenceQuery = useQuery(() => ({
             ...input.queryOptions.references(key),
             enabled: instanceQueriesEnabled(),
@@ -208,13 +218,20 @@ export function createChildStoreManager(input: {
             get provider_ready() {
               return instanceQueriesEnabled() && !providerQuery.isLoading
             },
+            config: {},
+            get model_catalog() {
+              return modelCatalogQuery.data ?? []
+            },
+            get provider_catalog() {
+              return providerCatalogQuery.data ?? []
+            },
             get provider() {
               const EMPTY = { all: new Map(), connected: [], default: {} }
               if (providerQuery.isLoading) return EMPTY
               if (providerQuery.data?.all.size === 0 && input.global.provider.all.size > 0) return input.global.provider
               return providerQuery.data ?? EMPTY
             },
-            config: {},
+
             get path() {
               const EMPTY = { state: "", config: "", worktree: "", directory, home: "" }
               if (pathQuery.isLoading) return EMPTY

@@ -98,7 +98,7 @@ export const SettingsGeneralV2: Component<{
   const updater = useUpdaterAction()
 
   const dir = createMemo(() => {
-    if (props.sessionID) return serverSync().session.lineage.peek(props.sessionID)?.session.directory
+    if (props.sessionID) return serverSync().session.lineage.peek(props.sessionID)?.session.directory ?? props.directory
     return props.directory
   })
   const accepting = createMemo(() => {

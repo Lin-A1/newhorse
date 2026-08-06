@@ -1381,26 +1381,8 @@ export default function LegacyLayout(props: ParentProps) {
     const currentKey = pathKey(current)
     const deletedKey = pathKey(directory)
     const shouldLeave = leaveDeletedWorkspace || (!!params.dir && currentKey === deletedKey)
-    if (!leaveDeletedWorkspace && shouldLeave) {
-      navigateWithSidebarReset(`/${base64Encode(root)}/session`)
-    }
 
     setBusy(directory, true)
-
-    const sessions: Session[] = await serverSDK()
-      .client.session.list({ directory })
-      .then((x) => x.data ?? [])
-      .catch(() => [])
-
-    clearWorkspaceTerminals(
-      directory,
-      sessions.map((s) => s.id),
-      platform,
-      serverSDK().scope,
-    )
-    await serverSDK()
-      .client.instance.dispose({ directory })
-      .catch(() => undefined)
 
     const result = await serverSDK()
       .client.worktree.remove({
@@ -1420,6 +1402,22 @@ export default function LegacyLayout(props: ParentProps) {
 
     if (!result) return
 
+    const sessions: Session[] = await serverSDK()
+      .client.session.list({ directory })
+      .then((x) => x.data ?? [])
+      .catch(() => [])
+    clearWorkspaceTerminals(
+      directory,
+      sessions.map((session) => session.id),
+      platform,
+      serverSDK().scope,
+    )
+    await serverSDK()
+      .client.instance.dispose({ directory })
+      .catch(() => undefined)
+
+    if (shouldLeave) navigateWithSidebarReset(`/${base64Encode(root)}/session`)
+
     if (pathKey(store.lastProjectSession[root]?.directory ?? "") === pathKey(directory)) {
       clearLastProjectSession(root)
     }
@@ -1433,6 +1431,14 @@ export default function LegacyLayout(props: ParentProps) {
       }),
     )
     setStore("workspaceOrder", root, (order) => (order ?? []).filter((workspace) => workspace !== directory))
+    setStore(
+      produce((draft) => {
+        delete draft.workspaceName[deletedKey]
+        delete draft.workspaceName[directory]
+        delete draft.workspaceExpanded[deletedKey]
+        delete draft.workspaceExpanded[directory]
+      }),
+    )
 
     layout.projects.close(directory)
     layout.projects.open(root)
@@ -1555,9 +1561,6 @@ export default function LegacyLayout(props: ParentProps) {
 
     const handleDelete = () => {
       const leaveDeletedWorkspace = !!params.dir && pathKey(currentDir()) === pathKey(props.directory)
-      if (leaveDeletedWorkspace) {
-        navigateWithSidebarReset(`/${base64Encode(props.root)}/session`)
-      }
       dialog.close()
       void deleteWorkspace(props.root, props.directory, leaveDeletedWorkspace)
     }
@@ -1571,14 +1574,14 @@ export default function LegacyLayout(props: ParentProps) {
 
     return (
       <Dialog title={language.t("workspace.delete.title")} fit>
-        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-          <div class="flex flex-col gap-1">
-            <span class="text-14-regular text-text-strong">
+        <div class="flex min-w-0 flex-col gap-4 px-4 pb-3 sm:pl-6 sm:pr-2.5">
+          <div class="flex min-w-0 flex-col gap-1">
+            <span class="break-words text-14-regular text-text-strong">
               {language.t("workspace.delete.confirm", { name: name() })}
             </span>
             <span class="text-12-regular text-text-weak">{description()}</span>
           </div>
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <Button variant="ghost" size="large" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
             </Button>
@@ -1645,16 +1648,16 @@ export default function LegacyLayout(props: ParentProps) {
 
     return (
       <Dialog title={language.t("workspace.reset.title")} fit>
-        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
-          <div class="flex flex-col gap-1">
-            <span class="text-14-regular text-text-strong">
+        <div class="flex min-w-0 flex-col gap-4 px-4 pb-3 sm:pl-6 sm:pr-2.5">
+          <div class="flex min-w-0 flex-col gap-1">
+            <span class="break-words text-14-regular text-text-strong">
               {language.t("workspace.reset.confirm", { name: name() })}
             </span>
             <span class="text-12-regular text-text-weak">
               {description()} {archivedLabel()} {language.t("workspace.reset.note")}
             </span>
           </div>
-          <div class="flex justify-end gap-2">
+          <div class="flex flex-wrap justify-end gap-2">
             <Button variant="ghost" size="large" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
             </Button>

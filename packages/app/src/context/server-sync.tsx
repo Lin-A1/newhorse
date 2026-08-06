@@ -1,4 +1,4 @@
-import type { Config, McpResource, OpencodeClient, Path, Project, ProviderAuthResponse } from "@newhorse/sdk/v2/client"
+import type { Config, McpResource, Model, OpencodeClient, Path, Project, ProviderAuthResponse, ProviderV2Info } from "@newhorse/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@newhorse/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -14,6 +14,8 @@ import {
   loadGlobalConfigQuery,
   loadPathQuery,
   loadProjectsQuery,
+  loadModelCatalogQuery,
+  loadProviderCatalogQuery,
   loadProvidersQuery,
   loadReferencesQuery,
 } from "./global-sync/bootstrap"
@@ -47,6 +49,8 @@ type GlobalStore = {
   path: Path
   project: Project[]
   provider: NormalizedProviderListResponse
+  model_catalog?: Model[]
+  provider_catalog?: ProviderV2Info[]
   provider_auth: ProviderAuthResponse
   config: Config
   reload: undefined | "pending" | "complete"
@@ -79,6 +83,10 @@ function makeQueryOptionsApi(
   return {
     globalConfig: () => loadGlobalConfigQuery(scope, serverSDK()),
     projects: () => loadProjectsQuery(scope, serverSDK()),
+    modelCatalog: (directory: PathKey | null) =>
+      loadModelCatalogQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
+    providerCatalog: (directory: PathKey | null) =>
+      loadProviderCatalogQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
     providers: (directory: PathKey | null) =>
       loadProvidersQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
     path: (directory: PathKey | null) =>
@@ -117,8 +125,14 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
   const queryOptionsApi = makeQueryOptionsApi(serverSDK.scope, () => serverSDK.client, sdkFor)
 
-  const [configQuery, providerQuery, pathQuery] = useQueries(() => ({
-    queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
+  const [configQuery, providerQuery, pathQuery, modelCatalogQuery, providerCatalogQuery] = useQueries(() => ({
+    queries: [
+      queryOptionsApi.globalConfig(),
+      queryOptionsApi.providers(null),
+      queryOptionsApi.path(null),
+      queryOptionsApi.modelCatalog(null),
+      queryOptionsApi.providerCatalog(null),
+    ],
   }))
 
   const [globalStore, setGlobalStore] = createStore<GlobalStore>({
@@ -136,6 +150,12 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       const EMPTY = { all: new Map(), connected: [], default: {} }
       if (providerQuery.isLoading) return EMPTY
       return providerQuery.data ?? EMPTY
+    },
+    get model_catalog() {
+      return modelCatalogQuery.data ?? []
+    },
+    get provider_catalog() {
+      return providerCatalogQuery.data ?? []
     },
     get config() {
       if (configQuery.isLoading) return {}
@@ -240,6 +260,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     queryOptions: queryOptionsApi,
     global: {
       provider: globalStore.provider,
+      model_catalog: globalStore.model_catalog,
+      provider_catalog: globalStore.provider_catalog,
     },
   })
 
@@ -370,6 +392,14 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     const event = e.details
     const recent = bootingRoot || Date.now() - bootedAt < 1500
 
+    const eventType = (event as { type?: string }).type
+    if (eventType === "catalog.updated" || eventType === "provider.updated" || eventType === "auth.updated") {
+      const location = directory === "global" ? null : key
+      for (const kind of ["providers", "model-catalog", "provider-catalog"] as const) {
+        void queryClient.invalidateQueries({ queryKey: [serverSDK.scope, location, kind] })
+      }
+    }
+
     session.apply(event)
     if (event.type === "session.created" || event.type === "session.updated" || event.type === "session.deleted") {
       homeSessions.apply(event)
@@ -467,8 +497,14 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       // Invalidate all provider queries so newly configured custom providers
       // appear immediately in the available provider list across all directories.
       queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "providers"] })
+      queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "model-catalog"] })
+      queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "provider-catalog"] })
       queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[0] === serverSDK.scope && query.queryKey[2] === "providers",
+        predicate: (query) =>
+          query.queryKey[0] === serverSDK.scope &&
+          (query.queryKey[2] === "providers" ||
+            query.queryKey[2] === "model-catalog" ||
+            query.queryKey[2] === "provider-catalog"),
       })
     },
   }))

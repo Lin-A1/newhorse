@@ -16,7 +16,7 @@ import { batch } from "solid-js"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type { State, VcsCache } from "./types"
 import type { ServerSession } from "../server-session"
-import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
+import { cmp, normalizeAgentList, normalizeProviderList, adaptModelCatalog } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
 import { QueryClient, queryOptions } from "@tanstack/solid-query"
 import { loadMcpQuery, loadMcpResourcesQuery } from "../server-sync"
@@ -114,7 +114,8 @@ export async function bootstrapGlobal(input: {
 }) {
   const slow = [
     () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverSDK)),
-    () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, null, input.serverSDK)),
+    () => input.queryClient.fetchQuery(loadModelCatalogQuery(input.scope, null, input.serverSDK)),
+    () => input.queryClient.fetchQuery(loadProviderCatalogQuery(input.scope, null, input.serverSDK)),
     () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverSDK)),
     () =>
       input.queryClient
@@ -183,6 +184,29 @@ export const loadProvidersQuery = (scope: ServerScope, directory: string | null,
     queryKey: [scope, directory, "providers"],
     queryFn: () => retry(() => sdk.provider.list().then((x) => normalizeProviderList(x.data!))),
   })
+
+export const loadModelCatalogQuery = (scope: ServerScope, directory: string | null, sdk: OpencodeClient) =>
+  queryOptions({
+    queryKey: [scope, directory, "model-catalog"],
+    queryFn: () =>
+      retry(() =>
+        sdk.v2.model
+          .list({ location: directory ? { directory } : undefined })
+          .then((x) => adaptModelCatalog(x.data?.data ?? [])),
+      ),
+  })
+
+export const loadProviderCatalogQuery = (scope: ServerScope, directory: string | null, sdk: OpencodeClient) =>
+  queryOptions({
+    queryKey: [scope, directory, "provider-catalog"],
+    queryFn: () =>
+      retry(() =>
+        sdk.v2.provider
+          .list({ location: directory ? { directory } : undefined })
+          .then((x) => x.data?.data ?? []),
+      ),
+  })
+
 
 export const loadAgentsQuery = (scope: ServerScope, directory: string | null, sdk: OpencodeClient) =>
   queryOptions({

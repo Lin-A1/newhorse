@@ -28,17 +28,13 @@ type PermissionRespondFn = (input: {
   directory?: string
 }) => void
 
-function isNonAllowRule(rule: unknown) {
+function isNonAllowRule(rule: unknown): boolean {
   if (!rule) return false
   if (typeof rule === "string") return rule !== "allow"
   if (typeof rule !== "object") return false
   if (Array.isArray(rule)) return false
 
-  for (const action of Object.values(rule)) {
-    if (action !== "allow") return true
-  }
-
-  return false
+  return Object.values(rule).some(isNonAllowRule)
 }
 
 function hasPermissionPromptRules(permission: unknown) {
@@ -210,17 +206,14 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
     }),
   )
 
+  function configuredAllows(directory: string) {
+    const [childStore] = input.sync.child(directory)
+    return childStore.config.permission === "allow"
+  }
+
   function enableConfiguredDirectory(directory: string) {
     if (meta.disposed || !ready()) return
-    const [childStore] = input.sync.child(directory)
-    if (childStore.config.permission !== "allow") return
-    const key = directoryAcceptKey(directory)
-    if (store.autoAccept[key] !== undefined) return
-    setStore(
-      produce((draft) => {
-        draft.autoAccept[key] = true
-      }),
-    )
+    input.sync.child(directory)
   }
 
   const MAX_RESPONDED = 1000
@@ -243,7 +236,9 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
 
   const respond: PermissionRespondFn = (request) => {
     if (meta.disposed) return
-    input.sdk.client.permission.respond(request).catch(() => {
+    const directory = request.directory ?? input.sync.session.lineage.peek(request.sessionID)?.session.directory
+    const target = directory ? input.sdk.createClient({ directory, throwOnError: true }) : input.sdk.client
+    target.permission.respond(request).catch(() => {
       responded.delete(request.permissionID)
     })
   }
@@ -274,11 +269,18 @@ function createServerPermissionState(input: { sdk: ServerSDK; sync: ServerSync }
   }
 
   function isAutoAcceptingDirectory(directory: string) {
-    return isDirectoryAutoAccepting(store.autoAccept, directory)
+    const explicit = store.autoAccept[directoryAcceptKey(directory)]
+    if (explicit !== undefined) return explicit
+    return configuredAllows(directory)
   }
 
   function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
-    return autoRespondsPermission(store.autoAccept, sessions(directory), permission, directory)
+    const explicit = sessionAutoAccept(store.autoAccept, sessions(directory), permission, directory)
+    if (explicit !== undefined) return explicit
+    if (!directory) return false
+    const directoryOverride = store.autoAccept[directoryAcceptKey(directory)]
+    if (directoryOverride !== undefined) return directoryOverride
+    return configuredAllows(directory)
   }
 
   function isPending(permission: PermissionRequest) {
