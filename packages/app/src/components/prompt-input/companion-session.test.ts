@@ -108,6 +108,34 @@ describe("ensureCompanionSession", () => {
     expect(getPinnedCompanion(scope)?.sessionID).toBe("ses_companion")
   })
 
+  test("uses a Companion session from another directory in the global list", async () => {
+    const existing = { id: "ses_global", directory: "C:/Personal", profileID: "companion", time: { updated: 300 } } as Session
+    const result = await ensureCompanionSession({
+      client: fakeClient({}),
+      directory,
+      scope,
+      fetch: async () => undefined,
+      globalList: async () => [existing],
+      list: async () => [],
+    })
+    expect(result.session.id).toBe("ses_global")
+    expect(result.directory).toBe("C:/Personal")
+  })
+
+  test("does not create when the pinned lookup fails with a non-404 error", async () => {
+    let creates = 0
+    pinCompanion(scope, "ses_error", "C:/Personal")
+    await expect(
+      ensureCompanionSession({
+        client: fakeClient({ create: () => { creates++; return { id: "unexpected" } } }),
+        directory,
+        scope,
+        fetch: async () => { throw Object.assign(new Error("network"), { status: 503 }) },
+        list: async () => [],
+      }),
+    ).rejects.toThrow("network")
+    expect(creates).toBe(0)
+  })
   test("throws when creation fails", async () => {
     await expect(
       ensureCompanionSession({

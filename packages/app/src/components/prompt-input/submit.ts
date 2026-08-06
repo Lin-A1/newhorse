@@ -338,11 +338,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         scope: sdk().scope,
         fetch: async (directory, sessionID) => {
           const target = directory === projectDirectory ? client : sdk().createClient({ directory, throwOnError: true })
-          return target.session.get({ sessionID }).then((response) => response.data).catch(() => undefined)
+          return target.session.get({ sessionID }).then((response) => response.data)
+        },
+        globalList: async () => {
+          const result = await client.experimental.session.list({ roots: true, archived: true, limit: 200 })
+          return (result.data ?? []) as Session[]
         },
         list: async (directory) => {
           const target = directory === projectDirectory ? client : sdk().createClient({ directory, throwOnError: true })
-          return target.session.list({ directory }).then((response) => response.data ?? []).catch(() => [])
+          return target.session.list({ directory }).then((response) => response.data ?? [])
         },
       }).catch((err) => {
         showToast({

@@ -38,17 +38,40 @@ export type CompanionSessionResult = { session: Session; directory: string }
 
 const companionLocks = new Map<string, Promise<CompanionSessionResult>>()
 
+function isNotFound(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  const value = error as { status?: unknown; response?: { status?: unknown }; cause?: { status?: unknown } }
+  return value.status === 404 || value.response?.status === 404 || value.cause?.status === 404
+}
+
 async function resolveCompanionSession(input: {
   client: DirectorySDK["client"]
   directory: string
   scope: string
   fetch: (directory: string, sessionID: string) => Promise<Session | undefined>
+  globalList?: () => Promise<Session[]>
   list?: (directory: string) => Promise<Session[]>
 }): Promise<CompanionSessionResult> {
   const pinned = getPinnedCompanion(input.scope)
   if (pinned) {
-    const existing = await input.fetch(pinned.directory, pinned.sessionID)
-    if (existing && existing.profileID === "companion") return { session: existing, directory: pinned.directory }
+    let existing: Session | undefined
+    try {
+      existing = await input.fetch(pinned.directory, pinned.sessionID)
+    } catch (error) {
+      if (!isNotFound(error)) throw error
+    }
+    if (existing && existing.profileID === "companion" && !existing.time?.archived) {
+      return { session: existing, directory: pinned.directory }
+    }
+  }
+  if (input.globalList) {
+    const existing = (await input.globalList())
+      .filter((session) => session.profileID === "companion" && !session.time?.archived)
+      .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))[0]
+    if (existing) {
+      pinCompanion(input.scope, existing.id, existing.directory ?? input.directory)
+      return { session: existing, directory: existing.directory ?? input.directory }
+    }
   }
   if (input.list) {
     const existing = (await input.list(input.directory))
@@ -70,6 +93,7 @@ export async function ensureCompanionSession(input: {
   directory: string
   scope: string
   fetch: (directory: string, sessionID: string) => Promise<Session | undefined>
+  globalList?: () => Promise<Session[]>
   list?: (directory: string) => Promise<Session[]>
 }): Promise<CompanionSessionResult> {
   const active = companionLocks.get(input.scope)
