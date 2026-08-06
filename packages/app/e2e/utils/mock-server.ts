@@ -17,6 +17,8 @@ export interface MockServerConfig {
   onMessages?: (input: { sessionID: string; before?: string; phase: "start" | "end" }) => void
   message?: (sessionID: string, messageID: string) => unknown
   onMessage?: (input: { sessionID: string; messageID: string }) => void
+  onSessionCreate?: (input: { directory?: string; body: unknown }) => void
+  onPrompt?: (input: { sessionID: string; directory?: string; body: unknown }) => void
   events?: () => unknown[]
   eventRetry?: number
   todos?: (sessionID: string) => unknown[]
@@ -250,7 +252,18 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       return json(route, { location: location(config), data: { ticket: "e2e-ticket", expires_in: 60 } })
     if (emptyObject.has(path)) return json(route, {})
     if (emptyList.has(path)) return json(route, [])
-    if (path === "/api/session") {
+    if (path === "/api/session" && route.request().method() === "POST") {
+      const body = await route.request().postDataJSON().catch(() => ({}))
+      const directory = url.searchParams.get("directory") ?? config.directory
+      config.onSessionCreate?.({ directory, body })
+      const created = currentSession(
+        { id: `ses_mock_${config.sessions.length + 1}`, directory, ...(body as Record<string, unknown>) },
+        directory,
+      )
+      config.sessions.push(created as ({ id: string } & Record<string, unknown>))
+      return json(route, { data: created })
+    }
+    if (path === "/api/session" && route.request().method() === "GET") {
       const directory = url.searchParams.get("directory")
       const parentID = url.searchParams.get("parentID")
       const limit = Number(url.searchParams.get("limit") ?? 50)
@@ -303,7 +316,30 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (/^\/api\/session\/[^/]+$/.test(path) && route.request().method() === "DELETE") {
       return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
     }
-    if (path === "/session") return json(route, config.listSessions?.() ?? config.sessions)
+    if (path === "/session" && route.request().method() === "POST") {
+      const body = await route.request().postDataJSON().catch(() => ({}))
+      const directory = url.searchParams.get("directory") ?? config.directory
+      config.onSessionCreate?.({ directory, body })
+      const created = currentSession(
+        { id: `ses_mock_${config.sessions.length + 1}`, directory, ...(body as Record<string, unknown>) },
+        directory,
+      )
+      config.sessions.push(created as ({ id: string } & Record<string, unknown>))
+      return json(route, created)
+    }
+    const promptMatch = path.match(/^\/(?:api\/)?session\/([^/]+)\/prompt_async$/)
+    if (promptMatch && route.request().method() === "POST") {
+      const body = await route.request().postDataJSON().catch(() => ({}))
+      config.onPrompt?.({
+        sessionID: promptMatch[1]!,
+        directory: url.searchParams.get("directory") ?? undefined,
+        body,
+      })
+      return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    }
+    if (path === "/session" && route.request().method() === "GET") {
+      return json(route, config.listSessions?.() ?? config.sessions)
+    }
     if (path in staticRoutes) return json(route, staticRoutes[path])
 
     const currentSessionMatch = path.match(/^\/api\/session\/([^/]+)$/)

@@ -144,14 +144,14 @@ export function SettingsReminders(props: { sessionID?: string }) {
   }
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <div class="flex min-h-0 min-w-0 flex-col px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex items-center justify-between gap-4 pt-6 pb-8 max-w-[720px]">
-          <div>
+          <div class="flex min-w-0 flex-1 flex-col gap-1">
             <h2 class="text-16-medium text-text-strong">{language.t("settings.reminders.title")}</h2>
             <p class="text-12-regular text-text-weak">{language.t("settings.reminders.description")}</p>
           </div>
-          <div class="flex gap-2">
+          <div class="flex shrink-0 flex-wrap justify-end gap-2">
             <Button size="small" disabled={reminders.loading()} onClick={() => void reminders.refresh().catch(fail)}>
               {language.t("common.refresh")}
             </Button>

@@ -28,9 +28,10 @@ export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for se
 
 // Free-tier quota exhaustion is not resolved by waiting hours. Keep the retry
 // short and bounded so the user sees a live, actionable state instead of a
-// day-long countdown loop.
+// day-long countdown loop. A single attempt surfaces the "Switch model" action
+// immediately instead of burning minutes on a quota that resets daily.
 export const FREE_TIER_RETRY_DELAY = 30_000 // 30 seconds
-export const FREE_TIER_MAX_ATTEMPTS = 5
+export const FREE_TIER_MAX_ATTEMPTS = 1
 
 function cap(ms: number) {
   return Math.min(ms, RETRY_MAX_DELAY)

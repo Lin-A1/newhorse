@@ -16,6 +16,7 @@ import { useSync, type DirectorySync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
+import { ensureCompanionSession } from "./companion-session"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
@@ -327,8 +328,41 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     let sessionDirectory = projectDirectory
     let client = sdk().client
     let workspaceID = input.newSessionWorkspaceID?.()
+    const profileID = input.newSessionProfileID?.()
+    let companionResolved: Awaited<ReturnType<typeof ensureCompanionSession>> | undefined
 
-    if (isNewSession) {
+    if (isNewSession && profileID === "companion") {
+      companionResolved = await ensureCompanionSession({
+        client,
+        directory: projectDirectory,
+        scope: sdk().scope,
+        fetch: async (directory, sessionID) => {
+          const target = directory === projectDirectory ? client : sdk().createClient({ directory, throwOnError: true })
+          return target.session.get({ sessionID }).then((response) => response.data).catch(() => undefined)
+        },
+        list: async (directory) => {
+          const target = directory === projectDirectory ? client : sdk().createClient({ directory, throwOnError: true })
+          return target.session.list({ directory }).then((response) => response.data ?? []).catch(() => [])
+        },
+      }).catch((err) => {
+        showToast({
+          title: language.t("prompt.toast.sessionCreateFailed.title"),
+          description: errorMessage(err),
+        })
+        return undefined
+      })
+      if (companionResolved) {
+        sessionDirectory = companionResolved.directory
+        if (sessionDirectory !== projectDirectory) {
+          client = sdk().createClient({ directory: sessionDirectory, throwOnError: true })
+          serverSync().child(sessionDirectory)
+        }
+      } else {
+        return
+      }
+    }
+
+    if (isNewSession && profileID !== "companion") {
       const workspaceType = input.newSessionWorkspaceType?.()
       if (!workspaceID && workspaceType) {
         const workspace = await client.experimental.workspace
@@ -393,12 +427,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       input.onNewSessionWorktreeReset?.()
     }
 
-    let session = input.info()
+    let session = input.info() ?? companionResolved?.session
+    if (companionResolved) seed(sessionDirectory, companionResolved.session)
     if (!session && isNewSession) {
       const created = await client.session
         .create({
           workspaceID,
-          profileID: input.newSessionProfileID?.(),
+          profileID,
         })
         .then((x) => x.data ?? undefined)
         .catch((err) => {
@@ -411,6 +446,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       if (created) {
         seed(sessionDirectory, created)
         session = created
+      }
+    }
+    if (session) {
         await startTransition(() => {
           if (!session) return
           if (shouldAutoAccept) permissionState.enableAutoAccept(session.id, sessionDirectory)
@@ -425,7 +463,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           else navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
           submission.retarget(prompt.capture({ dir: base64Encode(sessionDirectory), id: session.id }))
         })
-      }
     }
     if (!session) {
       showToast({

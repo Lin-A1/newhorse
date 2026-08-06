@@ -68,7 +68,7 @@ export default function NewSessionPage() {
       void dialog.show(() => <DialogConnectProvider directory={() => sdk().directory} />)
     })
   }
-  useSettingsCommand()
+  useSettingsCommand(() => sdk().directory)
   const route = useSessionKey()
   const [searchParams, setSearchParams] = useSearchParams<{ draftId?: string; prompt?: string }>()
   const local = useLocal()
@@ -137,6 +137,12 @@ export default function NewSessionPage() {
     const value = store.workspace
     if (!value?.startsWith("workspace:")) return
     return workspaceState().workspaces.find((item) => item.id === value.slice("workspace:".length))
+  })
+  createEffect(() => {
+    const value = store.workspace
+    if (!value?.startsWith("workspace:")) return
+    const id = value.slice("workspace:".length)
+    if (!workspaceState().workspaces.some((item) => item.id === id)) setStore("workspace", undefined)
   })
   const selectedAdapter = createMemo(() => {
     const value = store.workspace

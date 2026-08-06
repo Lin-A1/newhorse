@@ -90,6 +90,7 @@ export type PromptInputV2Option = {
   id: string
   label: string
   providerID?: string
+  description?: string
 }
 
 export type PromptInputV2Suggestion = {

@@ -16,7 +16,6 @@ export const popularProviders = [
   "zai",
   "modelscope",
   "siliconflow",
-  "opencode",
   "anthropic",
   "github-copilot",
   "openai",

@@ -306,7 +306,7 @@ export function NewHome() {
   const command = useCommand()
   const notification = useNotification()
   const marked = useMarked()
-  const openSettings = useSettingsCommand()
+  const openSettings = useSettingsCommand(() => selection().directory)
   let focusSessionSearch: (() => void) | undefined
   let sessionViewport: HTMLDivElement | undefined
   const [sessionThumbTrack, setSessionThumbTrack] = createSignal<HTMLDivElement>()
@@ -703,6 +703,7 @@ export function NewHome() {
                 loading={sessionLoad.isLoading}
                 results={searchResults()}
                 showProjectName={!selectedProject()}
+                showProjectAvatar={!selectedProject() && projects().length > 1}
                 server={selection().server}
                 noResultsLabel={language.t("home.sessions.search.noResults", { query: search() })}
                 bindFocus={(focus) => {
@@ -772,6 +773,7 @@ export function NewHome() {
                                 <HomeSessionRow
                                   record={record}
                                   showProjectName={!selectedProject()}
+                                  showProjectAvatar={!selectedProject() && projects().length > 1}
                                   server={selection().server}
                                   openSession={openSession}
                                   archiveSession={archiveSession}
@@ -1371,6 +1373,7 @@ function HomeSessionLeading(props: {
   project: LocalProject
   session: Session
   server: ServerConnection.Key
+  showProjectAvatar: boolean
   revealProjectOnHover: boolean
 }) {
   const tabs = useTabs()
@@ -1384,13 +1387,22 @@ function HomeSessionLeading(props: {
           style={{ right: "calc(100% + 4px)" }}
         />
       </Show>
-      <SessionTabAvatar
-        project={props.project}
-        directory={props.session.directory}
-        sessionId={props.session.id}
-        server={props.server}
-        revealProjectOnHover={props.revealProjectOnHover}
-      />
+      <Show
+        when={props.showProjectAvatar}
+        fallback={
+          // With a single project the avatar is already shown in the project
+          // column, so a neutral marker avoids duplicating it on every row.
+          <span class="block size-4 rounded-[3px] bg-v2-background-bg-layer-02" aria-hidden="true" />
+        }
+      >
+        <SessionTabAvatar
+          project={props.project}
+          directory={props.session.directory}
+          sessionId={props.session.id}
+          server={props.server}
+          revealProjectOnHover={props.revealProjectOnHover}
+        />
+      </Show>
     </div>
   )
 }
@@ -1402,6 +1414,7 @@ function HomeSessionSearch(props: {
   loading: boolean
   results: HomeSessionRecord[]
   showProjectName: boolean
+  showProjectAvatar: boolean
   server: ServerConnection.Key
   noResultsLabel: string
   bindFocus: (focus: () => void) => void
@@ -1519,6 +1532,7 @@ function HomeSessionSearch(props: {
                               <HomeSessionSearchResultRow
                                 record={record}
                                 showProjectName={props.showProjectName}
+                                showProjectAvatar={props.showProjectAvatar}
                                 server={props.server}
                                 selected={store.active === homeSessionSearchKey(record)}
                                 onHighlight={() => setStore("active", homeSessionSearchKey(record))}
@@ -1599,6 +1613,7 @@ function HomeSessionSearch(props: {
 function HomeSessionSearchResultRow(props: {
   record: HomeSessionRecord
   showProjectName: boolean
+  showProjectAvatar: boolean
   server: ServerConnection.Key
   selected: boolean
   onHighlight: () => void
@@ -1637,6 +1652,7 @@ function HomeSessionSearchResultRow(props: {
         project={props.record.project}
         session={props.record.session}
         server={props.server}
+        showProjectAvatar={props.showProjectAvatar}
         revealProjectOnHover={!!showProjectName()}
       />
       <div class="flex min-w-0 flex-1 items-center gap-1.5">
@@ -1674,6 +1690,7 @@ function HomeSessionGroupHeader(props: {
 function HomeSessionRow(props: {
   record: HomeSessionRecord
   showProjectName: boolean
+  showProjectAvatar: boolean
   server: ServerConnection.Key
   openSession: (session: Session, options?: OpenSessionOptions) => void
   archiveSession: (session: Session) => Promise<void>
@@ -1705,6 +1722,7 @@ function HomeSessionRow(props: {
           project={props.record.project}
           session={props.record.session}
           server={props.server}
+          showProjectAvatar={props.showProjectAvatar}
           revealProjectOnHover={!!showProjectName()}
         />
         <span

@@ -573,7 +573,14 @@ export function PromptInputV2Select(props: {
               <For each={props.options}>
                 {(option) => (
                   <MenuV2.RadioItem value={option.id} class="capitalize" closeOnSelect>
-                    {option.label}
+                    <span class="flex min-w-0 flex-col">
+                      <span class="truncate leading-5">{option.label}</span>
+                      <Show when={option.description}>
+                        <span class="truncate text-[11px] font-[440] leading-4 text-v2-text-text-muted">
+                          {option.description}
+                        </span>
+                      </Show>
+                    </span>
                   </MenuV2.RadioItem>
                 )}
               </For>

@@ -109,10 +109,11 @@ function Cell(props: {
 }
 
 function FocusCell(props: { active: boolean; inline?: boolean; onClick: () => void }) {
+  const language = useLanguage()
   const content = () => (
     <button
       type="button"
-      aria-label="Force focus styles on all interactive elements"
+      aria-label={language.t("debugBar.focus.tip")}
       aria-pressed={props.active}
       classList={{
         "flex min-w-0 items-center font-mono uppercase hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-focus": true,
@@ -122,23 +123,23 @@ function FocusCell(props: { active: boolean; inline?: boolean; onClick: () => vo
       }}
       onClick={props.onClick}
     >
-      <span class="text-[10px] leading-none font-black tracking-[0.04em] opacity-70">FOCUS</span>
+      <span class="text-[10px] leading-none font-black tracking-[0.04em] opacity-70">{language.t("debugBar.focus.label")}</span>
       <span classList={{ "leading-none font-bold": true, "text-[11px]": !!props.inline, "text-[13px]": !props.inline }}>
-        {props.active ? "ON" : "OFF"}
+        {language.t(props.active ? "debugBar.focus.on" : "debugBar.focus.off")}
       </span>
     </button>
   )
 
   if (props.inline) {
     return (
-      <TooltipV2 value="Force focus styles on all interactive elements" placement="top">
+      <TooltipV2 value={language.t("debugBar.focus.tip")} placement="top">
         {content()}
       </TooltipV2>
     )
   }
 
   return (
-    <Tooltip value="Force focus styles on all interactive elements" placement="top">
+    <Tooltip value={language.t("debugBar.focus.tip")} placement="top">
       {content()}
     </Tooltip>
   )

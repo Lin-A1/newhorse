@@ -13,7 +13,7 @@ export type PromptInputSubmission = {
 export type PromptInputControls = {
   agents: {
     available: { name: string; hidden?: boolean; mode: string }[]
-    options: string[]
+    options: { id: string; label: string; description?: string }[]
     current: string
     loading: boolean
     visible: boolean

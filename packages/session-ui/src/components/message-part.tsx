@@ -561,6 +561,39 @@ export function getToolInfo(
         icon: "brain",
         title: input.name || i18n.t("ui.tool.skill"),
       }
+    case "reminder":
+      return {
+        icon: "checklist",
+        title: i18n.t("ui.tool.reminder"),
+        subtitle: input.title,
+      }
+    case "memory":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.memory"),
+        subtitle: input.action === "recall" ? undefined : input.action,
+      }
+    case "truncate":
+      return {
+        icon: "mcp",
+        title: i18n.t("ui.tool.truncate"),
+      }
+    case "lsp":
+      return {
+        icon: "code-lines",
+        title: i18n.t("ui.tool.lsp"),
+        subtitle: input.action,
+      }
+    case "plan":
+      return {
+        icon: "task",
+        title: i18n.t("ui.tool.plan"),
+      }
+    case "capability":
+      return {
+        icon: "mcp",
+        title: i18n.t("ui.tool.capability"),
+      }
     default:
       return {
         icon: "mcp",

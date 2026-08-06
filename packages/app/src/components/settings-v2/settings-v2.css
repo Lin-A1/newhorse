@@ -3,10 +3,14 @@
 
 [data-component="tabs-v2"][data-variant="settings"] {
   height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 [data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-container"] {
   background: var(--v2-background-bg-base);
+  min-width: 0;
+  min-height: 0;
 }
 
 [data-component="dialog-v2"][data-variant="settings"] [data-slot="dialog-body"] {
@@ -17,6 +21,8 @@
 .settings-v2-panel {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
   overflow-y: auto;
   scrollbar-width: none;
@@ -172,6 +178,18 @@
 [data-component="dialog-v2"][data-variant="settings"] [data-component="button-v2"] {
   width: fit-content;
   max-width: 100%;
+}
+
+[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+[data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-list"] {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
 [data-component="tabs-v2"][data-variant="settings"][data-orientation="vertical"] [data-slot="tabs-v2-list"] {

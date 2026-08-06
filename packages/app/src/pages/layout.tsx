@@ -1117,7 +1117,7 @@ export default function LegacyLayout(props: ParentProps) {
       : import("@/components/dialog-settings")
     void module.then((x) => {
       if (dialogDead || dialogRun !== run) return
-      dialog.show(() => <x.DialogSettings />)
+      dialog.show(() => <x.DialogSettings directory={currentDir() || currentProject()?.worktree} />)
     })
   }
 
@@ -1387,8 +1387,26 @@ export default function LegacyLayout(props: ParentProps) {
 
     setBusy(directory, true)
 
+    const sessions: Session[] = await serverSDK()
+      .client.session.list({ directory })
+      .then((x) => x.data ?? [])
+      .catch(() => [])
+
+    clearWorkspaceTerminals(
+      directory,
+      sessions.map((s) => s.id),
+      platform,
+      serverSDK().scope,
+    )
+    await serverSDK()
+      .client.instance.dispose({ directory })
+      .catch(() => undefined)
+
     const result = await serverSDK()
-      .client.worktree.remove({ directory: root, worktreeRemoveInput: { directory } })
+      .client.worktree.remove({
+        directory: root,
+        worktreeRemoveInput: { directory },
+      })
       .then((x) => x.data)
       .catch((err) => {
         showToast({

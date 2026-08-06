@@ -16,8 +16,9 @@ import { SettingsContinuityGrants } from "./settings-continuity-grants"
 import { SettingsCompanionPlan } from "./settings-companion-plan"
 import { SettingsReminders } from "./settings-reminders"
 import { SettingsSkillsMcp } from "./settings-skills-mcp"
+import { SettingsUsage } from "./settings-usage"
 
-export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
+export const DialogSettings: Component<{ defaultValue?: string; directory?: string }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const dialog = useDialog()
@@ -93,6 +94,10 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
                       <Icon name="mcp" />
                       {language.t("settings.tab.skillsMcp")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="usage">
+                      <Icon name="dash" />
+                      {language.t("settings.tab.usage")}
+                    </Tabs.Trigger>
                   </div>
                 </div>
               </div>
@@ -104,7 +109,7 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
           </div>
         </Tabs.List>
         <Tabs.Content value="general" class="no-scrollbar">
-          <SettingsGeneral />
+          <SettingsGeneral directory={props.directory} />
         </Tabs.Content>
         <Tabs.Content value="shortcuts" class="no-scrollbar">
           <SettingsKeybinds />
@@ -135,6 +140,9 @@ export const DialogSettings: Component<{ defaultValue?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="skills-mcp" class="no-scrollbar">
           <SettingsSkillsMcp />
+        </Tabs.Content>
+        <Tabs.Content value="usage" class="no-scrollbar">
+          <SettingsUsage />
         </Tabs.Content>
       </Tabs>
     </Dialog>

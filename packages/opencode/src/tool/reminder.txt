@@ -1,5 +1,10 @@
 Create and manage user-requested reminders that persist across sessions.
 
+WHEN TO CALL: whenever the user explicitly asks to be reminded or nudged at a
+future time (phrases like "remind me...", "set a reminder...", "nudge me at...",
+"tell me to..."). Do NOT just agree verbally — actually call this tool with
+action=create so the reminder is stored and will fire.
+
 Actions:
 - create: requires title, body, scheduleAt (Unix milliseconds), and timezone; optional recurrenceRule supports only FREQ=DAILY or FREQ=WEEKLY with INTERVAL=1..365, plus misfirePolicy catch_up_once or skip
 - list: show reminders in the current workspace

@@ -82,7 +82,7 @@ const playDemoSound = (id: string | undefined) => {
   }, 100)
 }
 
-export const SettingsGeneral: Component = () => {
+export const SettingsGeneral: Component<{ directory?: string }> = (props) => {
   const theme = useTheme()
   const language = useLanguage()
   const permission = usePermission()
@@ -94,7 +94,7 @@ export const SettingsGeneral: Component = () => {
   const updater = useUpdaterAction()
 
   const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
-  const dir = createMemo(() => decode64(params.dir))
+  const dir = createMemo(() => props.directory ?? decode64(params.dir))
   const accepting = createMemo(() => {
     const value = dir()
     if (!value) return false
@@ -268,7 +268,7 @@ export const SettingsGeneral: Component = () => {
                 settings.general.setNewLayoutDesigns(checked)
                 if (!checked) return
                 void import("@/components/settings-v2").then((module) => {
-                  void dialog.show(() => <module.DialogSettings />)
+                  void dialog.show(() => <module.DialogSettings directory={props.directory} />)
                 })
               }}
             />

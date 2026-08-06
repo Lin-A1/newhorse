@@ -23,7 +23,7 @@ export function SettingsCompanionPlan(props: { sessionID?: string }) {
   const refresh = () => void plan.refreshAll().catch(fail)
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <div class="flex min-h-0 min-w-0 flex-col px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="flex flex-col gap-6 py-8">
         <section class="flex flex-col gap-2">
           <h2 class="text-16-medium text-text-strong">{language.t("settings.companionPlan.title")}</h2>

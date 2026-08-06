@@ -134,9 +134,9 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
     return {
       visible: version !== undefined || installing,
       installing,
-      label: "Update",
+      label: language.t("titlebar.update.label"),
       ariaLabel: language.t("toast.update.action.installRestart"),
-      title: version ? `Update ${version}` : undefined,
+      title: version ? language.t("titlebar.update.tooltip", { version }) : undefined,
       onInstall: () => props.update?.install(),
     }
   })
@@ -729,8 +729,8 @@ function TitlebarUpdateIconButton(props: { state: TitlebarUpdatePillState }) {
         aria-busy={props.state.installing}
         aria-label={props.state.ariaLabel}
       >
-        <span class="shrink-0 ml-[8px] mr-px text-[11px] text-v2-text-text-accent [font-weight:530] opacity-0 translate-x-2 motion-safe:transition-all duration-150 ease-out group-hover:opacity-100 group-hover:translate-x-0 group-focus-within:opacity-100 group-focus-within:translate-x-0 motion-reduce:translate-x-0">
-          Update
+        <span class="shrink-0 ml-1.5 mr-px max-w-[46px] truncate text-[11px] text-v2-text-text-accent [font-weight:530] opacity-0 motion-safe:transition-opacity duration-150 ease-out group-hover:opacity-100 group-focus-within:opacity-100 motion-reduce:opacity-100">
+          {props.state.label}
         </span>
         <span class="flex size-5 shrink-0 items-center justify-center">
           <Show
@@ -748,6 +748,7 @@ function TitlebarUpdateIconButton(props: { state: TitlebarUpdatePillState }) {
 }
 
 function ChannelIndicator(props: { debugTools?: { visible: boolean; toggle: () => void } }) {
+  const language = useLanguage()
   const channel = import.meta.env.VITE_OPENCODE_CHANNEL
   if (channel === "dev" && props.debugTools) {
     return (
@@ -755,7 +756,7 @@ function ChannelIndicator(props: { debugTools?: { visible: boolean; toggle: () =
         type="button"
         class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono cursor-pointer"
         onClick={props.debugTools.toggle}
-        aria-label="Toggle debug tools"
+        aria-label={language.t("titlebar.debugTools.toggle")}
         aria-pressed={props.debugTools.visible}
       >
         DEV

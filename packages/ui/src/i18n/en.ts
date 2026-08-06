@@ -144,6 +144,12 @@ export const dict: Record<string, string> = {
   "ui.tool.agent": "{{type}} Agent",
   "ui.tool.agent.default": "Agent",
   "ui.tool.skill": "Skill",
+  "ui.tool.reminder": "Reminder",
+  "ui.tool.memory": "Memory",
+  "ui.tool.truncate": "Context",
+  "ui.tool.lsp": "LSP",
+  "ui.tool.plan": "Plan",
+  "ui.tool.capability": "Capability",
 
   "ui.basicTool.called": "Called `{{tool}}`",
   "ui.toolErrorCard.failed": "Failed",

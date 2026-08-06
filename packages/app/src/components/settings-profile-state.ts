@@ -55,6 +55,12 @@ export function useCompanionProfileSettings() {
 
   const save = async () => {
     setState("saving", true)
+    // Clamp numeric inputs so a cleared/invalid field never sends NaN to the server.
+    const maxPerDay = Number.isFinite(state.maxPerDay) ? Math.max(0, Math.floor(state.maxPerDay)) : 3
+    const minIntervalMinutes = Number.isFinite(state.minIntervalMinutes)
+      ? Math.max(1, Math.floor(state.minIntervalMinutes))
+      : 120
+    const timezone = isValidTimezone(state.timezone) ? state.timezone : Intl.DateTimeFormat().resolvedOptions().timeZone
     await serverSDK()
       .client.global.profile.update({
         profileID: "companion",
@@ -62,10 +68,10 @@ export function useCompanionProfileSettings() {
         memory: state.memory,
         proactive: state.proactive,
         proactivePaused: state.proactivePaused,
-        quietHours: { start: state.quietStart, end: state.quietEnd, timezone: state.timezone },
+        quietHours: { start: state.quietStart, end: state.quietEnd, timezone },
         proactiveFrequency: {
-          maxPerDay: state.maxPerDay,
-          minIntervalMinutes: state.minIntervalMinutes,
+          maxPerDay,
+          minIntervalMinutes,
         },
         crisisRegion: state.crisisRegion,
       })
@@ -78,7 +84,7 @@ export function useCompanionProfileSettings() {
           proactivePaused: response.data.proactivePaused,
           quietStart: response.data.quietHours?.start ?? "22:00",
           quietEnd: response.data.quietHours?.end ?? "08:00",
-          timezone: response.data.quietHours?.timezone ?? state.timezone,
+          timezone: response.data.quietHours?.timezone ?? timezone,
           maxPerDay: response.data.proactiveFrequency.maxPerDay,
           minIntervalMinutes: response.data.proactiveFrequency.minIntervalMinutes,
           crisisRegion: response.data.crisisRegion ?? "",
@@ -95,4 +101,13 @@ export function useCompanionProfileSettings() {
   }
 
   return { state, setState, save }
+}
+
+function isValidTimezone(value: string) {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: value })
+    return true
+  } catch {
+    return false
+  }
 }

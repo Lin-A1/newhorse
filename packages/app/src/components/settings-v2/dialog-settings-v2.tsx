@@ -17,9 +17,11 @@ import { SettingsContinuityGrants } from "../settings-continuity-grants"
 import { SettingsCompanionPlan } from "../settings-companion-plan"
 import { SettingsReminders } from "../settings-reminders"
 import { SettingsSkillsMcp } from "../settings-skills-mcp"
+import { SettingsUsage } from "../settings-usage"
 
 export const DialogSettings: Component<{
   sessionID?: string
+  directory?: string
   defaultValue?: string
 }> = (props) => {
   const language = useLanguage()
@@ -28,7 +30,9 @@ export const DialogSettings: Component<{
   const [tab, setTab] = createSignal(props.defaultValue ?? "general")
 
   const showProviders = () => {
-    void dialog.show(() => <DialogSettings sessionID={props.sessionID} defaultValue="providers" />)
+    void dialog.show(() => (
+      <DialogSettings sessionID={props.sessionID} directory={props.directory} defaultValue="providers" />
+    ))
   }
 
   return (
@@ -97,6 +101,10 @@ export const DialogSettings: Component<{
                       <Icon name="mcp" />
                       {language.t("settings.tab.skillsMcp")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="usage">
+                      <Icon name="dash" />
+                      {language.t("settings.tab.usage")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
               </div>
@@ -108,7 +116,7 @@ export const DialogSettings: Component<{
           </div>
         </TabsV2.List>
         <TabsV2.Content value="general" class="settings-v2-panel">
-          <SettingsGeneralV2 sessionID={props.sessionID} />
+          <SettingsGeneralV2 sessionID={props.sessionID} directory={props.directory} />
         </TabsV2.Content>
         <TabsV2.Content value="shortcuts" class="settings-v2-panel">
           <SettingsKeybinds v2 />
@@ -139,6 +147,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="skills-mcp" class="settings-v2-panel">
           <SettingsSkillsMcp />
+        </TabsV2.Content>
+        <TabsV2.Content value="usage" class="settings-v2-panel">
+          <SettingsUsage />
         </TabsV2.Content>
       </TabsV2>
     </Dialog>

@@ -99,7 +99,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
   }
 
   return (
-    <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
+    <div class="flex min-h-0 min-w-0 flex-col px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
         <div class="flex items-center justify-between gap-4 pt-6 pb-8 max-w-[720px]">
           <div>
@@ -115,9 +115,20 @@ export function SettingsMemory(props: { sessionID?: string }) {
       <div class="flex flex-col gap-4 max-w-[720px]">
         <Show when={!memory.loading()} fallback={<div>{language.t("settings.memory.loading")}</div>}>
           <Show
-            when={memory.state.items.length > 0}
-            fallback={<div class="text-14-regular text-text-weak">{language.t("settings.memory.empty")}</div>}
+            when={!memory.ready.error}
+            fallback={
+              <div class="flex items-center gap-3 text-14-regular text-text-weak">
+                <span>{language.t("common.requestFailed")}</span>
+                <Button size="small" onClick={() => void memory.refresh().catch(fail)}>
+                  {language.t("common.retry")}
+                </Button>
+              </div>
+            }
           >
+            <Show
+              when={memory.state.items.length > 0}
+              fallback={<div class="text-14-regular text-text-weak">{language.t("settings.memory.empty")}</div>}
+            >
             <For each={memory.state.items}>
               {(item) => (
                 <article class="flex flex-col gap-3 rounded-lg bg-surface-base p-4" data-memory-id={item.id}>
@@ -221,7 +232,8 @@ export function SettingsMemory(props: { sessionID?: string }) {
                 </article>
               )}
             </For>
-          </Show>
+            </Show>
+            </Show>
 
           <Show when={memory.state.nextCursor}>
             <Button disabled={memory.state.loadingMore} onClick={() => void memory.loadMore().catch(fail)}>

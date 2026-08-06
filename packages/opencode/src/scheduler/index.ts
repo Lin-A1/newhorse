@@ -202,7 +202,7 @@ const layer = Layer.effect(
     const { db } = yield* Database.Service
     const events = yield* EventV2Bridge.Service
     const profiles = yield* Profile.Service
-    const follow = yield* Follow
+    const follow = yield* Follow.Service
     const trustPolicy = yield* TrustPolicy.Service
     const owner = randomUUID()
 

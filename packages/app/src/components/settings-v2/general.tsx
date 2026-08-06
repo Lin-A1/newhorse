@@ -83,6 +83,7 @@ const playDemoSound = (id: string | undefined) => {
 
 export const SettingsGeneralV2: Component<{
   sessionID?: string
+  directory?: string
 }> = (props) => {
   const theme = useTheme()
   const language = useLanguage()
@@ -98,9 +99,7 @@ export const SettingsGeneralV2: Component<{
 
   const dir = createMemo(() => {
     if (props.sessionID) return serverSync().session.lineage.peek(props.sessionID)?.session.directory
-    // No session context (e.g. opened from global settings): the auto-accept
-    // toggle stays disabled rather than crashing on a missing SDK provider.
-    return undefined
+    return props.directory
   })
   const accepting = createMemo(() => {
     const value = dir()
@@ -261,7 +260,7 @@ export const SettingsGeneralV2: Component<{
           settings.general.setNewLayoutDesigns(checked)
           if (checked) return
           void import("@/components/dialog-settings").then((module) => {
-            void dialog.show(() => <module.DialogSettings />)
+            void dialog.show(() => <module.DialogSettings directory={props.directory} />)
           })
         }}
       />

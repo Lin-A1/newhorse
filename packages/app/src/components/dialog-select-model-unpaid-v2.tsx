@@ -110,7 +110,6 @@ export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (pro
                     <ModelTooltip
                       model={{ ...item, name: displayModelName(item.name) }}
                       latest={item.latest}
-                      free={isFree(item)}
                       v2
                     />
                   }
@@ -121,7 +120,6 @@ export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (pro
                     onClick={() => selectModel(item)}
                   >
                     <span class="min-w-0 truncate">{displayModelName(item.name)}</span>
-                    <Tag class="shrink-0">{language.t("model.tag.free")}</Tag>
                     <Show when={item.latest}>
                       <Tag class="shrink-0">{language.t("model.tag.latest")}</Tag>
                     </Show>
@@ -161,11 +159,6 @@ export const DialogSelectModelUnpaidV2: Component<{ model?: ModelState }> = (pro
                       <ProviderIcon id={provider.id} class="mt-0.5 size-4 shrink-0 text-v2-icon-icon-base" />
                       <span class="flex min-w-0 flex-col">
                         <span class="truncate">{provider.name}</span>
-                        <Show when={provider.id === "opencode"}>
-                          <span class="truncate font-[440] text-v2-text-text-muted">
-                            {language.t("dialog.provider.opencode.tagline")}
-                          </span>
-                        </Show>
                       </span>
                     </button>
                   )}

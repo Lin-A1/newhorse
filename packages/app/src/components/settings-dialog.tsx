@@ -1,10 +1,10 @@
 import { useParams } from "@solidjs/router"
-import { onCleanup } from "solid-js"
+import { onCleanup, type Accessor } from "solid-js"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useDialog } from "@newhorse/ui/context/dialog"
 
-export function useSettingsDialog(defaultValue?: string) {
+export function useSettingsDialog(defaultValue?: string, directory?: Accessor<string | undefined>) {
   const dialog = useDialog()
   const params = useParams<{ id?: string }>()
   let run = 0
@@ -19,15 +19,17 @@ export function useSettingsDialog(defaultValue?: string) {
     const sessionID = params.id
     void import("@/components/settings-v2").then((module) => {
       if (dead || run !== current) return
-      void dialog.show(() => <module.DialogSettings sessionID={sessionID} defaultValue={defaultValue} />)
+      void dialog.show(() => (
+        <module.DialogSettings sessionID={sessionID} directory={directory?.()} defaultValue={defaultValue} />
+      ))
     })
   }
 }
 
-export function useSettingsCommand() {
+export function useSettingsCommand(directory?: Accessor<string | undefined>) {
   const command = useCommand()
   const language = useLanguage()
-  const show = useSettingsDialog()
+  const show = useSettingsDialog(undefined, directory)
 
   command.register("settings", () => [
     {
