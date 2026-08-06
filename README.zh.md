@@ -1,5 +1,5 @@
 <p align="center"><strong>newhorse</strong></p>
-<p align="center">面向软件项目、个人事务与长期关系连续性的本地优先可编程 AI 工作空间。</p>
+<p align="center">A local-first programmable AI workspace for software projects, personal work, and long-term continuity.</p>
 
 <p align="center">
   <a href="README.md">English</a> |
@@ -8,114 +8,114 @@
 
 ---
 
-## 概览
+## Overview
 
-Newhorse 是 [OpenCode](https://github.com/anomalyco/opencode) 的独立 fork，将编码智能体 Runtime 扩展为统一的工作与生活 AI 环境。同一套客户端/服务端 Runtime 驱动 Desktop、Web App、TUI、SDK、自动化、模型、Tool、MCP、Session 和 Workspace。
+Newhorse is an independent [OpenCode](https://github.com/anomalyco/opencode) fork that expands a coding-agent runtime into a unified work-and-life AI environment. The same client/server runtime powers the desktop app, web app, TUI, SDK, automation, models, tools, MCP servers, sessions, and workspaces.
 
-两个产品 Profile 共用这套 Runtime：
+Two product profiles share that runtime:
 
-- **Assistant** 面向项目执行：代码、文件、终端、研究、计划、任务与 Workspace。
-- **Companion** 面向个人连续性：关系感知对话、经确认的 Memory、Reminder、Follow-up 与主动计划。
+- **Assistant** focuses on project execution: code, files, terminals, research, plans, tasks, and workspaces.
+- **Companion** focuses on personal continuity: relationship-aware conversation, confirmed memory, reminders, follow-ups, and proactive plans.
 
-Profile 不是存储边界。持久内容按 Scope 与 Policy 隔离：项目内容留在项目/Workspace 上下文，个人与关系内容留在 Personal 个人域。Profile 身份本身永远不授予跨域移动内容的权限。
+Profiles are not storage boundaries. Persistent content is isolated by scope and policy: project content remains in project/workspace contexts, while personal and relationship content remains in the personal domain. A profile never grants permission to move content across that boundary.
 
-## 核心能力
+## Highlights
 
-### 完整的智能体工作空间
+### Full agent workspace
 
-- Desktop、浏览器与终端界面
-- Project Session、Git Worktree、Personal Workspace、Tab、Terminal、文件 Review、LSP 与 Command
-- 多个前台/后台 Agent 及 Tool 委托
-- MCP Server、Skill、Plugin、自定义 Command 与权限控制
-- 服务端动态模型目录，按 Provider 连接状态与可用性过滤
-- 多 Provider 认证与模型偏好，不依赖前端硬编码模型常量
+- Desktop, browser, and terminal interfaces
+- Project sessions, Git worktrees, personal workspaces, tabs, terminals, file review, LSP, and commands
+- Multiple foreground and background agents with tool delegation
+- MCP servers, skills, plugins, custom commands, and permission controls
+- Dynamic model catalog from the server, filtered by provider connection and availability
+- Multi-provider authentication and model preferences without a hard-coded frontend catalog
 
-### Assistant 与 Companion
+### Assistant and Companion
 
-- Session 对 Workspace 与 Profile 的不可变绑定
-- 每个 Server 复用唯一固定 Companion Session，跨项目时不会为每个目录新建对话
-- 可配置 Companion Persona、Quiet Hours、主动频率与安全上下文
-- 结构化 Memory proposal，具备 accept/reject/forget 生命周期
-- 持久 Reminder，支持创建、暂停、恢复、取消、lease 与幂等投递
-- Follow-up 调度与 Companion Plan，统一管理 proposed Memory、Reminder 和 Continuity Grant
-- 自动接受权限支持 Session、Lineage、Directory 优先级，并通过权限所属目录的 Client 响应
+- Immutable session bindings for workspace and profile
+- One server-scoped pinned Companion session, reused across projects instead of creating a new conversation per directory
+- Configurable Companion persona, quiet hours, proactive frequency, and safety context
+- Structured memory proposals with explicit accept/reject/forget lifecycle
+- Persistent reminders with create, pause, resume, cancel, lease, and idempotent delivery semantics
+- Follow-up scheduling and a Companion Plan surface that combines proposed memory, reminders, and continuity grants
+- Automatic permission acceptance with session, lineage, and directory precedence plus directory-specific response routing
 
-### 内容隔离与信任
+### Content isolation and trust
 
-- 基于 SQLite 的结构化 Memory，包含 Scope、Provenance、Status、Expiration 及 Profile/Workspace 绑定
-- Project 内容不会流入 Personal 或 Relationship Memory
-- Relationship Memory 不会流入 Project 上下文
-- 只有 Policy 允许的 Global Preference 才可投影到工作域
-- Personal Workspace 保留完整编程工具；风险动作通过明确的 `ask` 与 `deny` Policy 管理，而不是删减能力
-- Personal 上下文中的外部 MCP、Plugin 与 Skill 加载受 opt-in Policy 控制
+- Structured SQLite memory with scope, provenance, status, expiration, and profile/workspace bindings
+- Project content does not flow into personal or relationship memory
+- Relationship memory does not flow into project contexts
+- Only policy-approved global preferences can be projected into work contexts
+- Personal workspaces retain the complete programming toolset; risky behavior is controlled by explicit `ask` and `deny` policy rather than by removing capabilities
+- External MCP, plugin, and skill loading in personal contexts is subject to opt-in policy
 
-## 架构
+## Architecture
 
-Newhorse 将智能体产品中经常混在一起的职责拆分为：
+Newhorse separates the responsibilities that are often conflated in agent products:
 
-| 层 | 职责 |
+| Layer | Responsibility |
 | --- | --- |
-| Runtime | Session、Model、Agent、Tool、MCP、Skill、Memory、Scheduler |
-| Orchestration | 前台/后台 Agent 组之间的委托与协同 |
-| Workspace | Project、Worktree、Personal 环境及执行位置 |
-| Content Scope | 持久信息的归属与存储域 |
-| Policy | 权限、扩展加载与跨域信息流 |
-| Profile | Assistant/Companion 体验、Persona、Memory 行为与主动性 |
+| Runtime | Sessions, models, agents, tools, MCP, skills, memory, scheduling |
+| Orchestration | Delegation across foreground/background agent groups |
+| Workspace | Project, worktree, personal environment, and execution location |
+| Content scope | Ownership and persistence domain for durable information |
+| Policy | Permissions, extension loading, and cross-domain information flow |
+| Profile | Assistant/Companion experience, persona, memory behavior, and proactivity |
 
-主要 Package：
+Important packages include:
 
-- `packages/opencode` — CLI、Server、Runtime、Session、Tool、Worktree、Policy、Memory、Reminder 与 HTTP API
-- `packages/app` — SolidJS 产品 UI 与 Playwright 测试
-- `packages/desktop` — Electron Desktop 宿主与安装包
-- `packages/tui` — 终端界面
-- `packages/sdk/js` — 自动生成及手写的 JavaScript/TypeScript SDK
-- `packages/ui`、`packages/session-ui` — 通用 UI 与 Session 组件
-- `packages/web` — 营销/文档站点，不是产品 Web Client
+- `packages/opencode` — CLI, server, runtime, sessions, tools, worktrees, policy, memory, reminders, and HTTP APIs
+- `packages/app` — SolidJS product UI and Playwright suite
+- `packages/desktop` — Electron desktop host and installers
+- `packages/tui` — terminal interface
+- `packages/sdk/js` — generated and handwritten JavaScript/TypeScript SDK surfaces
+- `packages/ui` and `packages/session-ui` — shared UI and session components
+- `packages/web` — marketing/documentation site, not the product web client
 
-## 当前状态
+## Current status
 
-Newhorse 正在持续开发。当前支持源码构建、本地 Web/Desktop 开发、便携 CLI 导出和未签名 Desktop 安装包构建；尚未发布包管理器版本或已签名的公开安装器。
+Newhorse is under active development. Source builds, local web/desktop development, portable CLI exports, and unsigned desktop installer builds are supported. No package-manager release or signed public installer is currently published.
 
-主要基础能力已经落地：
+The following major foundations are implemented:
 
-- Central Trust Policy 与不含内容的 Policy Audit
-- Assistant/Companion Profile 与 Personal Workspace
-- 结构化 Memory、Reminder、Follow-up、Continuity Grant 与 Companion Plan 管理
-- 服务端动态 Model/Provider Catalog
-- Legacy 与 v2 两套 Settings 布局
-- Linux 与 Windows 便携 CLI 导出
-- Windows NSIS 与 Linux Desktop 打包路径
+- Central trust policy and content-free policy audit
+- Assistant/Companion profiles and personal workspaces
+- Structured memory, reminders, follow-ups, continuity grants, and Companion Plan management
+- Dynamic server-backed model/provider catalogs
+- Legacy and v2 settings layouts
+- Linux and Windows portable CLI export
+- Windows NSIS and Linux desktop packaging paths
 
-统一 Today/每日入口仍明确处于延期状态。macOS Desktop 运行验证以及生产签名/notarization 仍属于发布门槛。
+The unified Today/daily-entry experience remains intentionally deferred. macOS desktop runtime verification and production signing/notarization remain release-gating work.
 
-## 环境要求
+## Requirements
 
 - [Bun](https://bun.sh) 1.3.x
 - Git
-- 目标平台要求的构建工具（Electron Builder 会报告缺失依赖）
+- Platform tooling required by the target you build (Electron Builder reports missing prerequisites)
 
-## 从源码构建
+## Build from source
 
 ```bash
 git clone https://github.com/Lin-A1/newhorse.git
 cd newhorse
 bun install
 
-# CLI/Server 开发
+# CLI/server development
 bun run --cwd packages/opencode dev
 
-# 产品 Web UI 热更新
+# Product web UI with hot reload
 bun run dev:web
 
-# Electron Desktop 开发
+# Electron desktop development
 bun run dev:desktop
 ```
 
-产品 Web UI 由 Newhorse CLI/Server 提供服务。`packages/web` 是单独的营销与文档站点。
+The product web UI is served by the Newhorse CLI/server. `packages/web` is the separate marketing and documentation site.
 
-## 统一产品命令
+## Product commands
 
-根目录的产品编排器会委托现有 Package Script，并跟踪 Target 就绪状态与产物指纹：
+The root product orchestrator delegates to package scripts while tracking target readiness and artifact fingerprints:
 
 ```bash
 bun run product targets [--json]
@@ -127,22 +127,22 @@ bun run product export [--product cli|desktop|all] [--target <id>] [--execution 
 bun run product verify --artifact <path>
 ```
 
-Target 状态具有严格语义：
+Target status has strict meaning:
 
-- **configured** — 构建配置存在
-- **exportable** — 存在本地或 CI 导出路径
-- **verified** — 产物确实在目标操作系统运行过
-- **signed** — 已完成平台签名/notarization
-- **releasable** — 已验证、已签名并获得单独发布授权
+- **configured** — build configuration exists
+- **exportable** — a local or CI export route exists
+- **verified** — the artifact actually ran on the target operating system
+- **signed** — platform signing/notarization completed
+- **releasable** — verified, signed, and separately authorized for publication
 
-本地打包成功不会被自动描述为 signed 或 releasable。
+A local build is not reported as signed or releasable merely because packaging succeeded.
 
-## 测试
+## Testing
 
-仓库会主动阻止从根目录扫描测试。请在测试所属 Package 中执行：
+The repository deliberately blocks test discovery from the root. Run tests from the owning package:
 
 ```bash
-# Backend/Runtime
+# Backend/runtime
 bun test --cwd packages/opencode
 bun run --cwd packages/opencode typecheck
 
@@ -154,47 +154,47 @@ bun run --cwd packages/app typecheck:e2e
 # Playwright
 bun --cwd packages/app run test:e2e
 
-# 仓库级 Typecheck/Lint 编排
+# Repository-wide typecheck/lint orchestration
 bun run typecheck
 bun run lint
 ```
 
-部分 App 测试要求 browser condition 或 Package 自带的 Happy DOM preload；优先使用最近的 Package Script。
+Some app tests require the browser condition or the package's Happy DOM preload; follow the nearest package script when available.
 
-## 打包
+## Packaging
 
-### 便携 CLI
+### Portable CLI
 
 ```bash
 bun run product export --product cli --target windows-x64 --execution local --force
 bun run product export --product cli --target linux-x64 --execution local --force
 ```
 
-便携产物写入 `packages/opencode/dist/exports/`，包括 ZIP、SHA-256 与 Manifest。导出命令不会发布 Release、创建 Tag 或推送 Container。
+Portable outputs are written under `packages/opencode/dist/exports/` with a ZIP, SHA-256 checksum, and manifest. The export command does not publish a release, create a tag, or push a container.
 
-### Windows Desktop 安装包
+### Windows desktop installer
 
-在 Windows 上执行：
+On Windows:
 
 ```powershell
 bun run --cwd packages/desktop build
 bun run --cwd packages/desktop package:win
 ```
 
-Electron Builder 将 NSIS 安装器写入 `packages/desktop/dist/`。除非显式配置可信签名环境，否则本地安装包保持 unsigned。CI Desktop 导出通过手动触发、仅上传 Artifact 的 Workflow 提供。
+Electron Builder writes the NSIS installer to `packages/desktop/dist/`. Local installers are unsigned unless the trusted signing environment is explicitly configured. CI desktop exports are available through the manually dispatched artifact-only workflow.
 
-构建结构与 Manifest 保持确定性，但 Bun/Electron payload 可能包含时间戳和路径，因此不保证跨构建逐位一致。应以每次产物自身的 SHA-256 为准。
+Build structure and manifests are deterministic, but Bun/Electron payloads are not guaranteed to be bit-for-bit reproducible because build metadata can include timestamps and paths. Treat each artifact's own SHA-256 as authoritative.
 
-## 配置兼容
+## Configuration compatibility
 
-Newhorse 将配置写入 Project 或用户主目录下的 `.newhorse/`。旧 `.opencode/` 路径仍可读取，以支持迁移兼容。Runtime 环境变量优先采用 `NH_*`，并在需要兼容时继续接受上游 `OPENCODE_*` 别名，例如 `NH_DB` / `OPENCODE_DB`。
+Newhorse writes configuration under `.newhorse/` in the project or user home directory. Legacy `.opencode/` paths remain readable for migration compatibility. Runtime environment variables prefer `NH_*` and continue to accept upstream `OPENCODE_*` aliases where compatibility is required, for example `NH_DB` / `OPENCODE_DB`.
 
-## 与 OpenCode 的关系
+## Relationship to OpenCode
 
-Newhorse 是 [OpenCode](https://github.com/anomalyco/opencode) 的独立 fork，不由 OpenCode 团队开发、背书或提供支持。请在本仓库报告 Newhorse 问题，不要提交到上游。
+Newhorse is an independent fork of [OpenCode](https://github.com/anomalyco/opencode). It is not developed, endorsed, or supported by the OpenCode team. Please report Newhorse issues in this repository rather than upstream.
 
-原项目与本 fork 均遵循各自适用的许可条款，详见 [LICENSE](./LICENSE)。
+The original project and this fork remain subject to their applicable licenses. See [LICENSE](./LICENSE).
 
-## 贡献
+## Contributing
 
-提交 Pull Request 前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。测试必须按 Package 执行；不得提交凭据或内部交接文档；验证边界必须如实报告。
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request. Keep tests package-scoped, do not commit credentials or internal handoff documents, and report verification boundaries honestly.
