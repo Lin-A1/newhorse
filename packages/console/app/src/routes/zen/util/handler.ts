@@ -69,6 +69,19 @@ function resolve(text: string, params?: Record<string, string | number>) {
   })
 }
 
+// The gateway runs on Cloudflare Workers, where the caller's real address is
+// CF-Connecting-IP; x-real-ip is only set by upstream proxies like nginx.
+// Falling back through both keeps free-model IP rate limits keyed per client
+// instead of collapsing every anonymous request into the same "unknown" bucket.
+function clientIp(request: Request): string {
+  return (
+    request.headers.get("CF-Connecting-IP") ??
+    request.headers.get("x-real-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    ""
+  )
+}
+
 export async function handler(
   input: APIEvent,
   opts: {
@@ -101,7 +114,7 @@ export async function handler(
     const model = opts.parseModel(url, body)
     const variant = opts.parseVariant(url, body)
     const isStream = opts.parseIsStream(url, body)
-    const rawIp = input.request.headers.get("x-real-ip") ?? ""
+    const rawIp = clientIp(input.request)
     const ip = rawIp.includes(":") ? rawIp.split(":").slice(0, 4).join(":") : rawIp
     const rawZenApiKey = opts.parseApiKey(input.request.headers)
     const zenApiKey = rawZenApiKey === "public" ? undefined : rawZenApiKey

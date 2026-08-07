@@ -21,7 +21,10 @@ export default {
       )
         continue
 
-      const ip = event.event.request.headers["x-real-ip"]
+      const ip =
+        event.event.request.headers["CF-Connecting-IP"] ??
+        event.event.request.headers["x-real-ip"] ??
+        event.event.request.headers["x-forwarded-for"]?.split(",")[0]?.trim()
       let data: Record<string, unknown> = {
         "cf.continent": event.event.request.cf?.continent,
         "cf.country": event.event.request.cf?.country,
