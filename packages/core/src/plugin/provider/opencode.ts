@@ -4,9 +4,12 @@ import type { IntegrationOAuthMethodRegistration } from "@newhorse/plugin/v2/eff
 import { define } from "@newhorse/plugin/v2/effect/plugin"
 import type { CredentialValue } from "@newhorse/sdk/v2/types"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import path from "path"
 import { EventV2 } from "../../event"
 import { env } from "../../flag/flag"
 import { Credential } from "../../credential"
+import { FSUtil } from "../../fs-util"
+import { Global } from "../../global"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
@@ -75,14 +78,35 @@ function oauth(http: HttpClient.HttpClient) {
   } satisfies IntegrationOAuthMethodRegistration
 }
 
-export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | Scope.Scope>({
+export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | FSUtil.Service | Scope.Scope>({
   id: "opencode",
   effect: Effect.fn(function* (ctx) {
     const events = yield* EventV2.Service
     const http = yield* HttpClient.HttpClient
+    const fs = yield* FSUtil.Service
     const loading = Semaphore.makeUnsafe(1)
     let connected = false
+    let legacyAuth = false
     let providers: typeof ConfigV1.Info.Type.provider | undefined
+
+    const hasLegacyAuth = Effect.fn("OpencodePlugin.hasLegacyAuth")(function* () {
+      // When the control plane runs an instance it passes the full legacy auth
+      // store as OPENCODE_AUTH_CONTENT; that is authoritative and skips the
+      // on-disk file (which may be stale or absent in child workspaces).
+      const content = env("OPENCODE_AUTH_CONTENT")
+      if (content !== undefined) {
+        try {
+          const parsed = JSON.parse(content) as Record<string, unknown>
+          return Boolean(parsed && typeof parsed === "object" && parsed["opencode"])
+        } catch {
+          return false
+        }
+      }
+      const data = yield* fs.readJson(path.join(Global.Path.data, "auth.json")).pipe(
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      return Boolean(data && typeof data === "object" && "opencode" in data)
+    })
 
     const load = Effect.fn("OpencodePlugin.load")(function* () {
       const connection = yield* ctx.integration.connection.active("opencode")
@@ -90,6 +114,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
         ? yield* ctx.integration.connection.resolve(connection).pipe(Effect.catch(() => Effect.succeed(undefined)))
         : undefined
       connected = connection !== undefined
+      legacyAuth = yield* hasLegacyAuth()
       providers = credential
         ? yield* fetchProviders(http, credential).pipe(
             Effect.catch((cause) =>
@@ -108,6 +133,7 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
     })
 
     connected = (yield* ctx.integration.connection.active("opencode")) !== undefined
+    legacyAuth = yield* hasLegacyAuth()
     yield* ctx.catalog.transform((catalog) => {
       for (const [providerID, item] of Object.entries(providers ?? {})) {
         catalog.provider.update(providerID, (provider) => {
@@ -165,7 +191,14 @@ export const OpencodePlugin = define<HttpClient.HttpClient | EventV2.Service | S
 
       const item = catalog.provider.get(ProviderV2.ID.opencode)
       if (!item) return
-      const hasKey = Boolean(env("OPENCODE_API_KEY") || connected || item.provider.request.body.apiKey)
+      // The app and CLI store OpenCode Zen credentials in the legacy auth
+      // store (auth.json / OPENCODE_AUTH_CONTENT), not in the v2 integration
+      // store. Treat an opencode entry there as authenticated so paid models
+      // stay enabled in the catalog; otherwise they never appear in the model
+      // list and can't be selected.
+      const hasKey = Boolean(
+        env("OPENCODE_API_KEY") || connected || item.provider.request.body.apiKey || legacyAuth,
+      )
       catalog.provider.update(item.provider.id, (provider) => {
         if (!hasKey) provider.request.body.apiKey = "public"
       })
