@@ -131,7 +131,7 @@ describe("OpenAIPlugin", () => {
     }),
   )
 
-  it.effect("disables gpt-5-chat-latest during catalog transforms", () =>
+  it.effect("keeps gpt-5-chat-latest enabled and routes it through chat", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
       yield* catalog.transform((catalog) => {
@@ -147,9 +147,22 @@ describe("OpenAIPlugin", () => {
       })
       yield* addPlugin()
       expect(required(yield* catalog.model.get(ProviderV2.ID.openai, ModelV2.ID.make("gpt-5"))).enabled).toBe(true)
-      expect(
-        required(yield* catalog.model.get(ProviderV2.ID.openai, ModelV2.ID.make("gpt-5-chat-latest"))).enabled,
-      ).toBe(false)
+      expect(required(yield* catalog.model.get(ProviderV2.ID.openai, ModelV2.ID.make("gpt-5-chat-latest"))).enabled).toBe(
+        true,
+      )
+
+      const calls: string[] = []
+      const aisdk = yield* AISDK.Service
+      const result = yield* aisdk.runLanguage({
+        model: ModelV2.Info.make({
+          ...ModelV2.Info.empty(ProviderV2.ID.openai, ModelV2.ID.make("gpt-5-chat-latest")),
+          api: { id: ModelV2.ID.make("gpt-5-chat-latest"), type: "aisdk", package: "@ai-sdk/openai" },
+        }),
+        sdk: fakeSelectorSdk(calls),
+        options: {},
+      })
+      expect(calls).toEqual(["chat:gpt-5-chat-latest"])
+      expect(result.language).toBeDefined()
     }),
   )
 

@@ -79,7 +79,7 @@ export const SettingsProfileV2: Component = () => {
                       {language.t("settings.profile.quietHours.description")}
                     </span>
                   </div>
-                  <div class="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3 [&>*]:min-w-0">
+                  <div class="grid min-w-0 grid-cols-1 gap-2 min-[720px]:grid-cols-3 [&>*]:min-w-0 [&>*]:w-full">
                     <TextInputV2
                       type="time"
                       value={profile.state.quietStart}

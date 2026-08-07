@@ -97,6 +97,8 @@ describe("tool.reminder", () => {
   it.instance("delegates proactive consent validation to the scheduler", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
+      const profiles = yield* Profile.Service
+      yield* profiles.update(Profile.ID.make("companion"), { proactive: false, proactivePaused: false })
       const session = yield* sessions.create({ profileID: Profile.ID.make("companion") })
       const info = yield* ReminderTool
       const tool = yield* info.init()

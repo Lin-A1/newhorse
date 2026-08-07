@@ -20,8 +20,9 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    width: 480px;
-    height: 368px;
+    width: min(480px, calc(100vw - 32px));
+    max-width: calc(100vw - 32px);
+    height: min(368px, calc(100vh - 32px));
     background: var(--v2-background-bg-layer-01);
     box-shadow: var(--v2-elevation-overlay);
     border-radius: 6px;
@@ -29,7 +30,9 @@
     pointer-events: auto;
 
     [data-slot="dialog-content"] {
+      box-sizing: border-box;
       display: flex;
+      min-width: 0;
       flex-direction: column;
       align-items: flex-start;
       align-self: stretch;

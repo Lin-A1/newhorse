@@ -3,9 +3,9 @@ import { createStore } from "solid-js/store"
 import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
 import { createSimpleContext } from "@newhorse/ui/context"
-import { useProviders } from "@/hooks/use-providers"
 import { useServerSync } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
+import { legacyModelCatalog } from "./global-sync/utils"
 
 export type ModelKey = { providerID: string; modelID: string }
 
@@ -27,14 +27,15 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
   name: "Models",
   gate: false,
   init: (props: { directory?: Accessor<string | undefined> } = {}) => {
-    const providers = useProviders(props.directory)
     const serverSync = useServerSync()
     const catalog = createMemo(() => {
       const directory = props.directory?.()
       const child = directory ? serverSync().child(directory)[0] : undefined
       const connected = child?.provider.connected ?? serverSync().data.provider.connected
-      const source = child?.model_catalog ?? serverSync().data.model_catalog ?? []
-      const providerMap = child?.provider.all ?? serverSync().data.provider.all
+      const provider = child?.provider ?? serverSync().data.provider
+      const catalogSource = child?.model_catalog ?? serverSync().data.model_catalog ?? []
+      const source = catalogSource.length > 0 ? catalogSource : legacyModelCatalog(provider)
+      const providerMap = provider.all
       const catalogProviders = child?.provider_catalog ?? serverSync().data.provider_catalog ?? []
       const disabled = new Set(catalogProviders.filter((provider) => provider.disabled === true).map((provider) => provider.id))
       const allowed = new Set(connected)

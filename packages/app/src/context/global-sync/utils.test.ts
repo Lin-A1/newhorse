@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Agent, ModelV2Info } from "@newhorse/sdk/v2/client"
-import { adaptModelCatalog, directoryKey, normalizeAgentList } from "./utils"
+import { adaptModelCatalog, directoryKey, legacyModelCatalog, normalizeAgentList } from "./utils"
 
 const agent = (name = "build") =>
   ({
@@ -96,6 +96,32 @@ describe("adaptModelCatalog", () => {
         model({ id: "deprecated", status: "deprecated" }),
       ]).map((item) => item.id),
     ).toEqual(["enabled"])
+  })
+})
+
+describe("legacyModelCatalog", () => {
+  test("flattens provider models for fallback", () => {
+    expect(
+      legacyModelCatalog({
+        all: new Map([
+          [
+            "anthropic",
+            {
+              id: "anthropic",
+              name: "Anthropic",
+              source: "api",
+              env: [],
+              options: {},
+              models: {
+                opus: { id: "opus", providerID: "anthropic" } as never,
+              },
+            },
+          ],
+        ]),
+        connected: ["anthropic"],
+        default: { anthropic: "opus" },
+      } as never),
+    ).toHaveLength(1)
   })
 })
 

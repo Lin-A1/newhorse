@@ -161,7 +161,7 @@ export function PromptWorkspaceSelector(props: {
   branch?: string
   onChange: (value: string) => void
   onDone: () => void
-  onRemoveWorkspace?: (id: string) => void
+  onRemoveWorkspace?: (id: string) => void | Promise<void>
 }) {
   const language = useLanguage()
   let pending: string | undefined
@@ -244,10 +244,14 @@ export function PromptWorkspaceSelector(props: {
                           type="button"
                           class="shrink-0 rounded p-0.5 text-text-weaker hover:bg-surface-raised-base hover:text-text-base"
                           aria-label={language.t("session.new.workspace.remove", { name: workspace.name })}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
+                          onPointerDown={(event) => {
+                            event.preventDefault()
                             event.stopPropagation()
-                            props.onRemoveWorkspace?.(workspace.id)
+                          }}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            void props.onRemoveWorkspace?.(workspace.id)
                           }}
                         >
                           <Icon name="trash" size="small" />

@@ -159,6 +159,18 @@ function selectAzureLanguageModel(sdk: any, modelID: string, useChat: boolean) {
   return sdk.languageModel(modelID)
 }
 
+export function selectOpenAILanguageModel(sdk: any, modelID: string, model?: Model) {
+  if (sdk.responses === undefined && sdk.chat === undefined) return sdk.languageModel(modelID)
+  if (model && "endpoint" in model.api) {
+    if (model.api.endpoint === "responses" && sdk.responses) return sdk.responses(modelID)
+    if (model.api.endpoint === "chat" && sdk.chat) return sdk.chat(modelID)
+  }
+  if (model?.api.id.includes("chat") && sdk.chat) return sdk.chat(modelID)
+  if (sdk.responses) return sdk.responses(modelID)
+  if (sdk.chat) return sdk.chat(modelID)
+  return sdk.languageModel(modelID)
+}
+
 function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
   if (modelID === "openai.gpt-oss-safeguard-20b" || modelID === "openai.gpt-oss-safeguard-120b")
     return sdk.chat?.(modelID) ?? sdk.languageModel(modelID)
@@ -202,8 +214,8 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
     openai: () =>
       Effect.succeed({
         autoload: false,
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          return sdk.responses(modelID)
+        async getModel(sdk: any, modelID: string, _options?: Record<string, any>, model?: Model) {
+          return selectOpenAILanguageModel(sdk, modelID, model)
         },
         options: { headerTimeout: OPENAI_HEADER_TIMEOUT_DEFAULT },
       }),

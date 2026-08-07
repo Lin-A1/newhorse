@@ -29,8 +29,8 @@ export function useConfirm() {
       }
       dialog.push(
         () => (
-          <Dialog title={options.title} description={options.message}>
-            <div class="flex justify-end gap-2 pt-2">
+          <Dialog title={options.title} description={options.message} fit>
+            <div class="flex flex-wrap justify-end gap-2 pt-2">
               <Button size="small" variant="ghost" onClick={() => finish(false)}>
                 {options.cancelLabel ?? language.t("common.cancel")}
               </Button>

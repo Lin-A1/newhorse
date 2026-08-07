@@ -70,7 +70,7 @@ export const SettingsProfile: Component = () => {
                 title={language.t("settings.profile.quietHours.title")}
                 description={language.t("settings.profile.quietHours.description")}
               >
-                <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div class="grid min-w-0 grid-cols-1 gap-2 min-[720px]:grid-cols-3 [&>*]:min-w-0 [&>*]:w-full">
                   <TextField
                     type="time"
                     value={profile.state.quietStart}

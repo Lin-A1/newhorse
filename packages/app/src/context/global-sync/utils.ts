@@ -80,6 +80,10 @@ export function adaptModelCatalog(input: ModelV2Info[]): LegacyModel[] {
     })
 }
 
+export function legacyModelCatalog(input: NormalizedProviderListResponse): LegacyModel[] {
+  return [...input.all.values()].flatMap((provider) => Object.values(provider.models))
+}
+
 export function filterModelCatalog(input: LegacyModel[], connected: Iterable<string>) {
   const ids = new Set(connected)
   return input.filter((model) => ids.has(model.providerID))

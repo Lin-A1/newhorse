@@ -1,5 +1,5 @@
 <p align="center"><strong>newhorse</strong></p>
-<p align="center">A local-first programmable AI workspace for software projects, personal work, and long-term continuity.</p>
+<p align="center">A local-first programmable AI workspace for project work, personal continuity, and multi-surface agent workflows.</p>
 
 <p align="center">
   <a href="README.md">English</a> |
@@ -10,14 +10,14 @@
 
 ## Overview
 
-Newhorse is an independent [OpenCode](https://github.com/anomalyco/opencode) fork that expands a coding-agent runtime into a unified work-and-life AI environment. The same client/server runtime powers the desktop app, web app, TUI, SDK, automation, models, tools, MCP servers, sessions, and workspaces.
+Newhorse is an independent [OpenCode](https://github.com/anomalyco/opencode) fork that extends a coding-agent runtime into a broader work and life environment. The same runtime powers the desktop app, web app, TUI, SDK, automation, models, tools, MCP servers, sessions, and workspaces.
 
 Two product profiles share that runtime:
 
 - **Assistant** focuses on project execution: code, files, terminals, research, plans, tasks, and workspaces.
 - **Companion** focuses on personal continuity: relationship-aware conversation, confirmed memory, reminders, follow-ups, and proactive plans.
 
-Profiles are not storage boundaries. Persistent content is isolated by scope and policy: project content remains in project/workspace contexts, while personal and relationship content remains in the personal domain. A profile never grants permission to move content across that boundary.
+Profiles are not storage boundaries. Persistent content stays isolated by scope and policy: project content remains in project/workspace contexts, while personal and relationship content remains in the personal domain.
 
 ## Highlights
 
@@ -27,18 +27,18 @@ Profiles are not storage boundaries. Persistent content is isolated by scope and
 - Project sessions, Git worktrees, personal workspaces, tabs, terminals, file review, LSP, and commands
 - Multiple foreground and background agents with tool delegation
 - MCP servers, skills, plugins, custom commands, and permission controls
-- Dynamic model catalog from the server, filtered by provider connection and availability
-- Multi-provider authentication and model preferences without a hard-coded frontend catalog
+- Server-backed dynamic model catalogs filtered by provider availability
+- Multi-provider authentication and model preferences without a hard-coded frontend list
 
 ### Assistant and Companion
 
 - Immutable session bindings for workspace and profile
-- One server-scoped pinned Companion session, reused across projects instead of creating a new conversation per directory
+- One server-scoped pinned Companion session, reused across projects
 - Configurable Companion persona, quiet hours, proactive frequency, and safety context
 - Structured memory proposals with explicit accept/reject/forget lifecycle
-- Persistent reminders with create, pause, resume, cancel, lease, and idempotent delivery semantics
-- Follow-up scheduling and a Companion Plan surface that combines proposed memory, reminders, and continuity grants
-- Automatic permission acceptance with session, lineage, and directory precedence plus directory-specific response routing
+- Persistent reminders with create, pause, resume, cancel, lease, and idempotent delivery
+- Follow-up scheduling and a Companion Plan surface for memory, reminders, and continuity grants
+- Automatic permission acceptance with session, lineage, and directory precedence
 
 ### Content isolation and trust
 
@@ -46,12 +46,12 @@ Profiles are not storage boundaries. Persistent content is isolated by scope and
 - Project content does not flow into personal or relationship memory
 - Relationship memory does not flow into project contexts
 - Only policy-approved global preferences can be projected into work contexts
-- Personal workspaces retain the complete programming toolset; risky behavior is controlled by explicit `ask` and `deny` policy rather than by removing capabilities
-- External MCP, plugin, and skill loading in personal contexts is subject to opt-in policy
+- Personal workspaces retain the full programming toolset; risky behavior is controlled by explicit policy
+- External MCP, plugin, and skill loading in personal contexts is opt-in
 
 ## Architecture
 
-Newhorse separates the responsibilities that are often conflated in agent products:
+Newhorse separates responsibilities that are often conflated in agent products:
 
 | Layer | Responsibility |
 | --- | --- |
@@ -74,25 +74,25 @@ Important packages include:
 
 ## Current status
 
-Newhorse is under active development. Source builds, local web/desktop development, portable CLI exports, and unsigned desktop installer builds are supported. No package-manager release or signed public installer is currently published.
+Newhorse is under active development. Source builds, local web and desktop development, portable CLI exports, and unsigned desktop installer builds are supported. No package-manager release or signed public installer is currently published.
 
-The following major foundations are implemented:
+Major foundations already implemented include:
 
 - Central trust policy and content-free policy audit
 - Assistant/Companion profiles and personal workspaces
 - Structured memory, reminders, follow-ups, continuity grants, and Companion Plan management
-- Dynamic server-backed model/provider catalogs
+- Server-backed dynamic model/provider catalogs
 - Legacy and v2 settings layouts
 - Linux and Windows portable CLI export
 - Windows NSIS and Linux desktop packaging paths
 
-The unified Today/daily-entry experience remains intentionally deferred. macOS desktop runtime verification and production signing/notarization remain release-gating work.
+The unified Today/daily-entry experience remains intentionally deferred. macOS desktop validation and production signing/notarization are still release-gating items.
 
-## Requirements
+## Environment requirements
 
 - [Bun](https://bun.sh) 1.3.x
 - Git
-- Platform tooling required by the target you build (Electron Builder reports missing prerequisites)
+- Platform-specific build tools required by Electron Builder
 
 ## Build from source
 
@@ -104,18 +104,18 @@ bun install
 # CLI/server development
 bun run --cwd packages/opencode dev
 
-# Product web UI with hot reload
+# Product web UI hot reload
 bun run dev:web
 
 # Electron desktop development
 bun run dev:desktop
 ```
 
-The product web UI is served by the Newhorse CLI/server. `packages/web` is the separate marketing and documentation site.
+The product web UI is served by the Newhorse CLI/server. `packages/web` is a separate marketing and documentation site.
 
 ## Product commands
 
-The root product orchestrator delegates to package scripts while tracking target readiness and artifact fingerprints:
+The root product orchestrator delegates to package scripts and tracks target readiness and artifact fingerprints:
 
 ```bash
 bun run product targets [--json]
@@ -127,74 +127,27 @@ bun run product export [--product cli|desktop|all] [--target <id>] [--execution 
 bun run product verify --artifact <path>
 ```
 
-Target status has strict meaning:
+Target state uses strict meanings:
 
 - **configured** — build configuration exists
-- **exportable** — a local or CI export route exists
-- **verified** — the artifact actually ran on the target operating system
-- **signed** — platform signing/notarization completed
-- **releasable** — verified, signed, and separately authorized for publication
+- **exportable** — a local or CI export path exists
+- **verified** — the artifact has run successfully on the target OS
+- **signed** — platform signing/notarization is complete
+- **releasable** — the artifact is verified, signed, and authorized for release
 
-A local build is not reported as signed or releasable merely because packaging succeeded.
+A successful local package build is not automatically treated as signed or releasable.
 
 ## Testing
 
-The repository deliberately blocks test discovery from the root. Run tests from the owning package:
+Run package-scoped commands from the package directory, not the repo root.
 
 ```bash
-# Backend/runtime
-bun test --cwd packages/opencode
-bun run --cwd packages/opencode typecheck
-
-# App
-bun --cwd packages/app test --preload ./happydom.ts
 bun run --cwd packages/app typecheck
-bun run --cwd packages/app typecheck:e2e
-
-# Playwright
-bun --cwd packages/app run test:e2e
-
-# Repository-wide typecheck/lint orchestration
-bun run typecheck
-bun run lint
+bun run --cwd packages/opencode typecheck
+bun run --cwd packages/opencode test
+bun run --cwd packages/opencode test:httpapi
 ```
-
-Some app tests require the browser condition or the package's Happy DOM preload; follow the nearest package script when available.
-
-## Packaging
-
-### Portable CLI
-
-```bash
-bun run product export --product cli --target windows-x64 --execution local --force
-bun run product export --product cli --target linux-x64 --execution local --force
-```
-
-Portable outputs are written under `packages/opencode/dist/exports/` with a ZIP, SHA-256 checksum, and manifest. The export command does not publish a release, create a tag, or push a container.
-
-### Windows desktop installer
-
-On Windows:
-
-```powershell
-bun run --cwd packages/desktop build
-bun run --cwd packages/desktop package:win
-```
-
-Electron Builder writes the NSIS installer to `packages/desktop/dist/`. Local installers are unsigned unless the trusted signing environment is explicitly configured. CI desktop exports are available through the manually dispatched artifact-only workflow.
-
-Build structure and manifests are deterministic, but Bun/Electron payloads are not guaranteed to be bit-for-bit reproducible because build metadata can include timestamps and paths. Treat each artifact's own SHA-256 as authoritative.
-
-## Configuration compatibility
-
-Newhorse writes configuration under `.newhorse/` in the project or user home directory. Legacy `.opencode/` paths remain readable for migration compatibility. Runtime environment variables prefer `NH_*` and continue to accept upstream `OPENCODE_*` aliases where compatibility is required, for example `NH_DB` / `OPENCODE_DB`.
-
-## Relationship to OpenCode
-
-Newhorse is an independent fork of [OpenCode](https://github.com/anomalyco/opencode). It is not developed, endorsed, or supported by the OpenCode team. Please report Newhorse issues in this repository rather than upstream.
-
-The original project and this fork remain subject to their applicable licenses. See [LICENSE](./LICENSE).
 
 ## Contributing
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening a pull request. Keep tests package-scoped, do not commit credentials or internal handoff documents, and report verification boundaries honestly.
+See `README.zh.md` for the Chinese version. For code changes, keep commits focused and prefer small, reviewable patches.

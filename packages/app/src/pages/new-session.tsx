@@ -21,6 +21,8 @@ import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useConfirm } from "@/components/confirm-dialog"
+import { showToast } from "@/utils/toast"
+import { errorMessage } from "./layout/helpers"
 import { useSettings } from "@/context/settings"
 import { createPromptInputController, createPromptProjectControls } from "@/pages/session/composer"
 import { useSessionKey } from "@/pages/session/session-layout"
@@ -49,7 +51,7 @@ const providerTipExitDuration = 250
 
 /**
  * The `/new-session` draft page. Unlike `session.tsx`, this only renders the prompt
- * composer for a brand-new session — no terminal, review pane, file tree, or message
+ * composer for a brand-new session 閳?no terminal, review pane, file tree, or message
  * timeline. Submitting promotes the draft into a real session (see prompt-input/submit).
  */
 export default function NewSessionPage() {
@@ -112,9 +114,18 @@ export default function NewSessionPage() {
       message: language.t("session.new.workspace.remove.confirm", { name }),
     })
     if (!confirmed) return
-    await sdk()
+    const removed = await sdk()
       .client.experimental.workspace.remove({ id })
-      .catch(() => undefined)
+      .then((result) => result.data ?? true)
+      .catch((err) => {
+        showToast({
+          title: language.t("workspace.delete.failed.title"),
+          description: errorMessage(err, language.t("common.requestFailed")),
+        })
+        return undefined
+      })
+    if (!removed) return
+    setStore("workspace", (current) => (current === `workspace:${id}` ? "main" : current))
     void refetchWorkspaces()
   }
   const [profileState] = createResource(

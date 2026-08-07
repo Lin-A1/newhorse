@@ -19,8 +19,9 @@
   [data-slot="dialog-container"] {
     position: relative;
     z-index: 50;
-    width: min(calc(100vw - 16px), 640px);
-    height: min(calc(100vh - 16px), 512px);
+    width: min(calc(100vw - 32px), 640px);
+    max-width: calc(100vw - 32px);
+    height: min(calc(100vh - 32px), 512px);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -28,7 +29,9 @@
     overflow: visible;
 
     [data-slot="dialog-content"] {
+      box-sizing: border-box;
       display: flex;
+      min-width: 0;
       flex-direction: column;
       align-items: flex-start;
       align-self: stretch;

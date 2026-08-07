@@ -276,7 +276,7 @@ function DialogAddMcp(props: { onAdded: () => void }) {
 
   return (
     <Dialog title={language.t("settings.skillsMcp.mcp.add.title")}>
-      <div class="flex flex-col gap-4">
+      <div class="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-3 sm:px-6">
         <p class="text-12-regular text-text-weak">{language.t("settings.skillsMcp.mcp.add.description")}</p>
 
         <div class="flex flex-col gap-1.5">
@@ -334,7 +334,7 @@ function DialogAddMcp(props: { onAdded: () => void }) {
                 : language.t("settings.skillsMcp.mcp.add.url")
             }
           />
-          <p class="text-11-regular text-text-weaker">
+          <p class="break-words text-11-regular text-text-weaker">
             {type() === "local"
               ? language.t("settings.skillsMcp.mcp.add.command.help")
               : language.t("settings.skillsMcp.mcp.add.url.help")}

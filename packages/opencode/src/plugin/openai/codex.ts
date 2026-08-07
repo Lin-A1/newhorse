@@ -12,8 +12,6 @@ const ISSUER = "https://auth.openai.com"
 const CODEX_API_ENDPOINT = "https://chatgpt.com/backend-api/codex/responses"
 const OAUTH_PORT = 1455
 const OAUTH_POLLING_SAFETY_MARGIN_MS = 3000
-const ALLOWED_MODELS = new Set(["gpt-5.5", "gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini"])
-const DISALLOWED_MODELS = new Set(["gpt-5.5-pro"])
 
 interface PkceCodes {
   verifier: string
@@ -284,36 +282,39 @@ export async function CodexAuthPlugin(input: PluginInput, options: CodexAuthPlug
           Object.entries(provider.models)
             .filter(([, model]) => {
               if (model.options.reasoningMode === "pro") return false
-              if (ALLOWED_MODELS.has(model.api.id)) return true
-              if (DISALLOWED_MODELS.has(model.api.id)) return false
-              if (model.api.id === "gpt-5.6") return false
+              if (model.api.id === "gpt-5.3-codex-spark") return true
               const match = model.api.id.match(/^gpt-(\d+\.\d+)/)
-              return match ? parseFloat(match[1]) > 5.4 : false
+              return match ? parseFloat(match[1]) >= 5.4 : false
             })
-            .map(([modelID, model]) => [
-              modelID,
-              {
-                ...model,
-                cost: {
-                  input: 0,
-                  output: 0,
-                  cache: { read: 0, write: 0 },
+            .map(([modelID, model]) => {
+              const match = model.api.id.match(/^gpt-(\d+\.\d+)/)
+              const version = match ? parseFloat(match[1]) : undefined
+              return [
+                modelID,
+                {
+                  ...model,
+                  cost: {
+                    input: 0,
+                    output: 0,
+                    cache: { read: 0, write: 0 },
+                  },
+                  limit:
+                    version && version >= 5.6
+                      ? {
+                          context: 500_000,
+                          input: 372_000,
+                          output: 128_000,
+                        }
+                      : version && version >= 5.5
+                        ? {
+                            context: 400_000,
+                            input: 272_000,
+                            output: 128_000,
+                          }
+                        : model.limit,
                 },
-                limit: model.id.includes("gpt-5.5")
-                  ? {
-                      context: 400_000,
-                      input: 272_000,
-                      output: 128_000,
-                    }
-                  : model.id.includes("gpt-5.6")
-                    ? {
-                        context: 500_000,
-                        input: 372_000,
-                        output: 128_000,
-                      }
-                    : model.limit,
-              },
-            ]),
+              ]
+            }),
         )
       },
     },

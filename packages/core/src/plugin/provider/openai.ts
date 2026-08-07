@@ -6,7 +6,6 @@ import type { Scope } from "effect"
 import { Credential } from "../../credential"
 import { InstallationVersion } from "../../installation/version"
 import { Integration } from "../../integration"
-import { ModelV2 } from "../../model"
 import { OauthCallbackPage } from "../../oauth/page"
 import { ProviderV2 } from "../../provider"
 import type { PluginInternal } from "../internal"
@@ -158,20 +157,6 @@ export const OpenAIPlugin = define({
       draft.method.update(browser)
       draft.method.update(headless)
     })
-    yield* ctx.catalog.transform(
-      Effect.fn(function* (evt) {
-        for (const item of evt.provider.list()) {
-          if (item.provider.api.type !== "aisdk") continue
-          if (item.provider.api.package !== "@ai-sdk/openai") continue
-          if (!item.models.has(ModelV2.ID.make("gpt-5-chat-latest"))) continue
-          evt.model.update(item.provider.id, ModelV2.ID.make("gpt-5-chat-latest"), (model) => {
-            // OpenAIPlugin sends OpenAI models through Responses; this alias is a
-            // chat-completions-only model, so hide it only from OpenAI's catalog.
-            model.enabled = false
-          })
-        }
-      }),
-    )
     yield* ctx.aisdk.sdk(
       Effect.fn(function* (evt) {
         if (evt.package !== "@ai-sdk/openai") return
@@ -182,7 +167,35 @@ export const OpenAIPlugin = define({
     yield* ctx.aisdk.language(
       Effect.fn(function* (evt) {
         if (evt.model.providerID !== ProviderV2.ID.openai) return
-        evt.language = evt.sdk.responses(evt.model.api.id)
+        if (evt.options.endpoint === "responses" && evt.sdk.responses) {
+          evt.language = evt.sdk.responses(evt.model.api.id)
+          return
+        }
+        if (evt.options.endpoint === "chat" && evt.sdk.chat) {
+          evt.language = evt.sdk.chat(evt.model.api.id)
+          return
+        }
+        if ("endpoint" in evt.model.api && evt.model.api.endpoint === "responses" && evt.sdk.responses) {
+          evt.language = evt.sdk.responses(evt.model.api.id)
+          return
+        }
+        if ("endpoint" in evt.model.api && evt.model.api.endpoint === "chat" && evt.sdk.chat) {
+          evt.language = evt.sdk.chat(evt.model.api.id)
+          return
+        }
+        if (evt.model.api.id.includes("chat") && evt.sdk.chat) {
+          evt.language = evt.sdk.chat(evt.model.api.id)
+          return
+        }
+        if (evt.sdk.responses) {
+          evt.language = evt.sdk.responses(evt.model.api.id)
+          return
+        }
+        if (evt.sdk.chat) {
+          evt.language = evt.sdk.chat(evt.model.api.id)
+          return
+        }
+        evt.language = evt.sdk.languageModel(evt.model.api.id)
       }),
     )
   }),

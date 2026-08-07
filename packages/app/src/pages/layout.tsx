@@ -1375,7 +1375,7 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   const deleteWorkspace = async (root: string, directory: string, leaveDeletedWorkspace = false) => {
-    if (directory === root) return
+    if (directory === root) return false
 
     const current = currentDir()
     const currentKey = pathKey(current)
@@ -1383,6 +1383,20 @@ export default function LegacyLayout(props: ParentProps) {
     const shouldLeave = leaveDeletedWorkspace || (!!params.dir && currentKey === deletedKey)
 
     setBusy(directory, true)
+
+    const sessions: Session[] = await serverSDK()
+      .client.session.list({ directory })
+      .then((x) => x.data ?? [])
+      .catch(() => [])
+    clearWorkspaceTerminals(
+      directory,
+      sessions.map((session) => session.id),
+      platform,
+      serverSDK().scope,
+    )
+    await serverSDK()
+      .client.instance.dispose({ directory })
+      .catch(() => undefined)
 
     const result = await serverSDK()
       .client.worktree.remove({
@@ -1400,21 +1414,7 @@ export default function LegacyLayout(props: ParentProps) {
 
     setBusy(directory, false)
 
-    if (!result) return
-
-    const sessions: Session[] = await serverSDK()
-      .client.session.list({ directory })
-      .then((x) => x.data ?? [])
-      .catch(() => [])
-    clearWorkspaceTerminals(
-      directory,
-      sessions.map((session) => session.id),
-      platform,
-      serverSDK().scope,
-    )
-    await serverSDK()
-      .client.instance.dispose({ directory })
-      .catch(() => undefined)
+    if (!result) return false
 
     if (shouldLeave) navigateWithSidebarReset(`/${base64Encode(root)}/session`)
 
@@ -1456,6 +1456,7 @@ export default function LegacyLayout(props: ParentProps) {
     if (params.dir && projectRoot(nextCurrent) === root && !valid) {
       navigateWithSidebarReset(`/${base64Encode(root)}/session`)
     }
+    return true
   }
 
   const resetWorkspace = async (root: string, directory: string) => {
@@ -1544,6 +1545,7 @@ export default function LegacyLayout(props: ParentProps) {
     const [data, setData] = createStore({
       status: "loading" as "loading" | "ready" | "error",
       dirty: false,
+      deleting: false,
     })
 
     onMount(() => {
@@ -1560,9 +1562,13 @@ export default function LegacyLayout(props: ParentProps) {
     })
 
     const handleDelete = () => {
+      if (data.deleting || data.status === "loading") return
       const leaveDeletedWorkspace = !!params.dir && pathKey(currentDir()) === pathKey(props.directory)
-      dialog.close()
-      void deleteWorkspace(props.root, props.directory, leaveDeletedWorkspace)
+      setData("deleting", true)
+      void deleteWorkspace(props.root, props.directory, leaveDeletedWorkspace).then((success) => {
+        if (success) dialog.close()
+        else setData("deleting", false)
+      })
     }
 
     const description = () => {
@@ -1573,19 +1579,24 @@ export default function LegacyLayout(props: ParentProps) {
     }
 
     return (
-      <Dialog title={language.t("workspace.delete.title")} fit>
-        <div class="flex min-w-0 flex-col gap-4 px-4 pb-3 sm:pl-6 sm:pr-2.5">
+      <Dialog title={language.t("workspace.delete.title")} fit class="max-w-[calc(100vw-16px)]">
+        <div class="flex min-w-0 flex-col gap-4 px-4 pb-3 sm:px-6">
           <div class="flex min-w-0 flex-col gap-1">
             <span class="break-words text-14-regular text-text-strong">
               {language.t("workspace.delete.confirm", { name: name() })}
             </span>
-            <span class="text-12-regular text-text-weak">{description()}</span>
+            <span class="break-words text-12-regular text-text-weak">{description()}</span>
           </div>
           <div class="flex flex-wrap justify-end gap-2">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+            <Button variant="ghost" size="large" disabled={data.deleting} onClick={() => dialog.close()}>
               {language.t("common.cancel")}
             </Button>
-            <Button variant="primary" size="large" disabled={data.status === "loading"} onClick={handleDelete}>
+            <Button
+              variant="primary"
+              size="large"
+              disabled={data.status === "loading" || data.deleting}
+              onClick={handleDelete}
+            >
               {language.t("workspace.delete.button")}
             </Button>
           </div>

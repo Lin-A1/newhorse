@@ -18,6 +18,7 @@ const featuredProviders = [
   "moonshotai",
   "zhipuai",
   "alibaba",
+  "alibaba-cn",
   "minimax",
   "stepfun",
   "tencent-token-plan",
