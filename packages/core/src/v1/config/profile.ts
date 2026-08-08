@@ -32,6 +32,7 @@ export const Item = Schema.Struct({
   quietHours: Schema.optional(QuietHours),
   proactiveFrequency: Schema.optional(ProactiveFrequency),
   crisisRegion: Schema.optional(Schema.String),
+  dailySummary: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "ProfileConfig" })
 export type Item = Schema.Schema.Type<typeof Item>
 

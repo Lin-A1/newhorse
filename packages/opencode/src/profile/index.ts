@@ -30,6 +30,7 @@ export const Runtime = Schema.Struct({
   quietHours: Schema.optional(ConfigProfileV1.QuietHours),
   proactiveFrequency: ConfigProfileV1.ProactiveFrequency,
   crisisRegion: Schema.optional(Schema.String),
+  dailySummary: Schema.Boolean,
 })
 export type Runtime = Schema.Schema.Type<typeof Runtime>
 
@@ -42,6 +43,7 @@ export const Update = Schema.Struct({
   quietHours: Schema.optional(ConfigProfileV1.QuietHours),
   proactiveFrequency: Schema.optional(ConfigProfileV1.ProactiveFrequency),
   crisisRegion: Schema.optional(Schema.String),
+  dailySummary: Schema.optional(Schema.Boolean),
 })
 export type Update = Schema.Schema.Type<typeof Update>
 
@@ -108,6 +110,7 @@ function runtimeInfo(id: string, item: ConfigProfileV1.Item): Runtime {
     quietHours: item.quietHours,
     proactiveFrequency: item.proactiveFrequency ?? { maxPerDay: 3, minIntervalMinutes: 120 },
     crisisRegion: item.crisisRegion?.trim() || undefined,
+    dailySummary: item.dailySummary ?? true,
   }
 }
 
@@ -179,6 +182,7 @@ const layer = Layer.effect(
         quietHours: input.quietHours ?? previous.quietHours,
         proactiveFrequency: input.proactiveFrequency ?? current.proactiveFrequency,
         crisisRegion: input.crisisRegion === undefined ? previous.crisisRegion : input.crisisRegion.trim() || undefined,
+        dailySummary: input.dailySummary ?? current.dailySummary,
       }
     }
 

@@ -32,6 +32,7 @@ let companionRuntime: Profile.Runtime = {
   proactivePaused: false,
   proactiveFrequency: { maxPerDay: 3, minIntervalMinutes: 120 },
   crisisRegion: "CN",
+  dailySummary: true,
 }
 
 const apiLayer = HttpRouter.serve(
@@ -65,6 +66,7 @@ const apiLayer = HttpRouter.serve(
             personaVersion: 1,
             proactivePaused: false,
             proactiveFrequency: { maxPerDay: 3, minIntervalMinutes: 120 },
+            dailySummary: true,
           })
         }
         return Effect.fail(new Profile.NotFoundError({ profileID: id ?? assistantID, message: "not found" }))
