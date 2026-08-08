@@ -405,7 +405,13 @@ function AssistantStatusBar(props: {
     <div class="flex flex-col items-center gap-3" data-slot="assistant-status-bar">
       <pre
         aria-hidden="true"
-        class="max-w-full select-none overflow-hidden font-mono text-[11px] leading-[1.15] tracking-tight text-v2-icon-icon-muted"
+        class="max-w-full select-none overflow-hidden font-mono text-[11px] leading-[1.15] tracking-tight"
+        style={{
+          "background-image": "linear-gradient(180deg, #ffffff 0%, #d2d2d2 45%, #858585 100%)",
+          "-webkit-background-clip": "text",
+          "background-clip": "text",
+          color: "transparent",
+        }}
       >
         {NEWHORSE_ASCII}
       </pre>
