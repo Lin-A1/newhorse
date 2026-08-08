@@ -1252,6 +1252,8 @@ export const dict = {
   "settings.profile.frequency.description": "設定每天最多訊息數，以及主動訊息之間的最短間隔（分鐘）。",
   "settings.profile.crisisRegion.title": "危機支援地區",
   "settings.profile.crisisRegion.description": "選填。填寫你所在的國家或地區，夥伴在需要時可為你提供當地相關的危機支持資源和求助熱線。",
+  "settings.profile.dailySummary.title": "每日總結",
+  "settings.profile.dailySummary.description": "每天讓 newhorse 總結你在各 AI 工具中做了什麼。",
   "settings.profile.saved": "陪伴助理設定已儲存",
   "settings.models.title": "模型",
   "settings.models.description": "模型設定將在此處可設定。",

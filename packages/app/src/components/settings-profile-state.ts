@@ -20,6 +20,7 @@ export function useCompanionProfileSettings() {
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     maxPerDay: 3,
     minIntervalMinutes: 120,
+    dailySummary: true,
     loading: true,
     saving: false,
   })
@@ -41,6 +42,7 @@ export function useCompanionProfileSettings() {
           timezone: profile.quietHours?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
           maxPerDay: profile.proactiveFrequency.maxPerDay,
           minIntervalMinutes: profile.proactiveFrequency.minIntervalMinutes,
+          dailySummary: profile.dailySummary ?? true,
           loading: false,
         })
       })
@@ -74,6 +76,7 @@ export function useCompanionProfileSettings() {
           minIntervalMinutes,
         },
         crisisRegion: state.crisisRegion,
+        dailySummary: state.dailySummary,
       })
       .then((response) => {
         if (!response.data) throw new Error("Profile update returned no data")
@@ -88,6 +91,7 @@ export function useCompanionProfileSettings() {
           maxPerDay: response.data.proactiveFrequency.maxPerDay,
           minIntervalMinutes: response.data.proactiveFrequency.minIntervalMinutes,
           crisisRegion: response.data.crisisRegion ?? "",
+          dailySummary: response.data.dailySummary ?? true,
         })
         showToast({ variant: "success", icon: "circle-check", title: language.t("settings.profile.saved") })
       })

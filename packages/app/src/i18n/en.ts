@@ -1371,6 +1371,8 @@ export const dict = {
   "settings.profile.crisisRegion.title": "Crisis support region",
   "settings.profile.crisisRegion.description":
     "Optional. Your country or region, so the companion can suggest locally relevant crisis resources and helplines.",
+  "settings.profile.dailySummary.title": "Daily summary",
+  "settings.profile.dailySummary.description": "Each day, newhorse summarizes what you did across your AI tools.",
   "settings.profile.saved": "Companion settings saved",
   "settings.models.title": "Models",
   "settings.models.description": "Model settings will be configurable here.",

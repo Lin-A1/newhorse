@@ -60,6 +60,15 @@ export const SettingsProfileV2: Component = () => {
               >
                 <Switch checked={profile.state.proactive} onChange={(value) => profile.setState("proactive", value)} />
               </SettingsRowV2>
+              <SettingsRowV2
+                title={language.t("settings.profile.dailySummary.title")}
+                description={language.t("settings.profile.dailySummary.description")}
+              >
+                <Switch
+                  checked={profile.state.dailySummary}
+                  onChange={(value) => profile.setState("dailySummary", value)}
+                />
+              </SettingsRowV2>
               <Show when={profile.state.proactive}>
                 <SettingsRowV2
                   title={language.t("settings.profile.proactivePaused.title")}
