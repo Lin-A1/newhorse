@@ -367,6 +367,9 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
               if (route.type === "session") {
                 const s = session()
                 if (!s) return
+                // The companion (newhorse) session is pinned as a fixed tab; it
+                // never gets its own session tab in the strip.
+                if (s.profileID === "companion") return
                 const sessionId = s.parentID ?? s.id
                 const next = { server: route.server ?? server.key, sessionId }
                 tabsStoreActions.addSessionTab(next)

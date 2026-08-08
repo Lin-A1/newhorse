@@ -256,6 +256,9 @@ function ResolvedTargetSessionRoute() {
   createEffect(() => {
     const session = current()
     if (!session) return
+    // The companion (newhorse) session is pinned as a fixed tab and never
+    // gets its own session tab in the strip.
+    if (session.session.profileID === "companion") return
     tabs.addSessionTab({
       server: serverKey(),
       sessionId: session.root.id,

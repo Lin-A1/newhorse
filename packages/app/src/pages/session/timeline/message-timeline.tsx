@@ -300,7 +300,11 @@ export function MessageTimeline(props: {
     if (!id) return
     return sync().session.get(id)
   })
-  const titleValue = createMemo(() => info()?.title)
+  const titleValue = createMemo(() => {
+    // The companion (newhorse) session always shows the pinned brand name.
+    if (info()?.profileID === "companion") return language.t("newSession.mode.companion")
+    return info()?.title
+  })
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const shareUrl = createMemo(() => info()?.share?.url)
   const shareEnabled = createMemo(() => sync().data.config.share !== "disabled")
