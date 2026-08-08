@@ -1461,7 +1461,7 @@ export const dict = {
   "terminal.connectionLost.abnormalClose": "WebSocket cerrado anormalmente: {{code}}",
 
 
-  "newSession.mode.assistant": "Assistant",
+  "newSession.mode.assistant": "work",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "newhorse",
   "newSession.mode.companion.description": "Your daily companion — remembers you, sets reminders, and picks up where you left off.",

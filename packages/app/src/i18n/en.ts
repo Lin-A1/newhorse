@@ -1450,7 +1450,7 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
 
-  "newSession.mode.assistant": "Assistant",
+  "newSession.mode.assistant": "work",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "newhorse",
   "newSession.mode.companion.description": "newhorse — remembers you, sets reminders, and picks up where you left off.",

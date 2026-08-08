@@ -1418,7 +1418,7 @@ export const dict = {
   "error.childStore.storeCreateFailed": "创建存储失败",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
 
-  "newSession.mode.assistant": "助手",
+  "newSession.mode.assistant": "work",
   "newSession.mode.assistant.description": "跨项目编写、编辑和运行代码。",
   "newSession.mode.companion": "newhorse",
   "newSession.mode.companion.description": "newhorse — 记住你、设置提醒、接着你手头的事继续。",

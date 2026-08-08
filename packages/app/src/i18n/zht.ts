@@ -1423,7 +1423,7 @@ export const dict = {
   "terminal.connectionLost.abnormalClose": "WebSocket 異常關閉：{{code}}",
 
 
-  "newSession.mode.assistant": "Assistant",
+  "newSession.mode.assistant": "work",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
   "newSession.mode.companion": "newhorse",
   "newSession.mode.companion.description": "newhorse — 记住你、设置提醒、接着你手头的事继续。",
