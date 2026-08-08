@@ -1232,7 +1232,7 @@ export const dict = {
   "settings.providers.tag.config": "配置",
   "settings.providers.tag.custom": "自訂",
   "settings.providers.tag.other": "其他",
-  "settings.profile.title": "陪伴助理",
+  "settings.profile.title": "newhorse",
   "settings.profile.section.identity": "身份",
   "settings.profile.section.care": "主动关怀",
   "settings.profile.persona.title": "角色設定",
@@ -1425,8 +1425,8 @@ export const dict = {
 
   "newSession.mode.assistant": "Assistant",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
-  "newSession.mode.companion": "Companion",
-  "newSession.mode.companion.description": "你的生活伙伴 — 记住你、设置提醒、接着你手头的事继续。",
+  "newSession.mode.companion": "newhorse",
+  "newSession.mode.companion.description": "newhorse — 记住你、设置提醒、接着你手头的事继续。",
 
   "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
 } satisfies Partial<Record<Keys, string>>

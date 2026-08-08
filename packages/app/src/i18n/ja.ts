@@ -1178,7 +1178,7 @@ export const dict = {
   "settings.providers.tag.config": "設定",
   "settings.providers.tag.custom": "カスタム",
   "settings.providers.tag.other": "その他",
-  "settings.profile.title": "Companion",
+  "settings.profile.title": "newhorse",
   "settings.profile.section.identity": "Identity",
   "settings.profile.section.care": "Active care",
   "settings.profile.persona.title": "Persona",
@@ -1371,7 +1371,7 @@ export const dict = {
 
   "newSession.mode.assistant": "Assistant",
   "newSession.mode.assistant.description": "Code, edit, and work across your projects.",
-  "newSession.mode.companion": "Companion",
+  "newSession.mode.companion": "newhorse",
   "newSession.mode.companion.description": "Your daily companion — remembers you, sets reminders, and picks up where you left off.",
 
   "prompt.placeholder.design": "Ask anything, / for commands, @ for context...",
