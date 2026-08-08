@@ -226,7 +226,15 @@ const layer = Layer.effect(
 
     const [cachedGet, invalidate] = yield* Effect.cachedInvalidateWithTTL(populate, Duration.infinity)
 
-    const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
+    // The opencode zen provider is removed from the product. Drop it at the
+    // source so it never surfaces in the model list, provider list, or CLI.
+    const get = (): Effect.Effect<Record<string, Provider>> =>
+      cachedGet.pipe(
+        Effect.map((data) => {
+          const { opencode: _dropped, ...rest } = data
+          return rest
+        }),
+      )
 
     const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
       if (!force && (yield* fresh())) return
