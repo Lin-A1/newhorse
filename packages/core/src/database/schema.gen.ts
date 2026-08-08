@@ -104,6 +104,14 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`daily_summary\` (
+          \`date\` text PRIMARY KEY,
+          \`content\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`event_sequence\` (
           \`aggregate_id\` text PRIMARY KEY,
           \`seq\` integer NOT NULL,

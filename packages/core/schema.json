@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "598d9516-1031-419d-86f1-bbdc9a10f332",
+  "id": "dc45b3c4-e058-48f9-a52a-3fdcdc1ecbb2",
   "prevIds": [
-    "43d0f2d4-ef10-4592-b6a2-c330ac905463"
+    "598d9516-1031-419d-86f1-bbdc9a10f332"
   ],
   "ddl": [
     {
@@ -36,6 +36,10 @@
     },
     {
       "name": "credential",
+      "entityType": "tables"
+    },
+    {
+      "name": "daily_summary",
       "entityType": "tables"
     },
     {
@@ -743,6 +747,46 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "credential"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "date",
+      "entityType": "columns",
+      "table": "daily_summary"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content",
+      "entityType": "columns",
+      "table": "daily_summary"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "daily_summary"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "daily_summary"
     },
     {
       "type": "text",
@@ -3015,6 +3059,15 @@
       "nameExplicit": false,
       "name": "credential_pk",
       "table": "credential",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "date"
+      ],
+      "nameExplicit": false,
+      "name": "daily_summary_pk",
+      "table": "daily_summary",
       "entityType": "pks"
     },
     {

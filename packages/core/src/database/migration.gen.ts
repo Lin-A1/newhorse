@@ -51,5 +51,6 @@ export const migrations = (
     import("./migration/20260801111000_scheduler_eligible_index"),
     import("./migration/20260803180919_misty_gargoyle"),
     import("./migration/20260806042148_simple_nova"),
+    import("./migration/20260808185428_daily_summary"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
