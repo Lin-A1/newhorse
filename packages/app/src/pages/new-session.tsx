@@ -5,6 +5,7 @@ import { useSearchParams } from "@solidjs/router"
 import { Tooltip } from "@newhorse/ui/tooltip"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
+import { Icon } from "@newhorse/ui/icon"
 import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { NewSessionDesignView } from "@/components/session"
 import { PromptInputV2Composer, usePromptInputV2Controller } from "@/components/prompt-input-v2"
@@ -31,7 +32,6 @@ import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
 import {
   PromptGitStatus,
   PromptWorkspaceSelector,
-  PromptProfileCards,
   type ProfileOption,
   type WorkspaceAdapterOption,
   type WorkspaceOption,
@@ -51,7 +51,7 @@ const providerTipExitDuration = 250
 
 /**
  * The `/new-session` draft page. Unlike `session.tsx`, this only renders the prompt
- * composer for a brand-new session 閳?no terminal, review pane, file tree, or message
+ * composer for a brand-new session 闂?no terminal, review pane, file tree, or message
  * timeline. Submitting promotes the draft into a real session (see prompt-input/submit).
  */
 export default function NewSessionPage() {
@@ -87,7 +87,6 @@ export default function NewSessionPage() {
   const projectControls = createPromptProjectControls()
 
   const [store, setStore] = createStore<{ worktree?: string; workspace?: string }>({})
-  const [profileID, setProfileID] = createSignal<string | undefined>()
   const [workspaceState, { refetch: refetchWorkspaces }] = createResource(
     () => sdk().directory,
     async () => {
@@ -112,6 +111,8 @@ export default function NewSessionPage() {
     const confirmed = await confirm({
       title: language.t("session.new.workspace.remove.title"),
       message: language.t("session.new.workspace.remove.confirm", { name }),
+      confirmLabel: language.t("common.delete"),
+      cancelLabel: language.t("common.cancel"),
     })
     if (!confirmed) return
     const removed = await sdk()
@@ -136,14 +137,11 @@ export default function NewSessionPage() {
         .then((result) => result.data),
   )
   const profiles = createMemo(() => (profileState()?.items ?? []) as ProfileOption[])
-  const selectedProfileID = createMemo(() => profileID() ?? profileState()?.active)
+  const assistantProfileID = createMemo(() => profiles().find((p) => p.kind === "assistant")?.id)
   // Coding chrome (project/workspace/git) only makes sense for Assistant
-  // sessions. Companion sessions are personal: they route to the personal
-  // workspace without a project/worktree/branch choice.
-  const isAssistantProfile = createMemo(() => {
-    const profile = profiles().find((p) => p.id === selectedProfileID())
-    return !selectedProfileID() || profile?.kind !== "companion"
-  })
+  // sessions. New sessions are always assistant; the companion lives as a
+  // pinned tab in the titlebar.
+  const isAssistantProfile = () => true
   const selectedWorkspace = createMemo(() => {
     const value = store.workspace
     if (!value?.startsWith("workspace:")) return
@@ -194,7 +192,7 @@ export default function NewSessionPage() {
       return isAssistantProfile() ? (selectedWorkspace()?.directory ?? undefined) : undefined
     },
     get newSessionProfileID() {
-      return selectedProfileID()
+      return assistantProfileID()
     },
     onNewSessionWorktreeReset: () => setStore({ worktree: undefined, workspace: undefined }),
     onSubmit: () => comments.clear(),
@@ -264,19 +262,7 @@ export default function NewSessionPage() {
             <NewSessionDesignView>
               <div class={NEW_SESSION_CONTENT_WIDTH}>
                 <div class="flex flex-col gap-8">
-                  <Show when={selectedProfileID() && profiles().length > 0}>
-                    <PromptProfileCards
-                      value={selectedProfileID()!}
-                      profiles={profiles()}
-                      onChange={(value) => {
-                        const profile = profiles().find((p) => p.id === value)
-                        setProfileID(value)
-                        // Companion sessions are personal: never carry a
-                        // project/workspace/branch from the Assistant flow.
-                        if (profile?.kind === "companion") setStore({ workspace: undefined, worktree: undefined })
-                      }}
-                    />
-                  </Show>
+                  <AssistantStatusBar name={() => local.agent.current()?.name} />
                   <PromptInputV2Composer controller={promptInputV2Controller} />
                   <Show when={isAssistantProfile() && projectController.empty()}>
                     <PromptProjectAddButton controller={projectController} />
@@ -394,5 +380,18 @@ function ProviderTip(props: { ready: () => boolean; connected: () => boolean; op
         </div>
       </div>
     </Show>
+  )
+}
+
+function AssistantStatusBar(props: { name: () => string | undefined }) {
+  const language = useLanguage()
+  return (
+    <div class="flex min-h-6 items-center gap-2 text-v2-text-text-faint" data-slot="assistant-status-bar">
+      <Icon name="terminal" class="size-4 shrink-0 text-v2-icon-icon-muted" />
+      <span class="truncate text-[13px] font-medium text-v2-text-text-base">
+        {props.name() ?? language.t("command.category.agent")}
+      </span>
+      <span class="truncate text-v2-text-text-faint">{language.t("newSession.mode.assistant.description")}</span>
+    </div>
   )
 }

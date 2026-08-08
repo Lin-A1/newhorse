@@ -3,6 +3,7 @@ import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { IconButtonV2 } from "@newhorse/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
+import { Icon } from "@newhorse/ui/icon"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { ServerConnection, serverName } from "@/context/server"
@@ -427,6 +428,49 @@ export function DraftTabItem(props: {
           aria-label={language.t("common.closeTab")}
         />
       </div>
+    </div>
+  )
+}
+
+export function CompanionTabItem(props: {
+  title: string
+  active?: boolean
+  onNavigate: () => void
+  hidden?: boolean
+}) {
+  const language = useLanguage()
+  return (
+    <div
+      data-titlebar-tab
+      data-slot="titlebar-tab-item"
+      data-pinned-tab
+      data-active={props.active}
+      class="sticky left-0 z-20 flex h-7 shrink-0 select-none items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] px-1.5 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
+      classList={{ invisible: props.hidden }}
+    >
+      <button
+        type="button"
+        title={language.t("newSession.mode.companion.description")}
+        onMouseDown={(event) => {
+          if (event.button !== 0) return
+          props.onNavigate()
+        }}
+        onClick={(event) => {
+          event.preventDefault()
+          // Mouse navigation already happened on mousedown; detail 0 means keyboard activation.
+          if (event.detail > 0) return
+          props.onNavigate()
+        }}
+        class="flex h-full min-w-0 items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"
+      >
+        <Icon name="brain" class="size-4 shrink-0" />
+        <span
+          data-titlebar-tab-title
+          class="min-w-0 max-w-[160px] overflow-hidden text-clip whitespace-nowrap leading-4"
+        >
+          {props.title}
+        </span>
+      </button>
     </div>
   )
 }

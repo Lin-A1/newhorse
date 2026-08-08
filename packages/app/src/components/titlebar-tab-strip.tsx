@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createRoot, For, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, createResource, createRoot, For, onCleanup, onMount, Show } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
 import { isSortable, useSortable } from "@dnd-kit/solid/sortable"
@@ -8,7 +8,7 @@ import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { arrayMove } from "@dnd-kit/helpers"
 import { tabHref, tabKey, type SessionTab, type Tab } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
-import { DraftTabItem, TabNavItem } from "@/components/titlebar-tab-nav"
+import { CompanionTabItem, DraftTabItem, TabNavItem } from "@/components/titlebar-tab-nav"
 import { useGlobal, type ServerCtx } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useCommand } from "@/context/command"
@@ -169,6 +169,8 @@ export function TitlebarTabStrip(props: {
   onClose: (tab: Tab) => void
   onReorder: (keys: string[]) => void
   onOverflowChange: (overflowing: boolean) => void
+  onOpenCompanion?: () => void
+  companionActive?: boolean
 }) {
   const global = useGlobal()
   const language = useLanguage()
@@ -215,6 +217,13 @@ export function TitlebarTabStrip(props: {
         class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [app-region:no-drag]"
         ref={scrollRef}
       >
+        <Show when={props.onOpenCompanion}>
+          <CompanionTabItem
+            title={language.t("newSession.mode.companion")}
+            active={props.companionActive}
+            onNavigate={() => props.onOpenCompanion?.()}
+          />
+        </Show>
         <DragDropProvider
           sensors={[
             PointerSensor.configure({

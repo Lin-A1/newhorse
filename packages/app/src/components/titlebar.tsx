@@ -26,6 +26,11 @@ import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { tabKey, useTabs } from "@/context/tabs"
 import type { PromptSession } from "@/context/prompt"
+import { ensureCompanionSession } from "@/components/prompt-input/companion-session"
+import { legacySessionHref } from "@/utils/session-route"
+import { showToast } from "@/utils/toast"
+import { errorMessage } from "@/pages/layout/helpers"
+import type { Session } from "@newhorse/sdk/v2/client"
 import "./titlebar.css"
 import { newTabTooltipKeybind } from "./command-tooltip-keybind"
 
@@ -297,6 +302,59 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
 
             const currentTab = () => matchRoute(layout.route())
 
+            const [openingCompanion, setOpeningCompanion] = createSignal(false)
+            const companionDirectory = createMemo(() => {
+              const route = layout.route()
+              if (route.type === "session") return session()?.directory
+              if (route.type === "draft") {
+                const t = currentTab()
+                return t?.type === "draft" ? t.directory : undefined
+              }
+              if (route.type === "dir-new-sesssion") return route.dir
+              if (route.type === "home") return layout.home.selection()?.directory
+              const conn = global.servers.list().find((item) => ServerConnection.key(item) === server.key)
+              return conn ? global.ensureServerCtx(conn).projects.list()[0]?.worktree : undefined
+            })
+            const companionActive = createMemo(() => session()?.profileID === "companion")
+            const openCompanionSession = async () => {
+              if (openingCompanion()) return
+              setOpeningCompanion(true)
+              const conn = global.servers.list().find((item) => ServerConnection.key(item) === server.key)
+              const directory = conn ? companionDirectory() : undefined
+              if (!conn || !directory) {
+                setOpeningCompanion(false)
+                return
+              }
+              const serverSDK = global.ensureServerCtx(conn).sdk
+              const client = serverSDK.createClient({ directory, throwOnError: true })
+              const result = await ensureCompanionSession({
+                client,
+                directory,
+                scope: serverSDK.scope,
+                fetch: async (dir, sessionID) => {
+                  const target = dir === directory ? client : serverSDK.createClient({ directory: dir, throwOnError: true })
+                  return target.session.get({ sessionID }).then((r) => r.data)
+                },
+                globalList: async () => {
+                  const r = await client.experimental.session.list({ roots: true, archived: true, limit: 200 })
+                  return (r.data ?? []) as Session[]
+                },
+                list: async (dir) => {
+                  const target = dir === directory ? client : serverSDK.createClient({ directory: dir, throwOnError: true })
+                  return target.session.list({ directory: dir }).then((r) => r.data ?? [])
+                },
+              }).catch((err) => {
+                showToast({
+                  title: language.t("prompt.toast.sessionCreateFailed.title"),
+                  description: errorMessage(err, language.t("common.requestFailed")),
+                })
+                return undefined
+              })
+              setOpeningCompanion(false)
+              if (!result) return
+              navigate(legacySessionHref(result.directory, result.session.id))
+            }
+
             createEffect(() => {
               const route = layout.route()
               if (!tabs.ready()) return
@@ -503,6 +561,8 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                     if (index !== -1) tabsStoreActions.closeTab(index)
                   }}
                   onReorder={(keys) => tabsStoreActions.reorder(keys)}
+                  onOpenCompanion={openCompanionSession}
+                  companionActive={companionActive()}
                 />
                 <Show when={!creating()}>
                   <TooltipV2
