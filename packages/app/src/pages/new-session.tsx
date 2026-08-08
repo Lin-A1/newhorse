@@ -6,6 +6,7 @@ import { Tooltip } from "@newhorse/ui/tooltip"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
 import { Icon } from "@newhorse/ui/icon"
+import { getFilename } from "@newhorse/core/util/path"
 import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { NewSessionDesignView } from "@/components/session"
 import { PromptInputV2Composer, usePromptInputV2Controller } from "@/components/prompt-input-v2"
@@ -262,7 +263,11 @@ export default function NewSessionPage() {
             <NewSessionDesignView>
               <div class={NEW_SESSION_CONTENT_WIDTH}>
                 <div class="flex flex-col gap-8">
-                  <AssistantStatusBar name={() => local.agent.current()?.name} />
+                  <AssistantStatusBar
+                    agent={() => local.agent.current()?.name}
+                    model={() => local.model.current()?.name}
+                    project={() => getFilename(projectRoot())}
+                  />
                   <PromptInputV2Composer controller={promptInputV2Controller} />
                   <Show when={isAssistantProfile() && projectController.empty()}>
                     <PromptProjectAddButton controller={projectController} />
@@ -383,15 +388,39 @@ function ProviderTip(props: { ready: () => boolean; connected: () => boolean; op
   )
 }
 
-function AssistantStatusBar(props: { name: () => string | undefined }) {
+function AssistantStatusBar(props: {
+  agent: () => string | undefined
+  model: () => string | undefined
+  project: () => string | undefined
+}) {
   const language = useLanguage()
   return (
-    <div class="flex min-h-6 items-center gap-2 text-v2-text-text-faint" data-slot="assistant-status-bar">
-      <Icon name="terminal" class="size-4 shrink-0 text-v2-icon-icon-muted" />
-      <span class="truncate text-[13px] font-medium text-v2-text-text-base">
-        {props.name() ?? language.t("command.category.agent")}
+    <div class="flex min-h-6 flex-wrap items-center justify-center gap-1.5" data-slot="assistant-status-bar">
+      <span
+        class="flex h-6 items-center gap-1.5 rounded-full border border-v2-border-border-muted bg-v2-surface-surface-1 pl-2 pr-2.5 text-[13px] leading-none tracking-[-0.04px] text-v2-text-text-muted"
+        data-slot="assistant-status-agent"
+      >
+        <Icon name="terminal" class="size-3.5 shrink-0 text-v2-icon-icon-muted" />
+        <span class="truncate font-medium text-v2-text-text-base">
+          {props.agent() ?? language.t("command.category.agent")}
+        </span>
       </span>
-      <span class="truncate text-v2-text-text-faint">{language.t("newSession.mode.assistant.description")}</span>
+      <Show when={props.model()}>
+        <span
+          class="flex h-6 items-center rounded-full border border-v2-border-border-muted bg-v2-surface-surface-1 px-2.5 text-[13px] leading-none tracking-[-0.04px] text-v2-text-text-muted"
+          data-slot="assistant-status-model"
+        >
+          <span class="max-w-[180px] truncate">{props.model()}</span>
+        </span>
+      </Show>
+      <Show when={props.project()}>
+        <span
+          class="flex h-6 items-center rounded-full border border-v2-border-border-muted bg-v2-surface-surface-1 px-2.5 text-[13px] leading-none tracking-[-0.04px] text-v2-text-text-muted"
+          data-slot="assistant-status-project"
+        >
+          <span class="max-w-[180px] truncate">{props.project()}</span>
+        </span>
+      </Show>
     </div>
   )
 }
