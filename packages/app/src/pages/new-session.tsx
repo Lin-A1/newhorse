@@ -5,7 +5,6 @@ import { useSearchParams } from "@solidjs/router"
 import { Tooltip } from "@newhorse/ui/tooltip"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
-import { Icon } from "@newhorse/ui/icon"
 import { getFilename } from "@newhorse/core/util/path"
 import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { NewSessionDesignView } from "@/components/session"
@@ -388,6 +387,8 @@ function ProviderTip(props: { ready: () => boolean; connected: () => boolean; op
   )
 }
 
+const ASSISTANT_ASCII = ["  ┌──────┐", "  │ ❯ _  │", "  └──────┘"].join("\n")
+
 function AssistantStatusBar(props: {
   agent: () => string | undefined
   model: () => string | undefined
@@ -395,32 +396,26 @@ function AssistantStatusBar(props: {
 }) {
   const language = useLanguage()
   return (
-    <div class="flex min-h-6 flex-wrap items-center justify-center gap-1.5" data-slot="assistant-status-bar">
-      <span
-        class="flex h-6 items-center gap-1.5 rounded-full border border-v2-border-border-muted bg-v2-surface-surface-1 pl-2 pr-2.5 text-[13px] leading-none tracking-[-0.04px] text-v2-text-text-muted"
-        data-slot="assistant-status-agent"
+    <div class="flex flex-col items-center gap-2" data-slot="assistant-status-bar">
+      <pre
+        aria-hidden="true"
+        class="select-none font-mono text-[12px] leading-[1.1] tracking-tight text-v2-icon-icon-muted"
       >
-        <Icon name="terminal" class="size-3.5 shrink-0 text-v2-icon-icon-muted" />
-        <span class="truncate font-medium text-v2-text-text-base">
+        {ASSISTANT_ASCII}
+      </pre>
+      <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[13px] leading-none text-v2-text-text-muted">
+        <span class="font-medium text-v2-text-text-base">
           {props.agent() ?? language.t("command.category.agent")}
         </span>
-      </span>
-      <Show when={props.model()}>
-        <span
-          class="flex h-6 items-center rounded-full border border-v2-border-border-muted bg-v2-surface-surface-1 px-2.5 text-[13px] leading-none tracking-[-0.04px] text-v2-text-text-muted"
-          data-slot="assistant-status-model"
-        >
-          <span class="max-w-[180px] truncate">{props.model()}</span>
-        </span>
-      </Show>
-      <Show when={props.project()}>
-        <span
-          class="flex h-6 items-center rounded-full border border-v2-border-border-muted bg-v2-surface-surface-1 px-2.5 text-[13px] leading-none tracking-[-0.04px] text-v2-text-text-muted"
-          data-slot="assistant-status-project"
-        >
-          <span class="max-w-[180px] truncate">{props.project()}</span>
-        </span>
-      </Show>
+        <Show when={props.model()}>
+          <span aria-hidden="true">·</span>
+          <span class="max-w-[200px] truncate">{props.model()}</span>
+        </Show>
+        <Show when={props.project()}>
+          <span aria-hidden="true">·</span>
+          <span class="max-w-[200px] truncate">{props.project()}</span>
+        </Show>
+      </div>
     </div>
   )
 }
