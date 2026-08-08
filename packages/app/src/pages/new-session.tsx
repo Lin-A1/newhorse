@@ -5,6 +5,7 @@ import { useSearchParams } from "@solidjs/router"
 import { Tooltip } from "@newhorse/ui/tooltip"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
+import { SegmentedControlItemV2, SegmentedControlV2 } from "@newhorse/ui/v2/segmented-control-v2"
 import { getFilename } from "@newhorse/core/util/path"
 import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { NewSessionDesignView } from "@/components/session"
@@ -138,10 +139,11 @@ export default function NewSessionPage() {
   )
   const profiles = createMemo(() => (profileState()?.items ?? []) as ProfileOption[])
   const assistantProfileID = createMemo(() => profiles().find((p) => p.kind === "assistant")?.id)
-  // Coding chrome (project/workspace/git) only makes sense for Assistant
-  // sessions. New sessions are always assistant; the companion lives as a
-  // pinned tab in the titlebar.
-  const isAssistantProfile = () => true
+  // Two smart agents on the new-session page: Assistant (session-level work)
+  // and newhorse (the continuous companion). Coding chrome (project/workspace/
+  // git) only makes sense for Assistant sessions.
+  const [mode, setMode] = createSignal<"assistant" | "companion">("assistant")
+  const isAssistantProfile = () => mode() === "assistant"
   const selectedWorkspace = createMemo(() => {
     const value = store.workspace
     if (!value?.startsWith("workspace:")) return
@@ -192,7 +194,7 @@ export default function NewSessionPage() {
       return isAssistantProfile() ? (selectedWorkspace()?.directory ?? undefined) : undefined
     },
     get newSessionProfileID() {
-      return assistantProfileID()
+      return mode() === "companion" ? "companion" : assistantProfileID()
     },
     onNewSessionWorktreeReset: () => setStore({ worktree: undefined, workspace: undefined }),
     onSubmit: () => comments.clear(),
@@ -263,10 +265,27 @@ export default function NewSessionPage() {
               <div class={NEW_SESSION_CONTENT_WIDTH}>
                 <div class="flex flex-col gap-8">
                   <AssistantStatusBar
-                    agent={() => local.agent.current()?.name}
-                    model={() => local.model.current()?.name}
-                    project={() => getFilename(projectRoot())}
+                    agent={() => (mode() === "companion" ? language.t("newSession.mode.companion") : local.agent.current()?.name)}
+                    model={() => (mode() === "assistant" ? local.model.current()?.name : undefined)}
+                    project={() => (mode() === "assistant" ? getFilename(projectRoot()) : undefined)}
                   />
+                  <div class="flex items-center justify-center">
+                    <SegmentedControlV2
+                      value={mode()}
+                      onChange={(value) => {
+                        const next = value === "companion" ? "companion" : "assistant"
+                        setMode(next)
+                        if (next === "companion") setStore({ workspace: undefined, worktree: undefined })
+                      }}
+                    >
+                      <SegmentedControlItemV2 value="assistant">
+                        {language.t("newSession.mode.assistant")}
+                      </SegmentedControlItemV2>
+                      <SegmentedControlItemV2 value="companion">
+                        {language.t("newSession.mode.companion")}
+                      </SegmentedControlItemV2>
+                    </SegmentedControlV2>
+                  </div>
                   <PromptInputV2Composer controller={promptInputV2Controller} />
                   <Show when={isAssistantProfile() && projectController.empty()}>
                     <PromptProjectAddButton controller={projectController} />
