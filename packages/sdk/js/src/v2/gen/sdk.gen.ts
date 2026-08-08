@@ -38,6 +38,10 @@ import type {
   ContinuityGrantProposeResponses,
   ContinuityGrantRevokeErrors,
   ContinuityGrantRevokeResponses,
+  DailySummaryGenerateErrors,
+  DailySummaryGenerateResponses,
+  DailySummaryListErrors,
+  DailySummaryListResponses,
   EventSubscribeResponses,
   EventTuiCommandExecute,
   EventTuiPromptAppend,
@@ -1524,6 +1528,7 @@ export class Profile extends HeyApiClient {
         minIntervalMinutes: number
       }
       crisisRegion?: string
+      dailySummary?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1541,6 +1546,7 @@ export class Profile extends HeyApiClient {
             { in: "body", key: "quietHours" },
             { in: "body", key: "proactiveFrequency" },
             { in: "body", key: "crisisRegion" },
+            { in: "body", key: "dailySummary" },
           ],
         },
       ],
@@ -4523,6 +4529,62 @@ export class Reminder extends HeyApiClient {
       url: "/reminder/{reminderID}/audit",
       ...options,
       ...params,
+    })
+  }
+}
+
+export class DailySummary extends HeyApiClient {
+  /**
+   * List daily summaries
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      from?: string | "Infinity" | "-Infinity" | "NaN"
+      to?: string | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "from" },
+            { in: "query", key: "to" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<DailySummaryListResponses, DailySummaryListErrors, ThrowOnError>({
+      url: "/daily-summary",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Generate daily summary
+   */
+  public generate<ThrowOnError extends boolean = false>(
+    parameters?: {
+      date?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "date" }] }])
+    return (options?.client ?? this.client).post<
+      DailySummaryGenerateResponses,
+      DailySummaryGenerateErrors,
+      ThrowOnError
+    >({
+      url: "/daily-summary/generate",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }
@@ -8478,6 +8540,11 @@ export class OpencodeClient extends HeyApiClient {
   private _reminder?: Reminder
   get reminder(): Reminder {
     return (this._reminder ??= new Reminder({ client: this.client }))
+  }
+
+  private _dailySummary?: DailySummary
+  get dailySummary(): DailySummary {
+    return (this._dailySummary ??= new DailySummary({ client: this.client }))
   }
 
   private _session?: Session2

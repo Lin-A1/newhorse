@@ -1596,7 +1596,7 @@ export type GlobalEvent = {
           workspaceID?: string
           profileID: string
           sessionID?: string
-          eventType: "reminder" | "check_in" | "follow_up"
+          eventType: "reminder" | "check_in" | "follow_up" | "follow"
           title: string
           body: string
           scheduleAt: number
@@ -1691,6 +1691,7 @@ export type ProfileConfig = {
     minIntervalMinutes: number
   }
   crisisRegion?: string
+  dailySummary?: boolean
 }
 
 export type ProfilesConfig = {
@@ -6776,7 +6777,7 @@ export type ScheduledEventDue = {
     workspaceID?: string
     profileID: string
     sessionID?: string
-    eventType: "reminder" | "check_in" | "follow_up"
+    eventType: "reminder" | "check_in" | "follow_up" | "follow"
     title: string
     body: string
     scheduleAt: number
@@ -7759,7 +7760,7 @@ export type EventScheduledEventDue = {
     workspaceID?: string
     profileID: string
     sessionID?: string
-    eventType: "reminder" | "check_in" | "follow_up"
+    eventType: "reminder" | "check_in" | "follow_up" | "follow"
     title: string
     body: string
     scheduleAt: number
@@ -8187,6 +8188,7 @@ export type GlobalProfileRuntimeResponses = {
       minIntervalMinutes: number
     }
     crisisRegion?: string
+    dailySummary: boolean
   }
 }
 
@@ -8209,6 +8211,7 @@ export type GlobalProfileUpdateData = {
       minIntervalMinutes: number
     }
     crisisRegion?: string
+    dailySummary?: boolean
   }
   path: {
     profileID: string
@@ -8249,6 +8252,7 @@ export type GlobalProfileUpdateResponses = {
       minIntervalMinutes: number
     }
     crisisRegion?: string
+    dailySummary: boolean
   }
 }
 
@@ -11377,6 +11381,65 @@ export type ReminderAuditResponses = {
 }
 
 export type ReminderAuditResponse = ReminderAuditResponses[keyof ReminderAuditResponses]
+
+export type DailySummaryListData = {
+  body?: never
+  path?: never
+  query?: {
+    from?: string | "Infinity" | "-Infinity" | "NaN"
+    to?: string | "Infinity" | "-Infinity" | "NaN"
+  }
+  url: "/daily-summary"
+}
+
+export type DailySummaryListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type DailySummaryListError = DailySummaryListErrors[keyof DailySummaryListErrors]
+
+export type DailySummaryListResponses = {
+  /**
+   * Daily activity summaries
+   */
+  200: Array<{
+    date: string
+    content: string
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type DailySummaryListResponse = DailySummaryListResponses[keyof DailySummaryListResponses]
+
+export type DailySummaryGenerateData = {
+  body?: {
+    date?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: never
+  url: "/daily-summary/generate"
+}
+
+export type DailySummaryGenerateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type DailySummaryGenerateError = DailySummaryGenerateErrors[keyof DailySummaryGenerateErrors]
+
+export type DailySummaryGenerateResponses = {
+  /**
+   * Generated daily summary text
+   */
+  200: string
+}
+
+export type DailySummaryGenerateResponse = DailySummaryGenerateResponses[keyof DailySummaryGenerateResponses]
 
 export type SessionListData = {
   body?: never
