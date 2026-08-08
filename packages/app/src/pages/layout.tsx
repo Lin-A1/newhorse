@@ -56,6 +56,7 @@ import { ConstrainDragXAxis, getDraggableId } from "@/utils/solid-dnd"
 import { DebugBar } from "@/components/debug-bar"
 import { TabsInfoPopup } from "@/components/help-button"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
+import { SidebarTimeline } from "@/components/sidebar-timeline"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { ServerConnection, useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
@@ -96,6 +97,7 @@ export default function LegacyLayout(props: ParentProps) {
       workspaceBranchName: {} as Record<string, Record<string, string>>,
       workspaceExpanded: {} as Record<string, boolean>,
       gettingStartedDismissed: false,
+      sidebarTimeline: false,
     }),
   )
 
@@ -1119,6 +1121,10 @@ export default function LegacyLayout(props: ParentProps) {
       if (dialogDead || dialogRun !== run) return
       dialog.show(() => <x.DialogSettings directory={currentDir() || currentProject()?.worktree} />)
     })
+  }
+
+  function openTimeline() {
+    setStore("sidebarTimeline", !store.sidebarTimeline)
   }
 
   function projectRoot(directory: string) {
@@ -2272,8 +2278,16 @@ export default function LegacyLayout(props: ParentProps) {
       onOpenSettings={openSettings}
       helpLabel={() => language.t("sidebar.help")}
       onOpenHelp={() => platform.openLink("https://github.com/Lin-A1/newhorse/issues")}
+      timelineLabel={() => language.t("sidebar.dailySummary")}
+      onOpenTimeline={openTimeline}
       renderPanel={() =>
-        mobile ? <SidebarPanel project={currentProject} mobile /> : <SidebarPanel project={currentProject} merged />
+        store.sidebarTimeline ? (
+          <SidebarTimeline />
+        ) : mobile ? (
+          <SidebarPanel project={currentProject} mobile />
+        ) : (
+          <SidebarPanel project={currentProject} merged />
+        )
       }
     />
   )

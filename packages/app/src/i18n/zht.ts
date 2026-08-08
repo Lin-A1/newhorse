@@ -758,6 +758,8 @@ export const dict = {
   "sidebar.menu.toggle": "切換選單",
   "sidebar.nav.projectsAndSessions": "專案與工作階段",
   "sidebar.settings": "設定",
+  "sidebar.dailySummary": "每日總結",
+  "sidebar.dailySummary.empty": "還沒有每日總結 — newhorse 每天 23:00 後生成。",
   "sidebar.help": "說明",
   "sidebar.workspaces.enable": "啟用工作區",
   "sidebar.workspaces.disable": "停用工作區",
