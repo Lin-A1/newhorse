@@ -25,6 +25,7 @@ import { ProviderApi } from "./groups/provider"
 import { PtyApi, PtyConnectApi } from "./groups/pty"
 import { QuestionApi } from "./groups/question"
 import { ReminderApi } from "./groups/reminder"
+import { DailySummaryApi } from "./groups/daily-summary"
 import { SessionApi } from "./groups/session"
 import { SyncApi } from "./groups/sync"
 import { TuiApi } from "./groups/tui"
@@ -78,6 +79,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(PolicyAuditApi)
   .addHttpApi(ProviderApi)
   .addHttpApi(ReminderApi)
+  .addHttpApi(DailySummaryApi)
   .addHttpApi(SessionApi)
   .addHttpApi(SyncApi)
   .addHttpApi(TuiApi)

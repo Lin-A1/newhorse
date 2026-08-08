@@ -108,6 +108,7 @@ import { providerHandlers } from "./handlers/provider"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { reminderHandlers } from "./handlers/reminder"
+import { dailySummaryHandlers } from "./handlers/daily-summary"
 import { sessionHandlers } from "./handlers/session"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
@@ -180,6 +181,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     permissionHandlers,
     providerHandlers,
     reminderHandlers,
+    dailySummaryHandlers,
     sessionHandlers,
     syncHandlers,
     tuiHandlers,
