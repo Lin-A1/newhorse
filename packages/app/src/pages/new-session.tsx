@@ -387,7 +387,13 @@ function ProviderTip(props: { ready: () => boolean; connected: () => boolean; op
   )
 }
 
-const ASSISTANT_ASCII = ["  ┌──────┐", "  │ ❯ _  │", "  └──────┘"].join("\n")
+const NEWHORSE_ASCII = [
+  "██  ██    ██████    ██  ██  ██  ██        ██████    ████      ██████    ██████",
+  "██  ██    ██        ██  ██  ██  ██        ██  ██    ██        ██        ██",
+  "██████    ██████    ██  ██  ██  ██████    ██  ██    ████      ██████    ██████",
+  "██  ██    ██        ██  ██  ██  ██  ██    ██  ██    ██            ██    ██",
+  "██  ██    ██████    ██████████  ██  ██    ██████    ██        ██████    ██████",
+].join("\n")
 
 function AssistantStatusBar(props: {
   agent: () => string | undefined
@@ -396,12 +402,12 @@ function AssistantStatusBar(props: {
 }) {
   const language = useLanguage()
   return (
-    <div class="flex flex-col items-center gap-2" data-slot="assistant-status-bar">
+    <div class="flex flex-col items-center gap-3" data-slot="assistant-status-bar">
       <pre
         aria-hidden="true"
-        class="select-none font-mono text-[12px] leading-[1.1] tracking-tight text-v2-icon-icon-muted"
+        class="max-w-full select-none overflow-hidden font-mono text-[11px] leading-[1.15] tracking-tight text-v2-icon-icon-muted"
       >
-        {ASSISTANT_ASCII}
+        {NEWHORSE_ASCII}
       </pre>
       <div class="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[13px] leading-none text-v2-text-text-muted">
         <span class="font-medium text-v2-text-text-base">
