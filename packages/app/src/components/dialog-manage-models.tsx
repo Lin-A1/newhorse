@@ -12,6 +12,7 @@ import { Switch as SwitchV2 } from "@newhorse/ui/v2/switch-v2"
 import { ProviderIcon } from "@newhorse/ui/provider-icon"
 import { useFilteredList } from "@newhorse/ui/hooks"
 import { For, Show, type Component } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
 import { popularProviders } from "@/hooks/use-providers"
 import { useLanguage } from "@/context/language"
@@ -136,6 +137,8 @@ export const DialogManageModelsV2: Component = () => {
   const setModelVisibility = (item: ModelItem, checked: boolean) => {
     local.model.setVisibility({ modelID: item.id, providerID: item.provider.id }, checked)
   }
+  const [collapsed, setCollapsed] = createStore<Record<string, boolean>>({})
+  const toggleCollapsed = (providerID: string) => setCollapsed(providerID, !collapsed[providerID])
   const list = useFilteredList<ModelItem>({
     items: () => local.model.list(),
     key: (x) => `${x.provider.id}:${x.id}`,
@@ -220,10 +223,21 @@ export const DialogManageModelsV2: Component = () => {
                   {(group) => (
                     <div class="settings-v2-section" data-component="settings-models-provider">
                       <div class="settings-v2-models-group-header justify-between">
-                        <div class="flex min-w-0 items-center gap-2">
-                          <ProviderIcon id={group.category} width={16} height={16} class="ml-4 shrink-0" />
+                        <button
+                          type="button"
+                          class="flex min-w-0 items-center gap-1.5 text-left"
+                          onClick={() => toggleCollapsed(group.category)}
+                          aria-expanded={!collapsed[group.category]}
+                        >
+                          <IconV2
+                            name="chevron-down"
+                            size="small"
+                            class="shrink-0 text-v2-icon-icon-muted transition-transform duration-150"
+                            classList={{ "-rotate-90": collapsed[group.category] }}
+                          />
+                          <ProviderIcon id={group.category} width={16} height={16} class="shrink-0" />
                           <h3 class="settings-v2-section-title">{group.items[0].provider.name}</h3>
-                        </div>
+                        </button>
                         <div>
                           <SwitchV2
                             class="mr-6"
@@ -235,23 +249,25 @@ export const DialogManageModelsV2: Component = () => {
                           </SwitchV2>
                         </div>
                       </div>
-                      <SettingsListV2>
-                        <For each={group.items}>
-                          {(item) => (
-                            <SettingsRowV2 title={item.name} description="">
-                              <div>
-                                <SwitchV2
-                                  checked={local.model.visible({ modelID: item.id, providerID: item.provider.id })}
-                                  onChange={(checked) => setModelVisibility(item, checked)}
-                                  hideLabel
-                                >
-                                  {item.name}
-                                </SwitchV2>
-                              </div>
-                            </SettingsRowV2>
-                          )}
-                        </For>
-                      </SettingsListV2>
+                      <Show when={!collapsed[group.category]}>
+                        <SettingsListV2>
+                          <For each={group.items}>
+                            {(item) => (
+                              <SettingsRowV2 title={item.name} description="">
+                                <div>
+                                  <SwitchV2
+                                    checked={local.model.visible({ modelID: item.id, providerID: item.provider.id })}
+                                    onChange={(checked) => setModelVisibility(item, checked)}
+                                    hideLabel
+                                  >
+                                    {item.name}
+                                  </SwitchV2>
+                                </div>
+                              </SettingsRowV2>
+                            )}
+                          </For>
+                        </SettingsListV2>
+                      </Show>
                     </div>
                   )}
                 </For>
