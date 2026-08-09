@@ -1,4 +1,4 @@
-import fs from "node:fs/promises"
+﻿import fs from "node:fs/promises"
 import path from "node:path"
 import { Schema } from "effect"
 import { Global } from "@newhorse/core/global"
@@ -15,6 +15,7 @@ const decodePersonalConfig = Schema.decodeUnknownSync(PersonalConfig)
 export const PERSONAL_ADAPTER_TYPE = "personal"
 
 const ROOT = path.join(Global.Path.data, "personal")
+const REMOVED_MARKER = ".newhorse-workspace-removed"
 
 // Personal spaces live outside any repo, so the slug is the only thing
 // standing between a workspace name and an arbitrary filesystem write.
@@ -62,11 +63,24 @@ export const PersonalAdapter: WorkspaceAdapter = {
     await Promise.all(
       ["files", "notes", "output", "tmp"].map((name) => fs.mkdir(path.join(directory, name), { recursive: true })),
     )
+    await fs.rm(path.join(directory, REMOVED_MARKER), { force: true })
   },
   async list() {
     const entries = await fs.readdir(ROOT, { withFileTypes: true }).catch(() => [])
-    return entries
-      .filter((entry) => entry.isDirectory())
+    const visible = await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory())
+        .map(async (entry) => {
+          const directory = path.join(ROOT, entry.name)
+          const removed = await fs.stat(path.join(directory, REMOVED_MARKER)).then(
+            () => true,
+            () => false,
+          )
+          return removed ? undefined : entry
+        }),
+    )
+    return visible
+      .filter((entry) => entry !== undefined)
       .map((entry) => ({
         type: PERSONAL_ADAPTER_TYPE,
         name: entry.name,
@@ -75,9 +89,12 @@ export const PersonalAdapter: WorkspaceAdapter = {
         projectID: ProjectV2.ID.global,
       }))
   },
-  async remove() {
+  async remove(info) {
     // Personal spaces hold user-authored content, so removing the workspace
     // record must never delete the directory.
+    const directory = resolveDirectory(info)
+    await fs.mkdir(directory, { recursive: true })
+    await fs.writeFile(path.join(directory, REMOVED_MARKER), "")
   },
   target(info) {
     return {

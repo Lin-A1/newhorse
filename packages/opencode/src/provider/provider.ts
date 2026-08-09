@@ -1,4 +1,4 @@
-import { LayerNode } from "@newhorse/core/effect/layer-node"
+﻿import { LayerNode } from "@newhorse/core/effect/layer-node"
 import os from "os"
 import { ConfigV1 } from "@newhorse/core/v1/config/config"
 import fuzzysort from "fuzzysort"
@@ -171,7 +171,7 @@ export function selectOpenAILanguageModel(sdk: any, modelID: string, model?: Mod
   return sdk.languageModel(modelID)
 }
 
-function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
+export function selectBedrockMantleLanguageModel(sdk: BundledSDK, modelID: string) {
   if (modelID === "openai.gpt-oss-safeguard-20b" || modelID === "openai.gpt-oss-safeguard-120b")
     return sdk.chat?.(modelID) ?? sdk.languageModel(modelID)
   return sdk.responses?.(modelID) ?? sdk.languageModel(modelID)
@@ -206,6 +206,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
         }
       }
 
+
       return {
         autoload: Object.keys(input.models).length > 0,
         options: ok ? {} : { apiKey: "public" },
@@ -222,15 +223,15 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
     meta: () =>
       Effect.succeed({
         autoload: false,
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          return sdk.responses(modelID)
+        async getModel(sdk: any, modelID: string, _options?: Record<string, any>, model?: Model) {
+          return selectOpenAILanguageModel(sdk, modelID, model)
         },
       }),
     xai: () =>
       Effect.succeed({
         autoload: false,
-        async getModel(sdk: any, modelID: string, _options?: Record<string, any>) {
-          return sdk.responses(modelID)
+        async getModel(sdk: any, modelID: string, _options?: Record<string, any>, model?: Model) {
+          return selectOpenAILanguageModel(sdk, modelID, model)
         },
         options: {},
       }),
@@ -1990,8 +1991,8 @@ const layer = Layer.effect(
   }),
 )
 
-const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro"]
-const smallModelFamilyPriority = ["gemini-flash", "gpt-nano", "claude-haiku"]
+const priority = ["gpt-5", "claude-sonnet-4", "big-pickle", "gemini-3-pro", "qwen", "deepseek", "glm", "minimax", "moonshot", "doubao", "yi", "hunyuan", "baichuan"]
+const smallModelFamilyPriority = ["qwen", "deepseek", "glm", "minimax", "gemini-flash", "gpt-nano", "claude-haiku"]
 export function sort<T extends { id: string }>(models: T[]) {
   return sortBy(
     models,
@@ -2016,3 +2017,6 @@ export const node = LayerNode.make({
 })
 
 export * as Provider from "./provider"
+
+
+

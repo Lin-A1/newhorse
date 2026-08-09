@@ -1,4 +1,4 @@
-import { type Accessor, createMemo, createResource } from "solid-js"
+﻿import { type Accessor, createMemo, createResource } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DateTime } from "luxon"
 import { filter, firstBy, flat, groupBy, mapValues, pipe, uniqueBy, values } from "remeda"
@@ -39,8 +39,10 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       const catalogProviders = child?.provider_catalog ?? serverSync().data.provider_catalog ?? []
       const disabled = new Set(catalogProviders.filter((provider) => provider.disabled === true).map((provider) => provider.id))
       const allowed = new Set(connected)
-      return source
-        .filter((model) => allowed.has(model.providerID) && !disabled.has(model.providerID))
+      const scoped = allowed.size > 0 ? source.filter((model) => allowed.has(model.providerID)) : source
+      const visible = scoped.length > 0 ? scoped : source
+      return visible
+        .filter((model) => !disabled.has(model.providerID))
         .map((model) => ({
           ...model,
           provider: providerMap.get(model.providerID) ?? { id: model.providerID, name: model.providerID, models: {} },
@@ -183,3 +185,8 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
     }
   },
 })
+
+
+
+
+

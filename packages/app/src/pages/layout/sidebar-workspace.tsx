@@ -210,10 +210,8 @@ const WorkspaceActions = (props: {
             disabled={props.local() || props.busy()}
             onSelect={() => props.showDeleteWorkspaceDialog(props.root, props.directory)}
           >
-            <div class="flex items-center gap-2">
-              <Icon name="trash" size="small" class="text-icon-critical-base" />
-              <DropdownMenu.ItemLabel>{props.language.t("common.delete")}</DropdownMenu.ItemLabel>
-            </div>
+            <Icon name="trash" size="small" class="text-icon-critical-base" />
+            <DropdownMenu.ItemLabel>{props.language.t("common.delete")}</DropdownMenu.ItemLabel>
           </DropdownMenu.Item>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>

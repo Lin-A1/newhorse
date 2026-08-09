@@ -1593,13 +1593,14 @@ export default function LegacyLayout(props: ParentProps) {
             </span>
             <span class="break-words text-12-regular text-text-weak">{description()}</span>
           </div>
-          <div class="flex flex-wrap justify-end gap-2">
-            <Button variant="ghost" size="large" disabled={data.deleting} onClick={() => dialog.close()}>
+          <div class="flex items-center justify-end gap-2 pt-3">
+            <Button variant="ghost" size="large" class="min-w-20 justify-center" disabled={data.deleting} onClick={() => dialog.close()}>
               {language.t("common.cancel")}
             </Button>
             <Button
               variant="primary"
               size="large"
+              class="min-w-20 justify-center"
               disabled={data.status === "loading" || data.deleting}
               onClick={handleDelete}
             >
@@ -1674,11 +1675,11 @@ export default function LegacyLayout(props: ParentProps) {
               {description()} {archivedLabel()} {language.t("workspace.reset.note")}
             </span>
           </div>
-          <div class="flex flex-wrap justify-end gap-2">
-            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+          <div class="flex items-center justify-end gap-2 pt-3">
+            <Button variant="ghost" size="large" class="min-w-20 justify-center" onClick={() => dialog.close()}>
               {language.t("common.cancel")}
             </Button>
-            <Button variant="primary" size="large" disabled={state.status === "loading"} onClick={handleReset}>
+            <Button variant="primary" size="large" class="min-w-20 justify-center" disabled={state.status === "loading"} onClick={handleReset}>
               {language.t("workspace.reset.button")}
             </Button>
           </div>

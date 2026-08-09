@@ -31,6 +31,8 @@ export interface MockServerConfig {
   beforeSessionResponse?: (input: { path: string; sessionID?: string }) => Promise<void>
   capability?: unknown
   profileRuntime?: unknown
+  workspaces?: unknown[]
+  workspaceAdapters?: unknown[]
   memory?: {
     list: (
       query: URLSearchParams,
@@ -211,6 +213,21 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
     if (path === "/api/mcp") return json(route, { location: location(config), data: [] })
     if (path === "/api/mcp/resource")
       return json(route, { location: location(config), data: { resources: [], templates: [] } })
+    if (path === "/experimental/workspace/adapter" || path === "/api/experimental/workspace/adapter") {
+      return json(route, config.workspaceAdapters ?? [])
+    }
+    if (path === "/experimental/workspace" || path === "/api/experimental/workspace") {
+      return json(route, config.workspaces ?? [])
+    }
+    if (path === "/experimental/workspace/status" || path === "/api/experimental/workspace/status") {
+      return json(route, [])
+    }
+    if (path === "/experimental/workspace/sync-list" || path === "/api/experimental/workspace/sync-list") {
+      return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    }
+    if (path === "/experimental/workspace/{id}" || path === "/api/experimental/workspace/{id}") {
+      return json(route, {})
+    }
     const integration = path.match(/^\/api\/integration\/([^/]+)$/)?.[1]
     if (integration && route.request().method() === "GET")
       return json(route, {

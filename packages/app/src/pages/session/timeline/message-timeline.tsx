@@ -59,7 +59,8 @@ import { normalize } from "@newhorse/session-ui/session-diff"
 import { useFileComponent } from "@newhorse/ui/context/file"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "@/pages/session/message-gesture"
 import { SessionContextUsage } from "@/components/session-context-usage"
-import { useDialog } from "@newhorse/ui/context/dialog"
+import { useDialog } from '@newhorse/ui/context/dialog'
+import { useConfirm } from '@/components/confirm-dialog'
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { useSessionKey } from "@/pages/session/session-layout"
@@ -268,6 +269,7 @@ export function MessageTimeline(props: {
   const settings = useSettings()
   const tabs = useTabs()
   const dialog = useDialog()
+  const confirm = useConfirm()
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
@@ -845,6 +847,42 @@ export function MessageTimeline(props: {
       })
   }
 
+  const clearChatHistory = async (sessionID: string) => {
+    const session = sync().session.get(sessionID)
+    if (!session) return false
+
+    const confirmed = await confirm({
+      title: language.t("session.clear.title"),
+      message: language.t("session.clear.confirm", { name: sessionTitle(session.title) ?? language.t("command.session.new") }),
+      confirmLabel: language.t("session.clear.button"),
+    })
+    if (!confirmed) return false
+
+    let before: string | undefined
+    const messages: { id: string; time: { created: number } }[] = []
+    while (true) {
+      const response = await sdk().client.session.messages({ sessionID, limit: 200, before })
+      const page = response.data ?? []
+      messages.push(...page.map((item) => ({ id: item.info.id, time: { created: item.info.time.created } })))
+      const next = response.response.headers.get("x-next-cursor") ?? undefined
+      if (!next) break
+      before = next
+    }
+
+    const removed = [...messages].sort((a, b) => b.time.created - a.time.created || (a.id < b.id ? 1 : -1))
+    for (const message of removed) {
+      await sdk()
+        .client.session.deleteMessage({ sessionID, messageID: message.id })
+        .catch((err) => {
+          showToast({
+            title: language.t("session.clear.failed.title"),
+            description: errorMessage(err),
+          })
+          return undefined
+        })
+    }
+    return true
+  }
   const deleteSession = async (sessionID: string) => {
     const session = sync().session.get(sessionID)
     if (!session) return false
@@ -1609,12 +1647,20 @@ export function MessageTimeline(props: {
                                 <DropdownMenu.Item onSelect={() => void archiveSession(id)}>
                                   <DropdownMenu.ItemLabel>{language.t("common.archive")}</DropdownMenu.ItemLabel>
                                 </DropdownMenu.Item>
-                                <DropdownMenu.Separator />
-                                <DropdownMenu.Item
-                                  onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}
-                                >
-                                  <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
-                                </DropdownMenu.Item>
+                                <Show when={sessionProfile() !== "companion"}>
+                                  <DropdownMenu.Separator />
+                                  <DropdownMenu.Item
+                                    onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}
+                                  >
+                                    <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
+                                  </DropdownMenu.Item>
+                                </Show>
+                                <Show when={sessionProfile() === "companion"}>
+                                  <DropdownMenu.Separator />
+                                  <DropdownMenu.Item onSelect={() => void clearChatHistory(id)}>
+                                    <DropdownMenu.ItemLabel>{language.t("session.clear.button")}</DropdownMenu.ItemLabel>
+                                  </DropdownMenu.Item>
+                                </Show>
                               </DropdownMenu.Content>
                             </DropdownMenu.Portal>
                           </DropdownMenu>
@@ -1680,10 +1726,29 @@ export function MessageTimeline(props: {
                               <MenuV2.Item onSelect={() => void archiveSession(id)}>
                                 {language.t("common.archive")}
                               </MenuV2.Item>
-                              <MenuV2.Separator />
-                              <MenuV2.Item onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}>
-                                {language.t("common.delete")}...
-                              </MenuV2.Item>
+                              <Show when={sessionProfile() !== "companion"}>
+
+                                <MenuV2.Separator />
+
+                                <MenuV2.Item onSelect={() => dialog.show(() => <DialogDeleteSession sessionID={id} />)}>
+
+                                  {language.t("common.delete")}...
+
+                                </MenuV2.Item>
+
+                              </Show>
+
+                              <Show when={sessionProfile() === "companion"}>
+
+                                <MenuV2.Separator />
+
+                                <MenuV2.Item onSelect={() => void clearChatHistory(id)}>
+
+                                  {language.t("session.clear.button")}...
+
+                                </MenuV2.Item>
+
+                              </Show>
                             </MenuV2.Content>
                           </MenuV2.Portal>
                         </MenuV2>

@@ -176,6 +176,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
+      const current = yield* requireSession(ctx.params.sessionID)
+      if (current.profileID === "companion") return yield* new HttpApiError.BadRequest({})
       yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
       return true
     })
@@ -254,10 +256,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
-    // share/unshare errors aren't all client-induced — storage and network
+    // share/unshare errors are not all client-induced; storage and network
     // failures from SessionShare are real possibilities. Map to a typed 500
     // (matches the legacy route behavior which routed any failure through
-    // ErrorMiddleware → NamedError.Unknown 500) instead of blanket-mapping
+    // ErrorMiddleware -> NamedError.Unknown 500) instead of blanket-mapping
     // every failure to a 400 BadRequest.
     const share = Effect.fn("SessionHttpApi.share")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)

@@ -30,11 +30,11 @@ export function useConfirm() {
       dialog.push(
         () => (
           <Dialog title={options.title} description={options.message} fit>
-            <div class="flex flex-wrap justify-end gap-2 pt-2">
-              <Button size="small" variant="ghost" onClick={() => finish(false)}>
+            <div class="flex items-center justify-end gap-2 px-6 pb-5 pt-3">
+              <Button size="small" variant="ghost" class="min-w-20 justify-center" onClick={() => finish(false)}>
                 {options.cancelLabel ?? language.t("common.cancel")}
               </Button>
-              <Button size="small" variant="primary" onClick={() => finish(true)}>
+              <Button size="small" variant="primary" class="min-w-20 justify-center" onClick={() => finish(true)}>
                 {options.confirmLabel ?? language.t("common.confirm")}
               </Button>
             </div>

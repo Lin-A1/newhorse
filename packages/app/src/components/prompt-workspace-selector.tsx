@@ -41,9 +41,11 @@ export function PromptWorkspaceSelector(props: {
 }) {
   const language = useLanguage()
   let pending: string | undefined
+  const workspaceOptions = () => (Array.isArray(props.workspaceOptions) ? props.workspaceOptions : [])
+  const adapterOptions = () => (Array.isArray(props.adapterOptions) ? props.adapterOptions : [])
   const selected = () => (props.value === props.projectRoot ? "main" : props.value)
-  const selectedWorkspace = () => props.workspaceOptions?.find((item) => selected() === `workspace:${item.id}`)
-  const selectedAdapter = () => props.adapterOptions?.find((item) => selected() === `adapter:${item.type}`)
+  const selectedWorkspace = () => workspaceOptions().find((item) => selected() === `workspace:${item.id}`)
+  const selectedAdapter = () => adapterOptions().find((item) => selected() === `adapter:${item.type}`)
   const icon = () => {
     if (selected() === "main") return "monitor"
     if (selected() === "create" || selectedAdapter()) return "workspace-new"
@@ -94,7 +96,7 @@ export function PromptWorkspaceSelector(props: {
                   <Icon name="check" size="small" class="shrink-0" />
                 </Show>
               </MenuV2.Item>
-              <For each={props.adapterOptions?.filter((adapter) => adapter.type === "personal") ?? []}>
+              <For each={adapterOptions().filter((adapter) => adapter.type === "personal")}>
                 {(adapter) => (
                   <MenuV2.Item onSelect={() => select(`adapter:${adapter.type}`)}>
                     <IconV2 name="workspace-new" />
@@ -106,33 +108,38 @@ export function PromptWorkspaceSelector(props: {
                 )}
               </For>
             </MenuV2.Group>
-            <Show when={(props.workspaceOptions?.length ?? 0) > 0}>
+            <Show when={workspaceOptions().length > 0}>
               <MenuV2.Separator />
               <MenuV2.Group>
                 <MenuV2.GroupLabel>{language.t("session.new.workspace.existing")}</MenuV2.GroupLabel>
-                <For each={props.workspaceOptions ?? []}>
+                <For each={workspaceOptions()}>
                   {(workspace) => (
-                    <MenuV2.Item onSelect={() => select(`workspace:${workspace.id}`)}>
+                    <MenuV2.Item
+                      onSelect={() => select(`workspace:${workspace.id}`)}
+                      trailing={
+                        <Show when={props.onRemoveWorkspace}>
+                          <button
+                            type="button"
+                            class="shrink-0 rounded p-0.5 text-text-weaker hover:bg-surface-raised-base hover:text-text-base"
+                            aria-label={language.t("session.new.workspace.remove.title")}
+                            title={language.t("session.new.workspace.remove.title")}
+                            onPointerDown={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                            }}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              void props.onRemoveWorkspace?.(workspace.id)
+                            }}
+                          >
+                            <Icon name="trash" size="small" />
+                          </button>
+                        </Show>
+                      }
+                    >
                       <IconV2 name="workspace-isolated" />
                       <span class="min-w-0 flex-1 truncate">{workspace.name}</span>
-                      <Show when={props.onRemoveWorkspace}>
-                        <button
-                          type="button"
-                          class="shrink-0 rounded p-0.5 text-text-weaker hover:bg-surface-raised-base hover:text-text-base"
-                          aria-label={language.t("session.new.workspace.remove", { name: workspace.name })}
-                          onPointerDown={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                          }}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            void props.onRemoveWorkspace?.(workspace.id)
-                          }}
-                        >
-                          <Icon name="trash" size="small" />
-                        </button>
-                      </Show>
                       <Show when={selected() === `workspace:${workspace.id}`}>
                         <Icon name="check" size="small" class="shrink-0" />
                       </Show>

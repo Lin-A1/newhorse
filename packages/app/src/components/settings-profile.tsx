@@ -70,7 +70,7 @@ export const SettingsProfile: Component = () => {
                 title={language.t("settings.profile.quietHours.title")}
                 description={language.t("settings.profile.quietHours.description")}
               >
-                <div class="grid min-w-0 grid-cols-1 gap-2 min-[720px]:grid-cols-3 [&>*]:min-w-0 [&>*]:w-full">
+                <div class="grid min-w-0 w-full max-w-full grid-cols-[repeat(auto-fit,minmax(min(100%,120px),1fr))] gap-2 [&>*]:min-w-0 [&>*]:!w-full">
                   <TextField
                     type="time"
                     value={profile.state.quietStart}
@@ -88,7 +88,7 @@ export const SettingsProfile: Component = () => {
                 title={language.t("settings.profile.frequency.title")}
                 description={language.t("settings.profile.frequency.description")}
               >
-                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div class="grid min-w-0 w-full max-w-full grid-cols-[repeat(auto-fit,minmax(min(100%,150px),1fr))] gap-2 [&>*]:min-w-0 [&>*]:!w-full">
                   <TextField
                     type="number"
                     min="1"
@@ -137,3 +137,4 @@ const SettingsRow: Component<{ title: string; description: string; children: JSX
     <div>{props.children}</div>
   </div>
 )
+

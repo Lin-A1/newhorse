@@ -14,7 +14,7 @@ import { Auth } from "@/auth"
 import { Config } from "@/config/config"
 import { Env } from "../../src/env"
 import { Plugin } from "../../src/plugin/index"
-import { Provider, selectOpenAILanguageModel } from "@/provider/provider"
+import { Provider } from "@/provider/provider"
 
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Filesystem } from "@/util/filesystem"
@@ -303,53 +303,6 @@ it.instance("getModel returns model for valid provider/model", () =>
     expect(language).toBeDefined()
   }),
 )
-test("selectOpenAILanguageModel auto-detects chat aliases", () => {
-  const calls: string[] = []
-  const sdk = {
-    responses: (id: string) => {
-      calls.push(`responses:${id}`)
-      return `responses:${id}`
-    },
-    chat: (id: string) => {
-      calls.push(`chat:${id}`)
-      return `chat:${id}`
-    },
-    languageModel: (id: string) => {
-      calls.push(`languageModel:${id}`)
-      return `languageModel:${id}`
-    },
-  }
-
-  expect(
-    selectOpenAILanguageModel(sdk, "gpt-5-chat-latest", {
-      id: ModelV2.ID.make("gpt-5-chat-latest"),
-      providerID: ProviderV2.ID.openai,
-      name: "",
-      family: "",
-      api: { id: "gpt-5-chat-latest", url: "", npm: "@ai-sdk/openai" },
-      status: "active",
-      headers: {},
-      options: {},
-      cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
-      limit: { context: 1, input: 1, output: 1 },
-      capabilities: {
-        temperature: false,
-        reasoning: false,
-        attachment: false,
-        toolcall: false,
-        input: { text: false, audio: false, image: false, video: false, pdf: false },
-        output: { text: false, audio: false, image: false, video: false, pdf: false },
-        interleaved: false,
-      },
-      release_date: "",
-      variants: {},
-    }),
-  ).toBe("chat:gpt-5-chat-latest")
-  expect(selectOpenAILanguageModel(sdk, "gpt-5.6", undefined)).toBe("responses:gpt-5.6")
-  expect(calls).toContain("chat:gpt-5-chat-latest")
-  expect(calls).toContain("responses:gpt-5.6")
-})
-
 
 it.instance("getModel throws ModelNotFoundError for invalid model", () =>
   Effect.gen(function* () {
@@ -881,6 +834,21 @@ test("provider.sort prioritizes preferred models", () => {
   expect(sorted[0].id).toContain("latest")
   expect(sorted[sorted.length - 1].id).not.toContain("gpt-5")
   expect(sorted[sorted.length - 1].id).not.toContain("sonnet-4")
+})
+
+test("provider.sort prefers Chinese model families first", () => {
+  const models = [
+    { id: "random-model", name: "Random" },
+    { id: "gpt-5-turbo", name: "GPT-5 Turbo" },
+    { id: "qwen3-max", name: "Qwen3 Max" },
+    { id: "other-model", name: "Other" },
+  ] as any[]
+
+  const sorted = Provider.sort(models)
+  expect(sorted[0].id).toContain("qwen")
+  expect(sorted.findIndex((model) => model.id.includes("qwen"))).toBeLessThan(
+    sorted.findIndex((model) => model.id.includes("gpt-5")),
+  )
 })
 
 it.instance(

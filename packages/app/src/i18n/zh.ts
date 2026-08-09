@@ -1343,6 +1343,8 @@ export const dict = {
   "settings.profile.frequency.description": "设置每天最多消息数，以及主动消息之间的最短间隔（分钟）。",
   "settings.profile.crisisRegion.title": "危机支持地区",
   "settings.profile.crisisRegion.description": "可选。填写你所在的国家或地区，newhorse在需要时可为你提供本地相关的危机支持资源和求助热线。",
+  "settings.profile.dailySummary.title": "每日总结",
+  "settings.profile.dailySummary.description": "每天让 newhorse 总结你在各 AI 工具中做了什么。",
   "settings.profile.saved": "newhorse设置已保存",
   "settings.providers.connected.environmentDescription": "已通过环境变量连接",
   "settings.providers.custom.description": "通过基础 URL 添加与 OpenAI 兼容的提供商。",

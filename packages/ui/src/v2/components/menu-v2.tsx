@@ -49,13 +49,14 @@ function ItemBody(
 export interface MenuV2ItemProps extends ComponentProps<typeof DropdownMenu.Item> {
   shortcut?: JSX.Element | string
   badge?: JSX.Element | string
+  trailing?: JSX.Element
 }
 
 function MenuV2Item(props: ParentProps<MenuV2ItemProps>) {
-  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge"])
+  const [s, r] = splitProps(props, ["class", "classList", "children", "shortcut", "badge", "trailing"])
   return (
     <DropdownMenu.Item {...r} data-component="menu-v2-item" classList={{ ...s.classList, [s.class ?? ""]: !!s.class }}>
-      <ItemBody shortcut={s.shortcut} badge={s.badge}>
+      <ItemBody shortcut={s.shortcut} badge={s.badge} trailing={s.trailing}>
         {s.children}
       </ItemBody>
     </DropdownMenu.Item>

@@ -499,6 +499,37 @@ describe("workspace CRUD", () => {
   )
 
   it.instance(
+    "removing a personal workspace hides it from adapter sync without deleting files",
+    () =>
+      Effect.gen(function* () {
+        const instance = yield* requireInstance
+        const workspace = yield* Workspace.Service
+        const info = yield* workspace.create({
+          type: PERSONAL_ADAPTER_TYPE,
+          branch: null,
+          projectID: instance.project.id,
+          extra: null,
+        })
+        try {
+          if (!info.directory) throw new Error("Expected personal workspace directory")
+          yield* Effect.promise(() => fs.writeFile(path.join(info.directory!, "notes", "keep.txt"), "keep"))
+
+          const removed = yield* workspace.remove(info.id)
+          yield* workspace.syncList(instance.project)
+
+          expect(removed?.id).toBe(info.id)
+          expect(yield* workspace.get(info.id)).toBeUndefined()
+          expect((yield* workspace.list(instance.project)).map((item) => item.id)).not.toContain(info.id)
+          expect(yield* Effect.promise(() => fs.readFile(path.join(info.directory!, "notes", "keep.txt"), "utf8"))).toBe(
+            "keep",
+          )
+        } finally {
+          if (info.directory) yield* Effect.promise(() => fs.rm(info.directory!, { recursive: true, force: true }))
+        }
+      }),
+    { git: true },
+  )
+  it.instance(
     "create configures, persists, creates, starts local sync, and passes environment",
     () =>
       Effect.gen(function* () {

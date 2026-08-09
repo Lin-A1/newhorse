@@ -1,4 +1,4 @@
-import { Popover as Kobalte } from "@kobalte/core/popover"
+﻿import { Popover as Kobalte } from "@kobalte/core/popover"
 import {
   Component,
   ComponentProps,
@@ -248,10 +248,7 @@ export function ModelSelectorPopoverV2(props: {
     model
       .list()
       .filter((item) => model.visible({ modelID: item.id, providerID: item.provider.id }))
-      .filter((item) => (props.provider ? item.provider.id === props.provider : true))
-      // Hide the opencode Zen free-tier models: their quota is server-limited and
-      // frequently exhausted, which dead-ends users into an unusable selection.
-      .filter((item) => !(item.provider.id === "opencode" && (!item.cost || item.cost.input === 0))),
+      .filter((item) => (props.provider ? item.provider.id === props.provider : true)),
   )
   const models = createMemo(() => {
     const search = store.search.trim()
@@ -540,3 +537,4 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
     </Dialog>
   )
 }
+

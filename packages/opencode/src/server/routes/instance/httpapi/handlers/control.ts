@@ -1,4 +1,5 @@
 import { Auth } from "@/auth"
+import { GlobalBus } from "@/bus/global"
 
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -10,11 +11,19 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
   Effect.gen(function* () {
     const auth = yield* Auth.Service
 
+    const emitAuthUpdated = Effect.sync(() =>
+      GlobalBus.emit("event", {
+        directory: "global",
+        payload: { type: "auth.updated", properties: {} },
+      }),
+    )
+
     const authSet = Effect.fn("ControlHttpApi.authSet")(function* (ctx: {
       params: { providerID: ProviderV2.ID }
       payload: Auth.Info
     }) {
       yield* auth.set(ctx.params.providerID, ctx.payload).pipe(Effect.orDie)
+      yield* emitAuthUpdated
       return true
     })
 
@@ -22,6 +31,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
       params: { providerID: ProviderV2.ID }
     }) {
       yield* auth.remove(ctx.params.providerID).pipe(Effect.orDie)
+      yield* emitAuthUpdated
       return true
     })
 

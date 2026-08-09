@@ -88,7 +88,7 @@ export const SettingsProfileV2: Component = () => {
                       {language.t("settings.profile.quietHours.description")}
                     </span>
                   </div>
-                  <div class="grid min-w-0 grid-cols-1 gap-2 min-[720px]:grid-cols-3 [&>*]:min-w-0 [&>*]:w-full">
+                  <div class="grid min-w-0 w-full max-w-full grid-cols-[repeat(auto-fit,minmax(min(100%,120px),1fr))] gap-2 [&>*]:min-w-0 [&>*]:!w-full">
                     <TextInputV2
                       type="time"
                       value={profile.state.quietStart}
@@ -114,7 +114,7 @@ export const SettingsProfileV2: Component = () => {
                       {language.t("settings.profile.frequency.description")}
                     </span>
                   </div>
-                  <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div class="grid min-w-0 w-full max-w-full grid-cols-[repeat(auto-fit,minmax(min(100%,150px),1fr))] gap-2 [&>*]:min-w-0 [&>*]:!w-full">
                     <TextInputV2
                       type="number"
                       min="1"
@@ -154,3 +154,4 @@ export const SettingsProfileV2: Component = () => {
     </>
   )
 }
+

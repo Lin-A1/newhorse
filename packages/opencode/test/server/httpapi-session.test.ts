@@ -24,6 +24,7 @@ import * as HttpSessionError from "../../src/server/routes/instance/httpapi/hand
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
+import { Profile } from "@/profile"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { Database } from "@newhorse/core/database/database"
 import { SessionInputTable, SessionMessageTable, SessionTable } from "@newhorse/core/session/sql"
@@ -1039,6 +1040,27 @@ describe("session HttpApi", () => {
         )
 
         expect(response.status).toBe(400)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "rejects deleting companion sessions",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "companion lock", profileID: Profile.ID.make("companion") })
+
+        const response = yield* request(pathFor(SessionPaths.remove, { sessionID: session.id }), {
+          method: "DELETE",
+          headers,
+        })
+
+        expect(response.status).toBe(400)
+        expect(yield* requestJson<Session.Info>(pathFor(SessionPaths.get, { sessionID: session.id }), { headers })).toMatchObject({
+          id: session.id,
+        })
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
