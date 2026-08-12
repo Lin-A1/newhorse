@@ -15,6 +15,8 @@ import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Permission } from "@/permission"
 import { Database } from "@newhorse/core/database/database"
+import { Provider } from "@/provider/provider"
+import { resolveWithFallback, fallbackChainForAgent } from "@/provider/model-resolver"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -85,6 +87,7 @@ export const TaskTool = Tool.define(
     const agent = yield* Agent.Service
     const background = yield* BackgroundJob.Service
     const config = yield* Config.Service
+    const provider = yield* Provider.Service
     const sessions = yield* Session.Service
     const scope = yield* Scope.Scope
     const flags = yield* RuntimeFlags.Service
@@ -204,10 +207,14 @@ export const TaskTool = Tool.define(
       if (msg.info.role !== "assistant") return yield* Effect.fail(new Error("Not an assistant message"))
       const variant = msg.info.variant
 
-      const model = next.model ?? {
-        modelID: msg.info.modelID,
-        providerID: msg.info.providerID,
-      }
+      const resolved = yield* resolveWithFallback(provider, {
+        explicit: next.model,
+        fallbackChain:
+          fallbackChainForAgent(cfg, params.subagent_type) ?? fallbackChainForAgent(cfg, next.name),
+        defaultModel: Effect.succeed({ modelID: msg.info.modelID, providerID: msg.info.providerID }),
+      })
+      const model = { modelID: resolved.modelID, providerID: resolved.providerID }
+      const modelVariant = resolved.source === "fallback" ? resolved.variant : next.model ? undefined : variant
       const metadata = {
         parentSessionId: ctx.sessionID,
         sessionId: nextSession.id,
@@ -232,7 +239,7 @@ export const TaskTool = Tool.define(
             modelID: model.modelID,
             providerID: model.providerID,
           },
-          variant: next.model ? undefined : variant,
+          variant: modelVariant,
           agent: next.name,
           parts,
         })

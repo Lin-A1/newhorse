@@ -9,9 +9,19 @@ const Color = Schema.Union([
   Schema.Literals(["primary", "secondary", "accent", "success", "warning", "error", "info"]),
 ])
 
+const FallbackChainEntry = Schema.Struct({
+  providers: Schema.mutable(Schema.Array(Schema.String)),
+  model: Schema.String,
+  variant: Schema.optional(Schema.String),
+}).annotate({ identifier: "AgentFallbackChainEntry" })
+
 const AgentSchema = Schema.StructWithRest(
   Schema.Struct({
     model: Schema.optional(Schema.String),
+    fallbackChain: Schema.optional(Schema.mutable(Schema.Array(FallbackChainEntry))).annotate({
+      description:
+        "Availability-aware fallback models. Tried in order when the agent has no explicit `model`; the first provider in `providers` that is connected and exposes `model` is used.",
+    }),
     variant: Schema.optional(Schema.String).annotate({
       description: "Default model variant for this agent (applies only when using the agent's configured model).",
     }),
@@ -43,6 +53,7 @@ const AgentSchema = Schema.StructWithRest(
 const KNOWN_KEYS = new Set([
   "name",
   "model",
+  "fallbackChain",
   "variant",
   "prompt",
   "description",

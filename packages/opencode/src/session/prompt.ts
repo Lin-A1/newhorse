@@ -9,6 +9,7 @@ import { SessionRevert } from "./revert"
 import { Session } from "./session"
 import { Agent } from "../agent/agent"
 import { Provider } from "@/provider/provider"
+import { resolveWithFallback, fallbackChainForAgent } from "@/provider/model-resolver"
 
 import { type Tool as AITool, tool, jsonSchema } from "ai"
 import type { JSONSchema7 } from "@ai-sdk/provider"
@@ -698,7 +699,15 @@ const layer = Layer.effect(
         throw error
       }
 
-      const model = input.model ?? ag.model ?? (yield* currentModel(input.sessionID))
+      const cfg = yield* config.get()
+      const resolved = yield* resolveWithFallback(provider, {
+        explicit: input.model ?? ag.model,
+        fallbackChain: agentName
+          ? fallbackChainForAgent(cfg, agentName) ?? fallbackChainForAgent(cfg, ag.name)
+          : fallbackChainForAgent(cfg, ag.name),
+        defaultModel: currentModel(input.sessionID),
+      })
+      const model = { providerID: resolved.providerID, modelID: resolved.modelID }
       const same = ag.model && model.providerID === ag.model.providerID && model.modelID === ag.model.modelID
       const full =
         !input.variant && ag.variant && same
@@ -706,7 +715,10 @@ const layer = Layer.effect(
               .getModel(model.providerID, model.modelID)
               .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
           : undefined
-      const variant = input.variant ?? (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
+      const variant =
+        input.variant ??
+        (resolved.source === "fallback" ? resolved.variant : undefined) ??
+        (ag.variant && full?.variants?.[ag.variant] ? ag.variant : undefined)
 
       const info: SessionV1.User = {
         id: input.messageID ?? MessageID.ascending(),

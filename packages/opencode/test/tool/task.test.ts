@@ -29,6 +29,7 @@ import { testEffect } from "../lib/effect"
 import { Permission } from "@/permission"
 import { ProviderV2 } from "@newhorse/core/provider"
 import { ModelV2 } from "@newhorse/core/model"
+import { Provider } from "@/provider/provider"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -56,6 +57,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
       Database.node,
       RuntimeFlags.node,
       Ripgrep.node,
+      Provider.node,
     ]),
     [[RuntimeFlags.node, RuntimeFlags.layer(flags)]],
   )
