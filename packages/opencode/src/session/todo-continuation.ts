@@ -263,7 +263,9 @@ const layer = Layer.effect(
         if (!sessionID) return
         if (!event.data.error || event.data.error.name !== ABORTED_ERROR_NAME) return
         yield* Effect.sync(() => lastAbortTimes.set(sessionID, Date.now()))
-      }),
+      }).pipe(
+        Effect.catchCause((cause) => Effect.logError("todo-continuation error handler failed", { cause })),
+      ),
     )
     yield* Effect.addFinalizer(() => unsubscribeError)
 
@@ -271,7 +273,9 @@ const layer = Layer.effect(
       Effect.gen(function* () {
         if (!isIdle(event)) return
         yield* handleIdle(event.data.sessionID)
-      }),
+      }).pipe(
+        Effect.catchCause((cause) => Effect.logError("todo-continuation idle handler failed", { cause })),
+      ),
     )
     yield* Effect.addFinalizer(() => unsubscribeIdle)
 

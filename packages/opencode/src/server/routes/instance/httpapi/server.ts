@@ -269,8 +269,7 @@ const app = LayerNode.group([
   SessionCompaction.node,
   SessionRevert.node,
   SessionSummary.node,
-  // TODO(todo-continuation): disabled while investigating send/delete regressions.
-  // TodoContinuation.node,
+  TodoContinuation.node,
   DailySummary.node,
   SessionPrompt.node,
   Instruction.node,
