@@ -1,37 +1,35 @@
-## Usage
+# newhorse app
 
-Dependencies for these templates are managed with [pnpm](https://pnpm.io) using `pnpm up -Lri`.
+The newhorse product web UI, built with SolidJS and served by the newhorse
+server. The desktop app (`packages/desktop`) hosts this same renderer inside
+Electron.
 
-This is the reason you see a `pnpm-lock.yaml`. That said, any package manager will work. This file can safely be removed once you clone a template.
+## Development
 
 ```bash
-$ npm install # or pnpm install or yarn install
+bun install
+bun run dev    # Vite dev server on http://localhost:3000
 ```
 
-### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
+The UI talks to a newhorse server. By default it connects to
+`http://localhost:4096`; override with `VITE_OPENCODE_SERVER_HOST` /
+`VITE_OPENCODE_SERVER_PORT`. For a full local run, start the server from
+`packages/opencode` (`bun run dev`) or use `bun run dev:web` from the repo root.
 
-## Available Scripts
+## Commands
 
-In the project directory, you can run:
+```bash
+bun run typecheck       # TypeScript check
+bun run build           # production build to dist/
+bun run test:unit       # unit tests (happy-dom)
+bun run test:browser    # browser-condition unit tests
+bun run test:e2e        # Playwright end-to-end
+bun run test:e2e:local  # Playwright against a local backend
+```
 
-### `npm run dev` or `npm start`
+## End-to-end tests
 
-Runs the app in the development mode.<br>
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
-
-The page will reload if you make edits.<br>
-
-### `npm run build`
-
-Builds the app for production to the `dist` folder.<br>
-It correctly bundles Solid in production mode and optimizes the build for the best performance.
-
-The build is minified and the filenames include the hashes.<br>
-Your app is ready to be deployed!
-
-## E2E Testing
-
-Playwright starts the Vite dev server automatically via `webServer`, and UI tests expect an opencode backend at `localhost:4096` by default.
+The Playwright suite launches a real Chromium and mocks the server:
 
 ```bash
 bunx playwright install chromium
@@ -41,10 +39,10 @@ bun run test:e2e:local -- --grep "settings"
 
 Environment options:
 
-- `PLAYWRIGHT_SERVER_HOST` / `PLAYWRIGHT_SERVER_PORT` (backend address, default: `localhost:4096`)
-- `PLAYWRIGHT_PORT` (Vite dev server port, default: `3000`)
-- `PLAYWRIGHT_BASE_URL` (override base URL, default: `http://localhost:<PLAYWRIGHT_PORT>`)
+- `PLAYWRIGHT_SERVER_HOST` / `PLAYWRIGHT_SERVER_PORT` (backend address, default `localhost:4096`)
+- `PLAYWRIGHT_PORT` (Vite dev server port, default `3000`)
+- `PLAYWRIGHT_BASE_URL` (override base URL)
 
-## Deployment
-
-You can deploy the `dist` folder to any static host provider (netlify, surge, now, etc.)
+Note: a stale dev server left listening on ports 3000/4096 can be reused by
+Playwright and serve stale code. Kill listeners on those ports before running
+the suite.

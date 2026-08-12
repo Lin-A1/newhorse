@@ -29,6 +29,9 @@ Profile 不是存储边界。持久内容会按作用域和策略隔离：项目
 - MCP Server、Skill、Plugin、自定义 Command 与权限控制
 - 服务端动态模型目录，按 Provider 可用性过滤
 - 多 Provider 认证与模型偏好，不依赖前端硬编码列表
+- 原生代码评审引擎（diff 解析、确定性文件过滤、行级 AI 评论）
+- 基于 ast-grep 的结构化代码搜索，以及拆分后的 LSP 工具（定义、引用、重命名、符号、诊断）
+- 浏览器自动化工具（agent-browser），支持交互式 Web 任务
 
 ### Assistant 与 Companion
 
@@ -38,6 +41,9 @@ Profile 不是存储边界。持久内容会按作用域和策略隔离：项目
 - 结构化 Memory proposal，具备 accept/reject/forget 生命周期
 - 持久 Reminder，支持创建、暂停、恢复、取消、lease 与幂等投递
 - Follow-up 调度与 Companion Plan，统一管理 Memory、Reminder 和 Continuity Grant
+- 每日活动总结：基于 newhorse work、newhorse、Claude Code 和 Codex 的当日会话，用 LLM 生成一天一条的总结，本地时间 23:00 后自动生成一次
+- Todo 续跑执行器：一轮结束后仍有未完成任务时自动恢复继续工作
+- 多模型回退链：主 Provider/模型不可用时自动切换到可用的后备
 - 自动接受权限支持 Session、Lineage、Directory 优先级
 
 ### 内容隔离与信任
@@ -81,12 +87,17 @@ Newhorse 仍在持续开发中。当前支持源码构建、本地 Web/Desktop �
 - Central Trust Policy 与不含内容的 Policy Audit
 - Assistant/Companion Profile 与 Personal Workspace
 - 结构化 Memory、Reminder、Follow-up、Continuity Grant 与 Companion Plan 管理
+- 每日活动总结（Session Reader、23:00 调度器、HTTP list/generate、Sidebar 时间线）
 - 服务端动态 Model/Provider Catalog
 - Legacy 与 v2 两套 Settings 布局
+- 记忆检索升级：FTS5/BM25 检索、实体提取与加权、回合后自动提取（审核门控）
+- 执行期插件 Hooks（权限决策、轮末续跑）
+- 桌面端托盘常驻（关窗进托盘，Server 与后台 Agent 持续运行）
+- 工具描述汉化
 - Linux 与 Windows 便携 CLI 导出
 - Windows NSIS 与 Linux Desktop 打包路径
 
-统一 Today/每日入口仍明确处于延期状态。macOS Desktop 运行验证以及生产签名/notarization 仍属于发布门槛。
+每日总结已上线并显示在 Sidebar 时间线中。更完整的统一 Today/每日入口仍明确处于延期状态。macOS Desktop 运行验证以及生产签名/notarization 仍属于发布门槛。
 
 ## 环境要求
 

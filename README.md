@@ -29,6 +29,9 @@ Profiles are not storage boundaries. Persistent content stays isolated by scope 
 - MCP servers, skills, plugins, custom commands, and permission controls
 - Server-backed dynamic model catalogs filtered by provider availability
 - Multi-provider authentication and model preferences without a hard-coded frontend list
+- Native code review engine (diff parsing, deterministic file filtering, line-level AI comments)
+- Structural code search with ast-grep, and split LSP tools (definition, references, rename, symbols, diagnostics)
+- Browser automation tools (agent-browser) for interactive web tasks
 
 ### Assistant and Companion
 
@@ -38,6 +41,9 @@ Profiles are not storage boundaries. Persistent content stays isolated by scope 
 - Structured memory proposals with explicit accept/reject/forget lifecycle
 - Persistent reminders with create, pause, resume, cancel, lease, and idempotent delivery
 - Follow-up scheduling and a Companion Plan surface for memory, reminders, and continuity grants
+- Daily activity summaries: one LLM-generated recap per day across your newhorse work, newhorse, Claude Code, and Codex sessions, auto-generated once after 23:00 local
+- Todo-continuation enforcer: automatically resumes work when open todos remain after a turn
+- Multi-model fallback chains: switch to an available provider/model when the primary one fails
 - Automatic permission acceptance with session, lineage, and directory precedence
 
 ### Content isolation and trust
@@ -81,12 +87,17 @@ Major foundations already implemented include:
 - Central trust policy and content-free policy audit
 - Assistant/Companion profiles and personal workspaces
 - Structured memory, reminders, follow-ups, continuity grants, and Companion Plan management
+- Daily activity summaries (session readers, 23:00 scheduler, HTTP list/generate, sidebar timeline)
 - Server-backed dynamic model/provider catalogs
 - Legacy and v2 settings layouts
+- Memory retrieval upgrades: FTS5/BM25 search, entity extraction + boost, and post-turn auto-extraction (review-gated)
+- Execution-phase plugin hooks (permission decisions, end-of-turn continuation)
+- Tray-resident desktop mode (close-to-tray keeps the server and background agents running)
+- Tool descriptions localized to Chinese
 - Linux and Windows portable CLI export
 - Windows NSIS and Linux desktop packaging paths
 
-The unified Today/daily-entry experience remains intentionally deferred. macOS desktop validation and production signing/notarization are still release-gating items.
+Daily summaries are live in the sidebar timeline. A broader unified Today/daily-entry experience remains intentionally deferred. macOS desktop validation and production signing/notarization are still release-gating items.
 
 ## Environment requirements
 
