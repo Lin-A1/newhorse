@@ -254,6 +254,78 @@ describe("session.retry.retryable", () => {
     expect(SessionRetry.retryable(error, retryProvider)).toBeUndefined()
   })
 
+  test("retries fetch failed messages even when isRetryable is false", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "fetch failed",
+        isRetryable: false,
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "fetch failed" })
+  })
+
+  test("retries DNS lookup failures even when isRetryable is false", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "getaddrinfo ENOTFOUND api.openai.com",
+        isRetryable: false,
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({
+      message: "getaddrinfo ENOTFOUND api.openai.com",
+    })
+  })
+
+  test("retries socket hang up messages even when isRetryable is false", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "socket hang up",
+        isRetryable: false,
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "socket hang up" })
+  })
+
+  test("retries 429 detected via responseBody even when isRetryable is false", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "boom",
+        isRetryable: false,
+        statusCode: 200,
+        responseBody: JSON.stringify({ error: { code: "rate_limit_exceeded", message: "Too many requests" } }),
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "boom" })
+  })
+
+  test("retries request timeout messages even when isRetryable is false", () => {
+    const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
+      new SessionV1.APIError({
+        message: "request timed out",
+        isRetryable: false,
+        statusCode: 400,
+      }).toObject(),
+    )
+
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: "request timed out" })
+  })
+
+  test("retries plain text socket errors", () => {
+    const msg = "fetch failed: socket connection was closed unexpectedly"
+    const error = wrap(msg)
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
+  })
+
+  test("retries plain text request timeouts", () => {
+    const msg = "The request timed out after 60000ms"
+    const error = wrap(msg)
+    expect(SessionRetry.retryable(error, retryProvider)).toEqual({ message: msg })
+  })
+
   test("retries ZlibError decompression failures", () => {
     const error = Schema.decodeUnknownSync(SessionV1.APIError.Schema)(
       new SessionV1.APIError({
