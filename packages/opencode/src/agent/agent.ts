@@ -176,7 +176,7 @@ const layer = Layer.effect(
         const agents: Record<string, Info> = {
           build: {
             name: "build",
-            description: "The default agent. Executes tools based on configured permissions.",
+            description: "默认 agent。根据配置的权限执行工具。",
             options: {},
             permission: Permission.merge(
               defaults,
@@ -191,7 +191,7 @@ const layer = Layer.effect(
           },
           plan: {
             name: "plan",
-            description: "Plan mode. Disallows all edit tools.",
+            description: "规划模式。禁用所有编辑工具。",
             options: {},
             permission: Permission.merge(
               defaults,
@@ -217,7 +217,7 @@ const layer = Layer.effect(
           },
           general: {
             name: "general",
-            description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
+            description: `通用 agent，用于研究复杂问题并执行多步骤任务。使用此 agent 可以并行执行多个工作单元。`,
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
@@ -246,7 +246,7 @@ const layer = Layer.effect(
               }),
               user,
             ),
-            description: `Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.`,
+            description: `专门用于探索代码库的快速 agent。当你需要按模式快速查找文件（如 "src/components/**/*.tsx"）、搜索代码关键字（如 "API endpoints"），或回答关于代码库的问题（如 "how do API endpoints work?"）时使用它。调用此 agent 时，请指定所需的彻底程度："quick" 用于基础搜索，"medium" 用于适度探索，"very thorough" 用于跨多个位置和命名约定的全面分析。`,
             prompt: PROMPT_EXPLORE,
             options: {},
             mode: "subagent",
@@ -262,7 +262,7 @@ const layer = Layer.effect(
               }),
               user,
             ),
-            description: `Fast agent specialized for recalling stored memories. Use this when you need to retrieve durable facts, preferences, goals, events, or relationship notes from the user's memory ("wiki") relevant to the current conversation. It searches the memory store and returns a condensed digest of only the facts actually present.`,
+            description: `专门用于召回已存储记忆的快速 agent。当你需要从用户的记忆（"wiki"）中检索与当前对话相关的持久事实、偏好、目标、事件或关系笔记时使用它。它会搜索记忆库，并只返回实际存在的事实的精简摘要。`,
             prompt: PROMPT_RECALL,
             options: {},
             mode: "subagent",

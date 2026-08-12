@@ -1,5 +1,6 @@
-Load a specialized skill when the task at hand matches one of the skills listed in the system prompt.
+当手头任务与系统提示中列出的某个技能（skill）匹配时，加载该专项技能。
 
-Use this tool to inject the skill's instructions and resources into current conversation. The output may contain detailed workflow guidance as well as references to scripts, files, etc in the same directory as the skill.
+使用此工具把技能的指令和资源注入当前对话。输出可能包含详细的工作流指导，
+以及指向技能所在目录中脚本、文件等的引用。
 
-The skill name must match one of the skills listed in your system prompt.
+技能名称必须与你的系统提示中列出的某个技能完全一致。

@@ -1,14 +1,14 @@
-Read a file or directory from the local filesystem. If the path does not exist, an error is returned.
+从本地文件系统读取文件或目录。如果路径不存在，将返回错误。
 
-Usage:
-- The filePath parameter should be an absolute path.
-- By default, this tool returns up to 2000 lines from the start of the file.
-- The offset parameter is the line number to start from (1-indexed).
-- To read later sections, call this tool again with a larger offset.
-- Use the grep tool to find specific content in large files or files with long lines.
-- If you are unsure of the correct file path, use the glob tool to look up filenames by glob pattern.
-- Contents are returned with each line prefixed by its line number as `<line>: <content>`. For example, if a file has contents "foo\n", you will receive "1: foo\n". For directories, entries are returned one per line (without line numbers) with a trailing `/` for subdirectories.
-- Any line longer than 2000 characters is truncated.
-- Call this tool in parallel when you know there are multiple files you want to read.
-- Avoid tiny repeated slices (30 line chunks). If you need more context, read a larger window.
-- This tool can read image files and PDFs and return them as file attachments.
+用法：
+- filePath 参数应为绝对路径。
+- 默认情况下，此工具从文件开头返回最多 2000 行。
+- offset 参数是要开始的行号（从 1 开始）。
+- 要读取后面的部分，请用更大的 offset 再次调用此工具。
+- 在大型文件或长行文件中查找特定内容时，使用 grep 工具。
+- 如果不确定正确的文件路径，使用 glob 工具按 glob 模式查找文件名。
+- 内容会以每行行号作为前缀返回，格式为 `<line>: <content>`。例如，如果文件内容为 "foo\n"，你会收到 "1: foo\n"。对于目录，条目逐行返回（不带行号），子目录以 `/` 结尾。
+- 任何超过 2000 个字符的行都会被截断。
+- 当你知道要读取多个文件时，并行调用此工具。
+- 避免反复读取细碎的小块（如 30 行的分块）。如果需要更多上下文，读取更大的窗口。
+- 此工具可以读取图片文件和 PDF，并以文件附件的形式返回。

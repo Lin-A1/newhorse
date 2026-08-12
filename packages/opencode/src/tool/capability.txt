@@ -1,6 +1,6 @@
-Use this tool to inspect the current redacted capability status.
+使用此工具查看当前脱敏后的能力状态。
 
-It reports the active profile, workspace content scope, runtime agents, tool permissions,
-MCP availability, skills, loaded plugin count, memory policy, and reminder availability.
-It never returns configuration values, file paths, prompts, credentials, memory content,
-reminder text, MCP URLs, headers, or raw runtime errors.
+它会报告活动配置文件（profile）、工作区内容范围、运行时 agent、工具权限、
+MCP 可用性、技能（skills）、已加载插件数量、记忆策略以及提醒可用性。
+它绝不会返回配置值、文件路径、提示词、凭据、记忆内容、
+提醒文本、MCP URL、请求头或原始运行时错误。

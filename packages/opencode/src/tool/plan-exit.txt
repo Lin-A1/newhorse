@@ -1,13 +1,13 @@
-Use this tool when you have completed the planning phase and are ready to exit plan agent.
+当你在完成规划阶段、准备退出 plan agent 时，使用此工具。
 
-This tool will ask the user if they want to switch to build agent to start implementing the plan.
+此工具会询问用户是否想切换到 build agent 以开始实施计划。
 
-Call this tool:
-- After you have written a complete plan to the plan file
-- After you have clarified any questions with the user
-- When you are confident the plan is ready for implementation
+在以下情况调用此工具：
+- 在把完整计划写入计划文件之后
+- 在与用户澄清了所有问题之后
+- 当你确信计划已准备好实施时
 
-Do NOT call this tool:
-- Before you have created or finalized the plan
-- If you still have unanswered questions about the implementation
-- If the user has indicated they want to continue planning
+不要调用此工具：
+- 在创建或敲定计划之前
+- 如果对实施仍有未解答的问题
+- 如果用户表示想继续规划

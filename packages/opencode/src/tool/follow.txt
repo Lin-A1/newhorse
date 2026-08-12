@@ -1,16 +1,15 @@
-Follow points let you tell the Companion things you care about, and it will
-check them periodically and proactively tell you when something changes —
-change-driven, not time-driven.
+关注点（Follow point）让你告诉 Companion 你在意的事情，它会定期检查，
+并在有变化时主动告知你——以变化驱动，而不是以时间驱动。
 
 Actions:
-- create: start following something.
-  - kind is one of:
-    - topic: a subject to watch (e.g. "deepseek V4 release"); checked via web search
-    - deadline: a date to track (topic should be an ISO date like "2026-09-01")
-    - release: a repo/software to watch for new versions
-    - price: a thing to watch for price changes
-  - optional checkIntervalMinutes (default 60).
-- list: show what you're currently following.
-- remove: stop following (pass the follow id from list).
+- create: 开始关注某件事。
+  - kind 是以下之一：
+    - topic: 要关注的主题（如 "deepseek V4 release"）；通过网络搜索检查
+    - deadline: 要跟踪的日期（topic 应为 ISO 日期，如 "2026-09-01"）
+    - release: 要关注新版本的仓库/软件
+    - price: 要关注价格变动的事物
+  - 可选的 checkIntervalMinutes（默认 60）。
+- list: 显示你当前关注的内容。
+- remove: 停止关注（传入 list 返回的 follow id）。
 
-Only changed results are reported — no periodic spam.
+只报告发生变化的结果——不会周期性刷屏。

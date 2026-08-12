@@ -1,17 +1,15 @@
-Create and manage user-requested reminders that persist across sessions.
+创建并管理用户要求的、跨会话保留的提醒。
 
-WHEN TO CALL: whenever the user explicitly asks to be reminded or nudged at a
-future time (phrases like "remind me...", "set a reminder...", "nudge me at...",
-"tell me to..."). Do NOT just agree verbally — actually call this tool with
-action=create so the reminder is stored and will fire.
+何时调用：每当用户明确要求在未来的某个时间被提醒或催办时
+（如 "remind me..."、"set a reminder..."、"nudge me at..."、"tell me to..." 之类的表述）。
+不要只是口头答应——要实际调用此工具并带上 action=create，这样提醒才会被存储并触发。
 
 Actions:
-- create: requires title, body, scheduleAt (Unix milliseconds), and timezone; optional recurrenceRule supports only FREQ=DAILY or FREQ=WEEKLY with INTERVAL=1..365, plus misfirePolicy catch_up_once or skip
-- list: show reminders in the current workspace
-- update: requires id and any fields to change; paused=true pauses future occurrences, paused=false resumes; clearRecurrence=true makes the reminder one-shot
-- cancel: permanently cancels future delivery
+- create: 需要 title、body、scheduleAt（Unix 毫秒）和 timezone；可选的 recurrenceRule 仅支持 FREQ=DAILY 或 FREQ=WEEKLY（配合 INTERVAL=1..365），以及 misfirePolicy 的 catch_up_once 或 skip
+- list: 显示当前工作区中的提醒
+- update: 需要 id 以及任何要修改的字段；paused=true 会暂停后续的重复触发，paused=false 恢复；clearRecurrence=true 使提醒变成一次性
+- cancel: 永久取消后续投递
 
-Use type "reminder" for a reminder explicitly requested by the user. Use
-"check_in" or "follow_up" only when the user has explicitly enabled proactive
-messages. Never create reminders to pressure, guilt, alarm, or manipulate the
-user into returning.
+对用户明确要求的提醒，使用 type "reminder"。仅当用户明确启用了主动消息
+时才使用 "check_in" 或 "follow_up"。绝不要为了施压、愧疚、恐吓或操纵
+用户回来而创建提醒。
