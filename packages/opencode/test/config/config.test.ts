@@ -630,12 +630,26 @@ accountTokenIt.instance("resolves env templates in account config with account t
   }),
 )
 
-it.instance("validates config schema and throws on invalid fields", () =>
+it.instance("ignores unknown config fields while validating known ones", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
       $schema: "https://opencode.ai/config.json",
-      invalid_field: "should cause error",
+      invalid_field: "should be ignored",
+      model: "gpt-4o",
+    })
+    const config = yield* Config.use.get()
+    expect((config as any).invalid_field).toBeUndefined()
+    expect(config.model).toBe("gpt-4o")
+  }),
+)
+
+it.instance("throws error for invalid known fields", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    yield* writeConfigEffect(test.directory, {
+      $schema: "https://opencode.ai/config.json",
+      model: 42,
     })
     const exit = yield* Config.use.get().pipe(Effect.exit)
     expect(Exit.isFailure(exit)).toBe(true)
@@ -1454,7 +1468,7 @@ it.instance("permission config preserves user key order", () =>
   }),
 )
 
-test("config parser preserves permission order while rejecting unknown top-level keys", () => {
+test("config parser preserves permission order while ignoring unknown top-level keys", () => {
   const config = ConfigParse.schema(
     ConfigV1.Info,
     {
@@ -1468,13 +1482,18 @@ test("config parser preserves permission order while rejecting unknown top-level
   )
 
   expect(Object.keys(config.permission!)).toEqual(["bash", "*", "edit"])
-  try {
-    ConfigParse.schema(ConfigV1.Info, { invalid_field: true }, "test")
-    throw new Error("expected config parse to fail")
-  } catch (err) {
-    const error = err as { data?: { issues?: Array<{ code?: string; keys?: string[]; path?: string[] }> } }
-    expect(error.data?.issues?.[0]).toMatchObject({ code: "unrecognized_keys", keys: ["invalid_field"], path: [] })
-  }
+
+  // Unknown top-level keys are silently ignored instead of failing the whole config
+  const withUnknown = ConfigParse.schema(
+    ConfigV1.Info,
+    { invalid_field: true, model: "gpt-4o" },
+    "test",
+  )
+  expect((withUnknown as any).invalid_field).toBeUndefined()
+  expect(withUnknown.model).toBe("gpt-4o")
+
+  // Known fields are still strictly validated
+  expect(() => ConfigParse.schema(ConfigV1.Info, { model: 42 }, "test")).toThrow()
 })
 
 // MCP config merging tests
