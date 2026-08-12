@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { ProviderTransform } from "@/provider/transform"
 import { LLMRequestPrep } from "@/session/llm/request"
+import { Provider } from "@/provider/provider"
 import { ProviderV2 } from "@newhorse/core/provider"
 import { ModelV2 } from "@newhorse/core/model"
 import { ModelsDev } from "@newhorse/core/models-dev"
@@ -727,14 +728,62 @@ describe("ProviderTransform.options - gpt-5 reasoningEffort", () => {
     expect(result.reasoningEffort).toBeUndefined()
   })
 
-  test("gpt-5.5 should NOT set reasoningEffort", () => {
+  test("gpt-5.5 with useCompletionUrls should NOT set reasoningEffort", () => {
     const result = ProviderTransform.options({
       model: createModel("gpt-5.5"),
       sessionID,
-      providerOptions: {},
+      providerOptions: { useCompletionUrls: true },
     })
 
     expect(result.reasoningEffort).toBeUndefined()
+    expect(result.reasoningSummary).toBeUndefined()
+  })
+
+  test("azure gpt-6.0 with useCompletionUrls should NOT set reasoningEffort", () => {
+    // Any gpt version above 5.4 in combination with azure does not support
+    // reasoningEffort, regardless of minor version.
+    const result = ProviderTransform.options({
+      model: createModel("gpt-6.0"),
+      sessionID,
+      providerOptions: { useCompletionUrls: true },
+    })
+
+    expect(result.reasoningEffort).toBeUndefined()
+  })
+
+  test("azure gpt-5.4 with useCompletionUrls falls back to medium reasoningEffort", () => {
+    const result = ProviderTransform.options({
+      model: createModel("gpt-5.4"),
+      sessionID,
+      providerOptions: { useCompletionUrls: true },
+    })
+
+    expect(result.reasoningEffort).toBe("medium")
+  })
+
+  test("azure gpt-5 with useCompletionUrls falls back to medium reasoningEffort", () => {
+    const result = ProviderTransform.options({
+      model: createModel("gpt-5"),
+      sessionID,
+      providerOptions: { useCompletionUrls: true },
+    })
+
+    expect(result.reasoningEffort).toBe("medium")
+  })
+
+  test("non-azure gpt-5.5 is unaffected by the azure completion-urls early return", () => {
+    const model = {
+      ...createModel("gpt-5.5"),
+      providerID: "openai",
+      api: { id: "gpt-5.5", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }
+    const result = ProviderTransform.options({
+      model,
+      sessionID,
+      providerOptions: { useCompletionUrls: true },
+    })
+
+    expect(result.reasoningEffort).toBe("medium")
   })
 })
 
@@ -1992,6 +2041,147 @@ describe("ProviderTransform.message - DeepSeek reasoning content", () => {
   })
 })
 
+describe("ProviderTransform.message - interleaved reasoning_text widening", () => {
+  const createModel = (interleaved: any) =>
+    ({
+      id: "test/test-model",
+      providerID: "test",
+      api: {
+        id: "test-model",
+        url: "https://api.test.com",
+        npm: "@ai-sdk/openai-compatible",
+      },
+      name: "Test Model",
+      capabilities: {
+        temperature: true,
+        reasoning: true,
+        attachment: true,
+        toolcall: true,
+        input: { text: true, audio: false, image: true, video: false, pdf: false },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved,
+      },
+      cost: { input: 0.001, output: 0.002, cache: { read: 0.0001, write: 0.0002 } },
+      limit: { context: 128000, output: 8192 },
+      status: "active",
+      options: {},
+      headers: {},
+    }) as any
+
+  const msgs = [
+    {
+      role: "assistant",
+      content: [
+        { type: "reasoning", text: "thinking trace" },
+        { type: "text", text: "Answer" },
+      ],
+    },
+  ] as any[]
+
+  test("moves reasoning into the reasoning_text provider field", () => {
+    const result = ProviderTransform.message(msgs, createModel({ field: "reasoning_text" }), {}) as any[]
+    expect(result[0].content).toEqual([{ type: "text", text: "Answer" }])
+    expect(result[0].providerOptions?.openaiCompatible?.reasoning_text).toBe("thinking trace")
+  })
+
+  test("widened arbitrary field names pass through the interleaved rewrite", () => {
+    const result = ProviderTransform.message(msgs, createModel({ field: "thinking_trace" }), {}) as any[]
+    expect(result[0].content).toEqual([{ type: "text", text: "Answer" }])
+    expect(result[0].providerOptions?.openaiCompatible?.thinking_trace).toBe("thinking trace")
+  })
+
+  test("boolean interleaved leaves messages unchanged", () => {
+    const result = ProviderTransform.message(msgs, createModel(true), {}) as any[]
+    expect(result[0].content).toEqual([
+      { type: "reasoning", text: "thinking trace" },
+      { type: "text", text: "Answer" },
+    ])
+    expect(result[0].providerOptions).toBeUndefined()
+  })
+
+  test("raw string interleaved leaves messages unchanged at the transform layer", () => {
+    // provider.ts normalizes a string capability to { field: ... } before the
+    // transform runs, so the transform only ever sees the object or boolean form.
+    const result = ProviderTransform.message(msgs, createModel("reasoning_text"), {}) as any[]
+    expect(result[0].content).toEqual([
+      { type: "reasoning", text: "thinking trace" },
+      { type: "text", text: "Answer" },
+    ])
+    expect(result[0].providerOptions).toBeUndefined()
+  })
+})
+
+describe("interleaved schema widening", () => {
+  const baseModel = {
+    id: "test/test-model",
+    providerID: "test",
+    api: { id: "test-model", url: "", npm: "@ai-sdk/openai-compatible" },
+    name: "Test Model",
+    capabilities: {
+      temperature: true,
+      reasoning: false,
+      attachment: false,
+      toolcall: true,
+      input: { text: true, audio: false, image: false, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    limit: { context: 128000, output: 8192 },
+    status: "active",
+    options: {},
+    headers: {},
+    release_date: "2026-01-01",
+  } as const
+
+  const decodeProvider = (interleaved: any) =>
+    Schema.decodeUnknownSync(Provider.Model)({ ...baseModel, capabilities: { ...baseModel.capabilities, interleaved } })
+
+  test("provider Model accepts the { field } object with the widened reasoning_text field", () => {
+    expect(decodeProvider({ field: "reasoning_text" }).capabilities.interleaved).toEqual({ field: "reasoning_text" })
+  })
+
+  test("provider Model accepts the { field } object with an arbitrary string field", () => {
+    expect(decodeProvider({ field: "thinking_trace" }).capabilities.interleaved).toEqual({ field: "thinking_trace" })
+  })
+
+  test("provider Model accepts boolean interleaved", () => {
+    expect(decodeProvider(true).capabilities.interleaved).toBe(true)
+    expect(decodeProvider(false).capabilities.interleaved).toBe(false)
+  })
+
+  test("provider Model rejects non-string interleaved object fields", () => {
+    expect(() => decodeProvider({ field: 42 })).toThrow()
+  })
+
+  const baseModelsDev = {
+    id: "test-model",
+    name: "Test Model",
+    release_date: "2026-01-01",
+    attachment: false,
+    reasoning: false,
+    temperature: true,
+    tool_call: true,
+    limit: { context: 128000, output: 8192 },
+  } as const
+
+  const decodeModelsDev = (interleaved: any) =>
+    Schema.decodeUnknownSync(ModelsDev.Model)({ ...baseModelsDev, interleaved })
+
+  test("models-dev accepts the reasoning_text literal", () => {
+    expect(decodeModelsDev("reasoning_text").interleaved).toBe("reasoning_text")
+  })
+
+  test("models-dev accepts an arbitrary string field", () => {
+    expect(decodeModelsDev("thinking_trace").interleaved).toBe("thinking_trace")
+  })
+
+  test("models-dev accepts boolean and { field } interleaved", () => {
+    expect(decodeModelsDev(true).interleaved).toBe(true)
+    expect(decodeModelsDev({ field: "reasoning_text" }).interleaved).toEqual({ field: "reasoning_text" })
+  })
+})
+
 describe("ProviderTransform.message - surrogate sanitization", () => {
   const model = {
     id: "test/test-model",
@@ -3232,7 +3422,60 @@ describe("ProviderTransform.message - cache control on gateway", () => {
 
 describe("ProviderTransform.temperature - Cohere North", () => {
   test("defaults north-mini-code models to 1.0", () => {
-    expect(ProviderTransform.temperature({ id: "cohere/North-Mini-Code-1-0-latest" } as any)).toBe(1.0)
+    expect(
+      ProviderTransform.temperature({
+        id: "cohere/North-Mini-Code-1-0-latest",
+        api: { id: "North-Mini-Code-1-0-latest" },
+      } as any),
+    ).toBe(1.0)
+  })
+})
+
+describe("ProviderTransform gemini sampling defaults", () => {
+  const geminiModel = (apiId: string, id = apiId) =>
+    ({
+      id: `google/${id}`,
+      providerID: "google",
+      api: {
+        id: apiId,
+        url: "https://generativelanguage.googleapis.com",
+        npm: "@ai-sdk/google",
+      },
+      capabilities: { reasoning: true },
+    }) as any
+
+  test.each(["gemini-2.5-pro", "gemini-2.5-flash", "gemini-3-flash", "gemini-3-pro", "gemini-3.1-pro", "gemini-3.5-flash"])(
+    "applies sampling defaults for whitelisted %s",
+    (apiId) => {
+      const model = geminiModel(apiId)
+      expect(ProviderTransform.temperature(model)).toBe(1.0)
+      expect(ProviderTransform.topP(model)).toBe(0.95)
+      expect(ProviderTransform.topK(model)).toBe(64)
+    },
+  )
+
+  test.each(["gemini-2.0-flash", "gemini-3.5-flash-lite", "gemini-4.0-pro"])(
+    "leaves sampling undefined for non-whitelisted %s",
+    (apiId) => {
+      const model = geminiModel(apiId)
+      expect(ProviderTransform.temperature(model)).toBeUndefined()
+      expect(ProviderTransform.topP(model)).toBeUndefined()
+      expect(ProviderTransform.topK(model)).toBeUndefined()
+    },
+  )
+
+  test("reads the api id rather than the model id", () => {
+    // A whitelisted api.id wins even when the model id is an alias.
+    expect(ProviderTransform.temperature(geminiModel("gemini-2.5-pro", "aliased-deployment"))).toBe(1.0)
+    // A model id that looks whitelisted is ignored when the api id is not.
+    expect(ProviderTransform.temperature(geminiModel("custom-deployment", "gemini-2.5-pro"))).toBeUndefined()
+  })
+
+  test("keeps unrelated non-gemini sampling defaults", () => {
+    const qwen = geminiModel("qwen3-coder")
+    expect(ProviderTransform.temperature(qwen)).toBe(0.55)
+    expect(ProviderTransform.topP(qwen)).toBe(1)
+    expect(ProviderTransform.topK(qwen)).toBeUndefined()
   })
 })
 
