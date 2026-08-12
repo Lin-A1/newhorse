@@ -38,6 +38,22 @@ import { Provider } from "@/provider/provider"
 
 import { WebSearchTool } from "./websearch"
 import { LspTool } from "./lsp"
+import { AstGrepSearchTool, AstGrepReplaceTool } from "./ast-grep"
+import {
+  BrowserOpenTool,
+  BrowserSnapshotTool,
+  BrowserClickTool,
+  BrowserTypeTool,
+  BrowserEvalTool,
+  BrowserScreenshotTool,
+  BrowserSessionTool,
+} from "./browser"
+import { LspGotoDefinitionTool } from "./lsp-goto-definition"
+import { LspFindReferencesTool } from "./lsp-find-references"
+import { LspSymbolsTool } from "./lsp-symbols"
+import { LspDiagnosticsTool } from "./lsp-diagnostics"
+import { LspPrepareRenameTool } from "./lsp-prepare-rename"
+import { LspRenameTool } from "./lsp-rename"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { Glob } from "@newhorse/core/util/glob"
@@ -129,6 +145,21 @@ const layer = Layer.effect(
     const remindertool = yield* ReminderTool
     const followtool = yield* FollowTool
     const agent = yield* Agent.Service
+    const lspGotoDefinition = yield* LspGotoDefinitionTool
+    const lspFindReferences = yield* LspFindReferencesTool
+    const lspSymbols = yield* LspSymbolsTool
+    const lspDiagnostics = yield* LspDiagnosticsTool
+    const lspPrepareRename = yield* LspPrepareRenameTool
+    const lspRename = yield* LspRenameTool
+    const astGrepSearch = yield* AstGrepSearchTool
+    const astGrepReplace = yield* AstGrepReplaceTool
+    const browserOpen = yield* BrowserOpenTool
+    const browserSnapshot = yield* BrowserSnapshotTool
+    const browserClick = yield* BrowserClickTool
+    const browserType = yield* BrowserTypeTool
+    const browserEval = yield* BrowserEvalTool
+    const browserScreenshot = yield* BrowserScreenshotTool
+    const browserSession = yield* BrowserSessionTool
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
 
@@ -269,6 +300,21 @@ const layer = Layer.effect(
           patch: Tool.init(patchtool),
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
+          lspGotoDefinition: Tool.init(lspGotoDefinition),
+          lspFindReferences: Tool.init(lspFindReferences),
+          lspSymbols: Tool.init(lspSymbols),
+          lspDiagnostics: Tool.init(lspDiagnostics),
+          lspPrepareRename: Tool.init(lspPrepareRename),
+          lspRename: Tool.init(lspRename),
+          astGrepSearch: Tool.init(astGrepSearch),
+          astGrepReplace: Tool.init(astGrepReplace),
+          browserOpen: Tool.init(browserOpen),
+          browserSnapshot: Tool.init(browserSnapshot),
+          browserClick: Tool.init(browserClick),
+          browserType: Tool.init(browserType),
+          browserEval: Tool.init(browserEval),
+          browserScreenshot: Tool.init(browserScreenshot),
+          browserSession: Tool.init(browserSession),
           plan: Tool.init(plan),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
@@ -293,7 +339,25 @@ const layer = Layer.effect(
           tool.capability,
           tool.patch,
           ...(tool.execute ? [tool.execute] : []),
-          ...(flags.experimentalLspTool ? [tool.lsp] : []),
+          ...(flags.experimentalLspTool
+            ? [
+                tool.lspGotoDefinition,
+                tool.lspFindReferences,
+                tool.lspSymbols,
+                tool.lspDiagnostics,
+                tool.lspPrepareRename,
+                tool.lspRename,
+              ]
+            : []),
+          tool.astGrepSearch,
+          tool.astGrepReplace,
+          tool.browserOpen,
+          tool.browserSnapshot,
+          tool.browserClick,
+          tool.browserType,
+          tool.browserEval,
+          tool.browserScreenshot,
+          tool.browserSession,
           ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
         ]
         toolIDs = [...builtin, ...custom].map((item) => item.id)
