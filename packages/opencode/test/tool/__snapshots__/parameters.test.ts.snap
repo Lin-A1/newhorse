@@ -259,6 +259,48 @@ exports[`tool parameters JSON Schema (wire shape) memory 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) multi_edit 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "edits": {
+      "description": "The replacements to apply, in order. Each oldString must match exactly once in the file content as it exists after the previous edits (or set replaceAll on that edit to match every occurrence).",
+      "items": {
+        "properties": {
+          "newString": {
+            "description": "The text to replace it with (must be different from oldString)",
+            "type": "string",
+          },
+          "oldString": {
+            "description": "The text to replace",
+            "type": "string",
+          },
+          "replaceAll": {
+            "description": "Replace all occurrences of oldString for this edit (default false)",
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "oldString",
+          "newString",
+        ],
+        "type": "object",
+      },
+      "type": "array",
+    },
+    "filePath": {
+      "description": "The absolute path to the file to modify",
+      "type": "string",
+    },
+  },
+  "required": [
+    "filePath",
+    "edits",
+  ],
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) plan 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",

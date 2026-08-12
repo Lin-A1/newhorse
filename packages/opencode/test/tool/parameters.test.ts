@@ -16,6 +16,7 @@ import { Parameters as Grep } from "../../src/tool/grep"
 import { Parameters as Invalid } from "../../src/tool/invalid"
 import { Parameters as Lsp } from "../../src/tool/lsp"
 import { Parameters as Memory } from "../../src/tool/memory"
+import { Parameters as MultiEdit } from "../../src/tool/multi-edit"
 import { Parameters as Plan } from "../../src/tool/plan"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
@@ -45,6 +46,7 @@ describe("tool parameters", () => {
     test("invalid", () => expect(toJsonSchema(Invalid)).toMatchSnapshot())
     test("lsp", () => expect(toJsonSchema(Lsp)).toMatchSnapshot())
     test("memory", () => expect(toJsonSchema(Memory)).toMatchSnapshot())
+    test("multi_edit", () => expect(toJsonSchema(MultiEdit)).toMatchSnapshot())
     test("plan", () => expect(toJsonSchema(Plan)).toMatchSnapshot())
     test("question", () => expect(toJsonSchema(Question)).toMatchSnapshot())
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
@@ -211,6 +213,33 @@ describe("tool parameters", () => {
           provenance: "user_explicit",
         }),
       ).toEqual({ action: "save", content: "prefers concise answers", kind: "preference" })
+    })
+  })
+
+  describe("multi_edit", () => {
+    test("accepts filePath + edits", () => {
+      expect(
+        parse(MultiEdit, {
+          filePath: "/a",
+          edits: [{ oldString: "x", newString: "y" }],
+        }),
+      ).toEqual({ filePath: "/a", edits: [{ oldString: "x", newString: "y" }] })
+    })
+    test("accepts optional replaceAll per edit", () => {
+      const parsed = parse(MultiEdit, {
+        filePath: "/a",
+        edits: [{ oldString: "x", newString: "y", replaceAll: true }],
+      })
+      expect(parsed.edits[0].replaceAll).toBe(true)
+    })
+    test("rejects missing filePath", () => {
+      expect(accepts(MultiEdit, { edits: [{ oldString: "x", newString: "y" }] })).toBe(false)
+    })
+    test("rejects missing edits", () => {
+      expect(accepts(MultiEdit, { filePath: "/a" })).toBe(false)
+    })
+    test("rejects an edit missing newString", () => {
+      expect(accepts(MultiEdit, { filePath: "/a", edits: [{ oldString: "x" }] })).toBe(false)
     })
   })
 
