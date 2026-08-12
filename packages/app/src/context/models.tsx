@@ -34,7 +34,10 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       const connected = child?.provider.connected ?? serverSync().data.provider.connected
       const provider = child?.provider ?? serverSync().data.provider
       const catalogSource = child?.model_catalog ?? serverSync().data.model_catalog ?? []
-      const source = catalogSource.length > 0 ? catalogSource : legacyModelCatalog(provider)
+      // The v2 catalog (sdk.v2.model.list) does not include providers bound via
+      // the legacy v1 auth at this commit, so always merge the v1 provider
+      // config models too — otherwise a freshly-bound provider shows no models.
+      const source = uniqueBy([...legacyModelCatalog(provider), ...catalogSource], (model) => `${model.providerID}:${model.id}`)
       const providerMap = provider.all
       const catalogProviders = child?.provider_catalog ?? serverSync().data.provider_catalog ?? []
       const disabled = new Set(catalogProviders.filter((provider) => provider.disabled === true).map((provider) => provider.id))

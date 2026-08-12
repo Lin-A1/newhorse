@@ -413,6 +413,16 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         refresh: () => {
           if (recent) return
           bootstrap.refetch()
+          // bootstrap.refetch() re-fetches config / model-catalog / provider-catalog
+          // but NOT the global provider list. When a provider is connected via the
+          // dialog, auth.set emits `auth.updated` (refetching `providers` while the
+          // server's per-instance provider state is still stale) and then the dialog
+          // calls global.dispose() — the server only rebuilds that state when the
+          // instances are disposed, signalled back here by `global.disposed` /
+          // `server.connected`. Without refetching `providers` at this point the
+          // model selector's `connected` set stays stale and the just-connected
+          // provider's models never show up, so invalidate it here.
+          queryClient.invalidateQueries({ queryKey: [serverSDK.scope, null, "providers"] })
         },
         setGlobalProject: setProjects,
       })
