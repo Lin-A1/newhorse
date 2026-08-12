@@ -131,6 +131,8 @@ export interface Interface {
   readonly prepareCallHierarchy: (input: LocInput) => Effect.Effect<any[]>
   readonly incomingCalls: (input: LocInput) => Effect.Effect<any[]>
   readonly outgoingCalls: (input: LocInput) => Effect.Effect<any[]>
+  readonly prepareRename: (input: LocInput) => Effect.Effect<any[]>
+  readonly rename: (input: LocInput & { newName: string }) => Effect.Effect<any[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@newhorse/LSP") {}
@@ -477,6 +479,31 @@ const layer = Layer.effect(
       return yield* callHierarchyRequest(input, "callHierarchy/outgoingCalls")
     })
 
+    const prepareRename = Effect.fn("LSP.prepareRename")(function* (input: LocInput) {
+      const results = yield* run(input.file, (client) =>
+        client.connection
+          .sendRequest("textDocument/prepareRename", {
+            textDocument: { uri: pathToFileURL(input.file).href },
+            position: { line: input.line, character: input.character },
+          })
+          .catch(() => null),
+      )
+      return results.flat().filter(Boolean)
+    })
+
+    const rename = Effect.fn("LSP.rename")(function* (input: LocInput & { newName: string }) {
+      const results = yield* run(input.file, (client) =>
+        client.connection
+          .sendRequest("textDocument/rename", {
+            textDocument: { uri: pathToFileURL(input.file).href },
+            position: { line: input.line, character: input.character },
+            newName: input.newName,
+          })
+          .catch(() => null),
+      )
+      return results.flat().filter(Boolean)
+    })
+
     return Service.of({
       init,
       status,
@@ -492,6 +519,8 @@ const layer = Layer.effect(
       prepareCallHierarchy,
       incomingCalls,
       outgoingCalls,
+      prepareRename,
+      rename,
     })
   }),
 )
