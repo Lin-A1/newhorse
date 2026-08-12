@@ -71,6 +71,19 @@ export function setAppQuitting(quitting = true) {
   registry.setQuitting(quitting)
 }
 
+export function isAppQuitting() {
+  return registry.isQuitting()
+}
+
+// Whether the system tray is available. Close/minimize only hide the window
+// to the tray (instead of closing it) once a tray actually exists; otherwise
+// the window keeps its original close/minimize behavior.
+let trayEnabled = false
+
+export function setTrayEnabled(enabled = true) {
+  trayEnabled = enabled
+}
+
 export function setBackgroundColor(color: string) {
   backgroundColor = color
   BrowserWindow.getAllWindows().forEach((win) => {
@@ -87,7 +100,7 @@ function iconsDir() {
   return app.isPackaged ? join(process.resourcesPath, "icons") : join(root, "../../resources/icons")
 }
 
-function iconPath() {
+export function iconPath() {
   const ext = process.platform === "win32" ? "ico" : "png"
   return join(iconsDir(), `icon.${ext}`)
 }
@@ -150,6 +163,34 @@ export function getLastFocusedWindow() {
   const win = registry.lastFocused()
   if (!win || win.isDestroyed()) return null
   return win
+}
+
+function lastMainWindow() {
+  return getLastFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null
+}
+
+export function showMainWindow() {
+  const win = lastMainWindow()
+  if (!win || win.isDestroyed()) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+}
+
+export function hideMainWindow() {
+  const win = lastMainWindow()
+  if (!win || win.isDestroyed()) return
+  win.hide()
+}
+
+export function toggleMainWindow() {
+  const win = lastMainWindow()
+  if (!win || win.isDestroyed()) return
+  if (win.isVisible() && !win.isMinimized()) {
+    win.hide()
+    return
+  }
+  showMainWindow()
 }
 
 export function restoreMainWindows() {
@@ -237,6 +278,19 @@ function registerWindow(win: BrowserWindow, id: string) {
   // Windows never emits before-quit on OS shutdown/logoff, but each window
   // gets session-end before it closes; flag the quit so ids stay persisted.
   win.on("session-end", () => registry.setQuitting())
+  // Tray-resident mode: close/minimize hide the window to the tray instead of
+  // closing it, so the app (and its server sidecar) keeps running in the
+  // background for Companion care/reminders. A real quit already set the
+  // quitting flag (before-quit / session-end), which lets the close through.
+  win.on("close", (event) => {
+    if (isAppQuitting() || !trayEnabled) return
+    event.preventDefault()
+    win.hide()
+  })
+  win.on("minimize", () => {
+    if (isAppQuitting() || !trayEnabled) return
+    win.hide()
+  })
   win.on("closed", () => registry.closed(id))
 }
 

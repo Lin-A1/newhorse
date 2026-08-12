@@ -20,6 +20,9 @@ export function createWindowRegistry<W>(persistence: {
     setQuitting(value = true) {
       quitting = value
     },
+    isQuitting() {
+      return quitting
+    },
     register(id: string, window: W) {
       windows.set(id, window)
       const ids = persisted()
@@ -36,9 +39,10 @@ export function createWindowRegistry<W>(persistence: {
       windows.delete(id)
       if (lastFocusedID === id) lastFocusedID = windows.keys().next().value
       // Only a deliberate close (app keeps running with other windows open)
-      // forgets a window. Closing the last window quits the app and fires
-      // `closed` before `before-quit`, so treat it as a quit and keep the id
-      // for restore on next launch.
+      // forgets a window. With close-to-tray the app keeps running even when
+      // the last window is hidden, so a `closed` event outside a real quit
+      // means the window was actually destroyed; keep the id for restore on
+      // the next launch.
       if (quitting || windows.size === 0) return
       persistence.write(persisted().filter((item) => item !== id))
       persistence.cleanup(id)

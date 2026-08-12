@@ -34,13 +34,17 @@ import {
 } from "./server"
 import { setupAutoUpdater, showUpdaterDialog } from "./updater"
 import { safeWebContentsURL } from "./window-state"
+import { createTray } from "./tray"
 import {
   getLastFocusedWindow,
+  isAppQuitting,
   registerRendererProtocol,
-  setRelaunchHandler,
   setAppQuitting,
   setBackgroundColor,
   setDockIcon,
+  setRelaunchHandler,
+  setTrayEnabled,
+  showMainWindow,
   restoreMainWindows,
 } from "./windows"
 import { createWslServersController } from "./wsl/servers"
@@ -237,6 +241,19 @@ const main = Effect.gen(function* () {
     writeLog("window", "app render process gone", { url: safeWebContentsURL(webContents), details }, "error")
   })
 
+  // Tray-resident mode: windows hide to the tray on close/minimize, so all
+  // windows closing outside a real quit means the app should keep running in
+  // the background (server sidecar alive) rather than exit.
+  app.on("window-all-closed", () => {
+    if (!isAppQuitting()) return
+    app.quit()
+  })
+
+  // macOS: clicking the dock icon restores the last window.
+  app.on("activate", () => {
+    showMainWindow()
+  })
+
   setRelaunchHandler(() => {
     relaunch()
   })
@@ -269,6 +286,14 @@ const main = Effect.gen(function* () {
   app.setAsDefaultProtocolClient("opencode")
   registerRendererProtocol()
   setDockIcon()
+  try {
+    createTray()
+    // Only enable close/minimize-to-tray once a tray actually exists;
+    // otherwise closing windows keeps the original close/quit behavior.
+    setTrayEnabled(true)
+  } catch (error) {
+    logger.warn("failed to create system tray; windows will close normally", error)
+  }
   const updater = setupAutoUpdater(stopSidecars)
   registerIpcHandlers({
     killSidecar: () => killSidecar(),
