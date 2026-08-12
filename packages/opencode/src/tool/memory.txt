@@ -12,6 +12,22 @@ Never save credentials, tokens, payment details, government IDs, precise
 locations, or health information. Such content is refused.
 
 Actions:
-- list: show memory visible to the current Profile
-- save: propose a new entry for user review
-- forget: permanently delete an entry visible to the current Profile
+- list: show the 50 most recent memories visible to the current Profile
+- search: find memories relevant to a query (query is required). Narrow results
+  with an optional kind. Returns up to 10 matches. Prefer search over list when
+  you need a specific fact rather than recent history
+- save: propose a new entry for user review. Requires content and kind
+  (preference, fact, goal, event, relationship, or summary). Fails when memory
+  is disabled for this profile
+- forget: requires id. Permanently delete an entry visible to the current Profile
+- consolidate: no arguments. Collects every active fact, event, and preference,
+  then instructs you to distill them into a single concise "summary" memory
+  (save with kind=summary) and archive each source memory (archive with ids).
+  Use when related memories have grown redundant and should be folded together
+- archive: requires ids (array). Downgrades those memories to "paused" so they
+  stop surfacing in list and search but are not deleted. Use to retire old
+  memories or the sources you just consolidated into a summary
+- clear: permanently deletes all memories in a scope. target defaults to
+  "workspace"; "user_global" wipes cross-workspace memories; "relationship"
+  clears relationship memories and is only available in a Personal workspace.
+  Use only when the user explicitly asks to wipe stored memories
