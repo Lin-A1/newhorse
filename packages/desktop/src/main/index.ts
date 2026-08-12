@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
-import { app } from "electron"
+import { app, Menu, Tray } from "electron"
 
 import { Deferred, Effect, Fiber } from "effect"
 import contextMenu from "electron-context-menu"
@@ -37,6 +37,7 @@ import { safeWebContentsURL } from "./window-state"
 import { createTray } from "./tray"
 import {
   getLastFocusedWindow,
+  iconPath,
   isAppQuitting,
   registerRendererProtocol,
   setAppQuitting,
@@ -45,6 +46,7 @@ import {
   setRelaunchHandler,
   setTrayEnabled,
   showMainWindow,
+  toggleMainWindow,
   restoreMainWindows,
 } from "./windows"
 import { createWslServersController } from "./wsl/servers"
@@ -287,7 +289,7 @@ const main = Effect.gen(function* () {
   registerRendererProtocol()
   setDockIcon()
   try {
-    createTray()
+    createTray({ Tray, Menu, app, iconPath, showMainWindow, toggleMainWindow })
     // Only enable close/minimize-to-tray once a tray actually exists;
     // otherwise closing windows keeps the original close/quit behavior.
     setTrayEnabled(true)

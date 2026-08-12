@@ -12,6 +12,7 @@ import { exportDebugLogs, write as writeLog } from "./logging"
 import { getStore, removeStoreFile } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
+import { wireTrayResidentClose } from "./tray-policy"
 import { createWindowRegistry } from "./window-registry"
 import { safeWindowURL } from "./window-state"
 
@@ -282,15 +283,7 @@ function registerWindow(win: BrowserWindow, id: string) {
   // closing it, so the app (and its server sidecar) keeps running in the
   // background for Companion care/reminders. A real quit already set the
   // quitting flag (before-quit / session-end), which lets the close through.
-  win.on("close", (event) => {
-    if (isAppQuitting() || !trayEnabled) return
-    event.preventDefault()
-    win.hide()
-  })
-  win.on("minimize", () => {
-    if (isAppQuitting() || !trayEnabled) return
-    win.hide()
-  })
+  wireTrayResidentClose(win, { isQuitting: isAppQuitting, isTrayEnabled: () => trayEnabled })
   win.on("closed", () => registry.closed(id))
 }
 
