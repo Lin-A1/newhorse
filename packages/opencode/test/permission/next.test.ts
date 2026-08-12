@@ -5,6 +5,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { CrossSpawnSpawner } from "@newhorse/core/cross-spawn-spawner"
 import { Permission } from "../../src/permission"
+import { Plugin } from "../../src/plugin"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
@@ -14,11 +15,43 @@ import { AppNodeBuilder } from "@newhorse/core/effect/app-node-builder"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
+
+// Permission.node now depends on Plugin.node; provide a no-op plugin service
+// that never registers hooks so ask() behavior is unchanged.
+const noopPlugin = Layer.succeed(Plugin.Service, {
+  trigger: ((_name: string, _input: unknown, output: unknown) => Effect.succeed(output)) as unknown as Plugin.Interface["trigger"],
+  list: () => Effect.succeed([]),
+  init: () => Effect.void,
+})
+
 const env = AppNodeBuilder.build(
   LayerNode.group([Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
-  [[InstanceStore.bootstrapNode, noopBootstrap]],
+  [
+    [InstanceStore.bootstrapNode, noopBootstrap],
+    [Plugin.node, noopPlugin],
+  ],
 )
 const it = testEffect(env)
+
+// Builds an env whose plugin trigger simulates a permission.ask decision.
+const pluginDecisionEnv = (decide: (output: { status: "ask" | "deny" | "allow" }) => void) =>
+  AppNodeBuilder.build(
+    LayerNode.group([Permission.node, EventV2Bridge.node, CrossSpawnSpawner.node, InstanceStore.node]),
+    [
+      [InstanceStore.bootstrapNode, noopBootstrap],
+      [
+        Plugin.node,
+        Layer.succeed(Plugin.Service, {
+          trigger: ((_name: string, _input: unknown, output: any) => {
+            decide(output)
+            return Effect.succeed(output)
+          }) as unknown as Plugin.Interface["trigger"],
+          list: () => Effect.succeed([]),
+          init: () => Effect.void,
+        }),
+      ],
+    ],
+  )
 
 const rejectAll = (message?: string) =>
   Effect.gen(function* () {
@@ -1169,6 +1202,68 @@ it.instance(
       const exit = yield* Fiber.await(fiber)
       expect(Exit.isFailure(exit)).toBe(true)
       if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+    }),
+  { git: true },
+)
+
+// permission.ask hook wiring -------------------------------------------------
+
+testEffect(pluginDecisionEnv((output) => (output.status = "allow"))).instance(
+  "permission.ask hook - downgrades an ask to allow without a pending request",
+  () =>
+    Effect.gen(function* () {
+      const permission = yield* Permission.Service
+      yield* permission.ask({
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "bash", pattern: "*", action: "ask" }],
+      })
+      expect(yield* permission.list()).toEqual([])
+    }),
+  { git: true },
+)
+
+testEffect(pluginDecisionEnv((output) => (output.status = "deny"))).instance(
+  "permission.ask hook - escalates an ask to a DeniedError",
+  () =>
+    Effect.gen(function* () {
+      const err = yield* fail(
+        ask({
+          sessionID: SessionID.make("session_test"),
+          permission: "bash",
+          patterns: ["ls"],
+          metadata: {},
+          always: [],
+          ruleset: [{ permission: "bash", pattern: "*", action: "ask" }],
+        }),
+      )
+      expect(err).toBeInstanceOf(PermissionV1.DeniedError)
+      expect(yield* list()).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+const hardDenyConsulted = { value: false }
+testEffect(pluginDecisionEnv(() => (hardDenyConsulted.value = true))).instance(
+  "permission.ask hook - does not consult hooks when the ask is hard denied",
+  () =>
+    Effect.gen(function* () {
+      hardDenyConsulted.value = false
+      const err = yield* fail(
+        ask({
+          sessionID: SessionID.make("session_test"),
+          permission: "bash",
+          patterns: ["rm -rf /"],
+          metadata: {},
+          always: [],
+          ruleset: [{ permission: "bash", pattern: "*", action: "deny" }],
+        }),
+      )
+      expect(err).toBeInstanceOf(PermissionV1.DeniedError)
+      expect(hardDenyConsulted.value).toBe(false)
     }),
   { git: true },
 )

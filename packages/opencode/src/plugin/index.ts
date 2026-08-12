@@ -31,6 +31,7 @@ import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstallationChannel } from "@newhorse/core/installation/version"
+import { Wildcard } from "@newhorse/core/util/wildcard"
 
 type State = {
   hooks: Hooks[]
@@ -56,6 +57,27 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()("@newhorse/Plugin") {}
+
+/**
+ * Matches a trigger input against a hook's `matchers` glob pattern.
+ * `permission.ask` matches against the permission name and each request
+ * pattern; other hooks fall back to a generic set of identity fields.
+ */
+function matchesTriggerInput(name: string, input: unknown, pattern: string): boolean {
+  const value = (input ?? {}) as Record<string, unknown>
+  if (name === "permission.ask") {
+    if (typeof value.permission === "string" && Wildcard.match(value.permission, pattern)) return true
+    if (Array.isArray(value.patterns)) {
+      return value.patterns.some((item) => typeof item === "string" && Wildcard.match(item, pattern))
+    }
+    return false
+  }
+  for (const key of ["permission", "tool", "toolID", "command", "name", "provider", "agent"]) {
+    const item = value[key]
+    if (typeof item === "string" && Wildcard.match(item, pattern)) return true
+  }
+  return false
+}
 
 export function experimentalWebSocketsEnabled(input: { enabled: boolean; channel?: string }) {
   return input.enabled || ["local", "dev", "beta"].includes(input.channel ?? InstallationChannel)
@@ -287,6 +309,8 @@ const layer = Layer.effect(
       for (const hook of s.hooks) {
         const fn = hook[name] as any
         if (!fn) continue
+        const matcher = hook.matchers?.[name]
+        if (matcher && !matchesTriggerInput(name, input, matcher)) continue
         yield* Effect.promise(async () => fn(input, output))
       }
       return output

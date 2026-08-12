@@ -105,4 +105,58 @@ describe("plugin.trigger", () => {
       }),
     ),
   )
+
+  it.instance("skips hooks whose matcher does not match the input", () =>
+    withProject(
+      [
+        "export default async () => ({",
+        '  matchers: { "tool.execute.before": "edit" },',
+        '  "tool.execute.before": (_input, output) => {',
+        '    output.args.matched = true',
+        "  },",
+        "})",
+        "",
+      ].join("\n"),
+      Effect.gen(function* () {
+        const plugin = yield* Plugin.Service
+        const hit: { args: { matched?: boolean } } = { args: {} }
+        yield* plugin.trigger("tool.execute.before", { tool: "edit", sessionID: "session", callID: "call" }, hit)
+        expect(hit.args.matched).toBe(true)
+        const miss: { args: { matched?: boolean } } = { args: {} }
+        yield* plugin.trigger("tool.execute.before", { tool: "bash", sessionID: "session", callID: "call" }, miss)
+        expect(miss.args.matched).toBeUndefined()
+      }),
+    ),
+  )
+
+  it.instance("permission.ask matcher filters by permission name and pattern", () =>
+    withProject(
+      [
+        "export default async () => ({",
+        '  matchers: { "permission.ask": "read" },',
+        '  "permission.ask": (_input, output) => {',
+        '    output.status = "deny"',
+        "  },",
+        "})",
+        "",
+      ].join("\n"),
+      Effect.gen(function* () {
+        const plugin = yield* Plugin.Service
+        const hit: { status: "ask" | "deny" | "allow" } = { status: "ask" }
+        yield* plugin.trigger(
+          "permission.ask",
+          { permission: "read", patterns: ["*.env"], sessionID: "session", metadata: {}, always: [] },
+          hit,
+        )
+        expect(hit.status).toBe("deny")
+        const miss: { status: "ask" | "deny" | "allow" } = { status: "ask" }
+        yield* plugin.trigger(
+          "permission.ask",
+          { permission: "bash", patterns: ["ls"], sessionID: "session", metadata: {}, always: [] },
+          miss,
+        )
+        expect(miss.status).toBe("ask")
+      }),
+    ),
+  )
 })

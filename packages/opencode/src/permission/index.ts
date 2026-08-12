@@ -6,6 +6,7 @@ import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionV1 } from "@newhorse/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { Plugin } from "@/plugin"
 
 export const Event = PermissionV1.Event
 
@@ -43,6 +44,7 @@ const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2Bridge.Service
+    const plugin = yield* Plugin.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
@@ -82,6 +84,18 @@ const layer = Layer.effect(
       }
 
       if (!needsAsk) return
+
+      // This request genuinely needs to ask. Consult permission.ask hooks —
+      // a hard deny above already returned, so plugins can downgrade an ask to
+      // an allow, escalate it to a deny, but never resurrect a hard deny.
+      const pluginDecision: { status: "ask" | "deny" | "allow" } = { status: "ask" }
+      yield* plugin.trigger("permission.ask", request, pluginDecision)
+      if (pluginDecision.status === "deny") {
+        return yield* new PermissionV1.DeniedError({
+          ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+        })
+      }
+      if (pluginDecision.status === "allow") return
 
       const id = request.id ?? PermissionV1.ID.ascending()
       const info: PermissionV1.Request = {
@@ -222,6 +236,10 @@ export function visibleTools<T>(tools: Record<string, T>, ruleset: PermissionV1.
   return Object.fromEntries(Object.entries(tools).filter(([name]) => !hidden.has(name)))
 }
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2Bridge.node] })
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [EventV2Bridge.node, Plugin.node],
+})
 
 export * as Permission from "."

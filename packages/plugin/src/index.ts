@@ -4,7 +4,6 @@ import type {
   Project,
   Model,
   Provider,
-  Permission,
   UserMessage,
   Message,
   Part,
@@ -220,6 +219,13 @@ export type ProviderHook = {
 export type AuthOuathResult = AuthOAuthResult
 
 export interface Hooks {
+  /**
+   * Optional glob matchers, keyed by hook name (`hook -> wildcard pattern`).
+   * When a matcher is set for a hook, the hook is only triggered for inputs
+   * that match the pattern. For `permission.ask` the pattern is matched
+   * against the request's permission name and each of its patterns.
+   */
+  matchers?: Record<string, string>
   dispose?: () => Promise<void>
   event?: (input: { event: Event }) => Promise<void>
   config?: (input: Config) => Promise<void>
@@ -258,7 +264,24 @@ export interface Hooks {
     input: { sessionID: string; agent: string; model: Model; provider: ProviderContext; message: UserMessage },
     output: { headers: Record<string, string> },
   ) => Promise<void>
-  "permission.ask"?: (input: Permission, output: { status: "ask" | "deny" | "allow" }) => Promise<void>
+  /**
+   * Consulted when a permission request would ask the user. Mutate
+   * `output.status` to `"allow"` to auto-approve or `"deny"` to reject the
+   * whole request. Requests that are already hard-denied by config (e.g.
+   * enforced read-only agents) are never consulted.
+   */
+  "permission.ask"?: (
+    input: {
+      id?: string
+      sessionID: string
+      permission: string
+      patterns: Array<string>
+      metadata: Record<string, unknown>
+      always: Array<string>
+      tool?: { messageID: string; callID: string }
+    },
+    output: { status: "ask" | "deny" | "allow" },
+  ) => Promise<void>
   "command.execute.before"?: (
     input: { command: string; sessionID: string; arguments: string },
     output: { parts: Part[] },
