@@ -347,6 +347,26 @@ export interface Hooks {
     },
     output: { enabled: boolean },
   ) => Promise<void>
+  /**
+   * Called at the end of each turn, after the assistant produced its final
+   * message (a terminal finish — not a tool-call round) and the turn would
+   * otherwise stop. Distinct from `experimental.compaction.autocontinue`,
+   * which only fires after compaction.
+   *
+   * - `continue`: Defaults to `false`. Set to `true` to force another
+   *   continuation round (Claude Code Stop-hook exit-2 analog). Each string
+   *   in `context` is injected as a synthetic user turn the model responds to.
+   */
+  "session.complete"?: (
+    input: {
+      sessionID: string
+      agent: string
+      model: { providerID: string; modelID: string }
+      messageID: string
+      parts: Part[]
+    },
+    output: { continue: boolean; context: string[] },
+  ) => Promise<void>
   "experimental.text.complete"?: (
     input: { sessionID: string; messageID: string; partID: string },
     output: { text: string },

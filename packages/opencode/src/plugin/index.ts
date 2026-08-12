@@ -72,7 +72,7 @@ function matchesTriggerInput(name: string, input: unknown, pattern: string): boo
     }
     return false
   }
-  for (const key of ["permission", "tool", "toolID", "command", "name", "provider", "agent"]) {
+  for (const key of ["permission", "tool", "toolID", "command", "name", "provider", "agent", "sessionID"]) {
     const item = value[key]
     if (typeof item === "string" && Wildcard.match(item, pattern)) return true
   }

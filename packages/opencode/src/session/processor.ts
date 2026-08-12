@@ -13,7 +13,7 @@ import { Session } from "./session"
 import { LLM } from "./llm"
 import { MessageV2 } from "./message-v2"
 import { isOverflow } from "./overflow"
-import { PartID } from "./schema"
+import { MessageID, PartID } from "./schema"
 import type { SessionID } from "./schema"
 import { SessionRetry } from "./retry"
 import { SessionStatus } from "./status"
@@ -679,6 +679,61 @@ const layer = Layer.effect(
 
           if (ctx.needsCompaction) return "compact"
           if (ctx.blocked || ctx.assistantMessage.error) return "stop"
+
+          // End-of-turn hook: after a terminal assistant message (final finish
+          // — not a tool-call round, not a compaction summary), allow plugins
+          // to review the output and force a synthetic continuation round
+          // (Claude Code Stop-hook exit-2 analog). Skipped entirely when no
+          // plugin subscribes, so the no-hook path stays byte-for-byte the same.
+          if (
+            ctx.assistantMessage.summary !== true &&
+            ctx.assistantMessage.finish !== undefined &&
+            ctx.assistantMessage.finish !== "tool-calls" &&
+            (yield* plugin.list()).some((hook) => hook["session.complete"])
+          ) {
+            const complete = yield* plugin.trigger(
+              "session.complete",
+              {
+                sessionID: ctx.sessionID,
+                agent: ctx.assistantMessage.agent,
+                model: {
+                  providerID: ctx.assistantMessage.providerID,
+                  modelID: ctx.assistantMessage.modelID,
+                },
+                messageID: ctx.assistantMessage.id,
+                parts: yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
+                  Effect.provideService(Database.Service, database),
+                ),
+              },
+              { continue: false, context: [] },
+            )
+            if (complete.continue && complete.context.length > 0) {
+              const info = yield* session.updateMessage({
+                id: MessageID.ascending(),
+                role: "user",
+                sessionID: ctx.sessionID,
+                time: { created: Date.now() },
+                agent: ctx.assistantMessage.agent,
+                model: {
+                  providerID: ctx.assistantMessage.providerID,
+                  modelID: ctx.assistantMessage.modelID,
+                  variant: ctx.assistantMessage.variant,
+                },
+              })
+              for (const text of complete.context) {
+                yield* session.updatePart({
+                  id: PartID.ascending(),
+                  messageID: info.id,
+                  sessionID: ctx.sessionID,
+                  type: "text",
+                  synthetic: true,
+                  metadata: { session_complete_continue: true },
+                  text,
+                  time: { start: Date.now(), end: Date.now() },
+                })
+              }
+            }
+          }
           return "continue"
         })
       })
