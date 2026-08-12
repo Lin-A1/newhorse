@@ -39,15 +39,16 @@ export type ExcludeReason = "none" | "user-rule" | "extension" | "default-path" 
 
 /**
  * ReviewComment is a single review finding. Line numbers are 0 when they have
- * not been resolved yet.
+ * not been resolved yet; they are the mutable resolution targets filled in by
+ * the line-position resolver.
  */
 export interface ReviewComment {
   readonly path: string
   readonly content: string
   readonly suggestionCode?: string
   readonly existingCode?: string
-  readonly startLine: number
-  readonly endLine: number
+  startLine: number
+  endLine: number
   readonly thinking?: string
   /** One of: bug, security, performance, maintainability, test, style, documentation, other. */
   readonly category?: string
