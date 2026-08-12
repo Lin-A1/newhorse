@@ -89,6 +89,11 @@ export const MemoryApi = HttpApi.make("memory").add(
         query: ExportQuery,
         success: described(Schema.Array(Memory.Info), "Exported visible Memory records"),
       }).annotateMerge(OpenApi.annotations({ identifier: "memory.export", summary: "Export Memory records" })),
+      HttpApiEndpoint.get("history", `${root}/:memoryID/history`, {
+        params: { memoryID: Schema.String },
+        query: RoutingQuery,
+        success: described(Schema.Array(Memory.HistoryInfo), "Audit history for a Memory record"),
+      }).annotateMerge(OpenApi.annotations({ identifier: "memory.history", summary: "Get Memory audit history" })),
       HttpApiEndpoint.post("clear", `${root}/clear`, {
         query: RoutingQuery,
         payload: Clear,

@@ -84,6 +84,11 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
           })
         }),
       )
+      .handle("history", (ctx) =>
+        Effect.gen(function* () {
+          return yield* memory.history(ctx.params.memoryID)
+        }),
+      )
       .handle("clear", (ctx) =>
         Effect.gen(function* () {
           const route = yield* WorkspaceRouteContext

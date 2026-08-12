@@ -19,7 +19,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import type { PermissionV1 } from "@newhorse/core/v1/permission"
 import { TrustPolicy } from "@/trust-policy"
-import { and, desc, eq, gt, inArray, isNull, like, lt, ne, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gt, inArray, isNull, like, lt, ne, or, sql } from "drizzle-orm"
 import fuzzysort from "fuzzysort"
 import { Context, Effect, Layer, Ref, Schema } from "effect"
 
@@ -53,6 +53,23 @@ export const Page = Schema.Struct({
   nextCursor: Schema.optional(Schema.String),
 }).annotate({ identifier: "MemoryPage" })
 export type Page = Schema.Schema.Type<typeof Page>
+
+export const HistoryEvent = Schema.Literals(["ADD", "UPDATE", "DELETE", "ACCEPT", "REJECT", "PAUSE", "RESUME", "CLEAR"])
+
+// Audit log entry for a single Memory lifecycle transition. History rows have
+// no owner columns of their own and survive the physical deletion of the
+// memory row, so this is the only way to reconstruct what happened to a record
+// after it is gone.
+export const HistoryInfo = Schema.Struct({
+  id: Schema.String,
+  memoryID: Schema.String,
+  oldContent: Schema.optional(Schema.String),
+  newContent: Schema.optional(Schema.String),
+  event: HistoryEvent,
+  actorID: Schema.optional(Schema.String),
+  createdAt: Schema.Int,
+}).annotate({ identifier: "MemoryHistoryInfo" })
+export type HistoryInfo = Schema.Schema.Type<typeof HistoryInfo>
 
 export interface SaveInput {
   scope?: MemoryScope
@@ -229,6 +246,7 @@ export interface Interface {
     profileID?: string
   }) => Effect.Effect<number, MemoryPolicyRejected>
   readonly export: (input?: { includeGlobal?: boolean; profileID?: string }) => Effect.Effect<ReadonlyArray<Info>>
+  readonly history: (id: string) => Effect.Effect<ReadonlyArray<HistoryInfo>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@newhorse/Memory") {}
@@ -1050,6 +1068,28 @@ const layer = Layer.effect(
       return rows.map(decode)
     })
 
+    const history: Interface["history"] = Effect.fn("Memory.history")(function* (id) {
+      // Audit log is keyed by memory_id and intentionally has no owner scope:
+      // it must survive forget/clear/prune, so the owning memory row cannot be
+      // used to scope it. Oldest first so a UI can replay the record's timeline.
+      const rows = yield* db
+        .select()
+        .from(MemoryHistoryTable)
+        .where(eq(MemoryHistoryTable.memory_id, id))
+        .orderBy(asc(MemoryHistoryTable.created_at), asc(MemoryHistoryTable.id))
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map((row) => ({
+        id: row.id,
+        memoryID: row.memory_id!,
+        oldContent: row.old_content ?? undefined,
+        newContent: row.new_content ?? undefined,
+        event: row.event,
+        actorID: row.actor_id ?? undefined,
+        createdAt: row.created_at,
+      }))
+    })
+
     return Service.of({
       save,
       page,
@@ -1064,6 +1104,7 @@ const layer = Layer.effect(
       forget,
       clear,
       export: exportRecords,
+      history,
     })
   }),
 )
