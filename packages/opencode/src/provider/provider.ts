@@ -989,10 +989,15 @@ const ProviderModalities = Schema.Struct({
   pdf: Schema.Boolean,
 })
 
+const ProviderInterleavedField = Schema.Union([
+  Schema.Literals(["reasoning", "reasoning_content", "reasoning_text"]),
+  Schema.String,
+])
+
 const ProviderInterleaved = Schema.Union([
   Schema.Boolean,
   Schema.Struct({
-    field: Schema.Literals(["reasoning", "reasoning_content", "reasoning_details"]),
+    field: ProviderInterleavedField,
   }),
 ])
 
@@ -1256,7 +1261,7 @@ function fromModelsDevModel(provider: ModelsDev.Provider, model: ModelsDev.Model
         video: model.modalities?.output?.includes("video") ?? false,
         pdf: model.modalities?.output?.includes("pdf") ?? false,
       },
-      interleaved: model.interleaved ?? false,
+      interleaved: typeof model.interleaved === "string" ? { field: model.interleaved } : (model.interleaved ?? false),
     },
     release_date: model.release_date ?? "",
     variants: {},
@@ -1488,7 +1493,7 @@ const layer = Layer.effect(
                   pdf: model.modalities?.output?.includes("pdf") ?? existingModel?.capabilities.output.pdf ?? false,
                 },
                 interleaved:
-                  model.interleaved ??
+                  (typeof model.interleaved === "string" ? { field: model.interleaved } : model.interleaved) ??
                   existingModel?.capabilities.interleaved ??
                   (!existingModel && apiNpm === "@ai-sdk/openai-compatible" && apiID.includes("deepseek")
                     ? { field: "reasoning_content" }
