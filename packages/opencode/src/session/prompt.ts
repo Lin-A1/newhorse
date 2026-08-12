@@ -58,6 +58,7 @@ import { SessionTools } from "./tools"
 import { LLMEvent } from "@newhorse/llm"
 import { Profile } from "@/profile"
 import { Memory } from "@/memory"
+import { MemoryExtract } from "@/memory/extract"
 import { ContinuityGrant } from "@/continuity-grant"
 
 // @ts-ignore
@@ -192,6 +193,7 @@ const layer = Layer.effect(
     const database = yield* Database.Service
     const profiles = yield* Profile.Service
     const memory = yield* Memory.Service
+    const extract = yield* MemoryExtract.Service
     const continuity = yield* ContinuityGrant.Service
     const { db } = database
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
@@ -1413,6 +1415,23 @@ const layer = Layer.effect(
               }
             }
 
+            // Auto-extract memory proposals after a Companion turn's final
+            // reply. Background (never blocks the turn), fires only on the
+            // final answer (intermediate tool-call rounds never reach here),
+            // and lands as `proposed` for human review in the Memory Center.
+            yield* extract
+              .extract({
+                sessionID,
+                session,
+                profile,
+                agent,
+                model,
+                messages: msgs,
+                lastUser,
+                lastAssistant: handle.message,
+              })
+              .pipe(Effect.ignore, Effect.forkIn(scope))
+
             if (result === "stop") return "break" as const
             if (result === "compact") {
               yield* compaction.create({
@@ -1724,6 +1743,7 @@ export const node = LayerNode.make({
     Database.node,
     Profile.node,
     Memory.node,
+    MemoryExtract.node,
     ContinuityGrant.node,
   ],
 })
