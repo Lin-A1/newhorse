@@ -61,23 +61,26 @@ const model: Provider.Model = {
   release_date: "2026-01-01",
 }
 
-function textPart(messageID: string, text: string): SessionV1.Part {
+function textPart(
+  messageID: string,
+  text: string,
+  opts: { synthetic?: boolean; ignored?: boolean } = {},
+): SessionV1.TextPart {
   return {
     id: PartID.make(`prt_${messageID}`),
     sessionID: SESSION_ID,
     messageID: MessageID.make(messageID),
     type: "text",
     text,
-  } as SessionV1.Part
+    ...(opts.synthetic ? { synthetic: true as const } : {}),
+    ...(opts.ignored ? { ignored: true as const } : {}),
+  }
 }
 
 function userMessage(id: string, text: string, opts: { synthetic?: boolean; ignored?: boolean } = {}): SessionV1.WithParts {
-  const part: SessionV1.Part = textPart(id, text)
-  if (opts.synthetic) part.synthetic = true
-  if (opts.ignored) part.ignored = true
   return {
     info: { id: MessageID.make(id), sessionID: SESSION_ID, role: "user" } as unknown as SessionV1.User,
-    parts: [part],
+    parts: [textPart(id, text, opts)],
   }
 }
 
