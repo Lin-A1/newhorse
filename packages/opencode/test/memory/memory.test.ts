@@ -1,6 +1,8 @@
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Effect, Exit } from "effect"
+import { sql } from "drizzle-orm"
+import { Database } from "@newhorse/core/database/database"
 import { Memory, detectSensitive } from "@/memory"
 import { WorkspaceMetadataRef, WorkspaceRef } from "@/effect/instance-ref"
 import { MessageID } from "@/session/schema"
@@ -8,7 +10,7 @@ import { ProjectV2 } from "@newhorse/core/project"
 import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { testEffect } from "../lib/effect"
 
-const it = testEffect(LayerNode.compile(Memory.node))
+const it = testEffect(LayerNode.compile(LayerNode.group([Memory.node, Database.node])))
 
 function personal<A, E, R>(effect: Effect.Effect<A, E, R>, id = "wrk_memory_personal") {
   return effect.pipe(
@@ -523,6 +525,126 @@ describe("Memory", () => {
 
       const remaining = yield* memory.list()
       expect(remaining.map((item) => item.id)).toEqual([global.id])
+    }),
+  )
+
+  it.instance("searches Latin content through FTS5 trigram", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      yield* memory.save({ kind: "fact", content: "prefers dark mode hiking weekend", provenance: "user_explicit" })
+      yield* memory.save({ kind: "fact", content: "likes hiking in the mountains", provenance: "user_explicit" })
+      const found = yield* memory.search({ query: "hiking" })
+      expect(found).toHaveLength(2)
+      expect(found.map((item) => item.content).toSorted()).toEqual([
+        "likes hiking in the mountains",
+        "prefers dark mode hiking weekend",
+      ])
+    }),
+  )
+
+  it.instance("searches Chinese content through FTS5 trigram", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      yield* memory.save({ kind: "fact", content: "喜欢喝咖啡，周末去公园散步", provenance: "user_explicit" })
+      const found = yield* memory.search({ query: "喝咖啡" })
+      expect(found.map((item) => item.content)).toEqual(["喜欢喝咖啡，周末去公园散步"])
+    }),
+  )
+
+  it.instance("falls back to LIKE for short CJK terms the trigram index cannot match", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      yield* memory.save({ kind: "fact", content: "喜欢喝咖啡", provenance: "user_explicit" })
+      // 咖啡 is two characters: trigram requires >=3, so this must hit the LIKE fallback.
+      expect((yield* memory.search({ query: "咖啡" })).map((item) => item.content)).toEqual(["喜欢喝咖啡"])
+    }),
+  )
+
+  it.instance("stores entities at save and boosts entity matches in search", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const memory = yield* Memory.Service
+      yield* memory.save({
+        kind: "fact",
+        content: "Prefers PostgreSQL for the projects and uses GitHub Actions",
+        provenance: "user_explicit",
+      })
+      const saved = yield* memory.save({
+        kind: "fact",
+        content: "Prefers Postgres and GitHub Actions",
+        provenance: "user_explicit",
+      })
+      const entities = yield* db.all<{ memory_id: string; normalized_text: string }>(sql`
+        SELECT memory_id, normalized_text FROM memory_entity WHERE memory_id = ${saved.id} ORDER BY normalized_text
+      `)
+      expect(entities.map((entity) => entity.normalized_text)).toContain("postgres")
+      expect(entities.map((entity) => entity.normalized_text)).toContain("github actions")
+
+      // Query entity "postgres" fuzzy-matches the stored "PostgreSQL" entity, so
+      // both memories surface and the exact term match ranks first.
+      const found = yield* memory.search({ query: "postgres" })
+      expect(found.length).toBeGreaterThanOrEqual(1)
+      expect(found[0]!.content).toContain("Postgres")
+    }),
+  )
+
+  it.instance("writes memory_history for each lifecycle transition and forget survives", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const memory = yield* Memory.Service
+      const saved = yield* memory.save({
+        kind: "fact",
+        content: "Prefers PostgreSQL",
+        provenance: "model_inferred",
+      })
+      const history = (id: string) =>
+        db.all<{ event: string }>(sql`SELECT event FROM memory_history WHERE memory_id = ${id} ORDER BY created_at, id`)
+      expect((yield* history(saved.id)).map((row) => row.event)).toEqual(["ADD"])
+
+      yield* memory.update({ id: saved.id, content: "Prefers PostgreSQL and uses GitHub Actions" })
+      expect((yield* history(saved.id)).map((row) => row.event)).toEqual(["ADD", "UPDATE"])
+      yield* memory.decide({ id: saved.id, decision: "accept" })
+      expect((yield* history(saved.id)).map((row) => row.event)).toEqual(["ADD", "UPDATE", "ACCEPT"])
+      yield* memory.pause({ id: saved.id, paused: true })
+      yield* memory.pause({ id: saved.id, paused: false })
+      expect((yield* history(saved.id)).map((row) => row.event)).toEqual([
+        "ADD",
+        "UPDATE",
+        "ACCEPT",
+        "PAUSE",
+        "RESUME",
+      ])
+
+      yield* memory.forget(saved.id)
+      expect((yield* history(saved.id)).map((row) => row.event)).toEqual([
+        "ADD",
+        "UPDATE",
+        "ACCEPT",
+        "PAUSE",
+        "RESUME",
+        "DELETE",
+      ])
+      // Audit log outlives its memory row.
+      expect(yield* db.get(sql`SELECT count(*) AS c FROM memory WHERE id = ${saved.id}`)).toEqual({ c: 0 })
+    }),
+  )
+
+  it.instance("keeps history when maintain prunes rejected rows", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const memory = yield* Memory.Service
+      const saved = yield* memory.save({ kind: "fact", content: "rejected fact", provenance: "model_inferred" })
+      yield* memory.decide({ id: saved.id, decision: "reject" })
+      yield* db.run(
+        sql`UPDATE memory SET time_created = ${Date.now() - 40 * 24 * 60 * 60 * 1000} WHERE id = ${saved.id}`,
+      )
+
+      const result = yield* memory.maintain()
+      expect(result.pruned).toBe(1)
+      expect(yield* db.get(sql`SELECT count(*) AS c FROM memory WHERE id = ${saved.id}`)).toEqual({ c: 0 })
+      expect(yield* db.get(sql`SELECT count(*) AS c FROM memory_history WHERE memory_id = ${saved.id}`)).toEqual({
+        c: 2,
+      })
     }),
   )
 })

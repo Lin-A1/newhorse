@@ -1,8 +1,10 @@
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Database } from "@newhorse/core/database/database"
-import { MemoryTable } from "@newhorse/core/memory/sql"
+import { MemoryTable, MemoryEntityTable, MemoryHistoryTable } from "@newhorse/core/memory/sql"
+import { extractEntities } from "@newhorse/core/memory/entity"
 import { MessageTable, SessionTable } from "@newhorse/core/session/sql"
 import type {
+  MemoryHistoryEvent,
   MemoryKind,
   MemoryProvenance,
   MemoryScope,
@@ -18,6 +20,7 @@ import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import type { PermissionV1 } from "@newhorse/core/v1/permission"
 import { TrustPolicy } from "@/trust-policy"
 import { and, desc, eq, gt, inArray, isNull, like, lt, ne, or, sql } from "drizzle-orm"
+import fuzzysort from "fuzzysort"
 import { Context, Effect, Layer, Ref, Schema } from "effect"
 
 export const Scope = Schema.Literals(["workspace", "user_global"])
@@ -129,6 +132,54 @@ function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`)
 }
 
+// ---------------------------------------------------------------------------
+// FTS5 (trigram) query building.
+//
+// Tokenizer choice: trigram (built into FTS5, no extension). unicode61 does
+// not segment CJK — a run like "喜欢喝咖啡" becomes one opaque token, so
+// Chinese queries fail. trigram indexes every 3-character sequence and serves
+// both Latin and CJK. Trade-off: terms shorter than 3 characters cannot be
+// matched by trigram at all (dropped here); the LIKE fallback below covers
+// those. The matching query uses OR so bm25 does the ranking — memories
+// matching more terms rank ahead of memories matching one.
+// ---------------------------------------------------------------------------
+const MAX_FTS_TERMS = 24
+
+function containsCJK(value: string): boolean {
+  return /[㐀-䶿一-鿿豈-﫿]/.test(value)
+}
+
+function buildFtsQuery(query: string): string | undefined {
+  const terms = new Set<string>()
+  for (const rawToken of query.split(/\s+/).filter(Boolean)) {
+    // CJK runs are not space-separated: emit overlapping 3..6 char windows so
+    // a memory sharing any contiguous substring still matches. ASCII fragments
+    // inside a mixed token are kept as ordinary terms.
+    for (const chunk of rawToken.split(/([A-Za-z0-9_@#.-]+)/g).filter(Boolean)) {
+      if (containsCJK(chunk)) {
+        const max = Math.min(6, chunk.length)
+        for (let length = 3; length <= max; length++) {
+          for (let index = 0; index + length <= chunk.length; index++) {
+            terms.add(chunk.slice(index, index + length))
+          }
+        }
+      } else {
+        const clean = chunk.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")
+        if (clean.length >= 3) terms.add(clean)
+      }
+    }
+  }
+  if (terms.size === 0) return undefined
+  // Most specific (longest) terms first, bounded, so a long recall query does
+  // not blow up the OR clause.
+  const picked = [...terms]
+    .sort((a, b) => b.length - a.length)
+    .slice(0, MAX_FTS_TERMS)
+  // Phrase-quote each term to neutralise FTS5 special characters (" : - ( ) * …)
+  // and force token identity. `"` inside a phrase is escaped by doubling.
+  return picked.map((term) => `"${term.replace(/"/g, '""')}"`).join(" OR ")
+}
+
 const DEFAULT_STATUSES: MemoryStatus[] = ["proposed", "active", "paused"]
 
 // Bounded, host-owned lifecycle maintenance. Expiry/pruning run opportunistically
@@ -219,6 +270,8 @@ const layer = Layer.effect(
     const maintainInternal = Effect.fn("Memory.maintain")(function* (now: number) {
       // Expire rows whose time_expires has passed: they must no longer surface
       // in any read path, so demote them to deleted (excluded from page/list).
+      // The FTS index entry is intentionally left: search filters by status,
+      // so a deleted row never surfaces even though it is still indexed.
       const expired = yield* db
         .update(MemoryTable)
         .set({ status: "deleted" as const, time_updated: now })
@@ -226,14 +279,30 @@ const layer = Layer.effect(
         .returning({ id: MemoryTable.id })
         .all()
         .pipe(Effect.orDie)
-      // Prune rejected/deleted rows older than the retention window.
+      // Prune rejected/deleted rows older than the retention window. Deindex
+      // FTS and drop entities first (the FTS delete must see the memory rows),
+      // then physically remove the rows. History is an audit log and is NOT
+      // pruned with its memory row.
+      const pruneCondition = and(
+        inArray(MemoryTable.status, ["rejected", "deleted"]),
+        lt(MemoryTable.time_created, now - MEMORY_RETENTION_MS),
+      )
       const pruned = yield* db
-        .delete(MemoryTable)
-        .where(
-          and(inArray(MemoryTable.status, ["rejected", "deleted"]), lt(MemoryTable.time_created, now - MEMORY_RETENTION_MS)),
+        .transaction(
+          Effect.fnUntraced(function* (tx) {
+            const rows = yield* tx
+              .select({ id: MemoryTable.id })
+              .from(MemoryTable)
+              .where(pruneCondition)
+              .all()
+            if (rows.length === 0) return []
+            const ids = rows.map((row) => row.id)
+            yield* ftsDeindex(tx, ids)
+            yield* tx.delete(MemoryEntityTable).where(inArray(MemoryEntityTable.memory_id, ids)).run()
+            yield* tx.delete(MemoryTable).where(pruneCondition).run()
+            return ids
+          }),
         )
-        .returning({ id: MemoryTable.id })
-        .all()
         .pipe(Effect.orDie)
       return { expired: expired.length, pruned: pruned.length }
     })
@@ -245,6 +314,127 @@ const layer = Layer.effect(
       if (now - (yield* Ref.get(lastMaintain)) < MAINTENANCE_INTERVAL_MS) return
       yield* Ref.set(lastMaintain, now)
       yield* maintainInternal(now).pipe(Effect.ignore)
+    })
+
+    // -----------------------------------------------------------------------
+    // FTS5 / entity / history maintenance. The FTS virtual table cannot be
+    // declared in the Drizzle schema, so fresh installs (which run schema.up
+    // and skip migrations) create it lazily here; existing installs create it
+    // in the migration. Entity + history tables exist on both paths.
+    // -----------------------------------------------------------------------
+    type Exec = Parameters<Parameters<typeof db.transaction>[0]>[0]
+    let ftsEnsured = false
+    const ensureFts = Effect.fnUntraced(function* () {
+      if (ftsEnsured) return
+      yield* db.run(sql`
+        CREATE VIRTUAL TABLE IF NOT EXISTS \`memory_fts\` USING fts5(content, content='memory', tokenize='trigram')
+      `).pipe(Effect.orDie)
+      ftsEnsured = true
+    })
+
+    // Deindex FTS rows for memory ids. Must run BEFORE the memory rows are
+    // deleted or rewritten: external-content FTS reads the content table to
+    // update its postings, so the row must still exist at deindex time.
+    const ftsDeindex = Effect.fnUntraced(function* (exec: Exec, ids: ReadonlyArray<string>) {
+      if (ids.length === 0) return
+      yield* exec.run(sql`
+        DELETE FROM \`memory_fts\` WHERE rowid IN (
+          SELECT \`rowid\` FROM \`memory\` WHERE \`id\` IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+        )
+      `).pipe(Effect.orDie)
+    })
+
+    // Index a memory row into FTS (runs after the memory row exists).
+    const ftsIndex = Effect.fnUntraced(function* (exec: Exec, id: string, content: string) {
+      yield* exec.run(sql`
+        INSERT INTO \`memory_fts\` (rowid, content)
+        SELECT \`rowid\`, ${content} FROM \`memory\` WHERE \`id\` = ${id}
+      `).pipe(Effect.orDie)
+    })
+
+    // Rewrite the entity set for a memory row from its (new) content.
+    const replaceEntities = Effect.fnUntraced(function* (exec: Exec, id: string, content: string) {
+      yield* exec.delete(MemoryEntityTable).where(eq(MemoryEntityTable.memory_id, id)).run().pipe(Effect.orDie)
+      for (const entity of extractEntities(content)) {
+        yield* exec
+          .insert(MemoryEntityTable)
+          .values({
+            id: Identifier.ascending("memoryEntity"),
+            memory_id: id,
+            entity_text: entity.text,
+            entity_type: entity.type,
+            normalized_text: entity.normalized,
+          })
+          .run()
+          .pipe(Effect.orDie)
+      }
+    })
+
+    // Append a memory_history audit row. Independent of memory rows: it must
+    // survive forget/clear and maintain's 30-day pruning.
+    const writeHistory = Effect.fnUntraced(function* (
+      exec: Exec,
+      event: MemoryHistoryEvent,
+      memoryId: string,
+      opts: { oldContent?: string | null; newContent?: string | null; actorID?: string | null } = {},
+    ) {
+      yield* exec
+        .insert(MemoryHistoryTable)
+        .values({
+          id: Identifier.ascending("memoryHistory"),
+          memory_id: memoryId,
+          old_content: opts.oldContent ?? null,
+          new_content: opts.newContent ?? null,
+          event,
+          actor_id: opts.actorID ?? null,
+          created_at: Date.now(),
+        })
+        .run()
+        .pipe(Effect.orDie)
+    })
+
+    // Entity match counts for a set of candidate memory ids: exact normalized
+    // matches plus a small fuzzysort bonus for near-miss entity variants.
+    const FUZZY_SCORE_THRESHOLD = -500
+    const FUZZY_MATCH_WEIGHT = 0.5
+    const entityBoostFor = Effect.fnUntraced(function* (ids: ReadonlyArray<string>, query: string) {
+      const hits = new Map<string, number>()
+      const entities = extractEntities(query)
+      if (entities.length === 0 || ids.length === 0) return hits
+      const normals = [...new Set(entities.map((entity) => entity.normalized))]
+      const exact = yield* db
+        .all<{ memory_id: string; n: number }>(sql`
+          SELECT memory_id, count(*) AS n FROM memory_entity
+          WHERE memory_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+            AND normalized_text IN (${sql.join(normals.map((normalized) => sql`${normalized}`), sql`, `)})
+          GROUP BY memory_id
+        `)
+        .pipe(Effect.orDie)
+      for (const row of exact) hits.set(row.memory_id, row.n)
+      const stored = yield* db
+        .all<{ memory_id: string; normalized_text: string }>(sql`
+          SELECT memory_id, normalized_text FROM memory_entity
+          WHERE memory_id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+        `)
+        .pipe(Effect.orDie)
+      const storedByMemory = new Map<string, string[]>()
+      for (const row of stored) {
+        const list = storedByMemory.get(row.memory_id) ?? []
+        list.push(row.normalized_text)
+        storedByMemory.set(row.memory_id, list)
+      }
+      for (const [memoryId, storedList] of storedByMemory) {
+        let fuzzy = 0
+        for (const entity of entities) {
+          const nearMiss = storedList.some((target) => {
+            const result = fuzzysort.single(entity.normalized, target)
+            return result !== null && result.score > FUZZY_SCORE_THRESHOLD
+          })
+          if (nearMiss) fuzzy += 1
+        }
+        if (fuzzy > 0) hits.set(memoryId, (hits.get(memoryId) ?? 0) + fuzzy * FUZZY_MATCH_WEIGHT)
+      }
+      return hits
     })
 
     const maintain: Interface["maintain"] = Effect.fn("Memory.maintain")(function* () {
@@ -418,7 +608,18 @@ const layer = Layer.effect(
         time_updated: now,
         time_expires: input.expiresAt ?? null,
       }
-      const saved = yield* db.insert(MemoryTable).values(row).returning().get().pipe(Effect.orDie)
+      yield* ensureFts()
+      const saved = yield* db
+        .transaction(
+          Effect.fnUntraced(function* (tx) {
+            const inserted = yield* tx.insert(MemoryTable).values(row).returning().get()
+            yield* ftsIndex(tx, row.id, row.content)
+            yield* replaceEntities(tx, row.id, row.content)
+            yield* writeHistory(tx, "ADD", row.id, { newContent: row.content, actorID: profileID })
+            return inserted
+          }),
+        )
+        .pipe(Effect.orDie)
       return decode(saved!)
     })
 
@@ -537,15 +738,6 @@ const layer = Layer.effect(
         inArray(MemoryTable.status, input?.status ?? ["active"]),
         or(isNull(MemoryTable.time_expires), gt(MemoryTable.time_expires, Date.now())),
       ]
-      // Tokenize the query: match any keyword (OR) instead of requiring the
-      // whole query to be a substring — "weekend hiking plan" should surface a
-      // memory about "hiking" even without the full phrase.
-      const terms = query.split(/\s+/).filter(Boolean)
-      if (terms.length === 1) {
-        conditions.push(like(MemoryTable.content, `%${escapeLike(query)}%`))
-      } else {
-        conditions.push(or(...terms.map((term) => like(MemoryTable.content, `%${escapeLike(term)}%`))))
-      }
       if (input?.kind) conditions.push(eq(MemoryTable.kind, input.kind))
       if (input?.relationshipOnly) {
         conditions.push(eq(MemoryTable.kind, "relationship"), eq(MemoryTable.profile_id, input.profileID!))
@@ -554,6 +746,73 @@ const layer = Layer.effect(
         if (input?.profileID) {
           conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
         }
+      }
+      const limit = Math.min(Math.max(input?.limit ?? 10, 1), 50)
+
+      // Primary path: FTS5 trigram MATCH + bm25 ranking. The visibility /
+      // kind / profile / status filters still come from the memory table:
+      // FTS rowids are correlated to memory.rowid, then mapped to memory ids
+      // for the visibility query.
+      yield* ensureFts()
+      const ftsQuery = buildFtsQuery(query)
+      if (ftsQuery) {
+        const ftsRows = yield* db
+          .all<{ rowid: number; rank: number }>(sql`
+            SELECT memory_fts.rowid AS rowid, bm25(memory_fts) AS rank
+            FROM memory_fts
+            WHERE memory_fts MATCH ${ftsQuery}
+            ORDER BY bm25(memory_fts)
+            LIMIT 200
+          `)
+          .pipe(Effect.catchCause(() => Effect.succeed([])))
+        if (ftsRows.length > 0) {
+          const idRows = yield* db
+            .all<{ id: string; rowid: number }>(sql`
+              SELECT id, rowid FROM memory
+              WHERE rowid IN (${sql.join(ftsRows.map((row) => sql`${row.rowid}`), sql`, `)})
+            `)
+            .pipe(Effect.orDie)
+          const idByRowid = new Map(idRows.map((row) => [row.rowid, row.id]))
+          const ids = ftsRows
+            .map((row) => idByRowid.get(row.rowid))
+            .filter((id): id is string => !!id)
+          if (ids.length > 0) {
+            const rows = yield* db
+              .select()
+              .from(MemoryTable)
+              .where(and(...conditions, inArray(MemoryTable.id, ids)))
+              .all()
+              .pipe(Effect.orDie)
+            if (rows.length > 0) {
+              const rankByRowid = new Map(ftsRows.map((row) => [row.rowid, row.rank]))
+              const rowidById = new Map(idRows.map((row) => [row.id, row.rowid]))
+              const entityHits = yield* entityBoostFor(ids, query)
+              const ranked = rows
+                .map((row) => ({
+                  row,
+                  rank: rankByRowid.get(rowidById.get(row.id) ?? 0) ?? 0,
+                  hits: entityHits.get(row.id) ?? 0,
+                }))
+                .sort((a, b) => a.rank - b.rank || b.hits - a.hits || b.row.time_updated - a.row.time_updated)
+                .slice(0, limit)
+                .map((entry) => decode(entry.row))
+              return ranked
+            }
+          }
+        }
+      }
+
+      // Fallback: LIKE-based substring search. Kept for queries FTS cannot
+      // serve (terms shorter than 3 characters — e.g. 2-character CJK words —
+      // which the trigram tokenizer drops) and when the MATCH finds nothing.
+      // Tokenize the query: match any keyword (OR) instead of requiring the
+      // whole query to be a substring — "weekend hiking plan" should surface a
+      // memory about "hiking" even without the full phrase.
+      const terms = query.split(/\s+/).filter(Boolean)
+      if (terms.length === 1) {
+        conditions.push(like(MemoryTable.content, `%${escapeLike(query)}%`))
+      } else {
+        conditions.push(or(...terms.map((term) => like(MemoryTable.content, `%${escapeLike(term)}%`))))
       }
       const rows = yield* db
         .select()
@@ -574,7 +833,7 @@ const layer = Layer.effect(
           sql`instr(${MemoryTable.content}, ${query})`,
           desc(MemoryTable.time_updated),
         )
-        .limit(Math.min(Math.max(input?.limit ?? 10, 1), 50))
+        .limit(limit)
         .all()
         .pipe(Effect.orDie)
       return rows.map(decode)
@@ -602,17 +861,36 @@ const layer = Layer.effect(
         sensitivity: current.sensitivity,
         userRuleset: input.userRuleset,
       })
+      yield* ensureFts()
       const row = yield* db
-        .update(MemoryTable)
-        .set({
-          kind,
-          content: content.trim(),
-          ...(input.expiresAt !== undefined ? { time_expires: input.expiresAt } : {}),
-          time_updated: Date.now(),
-        })
-        .where(and(eq(MemoryTable.id, input.id), mutationFilter(scope, owner, input.profileID)))
-        .returning()
-        .get()
+        .transaction(
+          Effect.fnUntraced(function* (tx) {
+            // Deindex the OLD content first (external-content FTS reads the
+            // memory row to update postings), then apply the update and index
+            // the new content.
+            yield* ftsDeindex(tx, [input.id])
+            const updated = yield* tx
+              .update(MemoryTable)
+              .set({
+                kind,
+                content: content.trim(),
+                ...(input.expiresAt !== undefined ? { time_expires: input.expiresAt } : {}),
+                time_updated: Date.now(),
+              })
+              .where(and(eq(MemoryTable.id, input.id), mutationFilter(scope, owner, input.profileID)))
+              .returning()
+              .get()
+            if (!updated) return undefined
+            yield* ftsIndex(tx, updated.id, updated.content)
+            yield* replaceEntities(tx, updated.id, updated.content)
+            yield* writeHistory(tx, "UPDATE", updated.id, {
+              oldContent: current.content,
+              newContent: updated.content,
+              actorID: input.profileID,
+            })
+            return updated
+          }),
+        )
         .pipe(Effect.orDie)
       return row ? decode(row) : undefined
     })
@@ -621,21 +899,32 @@ const layer = Layer.effect(
       const owner = yield* context
       const scope = input.scope ?? "workspace"
       const row = yield* db
-        .update(MemoryTable)
-        .set({
-          status: input.decision === "accept" ? "active" : "rejected",
-          ...(input.decision === "accept" ? { provenance: "user_confirmed" as const } : {}),
-          time_updated: Date.now(),
-        })
-        .where(
-          and(
-            eq(MemoryTable.id, input.id),
-            mutationFilter(scope, owner, input.profileID),
-            eq(MemoryTable.status, "proposed"),
-          ),
+        .transaction(
+          Effect.fnUntraced(function* (tx) {
+            const updated = yield* tx
+              .update(MemoryTable)
+              .set({
+                status: input.decision === "accept" ? "active" : "rejected",
+                ...(input.decision === "accept" ? { provenance: "user_confirmed" as const } : {}),
+                time_updated: Date.now(),
+              })
+              .where(
+                and(
+                  eq(MemoryTable.id, input.id),
+                  mutationFilter(scope, owner, input.profileID),
+                  eq(MemoryTable.status, "proposed"),
+                ),
+              )
+              .returning()
+              .get()
+            if (updated) {
+              yield* writeHistory(tx, input.decision === "accept" ? "ACCEPT" : "REJECT", updated.id, {
+                actorID: input.profileID,
+              })
+            }
+            return updated
+          }),
         )
-        .returning()
-        .get()
         .pipe(Effect.orDie)
       return row ? decode(row) : undefined
     })
@@ -644,28 +933,53 @@ const layer = Layer.effect(
       const owner = yield* context
       const scope = input.scope ?? "workspace"
       const row = yield* db
-        .update(MemoryTable)
-        .set({ status: input.paused ? "paused" : "active", time_updated: Date.now() })
-        .where(
-          and(
-            eq(MemoryTable.id, input.id),
-            mutationFilter(scope, owner, input.profileID),
-            eq(MemoryTable.status, input.paused ? "active" : "paused"),
-          ),
+        .transaction(
+          Effect.fnUntraced(function* (tx) {
+            const updated = yield* tx
+              .update(MemoryTable)
+              .set({ status: input.paused ? "paused" : "active", time_updated: Date.now() })
+              .where(
+                and(
+                  eq(MemoryTable.id, input.id),
+                  mutationFilter(scope, owner, input.profileID),
+                  eq(MemoryTable.status, input.paused ? "active" : "paused"),
+                ),
+              )
+              .returning()
+              .get()
+            if (updated) {
+              yield* writeHistory(tx, input.paused ? "PAUSE" : "RESUME", updated.id, { actorID: input.profileID })
+            }
+            return updated
+          }),
         )
-        .returning()
-        .get()
         .pipe(Effect.orDie)
       return row ? decode(row) : undefined
     })
 
     const forget: Interface["forget"] = Effect.fn("Memory.forget")(function* (id, scope = "workspace", profileID) {
       const owner = yield* context
+      yield* ensureFts()
       const row = yield* db
-        .delete(MemoryTable)
-        .where(and(eq(MemoryTable.id, id), mutationFilter(scope, owner, profileID)))
-        .returning({ id: MemoryTable.id })
-        .get()
+        .transaction(
+          Effect.fnUntraced(function* (tx) {
+            const target = yield* tx
+              .select({ id: MemoryTable.id, content: MemoryTable.content })
+              .from(MemoryTable)
+              .where(and(eq(MemoryTable.id, id), mutationFilter(scope, owner, profileID)))
+              .get()
+            if (!target) return undefined
+            // Deindex FTS and drop entities before the row disappears.
+            yield* ftsDeindex(tx, [id])
+            yield* tx.delete(MemoryEntityTable).where(eq(MemoryEntityTable.memory_id, id)).run()
+            yield* tx
+              .delete(MemoryTable)
+              .where(and(eq(MemoryTable.id, id), mutationFilter(scope, owner, profileID)))
+              .run()
+            yield* writeHistory(tx, "DELETE", id, { oldContent: target.content, actorID: profileID })
+            return { id }
+          }),
+        )
         .pipe(Effect.orDie)
       return !!row
     })
@@ -694,16 +1008,25 @@ const layer = Layer.effect(
           eq(MemoryTable.profile_id, input.profileID),
         )!
       }
+      yield* ensureFts()
       return yield* db
         .transaction(
           Effect.fnUntraced(function* (tx) {
-            const row = yield* tx
-              .select({ count: sql<number>`count(*)` })
+            const rows = yield* tx
+              .select({ id: MemoryTable.id, content: MemoryTable.content })
               .from(MemoryTable)
               .where(condition)
-              .get()
-            yield* tx.delete(MemoryTable).where(condition).run()
-            return row?.count ?? 0
+              .all()
+            if (rows.length > 0) {
+              const ids = rows.map((row) => row.id)
+              yield* ftsDeindex(tx, ids)
+              yield* tx.delete(MemoryEntityTable).where(inArray(MemoryEntityTable.memory_id, ids)).run()
+              yield* tx.delete(MemoryTable).where(condition).run()
+              for (const row of rows) {
+                yield* writeHistory(tx, "CLEAR", row.id, { oldContent: row.content, actorID: input?.profileID })
+              }
+            }
+            return rows.length
           }),
         )
         .pipe(Effect.orDie)

@@ -146,6 +146,27 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`memory_entity\` (
+          \`id\` text PRIMARY KEY,
+          \`memory_id\` text NOT NULL,
+          \`entity_text\` text NOT NULL,
+          \`entity_type\` text NOT NULL,
+          \`normalized_text\` text NOT NULL,
+          CONSTRAINT \`fk_memory_entity_memory_id_memory_id_fk\` FOREIGN KEY (\`memory_id\`) REFERENCES \`memory\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`memory_history\` (
+          \`id\` text PRIMARY KEY,
+          \`memory_id\` text,
+          \`old_content\` text,
+          \`new_content\` text,
+          \`event\` text NOT NULL,
+          \`actor_id\` text,
+          \`created_at\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`memory\` (
           \`id\` text PRIMARY KEY,
           \`workspace_id\` text,
@@ -409,6 +430,12 @@ export default {
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`follow_profile_idx\` ON \`follow\` (\`profile_id\`);`)
       yield* tx.run(`CREATE INDEX \`follow_scope_status_idx\` ON \`follow\` (\`scope\`,\`status\`);`)
+      yield* tx.run(`CREATE INDEX \`memory_entity_memory_idx\` ON \`memory_entity\` (\`memory_id\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`memory_entity_normalized_idx\` ON \`memory_entity\` (\`normalized_text\`,\`memory_id\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`memory_history_memory_idx\` ON \`memory_history\` (\`memory_id\`);`)
+      yield* tx.run(`CREATE INDEX \`memory_history_created_at_idx\` ON \`memory_history\` (\`created_at\`);`)
       yield* tx.run(`CREATE INDEX \`memory_workspace_idx\` ON \`memory\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`memory_directory_idx\` ON \`memory\` (\`directory\`);`)
       yield* tx.run(`CREATE INDEX \`memory_scope_idx\` ON \`memory\` (\`scope\`);`)

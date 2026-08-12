@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "dc45b3c4-e058-48f9-a52a-3fdcdc1ecbb2",
+  "id": "2b09fdd2-9515-486a-925d-8a34d1e0c631",
   "prevIds": [
-    "598d9516-1031-419d-86f1-bbdc9a10f332"
+    "dc45b3c4-e058-48f9-a52a-3fdcdc1ecbb2"
   ],
   "ddl": [
     {
@@ -52,6 +52,14 @@
     },
     {
       "name": "follow",
+      "entityType": "tables"
+    },
+    {
+      "name": "memory_entity",
+      "entityType": "tables"
+    },
+    {
+      "name": "memory_history",
       "entityType": "tables"
     },
     {
@@ -997,6 +1005,126 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "follow"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "memory_entity"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "memory_id",
+      "entityType": "columns",
+      "table": "memory_entity"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity_text",
+      "entityType": "columns",
+      "table": "memory_entity"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "entity_type",
+      "entityType": "columns",
+      "table": "memory_entity"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "normalized_text",
+      "entityType": "columns",
+      "table": "memory_entity"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "memory_history"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "memory_id",
+      "entityType": "columns",
+      "table": "memory_history"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "old_content",
+      "entityType": "columns",
+      "table": "memory_history"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "new_content",
+      "entityType": "columns",
+      "table": "memory_history"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "event",
+      "entityType": "columns",
+      "table": "memory_history"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "actor_id",
+      "entityType": "columns",
+      "table": "memory_history"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "memory_history"
     },
     {
       "type": "text",
@@ -2790,6 +2918,21 @@
     },
     {
       "columns": [
+        "memory_id"
+      ],
+      "tableTo": "memory",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_memory_entity_memory_id_memory_id_fk",
+      "entityType": "fks",
+      "table": "memory_entity"
+    },
+    {
+      "columns": [
         "project_id"
       ],
       "tableTo": "project",
@@ -3102,6 +3245,24 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "memory_entity_pk",
+      "table": "memory_entity",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "memory_history_pk",
+      "table": "memory_history",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "memory_pk",
       "table": "memory",
       "entityType": "pks"
@@ -3368,6 +3529,66 @@
       "name": "follow_scope_status_idx",
       "entityType": "indexes",
       "table": "follow"
+    },
+    {
+      "columns": [
+        {
+          "value": "memory_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_entity_memory_idx",
+      "entityType": "indexes",
+      "table": "memory_entity"
+    },
+    {
+      "columns": [
+        {
+          "value": "normalized_text",
+          "isExpression": false
+        },
+        {
+          "value": "memory_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_entity_normalized_idx",
+      "entityType": "indexes",
+      "table": "memory_entity"
+    },
+    {
+      "columns": [
+        {
+          "value": "memory_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_history_memory_idx",
+      "entityType": "indexes",
+      "table": "memory_history"
+    },
+    {
+      "columns": [
+        {
+          "value": "created_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "memory_history_created_at_idx",
+      "entityType": "indexes",
+      "table": "memory_history"
     },
     {
       "columns": [

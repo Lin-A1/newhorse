@@ -12,6 +12,8 @@ const prefixes = {
   tool: "tool",
   workspace: "wrk",
   memory: "mem",
+  memoryEntity: "me",
+  memoryHistory: "mh",
   scheduledEvent: "sch",
   scheduledEventAudit: "sha",
   scheduledEventDelivery: "sdl",

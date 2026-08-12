@@ -8,6 +8,7 @@ export type MemoryKind = "preference" | "fact" | "goal" | "event" | "relationshi
 export type MemoryProvenance = "user_explicit" | "user_confirmed" | "model_inferred"
 export type MemorySensitivity = "normal" | "sensitive"
 export type MemoryStatus = "proposed" | "active" | "paused" | "rejected" | "deleted"
+export type MemoryHistoryEvent = "ADD" | "UPDATE" | "DELETE" | "ACCEPT" | "REJECT" | "PAUSE" | "RESUME" | "CLEAR"
 
 export const MemoryTable = sqliteTable(
   "memory",
@@ -44,5 +45,48 @@ export const MemoryTable = sqliteTable(
       table.id,
     ),
     index("memory_relationship_profile_status_idx").on(table.kind, table.profile_id, table.status),
+  ],
+)
+
+// Lightweight implicit graph: entities extracted from memory content at write
+// time (proper nouns, quoted phrases, technical identifiers, topic phrases).
+// Search boosts memories whose stored entities match entities extracted from
+// the query. Owned by the memory row: FK cascade clears entities when the
+// memory is forgotten, cleared, or pruned by maintain.
+export const MemoryEntityTable = sqliteTable(
+  "memory_entity",
+  {
+    id: text().primaryKey(),
+    memory_id: text()
+      .notNull()
+      .references(() => MemoryTable.id, { onDelete: "cascade" }),
+    entity_text: text().notNull(),
+    entity_type: text().notNull(),
+    normalized_text: text().notNull(),
+  },
+  (table) => [
+    index("memory_entity_memory_idx").on(table.memory_id),
+    index("memory_entity_normalized_idx").on(table.normalized_text, table.memory_id),
+  ],
+)
+
+// Audit log of memory lifecycle transitions. Intentionally has NO foreign key:
+// it must survive the physical deletion of its memory row (forget/clear, and
+// maintain's 30-day pruning of rejected/deleted rows). old_content/new_content
+// capture the content delta for UPDATE so the log is self-contained.
+export const MemoryHistoryTable = sqliteTable(
+  "memory_history",
+  {
+    id: text().primaryKey(),
+    memory_id: text(),
+    old_content: text(),
+    new_content: text(),
+    event: text().$type<MemoryHistoryEvent>().notNull(),
+    actor_id: text(),
+    created_at: integer().notNull(),
+  },
+  (table) => [
+    index("memory_history_memory_idx").on(table.memory_id),
+    index("memory_history_created_at_idx").on(table.created_at),
   ],
 )
