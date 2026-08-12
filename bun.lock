@@ -1824,7 +1824,6 @@
 
     "@newhorse/cli": ["@newhorse/cli@workspace:packages/cli"],
 
-    "@newhorse/client": ["@opencode-ai/client@vendor/opencode-ai-client-1.17.13.tgz", {}, "sha512-1cYJikTCrXNhnS2qQ3P3rtdbGqhvJKksswG0amJNqgaeUfz3xDlKEDx+YoIosT7Cqk/AtO18jtip0lYL3TVdHQ=="],
 
     "@newhorse/codemode": ["@newhorse/codemode@workspace:packages/codemode"],
 
@@ -1867,6 +1866,7 @@
     "@newhorse/script": ["@newhorse/script@workspace:packages/script"],
 
     "@newhorse/sdk": ["@newhorse/sdk@workspace:packages/sdk/js"],
+
 
     "@newhorse/server": ["@newhorse/server@workspace:packages/server"],
 
@@ -5923,6 +5923,8 @@
     "@modelcontextprotocol/sdk/raw-body": ["raw-body@3.0.2", "https://registry.npmmirror.com/raw-body/-/raw-body-3.0.2.tgz", { "dependencies": { "bytes": "~3.1.2", "http-errors": "~2.0.1", "iconv-lite": "~0.7.0", "unpipe": "~1.0.0" } }, "sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA=="],
 
     "@modelcontextprotocol/sdk/zod": ["zod@4.4.3", "https://registry.npmmirror.com/zod/-/zod-4.4.3.tgz", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
+
+    "@newhorse/app/@newhorse/client": ["@opencode-ai/client@vendor/opencode-ai-client-1.17.13.tgz", {}, "sha512-1cYJikTCrXNhnS2qQ3P3rtdbGqhvJKksswG0amJNqgaeUfz3xDlKEDx+YoIosT7Cqk/AtO18jtip0lYL3TVdHQ=="],
 
     "@newhorse/core/@ai-sdk/openai": ["@ai-sdk/openai@3.0.84", "https://registry.npmmirror.com/@ai-sdk/openai/-/openai-3.0.84.tgz", { "dependencies": { "@ai-sdk/provider": "3.0.14", "@ai-sdk/provider-utils": "4.0.38" }, "peerDependencies": { "zod": "^3.25.76 || ^4.1.8" } }, "sha512-cmgbeJL0bbY0yTJH4/AdmP5E7MjWRL9G8UdhIi0JlV/So03o82ORJofW8OzwCZPTORVQblFbpZXYGDcUd9NdUQ=="],
 
