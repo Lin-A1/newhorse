@@ -243,6 +243,7 @@ function provider(id: string) {
         models: {
           [id]: {
             id,
+            providerID: id,
             name: `${name} Model`,
             family: id,
             release_date: "2026-01-01",

@@ -26,6 +26,7 @@ test("shows the V2 thinking level control while relevant", async ({ page }) => {
           models: {
             "thinking-model": {
               id: "thinking-model",
+              providerID: "opencode",
               name: "Thinking Model",
               limit: { context: 200_000 },
               variants: { high: {} },
