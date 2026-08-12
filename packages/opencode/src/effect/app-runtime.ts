@@ -99,7 +99,9 @@ export const AppLayer = AppNodeBuilderV1.build(
     SessionRevert.node,
     SessionSummary.node,
     SessionPrompt.node,
-    TodoContinuation.node,
+    // TODO(todo-continuation): disabled while investigating send/delete regressions;
+    // re-enable after confirming the enforcer is not interfering with the event bus.
+    // TodoContinuation.node,
     Instruction.node,
     LLM.node,
     LSP.node,
