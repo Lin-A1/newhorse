@@ -31,8 +31,11 @@ import { DiffChanges } from "@newhorse/ui/diff-changes"
 import { FileIcon } from "@newhorse/ui/file-icon"
 import { Icon } from "@newhorse/ui/icon"
 import { IconButton } from "@newhorse/ui/icon-button"
+import { Tooltip } from "@newhorse/ui/tooltip"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
 import { IconButtonV2 } from "@newhorse/ui/v2/icon-button-v2"
+import { Mark } from "@newhorse/ui/logo"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { DropdownMenu } from "@newhorse/ui/dropdown-menu"
 import { MenuV2 } from "@newhorse/ui/v2/menu-v2"
 import { Dialog } from "@newhorse/ui/dialog"
@@ -71,6 +74,7 @@ import { useTabs } from "@/context/tabs"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useServerSync } from "@/context/server-sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
 import { scheduleConnectedMeasure } from "./measure"
@@ -266,6 +270,7 @@ export function MessageTimeline(props: {
   const serverSDK = useServerSDK()
   const sdk = useSDK()
   const sync = useSync()
+  const serverSync = useServerSync()
   const settings = useSettings()
   const tabs = useTabs()
   const dialog = useDialog()
@@ -904,6 +909,13 @@ export function MessageTimeline(props: {
 
     if (!result) return false
 
+    // Optimistically clear the home/sidebar session list now instead of waiting
+    // for the server's `session.deleted` event, which can lag the UI refresh.
+    serverSync().homeSessions.apply({
+      type: "session.deleted",
+      properties: { sessionID, info: session },
+    })
+
     const removed = new Set<string>([sessionID])
     const byParent = new Map<string, string[]>()
     for (const item of sync().data.session) {
@@ -1378,46 +1390,73 @@ export function MessageTimeline(props: {
           "scale-95": (!props.scroll.overflow || !props.scroll.jump) && !settings.general.newLayoutDesigns(),
         }}
       >
-        <Show
-          when={settings.general.newLayoutDesigns()}
-          fallback={
-            <button
-              type="button"
-              aria-label={language.t("session.messages.jumpToLatest")}
-              class="pointer-events-auto flex items-center justify-center w-10 h-8 bg-transparent border-none cursor-pointer p-0 group"
-              onClick={props.onResumeScroll}
-            >
-              <div
-                class="flex items-center justify-center w-8 h-6 rounded-[6px] border border-border-weaker-base bg-[color-mix(in_srgb,var(--surface-raised-stronger-non-alpha)_80%,transparent)] backdrop-blur-[0.75px] transition-colors group-hover:border-[var(--border-weak-base)] group-hover:[--icon-base:var(--icon-hover)]"
-                style={{
-                  "box-shadow":
-                    "0 51px 60px 0 rgba(0,0,0,0.10), 0 15px 18px 0 rgba(0,0,0,0.12), 0 6.386px 7.513px 0 rgba(0,0,0,0.12), 0 2.31px 2.717px 0 rgba(0,0,0,0.20)",
-                }}
+          <Show
+            when={settings.general.newLayoutDesigns()}
+            fallback={
+              <Tooltip
+                value={language.t("session.messages.jumpToLatest")}
+                placement="top"
+                class="pointer-events-auto flex items-center"
               >
-                <Icon name="arrow-down-to-line" size="small" />
-              </div>
-            </button>
-          }
-        >
-          <button
-            type="button"
-            aria-label={language.t("session.messages.jumpToLatest")}
-            class="pointer-events-auto flex items-center justify-center w-8 h-7 px-2 py-1.5 rounded-lg border-none cursor-pointer text-v2-text-text-base backdrop-blur-[2px]"
-            style={{
-              background: "color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent)",
-              "box-shadow": "var(--v2-elevation-raised), 0px 2px 8px var(--v2-background-bg-base)",
-            }}
-            onClick={props.onResumeScroll}
+                <button
+                  type="button"
+                  aria-label={language.t("session.messages.jumpToLatest")}
+                  class="pointer-events-auto flex items-center justify-center w-10 h-8 bg-transparent border-none cursor-pointer p-0 group transition-[transform] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus active:scale-[0.97] motion-reduce:transition-none motion-reduce:transform-none"
+                  onClick={props.onResumeScroll}
+                >
+                  <div
+                    class="flex items-center justify-center w-8 h-6 rounded-[6px] border border-border-weaker-base bg-[color-mix(in_srgb,var(--surface-raised-stronger-non-alpha)_80%,transparent)] backdrop-blur-[0.75px] transition-[background-color,border-color,color] duration-[120ms] ease-out group-hover:border-[var(--border-weak-base)] group-hover:[--icon-base:var(--icon-hover)]"
+                    style={{
+                      "box-shadow":
+                        "0 51px 60px 0 rgba(0,0,0,0.10), 0 15px 18px 0 rgba(0,0,0,0.12), 0 6.386px 7.513px 0 rgba(0,0,0,0.12), 0 2.31px 2.717px 0 rgba(0,0,0,0.20)",
+                    }}
+                  >
+                    <Icon name="arrow-down-to-line" size="small" />
+                  </div>
+                </button>
+              </Tooltip>
+            }
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332"
-                stroke="currentColor"
-                stroke-linecap="square"
-              />
-            </svg>
-          </button>
-        </Show>
+            <TooltipV2
+              value={language.t("session.messages.jumpToLatest")}
+              placement="top"
+              class="pointer-events-auto flex items-center"
+            >
+              <button
+                type="button"
+                aria-label={language.t("session.messages.jumpToLatest")}
+                class="pointer-events-auto flex items-center justify-center w-8 h-7 px-2 py-1.5 rounded-lg border-none cursor-pointer text-v2-text-text-base backdrop-blur-[2px] transition-[transform,background-color,box-shadow] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus active:scale-[0.97] motion-reduce:transition-none motion-reduce:transform-none"
+                style={{
+                  background: "color-mix(in srgb, var(--v2-background-bg-base) 92%, transparent)",
+                  "box-shadow": "var(--v2-elevation-raised), 0px 2px 8px var(--v2-background-bg-base)",
+                }}
+                onClick={props.onResumeScroll}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path
+                    d="M12.3333 8.66665L8 13L3.66667 8.66665M8 12.6667V2.83332"
+                    stroke="currentColor"
+                    stroke-linecap="square"
+                  />
+                </svg>
+              </button>
+            </TooltipV2>
+          </Show>
+      </div>
+      <div
+        data-slot="session-empty-brand"
+        aria-hidden="true"
+        class="pointer-events-none absolute inset-0 z-0 flex items-center justify-center overflow-hidden select-none"
+        classList={{ hidden: timelineRows().length > 0 }}
+      >
+        <div
+          class="absolute size-56 rounded-full opacity-60 md:size-64"
+          style={{
+            background:
+              "radial-gradient(circle, color-mix(in srgb, var(--v2-icon-icon-base) 4%, transparent), transparent 68%)",
+          }}
+        />
+        <Mark class="relative z-10 w-14 opacity-[0.045] md:w-16 md:opacity-[0.06]" />
       </div>
       <ScrollView
         viewportRef={bindListRoot}
@@ -1592,20 +1631,26 @@ export function MessageTimeline(props: {
                               if (open) return
                             }}
                           >
-                            <DropdownMenu.Trigger
-                              as={IconButton}
-                              icon="dot-grid"
-                              variant="ghost"
-                              class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
-                              classList={{
-                                "bg-surface-base-active": share.open || title.pendingShare,
-                              }}
-                              aria-label={language.t("common.moreOptions")}
-                              aria-expanded={title.menuOpen || share.open || title.pendingShare}
-                              ref={(el: HTMLButtonElement) => {
-                                more = el
-                              }}
-                            />
+                            <Tooltip
+                              value={language.t("common.moreOptions")}
+                              placement="bottom"
+                              class="flex items-center"
+                            >
+                              <DropdownMenu.Trigger
+                                as={IconButton}
+                                icon="dot-grid"
+                                variant="ghost"
+                                class="size-6 rounded-md data-[expanded]:bg-surface-base-active transition-[background-color,transform] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus active:scale-[0.97] motion-reduce:transition-none motion-reduce:transform-none"
+                                classList={{
+                                  "bg-surface-base-active": share.open || title.pendingShare,
+                                }}
+                                aria-label={language.t("common.moreOptions")}
+                                aria-expanded={title.menuOpen || share.open || title.pendingShare}
+                                ref={(el: HTMLButtonElement) => {
+                                  more = el
+                                }}
+                              />
+                            </Tooltip>
                             <DropdownMenu.Portal>
                               <DropdownMenu.Content
                                 style={{ "min-width": "104px" }}
@@ -1675,18 +1720,24 @@ export function MessageTimeline(props: {
                             if (open) return
                           }}
                         >
-                          <MenuV2.Trigger
-                            as={IconButtonV2}
-                            icon={<IconV2 name="outline-dots" />}
-                            variant="ghost-muted"
-                            size="large"
-                            state={share.open || title.pendingShare ? "pressed" : undefined}
-                            aria-label={language.t("common.moreOptions")}
-                            aria-expanded={title.menuOpen || share.open || title.pendingShare}
-                            ref={(el: HTMLButtonElement) => {
-                              more = el
-                            }}
-                          />
+                          <TooltipV2
+                            value={language.t("common.moreOptions")}
+                            placement="bottom"
+                            class="flex items-center"
+                          >
+                            <MenuV2.Trigger
+                              as={IconButtonV2}
+                              icon={<IconV2 name="outline-dots" />}
+                              variant="ghost-muted"
+                              size="large"
+                              state={share.open || title.pendingShare ? "pressed" : undefined}
+                              aria-label={language.t("common.moreOptions")}
+                              aria-expanded={title.menuOpen || share.open || title.pendingShare}
+                              ref={(el: HTMLButtonElement) => {
+                                more = el
+                              }}
+                            />
+                          </TooltipV2>
                           <MenuV2.Portal>
                             <MenuV2.Content
                               style={{ width: "120px", "min-width": "120px" }}
@@ -1897,23 +1948,35 @@ export function MessageTimeline(props: {
                                       >
                                         {shareUrl()}
                                       </div>
-                                      <IconButtonV2
-                                        type="button"
-                                        size="small"
-                                        variant="ghost-muted"
-                                        icon={<IconV2 name="outline-copy" />}
-                                        aria-label={language.t("session.share.copy.copyLink")}
-                                        onClick={copyShareUrl}
-                                      />
-                                      <IconButtonV2
-                                        type="button"
-                                        size="small"
-                                        variant="ghost-muted"
-                                        icon={<IconV2 name="outline-square-arrow" />}
-                                        aria-label={language.t("session.share.action.view")}
-                                        onClick={viewShare}
-                                        disabled={unshareMutation.isPending}
-                                      />
+                                      <TooltipV2
+                                        value={language.t("session.share.copy.copyLink")}
+                                        placement="bottom"
+                                        class="flex items-center"
+                                      >
+                                        <IconButtonV2
+                                          type="button"
+                                          size="small"
+                                          variant="ghost-muted"
+                                          icon={<IconV2 name="outline-copy" />}
+                                          aria-label={language.t("session.share.copy.copyLink")}
+                                          onClick={copyShareUrl}
+                                        />
+                                      </TooltipV2>
+                                      <TooltipV2
+                                        value={language.t("session.share.action.view")}
+                                        placement="bottom"
+                                        class="flex items-center"
+                                      >
+                                        <IconButtonV2
+                                          type="button"
+                                          size="small"
+                                          variant="ghost-muted"
+                                          icon={<IconV2 name="outline-square-arrow" />}
+                                          aria-label={language.t("session.share.action.view")}
+                                          onClick={viewShare}
+                                          disabled={unshareMutation.isPending}
+                                        />
+                                      </TooltipV2>
                                     </div>
                                     <div class="flex w-full">
                                       <ButtonV2

@@ -13,7 +13,21 @@
   user-select: none;
   outline: none;
   padding: 0;
-  cursor: default;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    background-image 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    opacity 120ms ease,
+    transform 120ms ease;
+  transform-origin: center;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  [data-component="icon-button-v2"]:is(:active, [data-state="pressed"]):not(:disabled) {
+    transform: scale(0.97);
+  }
 }
 
 [data-component="icon-button-v2"]:focus {

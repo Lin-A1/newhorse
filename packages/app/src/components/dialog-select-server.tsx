@@ -6,6 +6,7 @@ import { Icon } from "@newhorse/ui/icon"
 import { IconButton } from "@newhorse/ui/icon-button"
 import { List } from "@newhorse/ui/list"
 import { TextField } from "@newhorse/ui/text-field"
+import { Tooltip } from "@newhorse/ui/tooltip"
 import { useMutation } from "@tanstack/solid-query"
 import { showToast } from "@/utils/toast"
 import { useNavigate } from "@solidjs/router"
@@ -497,7 +498,9 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     if (!isFormMode()) return language.t("dialog.server.title")
     return (
       <div class="flex items-center gap-2 -ml-2">
-        <IconButton icon="arrow-left" variant="ghost" onClick={resetForm} aria-label={language.t("common.goBack")} />
+        <Tooltip placement="bottom" value={language.t("common.goBack")}>
+          <IconButton icon="arrow-left" variant="ghost" onClick={resetForm} aria-label={language.t("common.goBack")} />
+        </Tooltip>
         <span>{isAddMode() ? language.t("dialog.server.add.title") : language.t("dialog.server.edit.title")}</span>
       </div>
     )

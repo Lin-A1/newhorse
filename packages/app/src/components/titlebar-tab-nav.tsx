@@ -307,7 +307,7 @@ export function TabNavItem(props: {
         <IconButtonV2
           size="small"
           variant="ghost-muted"
-          class="hover-reveal relative z-10 group-hover:opacity-100 group-data-[active=true]:opacity-100 group-data-[editing=true]:opacity-100"
+          class="hover-reveal relative z-10 group-hover:opacity-100 group-data-[active=true]:opacity-100 group-data-[editing=true]:opacity-100 focus-visible:opacity-100"
           onPointerDown={(event) => {
             event.preventDefault()
             event.stopPropagation()
@@ -422,7 +422,7 @@ export function DraftTabItem(props: {
             event.preventDefault()
             event.stopPropagation()
           }}
-          class="hover-reveal relative z-10 group-hover:opacity-100 group-data-[active=true]:opacity-100 group-data-[editing=true]:opacity-100"
+          class="hover-reveal relative z-10 group-hover:opacity-100 group-data-[active=true]:opacity-100 group-data-[editing=true]:opacity-100 focus-visible:opacity-100"
           onClick={closeTab}
           icon={<IconV2 name="xmark-small" />}
           aria-label={language.t("common.closeTab")}

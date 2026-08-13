@@ -325,16 +325,16 @@ export function SessionHeader() {
             <Show
               when={isV2}
               fallback={
-                <div class="flex items-center gap-2">
+                <div data-slot="session-header-actions" class="flex items-center gap-1.5">
                   <Show when={projectDirectory()}>
-                    <div class="hidden xl:flex items-center">
+                    <div class="hidden xl:flex items-center mr-0.5">
                       <Show
                         when={canOpen()}
                         fallback={
                           <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-panel overflow-hidden">
                             <Button
                               variant="ghost"
-                              class="rounded-none h-full py-0 pr-3 pl-0.5 gap-1.5 border-none shadow-none"
+                              class="rounded-none h-full py-0 pr-3 pl-0.5 gap-1.5 border-none shadow-none transition-[background-color,color] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus motion-reduce:transition-none"
                               onClick={copyPath}
                               aria-label={language.t("session.header.open.copyPath")}
                             >
@@ -350,7 +350,7 @@ export function SessionHeader() {
                           <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-panel overflow-hidden">
                             <Button
                               variant="ghost"
-                              class="rounded-none h-full px-0.5 border-none shadow-none disabled:!cursor-default"
+                              class="rounded-none h-full px-0.5 border-none shadow-none transition-[background-color,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus active:scale-[0.96] disabled:!cursor-default motion-reduce:transition-none motion-reduce:transform-none"
                               classList={{
                                 "bg-surface-raised-base-active": opening(),
                               }}
@@ -370,17 +370,23 @@ export function SessionHeader() {
                               open={menu.open}
                               onOpenChange={(open) => setMenu("open", open)}
                             >
-                              <DropdownMenu.Trigger
-                                as={IconButton}
-                                icon="chevron-down"
-                                variant="ghost"
-                                disabled={opening()}
-                                class="rounded-none h-full w-[20px] p-0 border-none shadow-none data-[expanded]:bg-surface-raised-base-active disabled:!cursor-default"
-                                classList={{
-                                  "bg-surface-raised-base-active": opening(),
-                                }}
-                                aria-label={language.t("session.header.open.menu")}
-                              />
+                              <Tooltip
+                                placement="bottom"
+                                value={language.t("session.header.open.menu")}
+                                class="flex items-center"
+                              >
+                                <DropdownMenu.Trigger
+                                  as={IconButton}
+                                  icon="chevron-down"
+                                  variant="ghost"
+                                  disabled={opening()}
+                                  class="rounded-none h-full w-[20px] p-0 border-none shadow-none transition-[background-color,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus active:scale-[0.96] data-[expanded]:bg-surface-raised-base-active disabled:!cursor-default motion-reduce:transition-none motion-reduce:transform-none"
+                                  classList={{
+                                    "bg-surface-raised-base-active": opening(),
+                                  }}
+                                  aria-label={language.t("session.header.open.menu")}
+                                />
+                              </Tooltip>
                               <DropdownMenu.Portal>
                                 <DropdownMenu.Content class="[&_[data-slot=dropdown-menu-item]]:pl-1 [&_[data-slot=dropdown-menu-radio-item]]:pl-1 [&_[data-slot=dropdown-menu-radio-item]+[data-slot=dropdown-menu-radio-item]]:mt-1">
                                   <DropdownMenu.Group>
@@ -439,7 +445,7 @@ export function SessionHeader() {
                       </Show>
                     </div>
                   </Show>
-                  <div class="flex items-center gap-1">
+                  <div class="flex items-center gap-0.5 shrink-0">
                     <Show when={status()}>
                       <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
                         <StatusPopover />
@@ -451,7 +457,7 @@ export function SessionHeader() {
                     >
                       <Button
                         variant="ghost"
-                        class="group/terminal-toggle titlebar-icon w-8 h-6 p-0 box-border shrink-0"
+                        class="group/terminal-toggle titlebar-icon w-8 h-6 p-0 box-border shrink-0 transition-[background-color,color,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus active:scale-[0.96] motion-reduce:transition-none motion-reduce:transform-none"
                         onClick={toggleTerminal}
                         aria-label={language.t("command.terminal.toggle")}
                         aria-expanded={view().terminal.opened()}
@@ -468,7 +474,7 @@ export function SessionHeader() {
                       >
                         <Button
                           variant="ghost"
-                          class="group/review-toggle titlebar-icon w-8 h-6 p-0 box-border"
+                          class="group/review-toggle titlebar-icon w-8 h-6 p-0 box-border transition-[background-color,color,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus active:scale-[0.96] motion-reduce:transition-none motion-reduce:transform-none"
                           onClick={() => view().reviewPanel.toggle()}
                           aria-label={language.t("command.review.toggle")}
                           aria-expanded={view().reviewPanel.opened()}
@@ -484,7 +490,7 @@ export function SessionHeader() {
                       >
                         <Button
                           variant="ghost"
-                          class="titlebar-icon w-8 h-6 p-0 box-border"
+                          class="titlebar-icon w-8 h-6 p-0 box-border transition-[background-color,color,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus active:scale-[0.96] motion-reduce:transition-none motion-reduce:transform-none"
                           onClick={() => layout.fileTree.toggle()}
                           aria-label={language.t("command.fileTree.toggle")}
                           aria-expanded={layout.fileTree.opened()}
@@ -530,7 +536,7 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
   const language = useLanguage()
 
   return (
-    <div class="flex items-center gap-2">
+    <div data-slot="session-header-v2-actions" class="flex items-center gap-1 rounded-lg">
       <Show when={props.state.statusVisible}>
         <Tooltip placement="bottom" value={props.state.statusLabel}>
           <StatusPopoverV2 />
@@ -553,7 +559,7 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             type="button"
             variant="ghost-muted"
             size="large"
-            class="!w-9 shrink-0"
+            class="!w-9 shrink-0 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-v2-border-border-focus motion-reduce:transition-none"
             state={props.state.reviewOpened ? "pressed" : undefined}
             onClick={props.state.onReviewToggle}
             aria-label={props.state.reviewLabel}

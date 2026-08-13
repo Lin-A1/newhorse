@@ -9,6 +9,7 @@ import { formatServerError } from "@/utils/server-errors"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { exportMemory } from "./settings-memory-export"
+import { MemoryHistoryPanel } from "./settings-memory-history"
 import { useMemoryCenterState, type MemoryKind, type MemoryScope, type MemoryStatus } from "./settings-memory-state"
 import { useSettings } from "@/context/settings"
 import { useConfirm } from "./confirm-dialog"
@@ -53,6 +54,8 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const [content, setContent] = createSignal("")
   const [kind, setKind] = createSignal<MemoryKind>("preference")
   const [expires, setExpires] = createSignal("")
+  const [exporting, setExporting] = createSignal(false)
+  const [auditID, setAuditID] = createSignal<string>()
 
   const fail = (error: unknown) =>
     showToast({
@@ -93,10 +96,15 @@ export function SettingsMemory(props: { sessionID?: string }) {
     void memory.clear(target).catch(fail)
   }
 
-  const exportRecords = async () => {
-    const records = await memory.exportRecords()
-    await exportMemory(records, platform, downloadJson, new Date(), settings.general.downloadPath())
+  const exportRecords = () => {
+    setExporting(true)
+    return memory
+      .exportRecords()
+      .then((records) => exportMemory(records, platform, downloadJson, new Date(), settings.general.downloadPath()))
+      .finally(() => setExporting(false))
   }
+
+  const loadHistory = (item: MemoryInfo) => memory.history(item)
 
   return (
     <div class="flex min-h-0 min-w-0 flex-col px-4 pb-10 sm:px-10 sm:pb-10">
@@ -106,14 +114,29 @@ export function SettingsMemory(props: { sessionID?: string }) {
             <h2 class="text-16-medium text-text-strong">{language.t("settings.memory.title")}</h2>
             <p class="text-12-regular text-text-weak">{language.t("settings.memory.description")}</p>
           </div>
-          <Button size="small" disabled={memory.loading()} onClick={() => void exportRecords().catch(fail)}>
+          <Button
+            size="small"
+            disabled={memory.loading() || exporting()}
+            aria-busy={exporting()}
+            onClick={() => void exportRecords().catch(fail)}
+          >
+            <Show when={exporting()}>
+              <Spinner class="size-3.5 shrink-0" />
+            </Show>
             {language.t("common.export")}
           </Button>
         </div>
       </div>
 
       <div class="flex flex-col gap-4 max-w-[720px]">
-        <Show when={!memory.loading()} fallback={<div>{language.t("settings.memory.loading")}</div>}>
+        <Show
+          when={!memory.loading()}
+          fallback={
+            <div role="status" aria-live="polite" data-state="loading">
+              {language.t("settings.memory.loading")}
+            </div>
+          }
+        >
           <Show
             when={!memory.ready.error}
             fallback={
@@ -127,7 +150,11 @@ export function SettingsMemory(props: { sessionID?: string }) {
           >
             <Show
               when={memory.state.items.length > 0}
-              fallback={<div class="text-14-regular text-text-weak">{language.t("settings.memory.empty")}</div>}
+              fallback={
+                <div role="status" aria-live="polite" data-state="empty" class="text-14-regular text-text-weak">
+                  {language.t("settings.memory.empty")}
+                </div>
+              }
             >
             <For each={memory.state.items}>
               {(item) => (
@@ -228,7 +255,19 @@ export function SettingsMemory(props: { sessionID?: string }) {
                     >
                       {language.t("common.delete")}
                     </Button>
+                    <Button
+                      size="small"
+                      aria-expanded={auditID() === item.id}
+                      onClick={() => setAuditID(auditID() === item.id ? undefined : item.id)}
+                    >
+                      {auditID() === item.id
+                        ? language.t("settings.memory.audit.hide")
+                        : language.t("settings.memory.audit.view")}
+                    </Button>
                   </div>
+                  <Show when={auditID() === item.id}>
+                    <MemoryHistoryPanel item={item} load={loadHistory} />
+                  </Show>
                 </article>
               )}
             </For>

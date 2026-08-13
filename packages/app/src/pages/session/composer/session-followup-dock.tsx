@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { Button } from "@newhorse/ui/button"
 import { DockTray } from "@newhorse/ui/dock-surface"
 import { IconButton } from "@newhorse/ui/icon-button"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 
 export function SessionFollowupDock(props: {
@@ -35,11 +36,14 @@ export function SessionFollowupDock(props: {
       }}
     >
       <div
-        class="pl-3 pr-2 py-2 flex items-center gap-2"
+        class="pl-3 pr-2 py-2 flex items-center gap-2 rounded-[6px] transition-[background-color,box-shadow] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-v2-border-border-focus"
         role="button"
         tabIndex={0}
+        aria-expanded={!store.collapsed}
+        data-state={store.collapsed ? "collapsed" : "expanded"}
         onClick={toggle}
         onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return
           if (event.key !== "Enter" && event.key !== " ") return
           event.preventDefault()
           toggle()
@@ -50,24 +54,31 @@ export function SessionFollowupDock(props: {
           <span class="min-w-0 flex-1 truncate text-13-regular text-text-base cursor-default">{preview()}</span>
         </Show>
         <div class="ml-auto shrink-0">
-          <IconButton
-            data-collapsed={store.collapsed ? "true" : "false"}
-            icon="chevron-down"
-            size="normal"
-            variant="ghost"
-            style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}
-            onMouseDown={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-            }}
-            onClick={(event) => {
-              event.stopPropagation()
-              toggle()
-            }}
-            aria-label={
-              store.collapsed ? language.t("session.followupDock.expand") : language.t("session.followupDock.collapse")
-            }
-          />
+          <TooltipV2
+            placement="bottom"
+            value={store.collapsed ? language.t("session.followupDock.expand") : language.t("session.followupDock.collapse")}
+            class="flex items-center"
+          >
+            <IconButton
+              data-collapsed={store.collapsed ? "true" : "false"}
+              icon="chevron-down"
+              size="normal"
+              variant="ghost"
+              class="transition-[background-color,color,transform,opacity] duration-150 ease-out active:bg-v2-overlay-simple-overlay-pressed active:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus motion-reduce:transition-none"
+              style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}
+              onMouseDown={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                toggle()
+              }}
+              aria-label={
+                store.collapsed ? language.t("session.followupDock.expand") : language.t("session.followupDock.collapse")
+              }
+            />
+          </TooltipV2>
         </div>
       </div>
 

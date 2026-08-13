@@ -8,6 +8,7 @@ import { Dialog as DialogV2, DialogBody, DialogHeader, DialogTitleGroup } from "
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
 import { IconButtonV2 } from "@newhorse/ui/v2/icon-button-v2"
 import { TextInputV2 } from "@newhorse/ui/v2/text-input-v2"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { Switch as SwitchV2 } from "@newhorse/ui/v2/switch-v2"
 import { ProviderIcon } from "@newhorse/ui/provider-icon"
 import { useFilteredList } from "@newhorse/ui/hooks"
@@ -185,15 +186,17 @@ export const DialogManageModelsV2: Component = () => {
               aria-label={language.t("dialog.model.search.placeholder")}
             />
             <Show when={list.filter()}>
-              <IconButtonV2
-                type="button"
-                variant="ghost-muted"
-                size="small"
-                class="settings-v2-tab-search-clear"
-                icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
-                onClick={() => list.clear()}
-                aria-label={language.t("common.clear")}
-              />
+              <TooltipV2 placement="bottom" value={language.t("common.clear")}>
+                <IconButtonV2
+                  type="button"
+                  variant="ghost-muted"
+                  size="small"
+                  class="settings-v2-tab-search-clear"
+                  icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
+                  onClick={() => list.clear()}
+                  aria-label={language.t("common.clear")}
+                />
+              </TooltipV2>
             </Show>
           </div>
         </div>

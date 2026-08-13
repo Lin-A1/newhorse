@@ -105,7 +105,7 @@ const SHOW_HOME_SESSION_ARCHIVE = false
 const HOME_ROW_LAYOUT =
   "flex min-w-0 w-full shrink-0 cursor-default items-center rounded-[6px] bg-transparent text-left transition-[background-color,color,box-shadow] duration-[120ms] ease-in-out focus-visible:outline-none"
 const HOME_ROW_BASE = `${HOME_ROW_LAYOUT} border-0`
-const HOME_ROW = `${HOME_ROW_BASE} [font-weight:530] text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover`
+const HOME_ROW = `${HOME_ROW_BASE} [font-weight:530] text-v2-text-text-muted hover:bg-v2-overlay-simple-overlay-hover active:bg-v2-background-bg-layer-03 focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:[box-shadow:inset_0_0_0_1px_var(--v2-border-border-focus)]`
 const HOME_PROJECT_NAV_LABEL = "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
 const HOME_PROJECT_NAV_ROW = `${HOME_ROW_LAYOUT} h-7 gap-2 px-1.5 [font-weight:440] text-v2-text-text-muted hover:bg-v2-background-bg-layer-01 hover:text-v2-text-text-base hover:[box-shadow:inset_0_0_0_0.5px_var(--v2-border-border-muted)] data-[selected]:bg-v2-background-bg-layer-03 data-[selected]:text-v2-text-text-base data-[selected]:[box-shadow:inset_0_0_0_0.5px_var(--v2-border-border-muted)] data-[selected]:hover:bg-v2-background-bg-layer-03 focus-visible:bg-v2-background-bg-layer-01 focus-visible:text-v2-text-text-base focus-visible:[box-shadow:inset_0_0_0_0.5px_var(--v2-border-border-muted)]`
 const HOME_SECTION_LABEL = "text-v2-text-text-muted [font-weight:440]"
@@ -691,7 +691,7 @@ export function NewHome() {
             aria-label={language.t("sidebar.project.recentSessions")}
           >
             <div
-              class="sticky top-0 z-30 shrink-0 bg-v2-background-bg-base pb-3 pt-6 lg:pt-12"
+              class="sticky top-0 z-30 shrink-0 bg-v2-background-bg-base pb-3 pt-6 lg:pt-8"
               onWheel={(event) => {
                 if (sessionViewport) containHomeWheel(event, sessionViewport)
               }}
@@ -835,7 +835,7 @@ function HomeProjectColumn(props: {
 
   return (
     <aside
-      class="mt-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden lg:sticky lg:top-14 lg:mt-14 lg:h-[calc(100cqh-56px)] lg:self-start lg:pt-[52px]"
+      class="mt-6 flex min-h-0 min-w-0 flex-col gap-4 overflow-hidden lg:sticky lg:top-14 lg:mt-8 lg:h-[calc(100cqh-56px)] lg:self-start lg:pt-[32px]"
       aria-label={props.language.t("home.projects")}
       onWheel={(event) => {
         if (event.target === event.currentTarget) return
@@ -1392,7 +1392,12 @@ function HomeSessionLeading(props: {
         fallback={
           // With a single project the avatar is already shown in the project
           // column, so a neutral marker avoids duplicating it on every row.
-          <span class="block size-4 rounded-[3px] bg-v2-background-bg-layer-02" aria-hidden="true" />
+          <span
+            class="flex size-4 items-center justify-center rounded-[3px] text-v2-icon-icon-muted"
+            aria-hidden="true"
+          >
+            <IconV2 name="workspace-isolated" size="small" />
+          </span>
         }
       >
         <SessionTabAvatar
@@ -1549,7 +1554,7 @@ function HomeSessionSearch(props: {
             </div>
           </div>
         </Show>
-        <label class="relative z-20 flex h-9 w-full items-center gap-2 rounded-[6px] bg-v2-background-bg-layer-02/60 py-1 pl-3 pr-2 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out hover:bg-v2-background-bg-layer-02 focus-within:bg-v2-background-bg-layer-02">
+        <label class="relative z-20 flex h-9 w-full items-center gap-2 rounded-[6px] bg-v2-background-bg-layer-02/60 py-1 pl-3 pr-2 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out hover:bg-v2-background-bg-layer-02 focus-within:bg-v2-background-bg-layer-02 focus-within:[box-shadow:inset_0_0_0_1px_var(--v2-border-border-focus)]">
           <IconV2 name="magnifying-glass" />
           <input
             ref={input}
@@ -1591,18 +1596,20 @@ function HomeSessionSearch(props: {
             }}
           />
           <Show when={props.value}>
-            <IconButtonV2
-              type="button"
-              variant="ghost-muted"
-              size="small"
-              class="relative z-20 shrink-0"
-              icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
-              aria-label={props.placeholder}
-              onClick={() => {
-                props.onClose()
-                input?.focus()
-              }}
-            />
+            <TooltipV2 placement="bottom" value={language.t("common.clear")}>
+              <IconButtonV2
+                type="button"
+                variant="ghost-muted"
+                size="small"
+                class="relative z-20 shrink-0"
+                icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
+                aria-label={language.t("common.clear")}
+                onClick={() => {
+                  props.onClose()
+                  input?.focus()
+                }}
+              />
+            </TooltipV2>
           </Show>
         </label>
       </div>

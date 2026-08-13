@@ -410,15 +410,17 @@ export function ModelSelectorPopoverV2(props: {
                 }}
               />
               <Show when={store.search.trim()}>
-                <button
-                  type="button"
-                  class="flex size-5 items-center justify-center rounded-sm text-v2-icon-icon-muted hover:bg-v2-overlay-simple-overlay-hover"
-                  onPointerDown={(event) => event.preventDefault()}
-                  onClick={() => setSearch("")}
-                  aria-label={language.t("common.clear")}
-                >
-                  <Icon name="close" size="small" />
-                </button>
+                <TooltipV2 placement="bottom" value={language.t("common.clear")}>
+                  <button
+                    type="button"
+                    class="flex size-5 items-center justify-center rounded-sm text-v2-icon-icon-muted hover:bg-v2-overlay-simple-overlay-hover"
+                    onPointerDown={(event) => event.preventDefault()}
+                    onClick={() => setSearch("")}
+                    aria-label={language.t("common.clear")}
+                  >
+                    <Icon name="close" size="small" />
+                  </button>
+                </TooltipV2>
               </Show>
             </div>
           </div>

@@ -52,11 +52,12 @@ export function SortableTabV2(props: {
               }
               placement="bottom"
               gutter={10}
+              class="flex items-center"
             >
               <IconButton
                 icon="close-small"
                 variant="ghost"
-                class="h-5 w-5"
+                class="h-5 w-5 shrink-0 transition-[background-color,box-shadow,transform] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus md:active:scale-[0.96] motion-reduce:transition-none"
                 onClick={() => props.onTabClose(props.tab)}
                 aria-label={language.t("common.closeTab")}
               />

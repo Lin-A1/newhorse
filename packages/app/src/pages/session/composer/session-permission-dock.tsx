@@ -3,6 +3,7 @@ import type { PermissionRequest } from "@newhorse/sdk/v2"
 import { Button } from "@newhorse/ui/button"
 import { DockPrompt } from "@newhorse/session-ui/dock-prompt"
 import { Icon } from "@newhorse/ui/icon"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 
 export function SessionPermissionDock(props: {
@@ -33,21 +34,49 @@ export function SessionPermissionDock(props: {
       footer={
         <>
           <div />
-          <div data-slot="permission-footer-actions">
-            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
-              {language.t("ui.permission.deny")}
-            </Button>
-            <Button
-              variant="secondary"
-              size="normal"
-              onClick={() => props.onDecide("always")}
-              disabled={props.responding}
-            >
-              {language.t("ui.permission.allowAlways")}
-            </Button>
-            <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
-              {language.t("ui.permission.allowOnce")}
-            </Button>
+          <div
+            data-slot="permission-footer-actions"
+            data-state={props.responding ? "responding" : "idle"}
+            role="group"
+            aria-label={language.t("notification.permission.title")}
+            aria-busy={props.responding}
+          >
+            <TooltipV2 placement="top" value={language.t("ui.permission.deny")} class="flex items-center">
+              <Button
+                variant="ghost"
+                size="normal"
+                onClick={() => props.onDecide("reject")}
+                disabled={props.responding}
+                class="transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus motion-reduce:transition-none motion-reduce:transform-none"
+                aria-label={language.t("ui.permission.deny")}
+              >
+                {language.t("ui.permission.deny")}
+              </Button>
+            </TooltipV2>
+            <TooltipV2 placement="top" value={language.t("ui.permission.allowAlways")} class="flex items-center">
+              <Button
+                variant="secondary"
+                size="normal"
+                onClick={() => props.onDecide("always")}
+                disabled={props.responding}
+                class="transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus motion-reduce:transition-none motion-reduce:transform-none"
+                aria-label={language.t("ui.permission.allowAlways")}
+              >
+                {language.t("ui.permission.allowAlways")}
+              </Button>
+            </TooltipV2>
+            <TooltipV2 placement="top" value={language.t("ui.permission.allowOnce")} class="flex items-center">
+              <Button
+                variant="primary"
+                size="normal"
+                onClick={() => props.onDecide("once")}
+                disabled={props.responding}
+                class="transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus motion-reduce:transition-none motion-reduce:transform-none"
+                aria-label={language.t("ui.permission.allowOnce")}
+              >
+                {language.t("ui.permission.allowOnce")}
+              </Button>
+            </TooltipV2>
           </div>
         </>
       }

@@ -46,10 +46,15 @@
   white-space: nowrap;
 }
 
-.directory-picker-v2-suggestions button:hover,
+.directory-picker-v2-suggestions button:is(:hover, :focus-visible),
 .directory-picker-v2-suggestions button[data-active] {
   color: var(--v2-text-text-base);
   background: var(--v2-overlay-simple-overlay-hover);
+}
+
+.directory-picker-v2-suggestions button:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
 }
 
 .directory-picker-v2-browser {
@@ -75,8 +80,8 @@
   --trees-selected-bg-override: transparent;
   --trees-selected-fg-override: var(--v2-text-text-base);
   --trees-selected-focused-border-color-override: transparent;
-  --trees-focus-ring-color-override: transparent;
-  --trees-focus-ring-width-override: 0px;
+  --trees-focus-ring-color-override: var(--v2-border-border-focus);
+  --trees-focus-ring-width-override: 1px;
   --trees-focus-ring-offset-override: 0px;
   --trees-border-color-override: var(--v2-border-border-base);
   --trees-font-family-override: var(--font-family-sans);

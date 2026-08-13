@@ -14,6 +14,7 @@ import { IconButton } from "@newhorse/ui/icon-button"
 import { LineCommentV2OverflowIcon } from "@newhorse/ui/v2/line-comment-v2"
 import { MenuV2 } from "@newhorse/ui/v2/menu-v2"
 import { Tabs } from "@newhorse/ui/tabs"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { ScrollView } from "@newhorse/ui/scroll-view"
 import { showToast } from "@/utils/toast"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
@@ -47,14 +48,16 @@ function FileCommentMenu(props: {
   return (
     <div onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
       <DropdownMenu gutter={4} placement="bottom-end">
-        <DropdownMenu.Trigger
-          as={IconButton}
-          icon="dot-grid"
-          variant="ghost"
-          size="small"
-          class="size-6 rounded-md"
-          aria-label={props.moreLabel}
-        />
+        <TooltipV2 value={props.moreLabel} placement="bottom" class="flex items-center">
+          <DropdownMenu.Trigger
+            as={IconButton}
+            icon="dot-grid"
+            variant="ghost"
+            size="small"
+            class="size-6 rounded-md"
+            aria-label={props.moreLabel}
+          />
+        </TooltipV2>
         <DropdownMenu.Portal>
           <DropdownMenu.Content>
             <DropdownMenu.Item onSelect={props.onEdit}>
@@ -80,9 +83,11 @@ function FileCommentMenuV2(props: {
   return (
     <div onMouseDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
       <MenuV2 gutter={4}>
-        <MenuV2.Trigger as="button" type="button" data-slot="line-comment-v2-overflow" aria-label={props.moreLabel}>
-          <LineCommentV2OverflowIcon />
-        </MenuV2.Trigger>
+        <TooltipV2 value={props.moreLabel} placement="bottom" class="flex items-center">
+          <MenuV2.Trigger as="button" type="button" data-slot="line-comment-v2-overflow" aria-label={props.moreLabel}>
+            <LineCommentV2OverflowIcon />
+          </MenuV2.Trigger>
+        </TooltipV2>
         <MenuV2.Portal>
           <MenuV2.Content>
             <MenuV2.Item onSelect={props.onEdit}>{props.editLabel}</MenuV2.Item>

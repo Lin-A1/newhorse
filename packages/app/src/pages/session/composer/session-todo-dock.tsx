@@ -3,6 +3,7 @@ import { AnimatedNumber } from "@newhorse/ui/animated-number"
 import { Checkbox } from "@newhorse/ui/checkbox"
 import { DockTray } from "@newhorse/ui/dock-surface"
 import { IconButton } from "@newhorse/ui/icon-button"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { useSpring } from "@newhorse/ui/motion-spring"
 import { TextReveal } from "@newhorse/ui/text-reveal"
 import { TextStrikethrough } from "@newhorse/ui/text-strikethrough"
@@ -111,12 +112,15 @@ export function SessionTodoDock(props: {
         <div
           data-action="session-todo-toggle"
           classList={{
-            "flex items-center gap-2 overflow-visible": true,
+            "flex cursor-pointer items-center gap-2 overflow-visible rounded-[6px] transition-[background-color,box-shadow,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover active:scale-[0.995] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus motion-reduce:transition-none motion-reduce:transform-none":
+              true,
             "h-[42px] pl-4 pr-2": settings.general.newLayoutDesigns(),
             "pl-3 pr-2 py-2": !settings.general.newLayoutDesigns(),
           }}
           role="button"
           tabIndex={0}
+          aria-expanded={!props.collapsed}
+          data-state={props.collapsed ? "collapsed" : "expanded"}
           onClick={props.onToggle}
           onKeyDown={(event) => {
             if (event.key !== "Enter" && event.key !== " ") return
@@ -177,24 +181,32 @@ export function SessionTodoDock(props: {
               truncate
             />
           </div>
-          <div class="ml-auto">
-            <IconButton
-              data-action="session-todo-toggle-button"
-              data-collapsed={props.collapsed ? "true" : "false"}
-              icon="chevron-down"
-              size="normal"
-              variant="ghost"
-              style={{ transform: `rotate(${turn() * 180}deg)` }}
-              onMouseDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              onClick={(event) => {
-                event.stopPropagation()
-                props.onToggle()
-              }}
-              aria-label={props.collapsed ? props.expandLabel : props.collapseLabel}
-            />
+          <div class="ml-auto shrink-0">
+            <TooltipV2
+              placement="bottom"
+              value={props.collapsed ? props.expandLabel : props.collapseLabel}
+              class="flex items-center"
+            >
+              <IconButton
+                data-action="session-todo-toggle-button"
+                data-collapsed={props.collapsed ? "true" : "false"}
+                icon="chevron-down"
+                size="normal"
+                variant="ghost"
+                class="transition-[background-color,box-shadow,opacity,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus active:opacity-75 motion-reduce:transition-none"
+                style={{ transform: `rotate(${turn() * 180}deg)` }}
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  props.onToggle()
+                }}
+                aria-expanded={!props.collapsed}
+                aria-label={props.collapsed ? props.expandLabel : props.collapseLabel}
+              />
+            </TooltipV2>
           </div>
         </div>
 
@@ -232,36 +244,38 @@ function TodoList(props: { todos: Todo[] }) {
       >
         <Index each={props.todos}>
           {(todo) => (
-            <Checkbox
-              readOnly
-              checked={todo().status === "completed"}
-              indeterminate={todo().status === "in_progress"}
-              data-in-progress={todo().status === "in_progress" ? "" : undefined}
-              data-state={todo().status}
-              icon={dot(todo().status)}
-              style={{
-                "--checkbox-align": "flex-start",
-                "--checkbox-offset": "1px",
-                transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                opacity: todo().status === "pending" ? "0.94" : "1",
-              }}
-            >
-              <TextStrikethrough
-                active={todo().status === "completed" || todo().status === "cancelled"}
-                text={todo().content}
-                class="text-14-regular min-w-0 break-words"
+            <div class="min-w-0 rounded-md px-1.5 py-1 transition-[background-color,opacity] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover motion-reduce:transition-none">
+              <Checkbox
+                readOnly
+                checked={todo().status === "completed"}
+                indeterminate={todo().status === "in_progress"}
+                data-in-progress={todo().status === "in_progress" ? "" : undefined}
+                data-state={todo().status}
+                icon={dot(todo().status)}
                 style={{
-                  "line-height": "var(--line-height-normal)",
-                  transition:
-                    "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                  color:
-                    todo().status === "completed" || todo().status === "cancelled"
-                      ? "var(--text-weak)"
-                      : "var(--text-strong)",
-                  opacity: todo().status === "pending" ? "0.92" : "1",
+                  "--checkbox-align": "flex-start",
+                  "--checkbox-offset": "1px",
+                  transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+                  opacity: todo().status === "pending" ? "0.94" : "1",
                 }}
-              />
-            </Checkbox>
+              >
+                <TextStrikethrough
+                  active={todo().status === "completed" || todo().status === "cancelled"}
+                  text={todo().content}
+                  class="text-14-regular min-w-0 break-words"
+                  style={{
+                    "line-height": "var(--line-height-normal)",
+                    transition:
+                      "color 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1)), opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+                    color:
+                      todo().status === "completed" || todo().status === "cancelled"
+                        ? "var(--text-weak)"
+                        : "var(--text-strong)",
+                    opacity: todo().status === "pending" ? "0.92" : "1",
+                  }}
+                />
+              </Checkbox>
+            </div>
           )}
         </Index>
       </div>

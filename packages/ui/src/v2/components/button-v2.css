@@ -22,10 +22,22 @@
   user-select: none;
   cursor: pointer;
   outline: none;
+  transition:
+    background-color 120ms ease,
+    background-image 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    opacity 120ms ease,
+    transform 120ms ease;
+  transform-origin: center;
 }
 
 [data-component="button-v2"]:focus {
   outline: none;
+}
+
+[data-component="button-v2"]:is(:active, [data-state="pressed"]):not(:disabled):not([data-variant="loading"]) {
+  transform: scale(0.97);
 }
 
 [data-component="button-v2"]:is(:focus-visible, [data-state="focus"]):not(:disabled):not([data-variant="loading"]) {

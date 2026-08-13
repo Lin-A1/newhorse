@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/solid-query"
 import { Button } from "@newhorse/ui/button"
 import { DockPrompt } from "@newhorse/session-ui/dock-prompt"
 import { Icon } from "@newhorse/ui/icon"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { useSpring } from "@newhorse/ui/motion-spring"
 import { showToast } from "@/utils/toast"
 import type { QuestionAnswer, QuestionRequest } from "@newhorse/sdk/v2"
@@ -46,6 +47,7 @@ function Option(props: {
       data-picked={props.picked}
       role={props.multi ? "checkbox" : "radio"}
       aria-checked={props.picked}
+      class="transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus active:scale-[0.995] motion-reduce:transition-none motion-reduce:transform-none"
       disabled={props.disabled}
       onFocus={props.onFocus}
       onClick={props.onClick}
@@ -464,32 +466,48 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 <div data-slot="question-progress">
                   <For each={questions()}>
                     {(_, i) => (
-                      <button
-                        type="button"
-                        data-slot="question-progress-segment"
-                        data-active={i() === store.tab}
-                        data-answered={answered(i())}
-                        disabled={sending()}
-                        onClick={() => jump(i())}
-                        aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
-                      />
+                      <TooltipV2
+                        placement="bottom"
+                        value={`${language.t("ui.tool.questions")} ${i() + 1}`}
+                        class="flex items-center"
+                      >
+                        <button
+                          type="button"
+                          data-slot="question-progress-segment"
+                          data-active={i() === store.tab}
+                          data-answered={answered(i())}
+                          disabled={sending()}
+                          class="focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus"
+                          onClick={() => jump(i())}
+                          aria-current={i() === store.tab ? "step" : undefined}
+                          aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
+                        />
+                      </TooltipV2>
                     )}
                   </For>
                 </div>
               </Show>
-              <button
-                type="button"
-                data-component="icon-button"
-                data-icon="chevron-down"
-                data-size="normal"
-                data-variant="ghost"
-                disabled={sending()}
-                style={{ transform: `rotate(${hidden() * 180}deg)` }}
-                onClick={store.minimized ? restore : minimize}
-                aria-label={language.t(store.minimized ? "session.question.restore" : "session.question.minimize")}
+              <TooltipV2
+                placement="bottom"
+                value={language.t(store.minimized ? "session.question.restore" : "session.question.minimize")}
+                class="flex items-center"
               >
-                <Icon name="chevron-down" size="small" />
-              </button>
+                <button
+                  type="button"
+                  data-component="icon-button"
+                  data-icon="chevron-down"
+                  data-size="normal"
+                  data-variant="ghost"
+                  disabled={sending()}
+                  class="transition-[background-color,color,transform] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus motion-reduce:transition-none"
+                  style={{ transform: `rotate(${hidden() * 180}deg)` }}
+                  onClick={store.minimized ? restore : minimize}
+                  aria-label={language.t(store.minimized ? "session.question.restore" : "session.question.minimize")}
+                  aria-expanded={!store.minimized}
+                >
+                  <Icon name="chevron-down" size="small" />
+                </button>
+              </TooltipV2>
             </div>
           </>
         }
@@ -570,6 +588,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 data-picked={on()}
                 role={multi() ? "checkbox" : "radio"}
                 aria-checked={on()}
+                class="transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus active:scale-[0.995] motion-reduce:transition-none motion-reduce:transform-none"
                 disabled={sending()}
                 onFocus={() => setStore("focus", options().length)}
                 onClick={customOpen}
@@ -585,6 +604,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
             <form
               data-slot="question-option"
               data-custom="true"
+              class="transition-[background-color,border-color,box-shadow,transform] duration-150 ease-out focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-v2-border-border-focus active:scale-[0.995] motion-reduce:transition-none motion-reduce:transform-none"
               data-picked={on()}
               role={multi() ? "checkbox" : "radio"}
               aria-checked={on()}
@@ -608,6 +628,8 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 <textarea
                   ref={focusCustom}
                   data-slot="question-custom-input"
+                  aria-label={customLabel()}
+                  aria-multiline="true"
                   placeholder={customPlaceholder()}
                   value={input()}
                   rows={1}

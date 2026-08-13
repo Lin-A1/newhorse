@@ -5,6 +5,7 @@ import { IconButton } from "@newhorse/ui/icon-button"
 import { ProviderIcon } from "@newhorse/ui/provider-icon"
 import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@newhorse/ui/text-field"
+import { Tooltip } from "@newhorse/ui/tooltip"
 import { showToast } from "@/utils/toast"
 import { batch, For } from "solid-js"
 import { createStore, produce } from "solid-js/store"
@@ -251,15 +252,17 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
                     error={m.err.name}
                   />
                 </div>
-                <IconButton
-                  type="button"
-                  icon="trash"
-                  variant="ghost"
-                  class="mt-1.5"
-                  onClick={() => removeModel(i())}
-                  disabled={form.models.length <= 1}
-                  aria-label={language.t("provider.custom.models.remove")}
-                />
+                <Tooltip placement="bottom" value={language.t("provider.custom.models.remove")}>
+                  <IconButton
+                    type="button"
+                    icon="trash"
+                    variant="ghost"
+                    class="mt-1.5"
+                    onClick={() => removeModel(i())}
+                    disabled={form.models.length <= 1}
+                    aria-label={language.t("provider.custom.models.remove")}
+                  />
+                </Tooltip>
               </div>
             )}
           </For>
@@ -295,15 +298,17 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
                     error={h.err.value}
                   />
                 </div>
-                <IconButton
-                  type="button"
-                  icon="trash"
-                  variant="ghost"
-                  class="mt-1.5"
-                  onClick={() => removeHeader(i())}
-                  disabled={form.headers.length <= 1}
-                  aria-label={language.t("provider.custom.headers.remove")}
-                />
+                <Tooltip placement="bottom" value={language.t("provider.custom.headers.remove")}>
+                  <IconButton
+                    type="button"
+                    icon="trash"
+                    variant="ghost"
+                    class="mt-1.5"
+                    onClick={() => removeHeader(i())}
+                    disabled={form.headers.length <= 1}
+                    aria-label={language.t("provider.custom.headers.remove")}
+                  />
+                </Tooltip>
               </div>
             )}
           </For>

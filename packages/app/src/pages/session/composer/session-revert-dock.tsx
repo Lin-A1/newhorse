@@ -6,6 +6,7 @@ import { IconButton } from "@newhorse/ui/icon-button"
 import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
 import { IconButtonV2 } from "@newhorse/ui/v2/icon-button-v2"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 
@@ -48,9 +49,11 @@ export function SessionRevertDock(props: {
       fallback={
         <DockTray data-component="session-revert-dock">
           <div
-            class="pl-3 pr-2 py-2 flex items-center gap-2"
+            class="pl-3 pr-2 py-2 flex items-center gap-2 rounded-[6px] transition-[background-color,box-shadow] duration-150 ease-out hover:bg-surface-base-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-border-focus motion-reduce:transition-none"
             role="button"
             tabIndex={0}
+            aria-expanded={!store.collapsed}
+            data-state={store.collapsed ? "collapsed" : "expanded"}
             onClick={toggle}
             onKeyDown={onHeaderKeyDown}
           >
@@ -59,23 +62,32 @@ export function SessionRevertDock(props: {
               <span class="min-w-0 flex-1 truncate text-14-regular text-text-base cursor-default">{preview()}</span>
             </Show>
             <div class="ml-auto shrink-0">
-              <IconButton
-                icon="chevron-down"
-                size="normal"
-                variant="ghost"
-                style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}
-                onMouseDown={(event) => {
-                  event.preventDefault()
-                  event.stopPropagation()
-                }}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  toggle()
-                }}
-                aria-label={
+              <TooltipV2
+                placement="bottom"
+                value={
                   store.collapsed ? language.t("session.revertDock.expand") : language.t("session.revertDock.collapse")
                 }
-              />
+                class="flex items-center"
+              >
+                <IconButton
+                  icon="chevron-down"
+                  size="normal"
+                  variant="ghost"
+                  class="transition-[background-color,box-shadow,transform] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus md:active:scale-[0.96] motion-reduce:transition-none motion-reduce:transform-none"
+                  style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    toggle()
+                  }}
+                  aria-label={
+                    store.collapsed ? language.t("session.revertDock.expand") : language.t("session.revertDock.collapse")
+                  }
+                />
+              </TooltipV2>
             </div>
           </div>
 
@@ -92,7 +104,7 @@ export function SessionRevertDock(props: {
                     <Button
                       size="small"
                       variant="secondary"
-                      class="shrink-0"
+                      class="shrink-0 transition-[background-color,box-shadow,transform] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus active:scale-[0.98] motion-reduce:transition-none motion-reduce:transform-none"
                       disabled={props.disabled || !!props.restoring}
                       onClick={() => props.onRestore(item.id)}
                     >
@@ -111,9 +123,11 @@ export function SessionRevertDock(props: {
         class="w-full overflow-hidden rounded-xl border-[0.5px] border-v2-border-border-base bg-v2-background-bg-layer-01"
       >
         <div
-          class="flex h-[42px] items-center gap-2 pl-4 pr-2"
+          class="flex h-[42px] items-center gap-2 rounded-[6px] pl-4 pr-2 transition-[background-color,box-shadow] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-v2-border-border-focus motion-reduce:transition-none"
           role="button"
           tabIndex={0}
+          aria-expanded={!store.collapsed}
+          data-state={store.collapsed ? "collapsed" : "expanded"}
           onClick={toggle}
           onKeyDown={onHeaderKeyDown}
         >
@@ -133,23 +147,32 @@ export function SessionRevertDock(props: {
             </span>
           </Show>
           <div class="ml-auto shrink-0">
-            <IconButtonV2
-              icon={<IconV2 name="outline-chevron-down" size="small" />}
-              size="large"
-              variant="ghost-muted"
-              style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}
-              onMouseDown={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              onClick={(event) => {
-                event.stopPropagation()
-                toggle()
-              }}
-              aria-label={
+            <TooltipV2
+              placement="bottom"
+              value={
                 store.collapsed ? language.t("session.revertDock.expand") : language.t("session.revertDock.collapse")
               }
-            />
+              class="flex items-center"
+            >
+              <IconButtonV2
+                icon={<IconV2 name="outline-chevron-down" size="small" />}
+                size="large"
+                variant="ghost-muted"
+                class="transition-[background-color,box-shadow,transform] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus md:active:scale-[0.96] motion-reduce:transition-none motion-reduce:transform-none"
+                style={{ transform: `rotate(${store.collapsed ? 180 : 0}deg)` }}
+                onMouseDown={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  toggle()
+                }}
+                aria-label={
+                  store.collapsed ? language.t("session.revertDock.expand") : language.t("session.revertDock.collapse")
+                }
+              />
+            </TooltipV2>
           </div>
         </div>
 
@@ -170,7 +193,7 @@ export function SessionRevertDock(props: {
                   <ButtonV2
                     size="small"
                     variant="neutral"
-                    class="shrink-0"
+                    class="shrink-0 transition-[background-color,box-shadow,transform] duration-150 ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus active:scale-[0.98] motion-reduce:transition-none motion-reduce:transform-none"
                     disabled={props.disabled || !!props.restoring}
                     onClick={() => props.onRestore(item.id)}
                   >

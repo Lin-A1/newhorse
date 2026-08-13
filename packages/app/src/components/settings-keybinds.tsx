@@ -8,6 +8,7 @@ import { TextField } from "@newhorse/ui/text-field"
 import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
 import { IconButtonV2 } from "@newhorse/ui/v2/icon-button-v2"
 import { TextInputV2 } from "@newhorse/ui/v2/text-input-v2"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { showToast } from "@/utils/toast"
 import fuzzysort from "fuzzysort"
 import { DEFAULT_PALETTE_KEYBIND, formatKeybind, parseKeybind, useCommand } from "@/context/command"
@@ -504,7 +505,12 @@ export const SettingsKeybinds: Component<{ v2?: boolean }> = (props) => {
                   class="flex-1"
                 />
                 <Show when={store.filter}>
-                  <IconButton icon="circle-x" variant="ghost" onClick={() => setStore("filter", "")} />
+                  <IconButton
+                    icon="circle-x"
+                    variant="ghost"
+                    aria-label={language.t("common.clear")}
+                    onClick={() => setStore("filter", "")}
+                  />
                 </Show>
               </div>
             </div>
@@ -535,14 +541,17 @@ export const SettingsKeybinds: Component<{ v2?: boolean }> = (props) => {
               aria-label={language.t("settings.shortcuts.search.placeholder")}
             />
             <Show when={store.filter}>
-              <IconButtonV2
-                type="button"
-                variant="ghost-muted"
-                size="small"
-                class="settings-v2-tab-search-clear"
-                icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
-                onClick={() => setStore("filter", "")}
-              />
+              <TooltipV2 placement="bottom" value={language.t("common.clear")}>
+                <IconButtonV2
+                  type="button"
+                  variant="ghost-muted"
+                  size="small"
+                  class="settings-v2-tab-search-clear"
+                  icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
+                  onClick={() => setStore("filter", "")}
+                  aria-label={language.t("common.clear")}
+                />
+              </TooltipV2>
             </Show>
           </div>
         </div>

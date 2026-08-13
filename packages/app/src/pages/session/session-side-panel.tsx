@@ -376,11 +376,12 @@ export function SessionSidePanel(props: {
                                       keybind={command.keybind("tab.close")}
                                       placement="bottom"
                                       gutter={10}
+                                      class="flex items-center"
                                     >
                                       <IconButton
                                         icon="close-small"
                                         variant="ghost"
-                                        class="h-5 w-5"
+                                        class="h-5 w-5 shrink-0 transition-[background-color,box-shadow,transform] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus md:active:scale-[0.96] motion-reduce:transition-none"
                                         onClick={() => tabs().close("context")}
                                         aria-label={language.t("common.closeTab")}
                                       />
@@ -417,11 +418,12 @@ export function SessionSidePanel(props: {
                                             keybind={command.keybind("tab.close")}
                                             placement="bottom"
                                             gutter={10}
+                                            class="flex items-center"
                                           >
                                             <IconButton
                                               icon="close-small"
                                               variant="ghost"
-                                              class="h-5 w-5"
+                                              class="h-5 w-5 shrink-0 transition-[background-color,box-shadow,transform] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus md:active:scale-[0.96] motion-reduce:transition-none"
                                               onClick={() => tabs().close(SESSION_OPEN_FILE_TAB)}
                                               aria-label={language.t("common.closeTab")}
                                             />
@@ -455,7 +457,7 @@ export function SessionSidePanel(props: {
                                     icon="plus-small"
                                     variant="ghost"
                                     iconSize="large"
-                                    class="!rounded-md"
+                                    class="!rounded-md shrink-0 transition-[background-color,box-shadow,transform] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus md:active:scale-[0.96] motion-reduce:transition-none"
                                     onClick={() => {
                                       void import("@/components/dialog-select-file").then((x) => {
                                         dialog.show(() => <x.DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
@@ -590,11 +592,12 @@ export function SessionSidePanel(props: {
                                     }
                                     placement="bottom"
                                     gutter={10}
+                                    class="flex items-center"
                                   >
                                     <IconButton
                                       icon="close-small"
                                       variant="ghost"
-                                      class="h-5 w-5"
+                                      class="h-5 w-5 shrink-0 transition-[background-color,box-shadow,transform] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus md:active:scale-[0.96] motion-reduce:transition-none"
                                       onClick={() => tabs().close("context")}
                                       aria-label={language.t("common.closeTab")}
                                     />
@@ -637,11 +640,12 @@ export function SessionSidePanel(props: {
                                         }
                                         placement="bottom"
                                         gutter={10}
+                                        class="flex items-center"
                                       >
                                         <IconButton
                                           icon="close-small"
                                           variant="ghost"
-                                          class="h-5 w-5"
+                                          class="h-5 w-5 shrink-0 transition-[background-color,box-shadow,transform] duration-[120ms] ease-out focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus md:active:scale-[0.96] motion-reduce:transition-none"
                                           onClick={() => tabs().close(SESSION_OPEN_FILE_TAB)}
                                           aria-label={language.t("common.closeTab")}
                                         />
@@ -659,7 +663,7 @@ export function SessionSidePanel(props: {
                               )}
                             </For>
                             <div
-                              class="h-full shrink-0 sticky right-0 z-10 flex items-center justify-center"
+                              class="h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pr-3"
                               classList={{
                                 "bg-v2-background-bg-base": settings.general.newLayoutDesigns(),
                                 "bg-background-stronger": !settings.general.newLayoutDesigns(),
@@ -681,6 +685,7 @@ export function SessionSidePanel(props: {
                                   icon={<Icon name="plus-small" />}
                                   variant="ghost-muted"
                                   size="large"
+                                  class="shrink-0"
                                   onClick={() => openFileBrowser()}
                                   aria-label={language.t("command.file.open")}
                                 />

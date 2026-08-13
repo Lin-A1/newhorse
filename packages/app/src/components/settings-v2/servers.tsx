@@ -2,6 +2,7 @@ import { Tag } from "@newhorse/ui/v2/badge-v2"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
 import { IconButtonV2 } from "@newhorse/ui/v2/icon-button-v2"
 import { TextInputV2 } from "@newhorse/ui/v2/text-input-v2"
+import { TooltipV2 } from "@newhorse/ui/v2/tooltip-v2"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import fuzzysort from "fuzzysort"
 import { type Component, For, Show, createMemo } from "solid-js"
@@ -71,14 +72,17 @@ export const SettingsServersV2: Component = () => {
               aria-label={language.t("dialog.server.search.placeholder")}
             />
             <Show when={store.filter}>
-              <IconButtonV2
-                type="button"
-                variant="ghost-muted"
-                size="small"
-                class="settings-v2-tab-search-clear"
-                icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
-                onClick={() => setStore("filter", "")}
-              />
+              <TooltipV2 placement="bottom" value={language.t("common.clear")}>
+                <IconButtonV2
+                  type="button"
+                  variant="ghost-muted"
+                  size="small"
+                  class="settings-v2-tab-search-clear"
+                  icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
+                  aria-label={language.t("common.clear")}
+                  onClick={() => setStore("filter", "")}
+                />
+              </TooltipV2>
             </Show>
           </div>
         </Show>
@@ -88,7 +92,7 @@ export const SettingsServersV2: Component = () => {
         <Show
           when={filtered().length > 0 || wslServers().length > 0}
           fallback={
-            <div class="settings-v2-servers-status">
+            <div class="settings-v2-servers-status" role="status" aria-live="polite" data-state="empty">
               <span>{store.filter ? language.t("palette.empty") : language.t("dialog.server.empty")}</span>
               <Show when={store.filter}>
                 <span class="settings-v2-servers-status-filter">&quot;{store.filter}&quot;</span>

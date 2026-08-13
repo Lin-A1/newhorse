@@ -713,6 +713,36 @@
   width: 100%;
 }
 
+[data-component="dock-prompt"] {
+  [data-dock-surface="shell"] {
+    transition: box-shadow 150ms ease-out;
+  }
+
+  [data-dock-surface="shell"]:focus-within {
+    box-shadow:
+      var(--shadow-xs-border),
+      0 0 0 1px var(--v2-border-border-focus);
+  }
+
+  [data-dock-surface="tray"] {
+    transition:
+      border-color 150ms ease-out,
+      box-shadow 150ms ease-out;
+  }
+
+  [data-dock-surface="tray"]:focus-within {
+    border-color: var(--v2-border-border-focus);
+    box-shadow: var(--shadow-xs-border-hover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="dock-prompt"] [data-dock-surface="shell"],
+  [data-component="dock-prompt"] [data-dock-surface="tray"] {
+    transition: none;
+  }
+}
+
 [data-component="dock-prompt"][data-kind="permission"] {
   position: relative;
   display: flex;
@@ -892,7 +922,19 @@
       height: 2px;
       border-radius: 999px;
       background-color: var(--v2-icon-icon-muted);
-      transition: background-color 0.2s ease;
+      transition:
+        background-color 0.2s ease,
+        opacity 0.12s ease,
+        transform 0.12s ease;
+    }
+
+    &:hover:not(:disabled)::after {
+      background-color: var(--v2-icon-icon-base);
+    }
+
+    &:active:not(:disabled)::after {
+      opacity: 0.75;
+      transform: scaleX(0.92);
     }
 
     &[data-active="true"]::after {
@@ -906,6 +948,12 @@
     &:disabled {
       cursor: not-allowed;
       opacity: 0.6;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      &::after {
+        transition: none;
+      }
     }
   }
 

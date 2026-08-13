@@ -188,6 +188,14 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
           classList={{
             "-top-1": newLayout(),
           }}
+          class="after:rounded-full after:bg-v2-border-border-weak hover:after:bg-v2-border-border-focus active:after:bg-v2-border-border-focus focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus motion-reduce:transition-none"
+          role="separator"
+          aria-label={language.t("terminal.title")}
+          aria-orientation="horizontal"
+          aria-valuemin={100}
+          aria-valuemax={Math.round(max())}
+          aria-valuenow={Math.round(pane())}
+          data-state={size.active() ? "resizing" : "idle"}
           direction="vertical"
           size={pane()}
           min={100}
@@ -291,6 +299,7 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
                             iconSize="large"
                             onClick={() => terminal.new({ focus: true })}
                             aria-label={language.t("command.terminal.new")}
+                          class="rounded-md transition-[background-color,box-shadow,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus active:scale-[0.96] motion-reduce:transition-none motion-reduce:transform-none"
                           />
                         </TooltipKeybind>
                       }
@@ -313,6 +322,7 @@ export function TerminalPanelV2(props: { stacked?: boolean } = {}) {
                           iconSize="large"
                           onClick={() => terminal.new({ focus: true })}
                           aria-label={language.t("command.terminal.new")}
+                          class="rounded-md transition-[background-color,box-shadow,transform] duration-150 ease-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus active:scale-[0.96] motion-reduce:transition-none motion-reduce:transform-none"
                         />
                       </TooltipV2>
                     </Show>

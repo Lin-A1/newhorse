@@ -328,3 +328,98 @@
     }
   }
 }
+
+@layer components {
+  [data-platform="desktop"] [data-slot="titlebar-v2"] {
+    border-bottom: 0.5px solid color-mix(in srgb, var(--v2-border-border-base) 72%, transparent);
+    box-shadow: 0 1px 0 color-mix(in srgb, var(--v2-background-bg-deep) 60%, transparent);
+  }
+
+  [data-platform="desktop"] .titlebar-channel-indicator {
+    display: inline-flex;
+    height: 22px;
+    align-items: center;
+    padding-inline: 8px;
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.04em;
+  }
+
+  [data-platform="desktop"] .titlebar-channel-indicator:focus-visible {
+    outline: 2px solid var(--v2-border-border-focus);
+    outline-offset: 1px;
+  }
+
+  [data-platform="desktop"] [data-component="home-session-row"]:active,
+  [data-platform="desktop"] [data-component="home-session-search-row"]:active {
+    background-color: var(--v2-background-bg-layer-03);
+  }
+
+  [data-platform="desktop"] [data-slot="session-header-v2-actions"] [data-component="icon-button-v2"] {
+    transition:
+      background-color 120ms ease,
+      color 120ms ease,
+      transform 120ms ease;
+  }
+
+  [data-platform="desktop"] [data-slot="session-header-v2-actions"] [data-component="icon-button-v2"]:active {
+    transform: scale(0.96);
+  }
+
+  [data-platform="desktop"] [data-component="prompt-input-v2"] {
+    border: 1px solid color-mix(in srgb, var(--v2-border-border-base) 86%, transparent);
+    transition:
+      border-color 140ms ease,
+      box-shadow 140ms ease;
+  }
+
+  [data-platform="desktop"] [data-component="prompt-input-v2"]:focus-within {
+    border-color: color-mix(in srgb, var(--v2-border-border-focus) 78%, var(--v2-border-border-base));
+    box-shadow:
+      var(--v2-elevation-raised),
+      0 0 0 2px color-mix(in srgb, var(--v2-border-border-focus) 18%, transparent);
+  }
+
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-attach"],
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-model"] {
+    transition:
+      background-color 120ms ease,
+      color 120ms ease,
+      transform 120ms ease;
+  }
+
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-attach"]:is(:hover, :focus-visible),
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-model"]:is(:hover, :focus-visible) {
+    background-color: var(--v2-overlay-simple-overlay-hover);
+    color: var(--v2-icon-icon-base);
+  }
+
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-attach"]:active,
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-model"]:active {
+    transform: scale(0.97);
+  }
+
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-submit"]:not(:disabled) {
+    color: var(--v2-text-text-contrast);
+    transition: transform 120ms ease, box-shadow 120ms ease;
+  }
+
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-submit"]:not(:disabled):active {
+    transform: scale(0.96);
+  }
+
+  [data-platform="desktop"] [data-component="prompt-input-v2"] [data-action="prompt-submit"]:disabled {
+    background-image: none !important;
+    background-color: var(--v2-background-bg-layer-02);
+    color: var(--v2-icon-icon-muted);
+    box-shadow: inset 0 0 0 0.5px var(--v2-border-border-base);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-platform="desktop"] *,
+  [data-platform="desktop"] *::before,
+  [data-platform="desktop"] *::after {
+    scroll-behavior: auto !important;
+  }
+}

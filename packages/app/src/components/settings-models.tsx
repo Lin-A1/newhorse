@@ -4,6 +4,7 @@ import { Switch } from "@newhorse/ui/switch"
 import { Icon } from "@newhorse/ui/icon"
 import { IconButton } from "@newhorse/ui/icon-button"
 import { TextField } from "@newhorse/ui/text-field"
+import { Tooltip } from "@newhorse/ui/tooltip"
 import { type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
@@ -89,7 +90,14 @@ const SettingsModelsContent: Component = () => {
               class="flex-1"
             />
             <Show when={list.filter()}>
-              <IconButton icon="circle-x" variant="ghost" onClick={list.clear} />
+              <Tooltip placement="bottom" value={language.t("common.clear")}>
+                <IconButton
+                  icon="circle-x"
+                  variant="ghost"
+                  aria-label={language.t("common.clear")}
+                  onClick={list.clear}
+                />
+              </Tooltip>
             </Show>
           </div>
         </div>

@@ -144,8 +144,20 @@ export const SettingsProfileV2: Component = () => {
               </SettingsRowV2>
             </SettingsListV2>
             <div class="flex justify-end pt-4">
-              <ButtonV2 variant="contrast" disabled={profile.state.saving} onClick={() => void profile.save()}>
-                {profile.state.saving ? <Spinner class="size-3.5" /> : language.t("common.save")}
+              <ButtonV2
+                variant="contrast"
+                disabled={profile.state.saving}
+                aria-busy={profile.state.saving}
+                onClick={() => void profile.save()}
+              >
+                {profile.state.saving ? (
+                  <>
+                    <Spinner class="size-3.5" />
+                    {language.t("common.saving")}
+                  </>
+                ) : (
+                  language.t("common.save")
+                )}
               </ButtonV2>
             </div>
           </div>
