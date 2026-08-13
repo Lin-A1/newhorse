@@ -41,6 +41,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/r
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { ErrorPage } from "@/pages/error"
 import { CommentsProvider, useComments } from "@/context/comments"
+import type { LineComment } from "@/context/comments"
 import { useCommand } from "@/context/command"
 import { DirectoryDataProvider } from "@/pages/directory-layout"
 import { useServerSync } from "@/context/server-sync"
@@ -556,6 +557,42 @@ export default function Page() {
   const sessionSync = timeline.resource
   const userMessages = timeline.userMessages
   const visibleUserMessages = timeline.visibleUserMessages
+
+  // Read-only overlay of native-engine review comments. The server attaches
+  // each finding to a synthetic text part (metadata.newhorseReview) of the
+  // /review command's user message; here we lift them back into LineComments
+  // so the review tab renders them alongside the user's own comments without
+  // ever persisting them through the comments store.
+  const aiReviewComments = createMemo<LineComment[]>(() => {
+    const id = params.id
+    if (!id) return []
+    const out: LineComment[] = []
+    for (const msg of userMessages()) {
+      const parts = sync().data.part[msg.id]
+      if (!parts) continue
+      for (const part of parts) {
+        if (part.type !== "text" || !part.synthetic) continue
+        const review = part.metadata?.newhorseReview
+        if (!review || typeof review !== "object") continue
+        const record = review as Record<string, unknown>
+        const path = record.path
+        const content = record.content
+        if (typeof path !== "string" || typeof content !== "string") continue
+        const start = Number(record.startLine ?? record.start_line)
+        const end = Number(record.endLine ?? record.end_line)
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start < 1 || end < 1) continue
+        out.push({
+          id: `newhorse-review:${msg.id}:${part.id}`,
+          file: path,
+          selection: { start, end },
+          comment: content,
+          time: part.time?.start ?? msg.time.created,
+        })
+      }
+    }
+    return out
+  })
+  const reviewComments = createMemo<LineComment[]>(() => [...comments.all(), ...aiReviewComments()])
 
   createEffect(() => {
     const tab = activeFileTab()
@@ -1280,7 +1317,7 @@ export default function Page() {
         commentMentions={{
           items: file.searchFilesAndDirectories,
         }}
-        comments={comments.all()}
+        comments={reviewComments()}
         focusedComment={comments.focus()}
         onFocusedCommentChange={comments.setFocus}
         onViewFile={openReviewFile}
@@ -1323,7 +1360,7 @@ export default function Page() {
       return reviewCommentActions()
     },
     get comments() {
-      return comments.all()
+      return reviewComments()
     },
     get focusedComment() {
       return comments.focus()

@@ -42,6 +42,7 @@ import { Format } from "@/format"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
+import { ReviewSession } from "@/review/runner"
 import { Workspace } from "@/control-plane/workspace"
 import { Worktree } from "@/worktree"
 import { Installation } from "@/installation"
@@ -109,6 +110,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Truncate.node,
     ToolRegistry.node,
     Format.node,
+    ReviewSession.node,
     InstanceStore.node,
     Project.node,
     Vcs.node,
