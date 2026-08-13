@@ -145,6 +145,8 @@ import type {
   MemoryDecideResponses,
   MemoryExportErrors,
   MemoryExportResponses,
+  MemoryHistoryErrors,
+  MemoryHistoryResponses,
   MemoryListErrors,
   MemoryListResponses,
   MemoryPauseErrors,
@@ -3376,6 +3378,38 @@ export class Memory extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<MemoryExportResponses, MemoryExportErrors, ThrowOnError>({
       url: "/memory/export",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get Memory audit history
+   */
+  public history<ThrowOnError extends boolean = false>(
+    parameters: {
+      memoryID: string
+      directory?: string
+      workspace?: string
+      session?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "memoryID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<MemoryHistoryResponses, MemoryHistoryErrors, ThrowOnError>({
+      url: "/memory/{memoryID}/history",
       ...options,
       ...params,
     })

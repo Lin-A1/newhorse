@@ -2594,6 +2594,16 @@ export type MemoryPage = {
   nextCursor?: string
 }
 
+export type MemoryHistoryInfo = {
+  id: string
+  memoryID: string
+  oldContent?: string
+  newContent?: string
+  event: "ADD" | "UPDATE" | "DELETE" | "ACCEPT" | "REJECT" | "PAUSE" | "RESUME" | "CLEAR"
+  actorID?: string
+  createdAt: number
+}
+
 export type Project = {
   id: string
   worktree: string
@@ -10312,6 +10322,37 @@ export type MemoryExportResponses = {
 }
 
 export type MemoryExportResponse = MemoryExportResponses[keyof MemoryExportResponses]
+
+export type MemoryHistoryData = {
+  body?: never
+  path: {
+    memoryID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/memory/{memoryID}/history"
+}
+
+export type MemoryHistoryErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryHistoryError = MemoryHistoryErrors[keyof MemoryHistoryErrors]
+
+export type MemoryHistoryResponses = {
+  /**
+   * Audit history for a Memory record
+   */
+  200: Array<MemoryHistoryInfo>
+}
+
+export type MemoryHistoryResponse = MemoryHistoryResponses[keyof MemoryHistoryResponses]
 
 export type MemoryClearData = {
   body?: {

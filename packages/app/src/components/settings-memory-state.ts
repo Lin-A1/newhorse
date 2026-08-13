@@ -239,5 +239,12 @@ export function useMemoryCenterState(sessionID?: string) {
         "Memory export failed",
       )
     },
+    async history(item: MemoryInfo) {
+      const scoped = current(item)
+      return required(
+        await scoped.client.memory.history({ ...scoped.routing, memoryID: item.id }),
+        "Memory history failed",
+      )
+    },
   }
 }
