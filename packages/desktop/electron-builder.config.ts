@@ -59,6 +59,9 @@ const getBase = (appId: string): Configuration => ({
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
     },
+    // Tray + window icons must be at process.resourcesPath/icons at runtime
+    // (iconPath() joins resourcesPath/icons/icon.ico).
+    { from: "resources/icons", to: "icons" },
   ],
   mac: {
     category: "public.app-category.developer-tools",

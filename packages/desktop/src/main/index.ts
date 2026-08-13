@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { mkdirSync, rmSync } from "node:fs"
+import { existsSync, mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
@@ -289,10 +289,15 @@ const main = Effect.gen(function* () {
   registerRendererProtocol()
   setDockIcon()
   try {
-    createTray({ Tray, Menu, app, iconPath, showMainWindow, toggleMainWindow })
-    // Only enable close/minimize-to-tray once a tray actually exists;
-    // otherwise closing windows keeps the original close/quit behavior.
-    setTrayEnabled(true)
+    // Only enable close/minimize-to-tray when the tray can actually render an
+    // icon. If the icon is missing (e.g. a packaging slip), a hidden window
+    // would be unrecoverable — fall back to the original close/quit behavior.
+    if (existsSync(iconPath())) {
+      createTray({ Tray, Menu, app, iconPath, showMainWindow, toggleMainWindow })
+      setTrayEnabled(true)
+    } else {
+      logger.warn(`tray icon not found at ${iconPath()}; windows will close normally`)
+    }
   } catch (error) {
     logger.warn("failed to create system tray; windows will close normally", error)
   }
