@@ -26,6 +26,9 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@newhorse/core/cross-spawn-spawner"
 import * as Stream from "effect/Stream"
 import { Command } from "../command"
+import { formatReviewFindings, parseReviewArguments, reviewCommentMetadata } from "@/command/review"
+import { ReviewSession } from "@/review/runner"
+import type { ReviewComment } from "@/review/types"
 import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
@@ -196,6 +199,7 @@ const layer = Layer.effect(
     const memory = yield* Memory.Service
     const extract = yield* MemoryExtract.Service
     const continuity = yield* ContinuityGrant.Service
+    const reviewSession = yield* ReviewSession.Service
     const { db } = database
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
@@ -1557,6 +1561,83 @@ const layer = Layer.effect(
         throw error
       }
 
+      // Native review engine entry point. `/review` runs the S1-S6
+      // ReviewSession engine instead of the prompt template: it reviews the
+      // diff scope (uncommitted by default, or commit/branch), writes the
+      // structured findings into the command's user message as synthetic text
+      // parts (metadata-only, invisible in the chat), and lets the model write
+      // the human summary in the normal turn. The app reads the metadata from
+      // the synced parts to overlay the findings on the review tab.
+      if (input.command === Command.Default.REVIEW) {
+        yield* Effect.logInfo("review command (native engine)", {
+          "session.id": input.sessionID,
+          arguments: input.arguments,
+        })
+        const scope = parseReviewArguments(input.arguments)
+        const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+        const model = yield* getModel(taskModel.providerID, taskModel.modelID, input.sessionID)
+        const msgs = yield* MessageV2.filterCompactedEffect(input.sessionID).pipe(
+          Effect.provideService(Database.Service, database),
+        )
+        const lastUser =
+          MessageV2.latest(msgs).user ??
+          ({
+            id: MessageID.ascending(),
+            sessionID: input.sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: taskModel.providerID, modelID: taskModel.modelID },
+          } satisfies SessionV1.User)
+        const ctx = yield* InstanceState.context
+
+        yield* status.set(input.sessionID, { type: "busy" })
+        const runExit = yield* reviewSession
+          .run({
+            cwd: ctx.directory,
+            mode: scope.mode,
+            commit: scope.commit,
+            from: scope.from,
+            to: scope.to,
+            sessionID: input.sessionID,
+            user: lastUser,
+            agent,
+            model,
+            permission: session.permission,
+          })
+          .pipe(Effect.exit)
+        const comments: ReviewComment[] = Exit.isSuccess(runExit)
+          ? runExit.value
+          : (yield* Effect.logError("review command engine failed", {
+              "session.id": input.sessionID,
+              error: Cause.squash(runExit.cause),
+            }).pipe(Effect.as<ReviewComment[]>([])))
+
+        const result = yield* prompt({
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          model: taskModel,
+          agent: agent.name,
+          variant: input.variant,
+          parts: [
+            { type: "text", text: formatReviewFindings(comments) },
+            ...comments.map((cm) => ({
+              type: "text" as const,
+              text: "",
+              synthetic: true,
+              metadata: reviewCommentMetadata(cm),
+            })),
+          ],
+        })
+        yield* events.publish(Command.Event.Executed, {
+          name: input.command,
+          sessionID: input.sessionID,
+          arguments: input.arguments,
+          messageID: result.info.id,
+        })
+        return result
+      }
+
       const templateParts = yield* resolvePromptParts(template)
       const inputFiles = new Set(
         input.parts?.filter((part) => new URL(part.url).protocol === "file:").map((part) => fileURLToPath(part.url)),
@@ -1757,6 +1838,7 @@ export const node = LayerNode.make({
     Memory.node,
     MemoryExtract.node,
     ContinuityGrant.node,
+    ReviewSession.node,
   ],
 })
 
