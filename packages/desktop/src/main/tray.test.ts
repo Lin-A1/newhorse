@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import type { TrayDeps, TrayLike } from "./tray"
 import { createTray } from "./tray"
 import type { TrayResidentWindow } from "./tray-policy"
-import { wireTrayResidentClose } from "./tray-policy"
+import { wireTrayResidentClose, type CloseAction, type CloseActionDeps } from "./tray-policy"
 
 // Fake electron pieces. tray.ts injects all electron/window dependencies, so
 // tests drive the real module with these fakes and never load the electron
@@ -168,7 +168,7 @@ describe("close-to-tray policy", () => {
 
   test("close hides to the tray when not quitting and a tray exists", () => {
     const win = fakeWindow()
-    wireTrayResidentClose(win, { isQuitting: () => false, isTrayEnabled: () => true })
+    wireTrayResidentClose(win, { isQuitting: () => false, isTrayEnabled: () => true, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
 
     win.emitClose()
 
@@ -178,7 +178,7 @@ describe("close-to-tray policy", () => {
 
   test("close is allowed through during a real quit", () => {
     const win = fakeWindow()
-    wireTrayResidentClose(win, { isQuitting: () => true, isTrayEnabled: () => true })
+    wireTrayResidentClose(win, { isQuitting: () => true, isTrayEnabled: () => true, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
 
     win.emitClose()
 
@@ -188,7 +188,7 @@ describe("close-to-tray policy", () => {
 
   test("close is allowed through when no tray was created", () => {
     const win = fakeWindow()
-    wireTrayResidentClose(win, { isQuitting: () => false, isTrayEnabled: () => false })
+    wireTrayResidentClose(win, { isQuitting: () => false, isTrayEnabled: () => false, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
 
     win.emitClose()
 
@@ -198,17 +198,17 @@ describe("close-to-tray policy", () => {
 
   test("minimize hides to the tray only when not quitting and a tray exists", () => {
     const hide = fakeWindow()
-    wireTrayResidentClose(hide, { isQuitting: () => false, isTrayEnabled: () => true })
+    wireTrayResidentClose(hide, { isQuitting: () => false, isTrayEnabled: () => true, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
     hide.emitMinimize()
     expect(hide.hidden).toBe(1)
 
     const quitting = fakeWindow()
-    wireTrayResidentClose(quitting, { isQuitting: () => true, isTrayEnabled: () => true })
+    wireTrayResidentClose(quitting, { isQuitting: () => true, isTrayEnabled: () => true, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
     quitting.emitMinimize()
     expect(quitting.hidden).toBe(0)
 
     const noTray = fakeWindow()
-    wireTrayResidentClose(noTray, { isQuitting: () => false, isTrayEnabled: () => false })
+    wireTrayResidentClose(noTray, { isQuitting: () => false, isTrayEnabled: () => false, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
     noTray.emitMinimize()
     expect(noTray.hidden).toBe(0)
   })
@@ -220,6 +220,9 @@ describe("close-to-tray policy", () => {
     wireTrayResidentClose(win, {
       isQuitting: () => quitting,
       isTrayEnabled: () => trayEnabled,
+      getCloseAction: () => "tray" as CloseAction,
+      askCloseAction: async () => "tray" as CloseAction,
+      quit: () => {},
     })
 
     win.emitClose()
@@ -235,5 +238,60 @@ describe("close-to-tray policy", () => {
     win.emitClose()
     expect(win.prevented).toBe(false)
     expect(win.hidden).toBe(1)
+  })
+
+  test("close with a quit close action lets the window close", () => {
+    const win = fakeWindow()
+    wireTrayResidentClose(win, {
+      isQuitting: () => false,
+      isTrayEnabled: () => true,
+      getCloseAction: () => "quit",
+      askCloseAction: async () => "tray",
+      quit: () => {},
+    })
+    win.emitClose()
+    expect(win.prevented).toBe(false)
+    expect(win.hidden).toBe(0)
+  })
+
+  test("close with an ask action shows the dialog and honors the chosen action", async () => {
+    const win = fakeWindow()
+    let asked = 0
+    const askCloseAction = async () => {
+      asked += 1
+      return "tray"
+    }
+    wireTrayResidentClose(win, {
+      isQuitting: () => false,
+      isTrayEnabled: () => true,
+      getCloseAction: () => "ask",
+      askCloseAction,
+      quit: () => {},
+    })
+    win.emitClose()
+    expect(win.prevented).toBe(true)
+    expect(asked).toBe(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(win.hidden).toBe(1)
+  })
+
+  test("close with an ask action can quit the app", async () => {
+    const win = fakeWindow()
+    let quit = 0
+    wireTrayResidentClose(win, {
+      isQuitting: () => false,
+      isTrayEnabled: () => true,
+      getCloseAction: () => "ask",
+      askCloseAction: async () => "quit",
+      quit: () => {
+        quit += 1
+      },
+    })
+    win.emitClose()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(quit).toBe(1)
+    expect(win.hidden).toBe(0)
   })
 })

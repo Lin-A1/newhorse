@@ -1,26 +1,50 @@
-// Close/minimize behavior in tray-resident background mode. A window hides to
-// the tray (instead of closing/quit) only when the app is not quitting for
-// real AND a system tray actually exists; otherwise the window keeps its
-// original close/minimize behavior (all windows closing outside a quit does
-// not exit the app — the sidecar keeps running — but closing a window really
-// destroys it, so the registry keeps its id for restore).
+// Close/minimize behavior in tray-resident background mode.
+//
+// When a window closes:
+//   - if the app is really quitting or no tray exists → the window closes normally
+//   - otherwise the configured close action applies:
+//       "quit" → quit the app
+//       "tray" → hide the window to the system tray
+//       "ask"  → show a dialog asking, with an option to remember the choice
+//
+// Minimize always hides to the tray (when the tray exists) — minimizing means
+// "park it in the tray", closing is the only ambiguous action.
+export type CloseAction = "quit" | "tray" | "ask"
+
 export type TrayResidentWindow = {
   hide(): void
   on(event: "close", handler: (event: { preventDefault(): void }) => void): void
   on(event: "minimize", handler: () => void): void
 }
 
-export function wireTrayResidentClose(
-  win: TrayResidentWindow,
-  shouldHide: { isQuitting: () => boolean; isTrayEnabled: () => boolean },
-) {
+export type CloseActionDeps = {
+  isQuitting: () => boolean
+  isTrayEnabled: () => boolean
+  getCloseAction: () => CloseAction
+  /** Shows the close-action dialog and returns the chosen action. Persisting
+   * the "always do this" choice is the caller's responsibility. */
+  askCloseAction: () => Promise<CloseAction>
+  /** Actually quits the app (e.g. app.quit()). */
+  quit: () => void
+}
+
+export function wireTrayResidentClose(win: TrayResidentWindow, deps: CloseActionDeps) {
   win.on("close", (event) => {
-    if (shouldHide.isQuitting() || !shouldHide.isTrayEnabled()) return
+    if (deps.isQuitting() || !deps.isTrayEnabled()) return
+    const action = deps.getCloseAction()
+    if (action === "quit") return
     event.preventDefault()
+    if (action === "ask") {
+      void deps.askCloseAction().then((chosen) => {
+        if (chosen === "quit") deps.quit()
+        else win.hide()
+      })
+      return
+    }
     win.hide()
   })
   win.on("minimize", () => {
-    if (shouldHide.isQuitting() || !shouldHide.isTrayEnabled()) return
+    if (deps.isQuitting() || !deps.isTrayEnabled()) return
     win.hide()
   })
 }

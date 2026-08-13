@@ -10,9 +10,9 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { getStore, removeStoreFile } from "./store"
-import { PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
+import { CLOSE_ACTION_KEY, PINCH_ZOOM_ENABLED_KEY, WINDOW_IDS_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
-import { wireTrayResidentClose } from "./tray-policy"
+import { wireTrayResidentClose, type CloseAction } from "./tray-policy"
 import { createWindowRegistry } from "./window-registry"
 import { safeWindowURL } from "./window-state"
 
@@ -283,8 +283,33 @@ function registerWindow(win: BrowserWindow, id: string) {
   // closing it, so the app (and its server sidecar) keeps running in the
   // background for Companion care/reminders. A real quit already set the
   // quitting flag (before-quit / session-end), which lets the close through.
-  wireTrayResidentClose(win, { isQuitting: isAppQuitting, isTrayEnabled: () => trayEnabled })
+  // On close the user can pick quit vs. tray, and remember the choice.
+  wireTrayResidentClose(win, {
+    isQuitting: isAppQuitting,
+    isTrayEnabled: () => trayEnabled,
+    getCloseAction: () => (getStore().get(CLOSE_ACTION_KEY) as CloseAction | undefined) ?? "ask",
+    askCloseAction: () => askCloseActionDialog(win),
+    quit: () => app.quit(),
+  })
   win.on("closed", () => registry.closed(id))
+}
+
+function askCloseActionDialog(win: BrowserWindow): Promise<CloseAction> {
+  return dialog.showMessageBox(win, {
+    type: "question",
+    title: "newhorse",
+    message: "Close newhorse?",
+    detail: "Minimize to the system tray to keep newhorse running in the background, or quit entirely.",
+    buttons: ["Minimize to tray", "Quit newhorse"],
+    defaultId: 0,
+    cancelId: 0,
+    checkboxLabel: "Always do this",
+    checkboxChecked: false,
+  }).then(({ response, checkboxChecked }) => {
+    const action: CloseAction = response === 1 ? "quit" : "tray"
+    if (checkboxChecked) getStore().set(CLOSE_ACTION_KEY, action)
+    return action
+  })
 }
 
 function windowStateFile(id: string) {
