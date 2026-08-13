@@ -82,14 +82,16 @@ Newhorse 将智能体产品中常被混在一起的职责拆分为：
 
 ## 在 OpenCode 基础上优化了什么
 
-Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续性、确定性工具和生产级加固的新horse 专属能力：
+Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续性、确定性工具和生产级加固的 newhorse 专属能力：
 
 **记忆与个人连续性**
 - 结构化 SQLite 记忆（scope/provenance/status/expiration），proposal 接受/拒绝生命周期（Memory Center）
 - 回合后自动提取记忆提案（审核门控）+ 同批去重
 - FTS5/BM25 检索 + 实体提取与加权 —— **无需嵌入模型**
 - 持久 Reminder、Follow-up、Continuity Grant 与 Companion Plan
-- 每日活动总结（覆盖 newhorse、Claude Code、Codex 会话）
+- 每日活动总结（覆盖 newhorse、Claude Code、Codex 会话，含归档未删除会话）
+- 记忆提取观测性：每个自动提取 gate 都会记录跳过原因，便于诊断「为什么没有提取记忆」
+- Companion 会话「清空聊天记录」= 乐观清空显示 + 后台非阻塞压缩为隐藏上下文（保留连续性，不显示压缩内容）
 - Todo 续跑执行器（idle 且有未完成任务时自动恢复）
 
 **确定性工具与智能体**
@@ -109,6 +111,12 @@ Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续�
 - 托盘常驻后台模式，关闭动作可选（退出或最小化到托盘）
 - 工具描述汉化
 - 原生代码评审展示在 app 的 review tab
+- 删除会话后其 token/费用仍保留在用量统计中（session_usage 归档表 + /session/usage 端点；usage tab 合并活跃与归档用量）
+- Companion 会话可改名：固定 Companion 会话支持重命名，改名后标题栏保留自定义名称
+
+**自我认知与文档**
+- Agent 身份自感知：系统提示词身份为 newhorse；内置 `newhorse-capabilities` skill 在 agent 回答「newhorse 能做什么」时读取内置清单，不再 WebFetch 外部文档
+- 内置配置 skill 由 `customize-opencode` 更名为 `customize-newhorse`：内容改为 newhorse 配置文档（newhorse.json / .newhorse / ~/.config/newhorse，opencode 路径标记为 legacy）
 
 其中多项移植自或参考自开源参考项目（OpenCodeReview、oh-my-opencode、mem0、Claude Code 的格式），并遵守其许可证。
 
@@ -121,7 +129,7 @@ Newhorse 仍在持续开发中。当前支持源码构建、本地 Web/Desktop �
 - Central Trust Policy 与不含内容的 Policy Audit
 - Assistant/Companion Profile 与 Personal Workspace
 - 结构化 Memory、Reminder、Follow-up、Continuity Grant 与 Companion Plan 管理
-- 每日活动总结（Session Reader、23:00 调度器、HTTP list/generate、Sidebar 时间线）
+- 每日活动总结（Session Reader、23:00 调度器、HTTP list/generate、Sidebar 时间线，含归档未删除会话）
 - 服务端动态 Model/Provider Catalog
 - Legacy 与 v2 两套 Settings 布局
 - 记忆检索升级：FTS5/BM25 检索、实体提取与加权、回合后自动提取（审核门控）
@@ -130,6 +138,12 @@ Newhorse 仍在持续开发中。当前支持源码构建、本地 Web/Desktop �
 - 工具描述汉化
 - Linux 与 Windows 便携 CLI 导出
 - Windows NSIS 与 Linux Desktop 打包路径
+- newhorse 身份与能力自感知（系统提示词身份为 newhorse；内置 newhorse-capabilities skill）
+- 内置 customize-newhorse skill 替代 customize-opencode（newhorse 配置路径；opencode 路径标记 legacy）
+- 用量归档：删除会话后其 token/费用仍计入用量统计（session_usage 归档表 + /session/usage 端点；usage tab 合并统计）
+- 记忆提取观测性（每个 gate 记录跳过原因）
+- Companion「清空聊天记录」= 乐观清空 + 后台隐藏压缩（保留连续性）
+- Companion 会话可改名
 
 每日总结已上线并显示在 Sidebar 时间线中。更完整的统一 Today/每日入口仍明确处于延期状态。macOS Desktop 运行验证以及生产签名/notarization 仍属于发布门槛。
 

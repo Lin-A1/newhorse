@@ -89,7 +89,9 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - Post-turn auto-extraction of memory proposals (review-gated) with same-batch dedup
 - FTS5/BM25 retrieval plus entity extraction & boost — no embedding model required
 - Persistent reminders, follow-ups, continuity grants, and Companion Plan
-- Daily activity summaries across newhorse, Claude Code, and Codex sessions
+- Daily activity summaries across newhorse, Claude Code, and Codex sessions, including archived (non-deleted) sessions
+- Observable memory extraction: every auto-extraction gate logs its skip reason, so a Companion session that never proposes memories is diagnosable
+- "Clear chat history" on a Companion session clears the displayed chat and background-compacts the conversation into hidden context — continuity is kept without showing the compacted content
 - Todo-continuation enforcer (auto-resume on idle with open todos)
 
 **Deterministic tooling & agents**
@@ -109,6 +111,12 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - Tray-resident background mode with a close-action choice (quit vs minimize to tray)
 - Tool descriptions localized to Chinese
 - Native code review surfaced in the app's review tab
+- Deleted sessions keep their token/cost contribution in the usage stats via a `session_usage` archive table and the `/session/usage` endpoint; the usage tab merges active and archived usage
+- Companion session rename: the pinned Companion session can be renamed and the header keeps the custom title
+
+**Self-awareness & docs**
+- Agent identity: the system prompt presents the agent as newhorse, and a built-in `newhorse-capabilities` skill answers "what can newhorse do" from a bundled checklist instead of fetching external docs
+- The built-in configuration skill is now `customize-newhorse`, documented against newhorse config paths (newhorse.json, .newhorse, ~/.config/newhorse); opencode paths are marked legacy
 
 Several of these are ported from or inspired by open-source reference projects (OpenCodeReview, oh-my-opencode, mem0, and Claude Code's formats), respecting their licenses.
 
@@ -121,7 +129,7 @@ Major foundations already implemented include:
 - Central trust policy and content-free policy audit
 - Assistant/Companion profiles and personal workspaces
 - Structured memory, reminders, follow-ups, continuity grants, and Companion Plan management
-- Daily activity summaries (session readers, 23:00 scheduler, HTTP list/generate, sidebar timeline)
+- Daily activity summaries (session readers, 23:00 scheduler, HTTP list/generate, sidebar timeline), including archived (non-deleted) sessions
 - Server-backed dynamic model/provider catalogs
 - Legacy and v2 settings layouts
 - Memory retrieval upgrades: FTS5/BM25 search, entity extraction + boost, and post-turn auto-extraction (review-gated)
@@ -130,6 +138,12 @@ Major foundations already implemented include:
 - Tool descriptions localized to Chinese
 - Linux and Windows portable CLI export
 - Windows NSIS and Linux desktop packaging paths
+- newhorse identity and capability self-awareness (system prompt presents the agent as newhorse; built-in `newhorse-capabilities` skill)
+- Built-in `customize-newhorse` skill replaces `customize-opencode` (newhorse config paths; opencode paths marked legacy)
+- Usage archiving: deleting a session no longer erases its token/cost from the usage stats (session_usage archive table + /session/usage endpoint; usage tab merges active and archived usage)
+- Observable memory extraction (per-gate skip-reason logging)
+- Companion "clear chat history" = optimistic clear + hidden background compaction (continuity kept)
+- Companion session rename
 
 Daily summaries are live in the sidebar timeline. A broader unified Today/daily-entry experience remains intentionally deferred. macOS desktop validation and production signing/notarization are still release-gating items.
 

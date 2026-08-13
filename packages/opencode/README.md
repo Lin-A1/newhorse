@@ -5,6 +5,15 @@ serves the HTTP API, and hosts the session runtime, tools, memory, reminders,
 trust policy, and daily summaries that the web app, desktop app, and TUI
 connect to.
 
+The runtime identifies itself as **newhorse** in the system prompt and ships
+two built-in skills for product self-awareness: `newhorse-capabilities` answers
+"what can newhorse do" from the bundled feature list instead of fetching
+external docs, and `customize-newhorse` documents how to configure newhorse
+itself. Deleting a session archives its token/cost usage to the `session_usage`
+table before the row is removed, so usage stats keep the contribution; archived
+usage is served by the `/session/usage` endpoint, and daily summaries include
+archived sessions.
+
 ## `nh` commands
 
 `nh` is the product CLI entry point:
@@ -46,11 +55,11 @@ bun run test:httpapi
 - `src/server/` — HTTP server, routes, handlers, and middleware
 - `src/session/` — session runtime and schema (includes reminders)
 - `src/provider/` — provider registry, model config, and authentication
-- `src/memory/` — structured memory store and lifecycle
+- `src/memory/` — structured memory store and lifecycle (extraction gate logs skip reasons)
 - `src/continuity-grant/` — continuity grants for proactive access
 - `src/trust-policy/` — central trust policy and audit
 - `src/daily-summary/` — daily activity summaries (session readers + 23:00 scheduler)
 - `src/agent/` — agent registry and delegation
 - `src/worktree/` — Git worktree management
-- `src/mcp/` / `src/plugin/` / `src/skill/` — extension loading
+- `src/mcp/` / `src/plugin/` / `src/skill/` — extension loading (built-in `newhorse-capabilities` and `customize-newhorse` skills)
 - `src/scheduler/` — scheduled and recurring work
