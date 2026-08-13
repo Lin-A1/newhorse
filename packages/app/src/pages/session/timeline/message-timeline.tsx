@@ -76,7 +76,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
-import { sessionTitle } from "@/utils/session-title"
+import { isDefaultSessionTitle, sessionTitle } from "@/utils/session-title"
 import { scheduleConnectedMeasure } from "./measure"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { createTimelineProjection } from "./projection"
@@ -308,9 +308,14 @@ export function MessageTimeline(props: {
     return sync().session.get(id)
   })
   const titleValue = createMemo(() => {
-    // The companion (newhorse) session always shows the pinned brand name.
-    if (info()?.profileID === "companion") return language.t("newSession.mode.companion")
-    return info()?.title
+    const current = info()
+    // The companion (newhorse) session shows the pinned brand name by default.
+    // Once renamed, show the custom title so the rename actually sticks.
+    if (current?.profileID === "companion") {
+      if (current.title && !isDefaultSessionTitle(current.title)) return current.title
+      return language.t("newSession.mode.companion")
+    }
+    return current?.title
   })
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
   const shareUrl = createMemo(() => info()?.share?.url)
