@@ -243,11 +243,21 @@ const layer = Layer.effect(
       )
       if (!result || result.memories.length === 0) return
 
-      // (c) Dedup + cap, then save each as a model_inferred proposal.
-      const candidates = result.memories
-        .map((item) => ({ content: item.content.trim() }))
-        .filter((item) => item.content.length > 0 && !isDuplicate(item.content, relatedContents))
-        .slice(0, MAX_MEMORIES)
+      // (c) Dedup against existing memories AND against candidates already
+      // accepted from this same batch (the LLM can propose near-identical
+      // variants in a single reply), then cap, then save each as a
+      // model_inferred proposal.
+      const candidates: { content: string }[] = []
+      const acceptedContents: string[] = []
+      for (const item of result.memories) {
+        if (candidates.length >= MAX_MEMORIES) break
+        const content = item.content.trim()
+        if (content.length === 0) continue
+        if (isDuplicate(content, relatedContents)) continue
+        if (isDuplicate(content, acceptedContents)) continue
+        candidates.push({ content })
+        acceptedContents.push(content)
+      }
       if (candidates.length === 0) return
 
       yield* Effect.logInfo("memory extract proposing", { "session.id": input.sessionID, count: candidates.length })

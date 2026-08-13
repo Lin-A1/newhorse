@@ -321,13 +321,13 @@ describe("MemoryExtract", () => {
     const cap = mockEnv({
       llmText: JSON.stringify({
         memories: [
-          { kind: "fact", content: "Memory one about the user" },
-          { kind: "fact", content: "Memory two about the user" },
-          { kind: "fact", content: "Memory three about the user" },
-          { kind: "fact", content: "Memory four about the user" },
-          { kind: "fact", content: "Memory five about the user" },
-          { kind: "fact", content: "Memory six about the user" },
-          { kind: "fact", content: "Memory seven about the user" },
+          { kind: "fact", content: "The user was born in Lisbon" },
+          { kind: "fact", content: "The user collects vintage cameras" },
+          { kind: "fact", content: "The user prefers herbal tea" },
+          { kind: "fact", content: "The user is learning Spanish" },
+          { kind: "fact", content: "The user runs five kilometers daily" },
+          { kind: "fact", content: "The user works as a marine biologist" },
+          { kind: "fact", content: "The user reads before bed" },
         ],
       }),
     })
@@ -337,11 +337,11 @@ describe("MemoryExtract", () => {
         yield* extract.extract(makeInput())
         expect(cap.saveCalls).toHaveLength(5)
         expect(cap.saveCalls.map((item) => item.content)).toEqual([
-          "Memory one about the user",
-          "Memory two about the user",
-          "Memory three about the user",
-          "Memory four about the user",
-          "Memory five about the user",
+          "The user was born in Lisbon",
+          "The user collects vintage cameras",
+          "The user prefers herbal tea",
+          "The user is learning Spanish",
+          "The user runs five kilometers daily",
         ])
       }),
     )
@@ -415,6 +415,75 @@ describe("MemoryExtract", () => {
         const extract = yield* MemoryExtract.Service
         yield* extract.extract(makeInput())
         expect(allDup.saveCalls).toHaveLength(0)
+      }),
+    )
+
+    const sameBatchIdentical = mockEnv({
+      llmText: JSON.stringify({
+        memories: [
+          { kind: "preference", content: "The user enjoys reading novels" },
+          { kind: "preference", content: "The user enjoys reading novels" },
+          { kind: "preference", content: "The user prefers green tea" },
+        ],
+      }),
+    })
+    testEffect(sameBatchIdentical.layer).effect("saves only one of two identical candidates from the same batch", () =>
+      Effect.gen(function* () {
+        const extract = yield* MemoryExtract.Service
+        yield* extract.extract(makeInput())
+        expect(sameBatchIdentical.saveCalls).toHaveLength(2)
+        expect(sameBatchIdentical.saveCalls.map((item) => item.content)).toEqual([
+          "The user enjoys reading novels",
+          "The user prefers green tea",
+        ])
+      }),
+    )
+
+    const sameBatchContainment = mockEnv({
+      llmText: JSON.stringify({
+        memories: [
+          { kind: "preference", content: "The user prefers dark mode and quiet evenings" },
+          { kind: "preference", content: "The user prefers dark mode" },
+          { kind: "preference", content: "The user likes to swim" },
+        ],
+      }),
+    })
+    testEffect(sameBatchContainment.layer).effect("saves only one of two containment-duplicate candidates from the same batch", () =>
+      Effect.gen(function* () {
+        const extract = yield* MemoryExtract.Service
+        yield* extract.extract(makeInput())
+        expect(sameBatchContainment.saveCalls).toHaveLength(2)
+        expect(sameBatchContainment.saveCalls.map((item) => item.content)).toEqual([
+          "The user prefers dark mode and quiet evenings",
+          "The user likes to swim",
+        ])
+      }),
+    )
+
+    const sameBatchDupThenCap = mockEnv({
+      llmText: JSON.stringify({
+        memories: [
+          { kind: "fact", content: "The user collects vintage cameras" },
+          { kind: "fact", content: "The user collects vintage cameras" },
+          { kind: "fact", content: "The user prefers herbal tea" },
+          { kind: "fact", content: "The user is learning Spanish" },
+          { kind: "fact", content: "The user runs five kilometers daily" },
+          { kind: "fact", content: "The user works as a marine biologist" },
+        ],
+      }),
+    })
+    testEffect(sameBatchDupThenCap.layer).effect("filters same-batch duplicates before applying the cap", () =>
+      Effect.gen(function* () {
+        const extract = yield* MemoryExtract.Service
+        yield* extract.extract(makeInput())
+        expect(sameBatchDupThenCap.saveCalls).toHaveLength(5)
+        expect(sameBatchDupThenCap.saveCalls.map((item) => item.content)).toEqual([
+          "The user collects vintage cameras",
+          "The user prefers herbal tea",
+          "The user is learning Spanish",
+          "The user runs five kilometers daily",
+          "The user works as a marine biologist",
+        ])
       }),
     )
   })
