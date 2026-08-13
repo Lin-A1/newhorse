@@ -96,7 +96,7 @@ export type Current = Schema.Schema.Type<typeof Current>
 
 const checks = [
   ["read", ["read"]],
-  ["edit", ["edit", "write", "apply_patch"]],
+  ["edit", ["edit", "write", "apply_patch", "multi_edit"]],
   ["shell", ["bash"]],
   ["delegate", ["task"]],
   ["memory", ["memory"]],

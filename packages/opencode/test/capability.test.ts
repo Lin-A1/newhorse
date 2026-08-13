@@ -66,7 +66,7 @@ it.instance("uses runtime permission aliases and caller overrides for tools", ()
     const capability = yield* Capability.Service
     const build = yield* agents.get("build")
     const snapshot = yield* capability.current({
-      toolIDs: ["edit", "write", "apply_patch", "list_mcp_resources"],
+      toolIDs: ["edit", "write", "apply_patch", "multi_edit", "list_mcp_resources"],
       agent: build,
       permission: [
         { permission: "edit", pattern: "*", action: "deny" },
@@ -82,6 +82,7 @@ it.instance("uses runtime permission aliases and caller overrides for tools", ()
     expect(tools.edit).toBe("deny")
     expect(tools.write).toBe("deny")
     expect(tools.apply_patch).toBe("deny")
+    expect(tools.multi_edit).toBe("deny")
     expect(tools.list_mcp_resources).toBe("ask")
     expect(snapshot.skills).toEqual([])
     expect(snapshot.memory.availability).toEqual({ available: false, reason: "permission_denied" })
@@ -102,5 +103,20 @@ it.instance("keeps full coding capability visible for the build agent", () =>
     expect(status.shell).toBe("allow")
     expect(status.delegate).toBe("allow")
     expect(status.memory).toBe("ask")
+  }),
+)
+
+it.instance("counts multi_edit as an edit capability in the snapshot", () =>
+  Effect.gen(function* () {
+    const agents = yield* Agent.Service
+    const capability = yield* Capability.Service
+    const build = yield* agents.get("build")
+    const snapshot = yield* capability.inspect({
+      agent: build,
+      permission: [{ permission: "multi_edit", pattern: "*", action: "deny" }],
+    })
+    const status = Object.fromEntries(snapshot.capabilities.map((entry) => [entry.name, entry.action]))
+
+    expect(status.edit).toBe("conditional")
   }),
 )

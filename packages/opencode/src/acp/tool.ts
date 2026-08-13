@@ -50,6 +50,7 @@ export function toToolKind(toolName: string): ToolKind {
     case "apply_patch":
     case "patch":
     case "write":
+    case "multi_edit":
       return "edit"
 
     case "grep":

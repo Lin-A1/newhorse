@@ -216,7 +216,7 @@ export function merge(...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule[] 
 }
 
 export function toolPermission(tool: string): string {
-  if (["edit", "write", "apply_patch"].includes(tool)) return "edit"
+  if (["edit", "write", "apply_patch", "multi_edit"].includes(tool)) return "edit"
   if (["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"].includes(tool)) return "read"
   return tool
 }
