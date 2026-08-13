@@ -69,7 +69,6 @@ export const DialogServerV2: Component<{
               value={controller.formValue()}
               placeholder={language.t("dialog.server.add.placeholder")}
               invalid={!!controller.formError()}
-              disabled={controller.formBusy()}
               autofocus
               onInput={(event) => controller.handleFormChange()(event.currentTarget.value)}
               onKeyDown={keyDown}
@@ -86,7 +85,6 @@ export const DialogServerV2: Component<{
               class="!w-full self-stretch"
               value={controller.formName()}
               placeholder={language.t("dialog.server.add.namePlaceholder")}
-              disabled={controller.formBusy()}
               onInput={(event) => controller.handleFormNameChange()(event.currentTarget.value)}
               onKeyDown={keyDown}
             />
@@ -100,7 +98,6 @@ export const DialogServerV2: Component<{
                 class="!w-full self-stretch"
                 value={controller.formUsername()}
                 placeholder={language.t("dialog.server.add.usernamePlaceholder")}
-                disabled={controller.formBusy()}
                 onInput={(event) => controller.handleFormUsernameChange()(event.currentTarget.value)}
                 onKeyDown={keyDown}
               />
@@ -113,7 +110,6 @@ export const DialogServerV2: Component<{
                 class="!w-full self-stretch"
                 value={controller.formPassword()}
                 placeholder={language.t("dialog.server.add.passwordPlaceholder")}
-                disabled={controller.formBusy()}
                 onInput={(event) => controller.handleFormPasswordChange()(event.currentTarget.value)}
                 onKeyDown={keyDown}
               />

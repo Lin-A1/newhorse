@@ -29,7 +29,6 @@ interface ServerFormProps {
   username: string
   password: string
   placeholder: string
-  busy: boolean
   error: string
   status: boolean | undefined
   onChange: (value: string) => void
@@ -136,7 +135,6 @@ function ServerForm(props: ServerFormProps) {
             autofocus
             validationState={props.error ? "invalid" : "valid"}
             error={props.error}
-            disabled={props.busy}
             onChange={props.onChange}
             onKeyDown={keyDown}
           />
@@ -146,7 +144,6 @@ function ServerForm(props: ServerFormProps) {
           label={language.t("dialog.server.add.name")}
           placeholder={language.t("dialog.server.add.namePlaceholder")}
           value={props.name}
-          disabled={props.busy}
           onChange={props.onNameChange}
           onKeyDown={keyDown}
         />
@@ -156,7 +153,6 @@ function ServerForm(props: ServerFormProps) {
             label={language.t("dialog.server.add.username")}
             placeholder={language.t("dialog.server.add.usernamePlaceholder")}
             value={props.username}
-            disabled={props.busy}
             onChange={props.onUsernameChange}
             onKeyDown={keyDown}
           />
@@ -165,7 +161,6 @@ function ServerForm(props: ServerFormProps) {
             label={language.t("dialog.server.add.password")}
             placeholder={language.t("dialog.server.add.passwordPlaceholder")}
             value={props.password}
-            disabled={props.busy}
             onChange={props.onPasswordChange}
             onKeyDown={keyDown}
           />
@@ -377,7 +372,6 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   }
 
   const handleAddChange = (value: string) => {
-    if (addMutation.isPending) return
     setStore("addServer", { url: value, error: "" })
     void previewStatus(value, store.addServer.username, store.addServer.password, (next) =>
       setStore("addServer", { status: next }),
@@ -385,12 +379,10 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   }
 
   const handleAddNameChange = (value: string) => {
-    if (addMutation.isPending) return
     setStore("addServer", { name: value, error: "" })
   }
 
   const handleAddUsernameChange = (value: string) => {
-    if (addMutation.isPending) return
     setStore("addServer", { username: value, error: "" })
     void previewStatus(store.addServer.url, value, store.addServer.password, (next) =>
       setStore("addServer", { status: next }),
@@ -398,7 +390,6 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   }
 
   const handleAddPasswordChange = (value: string) => {
-    if (addMutation.isPending) return
     setStore("addServer", { password: value, error: "" })
     void previewStatus(store.addServer.url, store.addServer.username, value, (next) =>
       setStore("addServer", { status: next }),
@@ -406,7 +397,6 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   }
 
   const handleEditChange = (value: string) => {
-    if (editMutation.isPending) return
     setStore("editServer", { value, error: "" })
     void previewStatus(value, store.editServer.username, store.editServer.password, (next) =>
       setStore("editServer", { status: next }),
@@ -414,12 +404,10 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   }
 
   const handleEditNameChange = (value: string) => {
-    if (editMutation.isPending) return
     setStore("editServer", { name: value, error: "" })
   }
 
   const handleEditUsernameChange = (value: string) => {
-    if (editMutation.isPending) return
     setStore("editServer", { username: value, error: "" })
     void previewStatus(store.editServer.value, value, store.editServer.password, (next) =>
       setStore("editServer", { status: next }),
@@ -427,7 +415,6 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   }
 
   const handleEditPasswordChange = (value: string) => {
-    if (editMutation.isPending) return
     setStore("editServer", { password: value, error: "" })
     void previewStatus(store.editServer.value, store.editServer.username, value, (next) =>
       setStore("editServer", { status: next }),
@@ -677,7 +664,6 @@ export function ServerConnectionForm(props: { controller: ReturnType<typeof useS
         username={props.controller.formUsername()}
         password={props.controller.formPassword()}
         placeholder={language.t("dialog.server.add.placeholder")}
-        busy={props.controller.formBusy()}
         error={props.controller.formError()}
         status={props.controller.formStatus()}
         onChange={props.controller.handleFormChange()}
