@@ -868,29 +868,27 @@ export function MessageTimeline(props: {
     })
     if (!confirmed) return false
 
-    let before: string | undefined
-    const messages: { id: string; time: { created: number } }[] = []
-    while (true) {
-      const response = await sdk().client.session.messages({ sessionID, limit: 200, before })
-      const page = response.data ?? []
-      messages.push(...page.map((item) => ({ id: item.info.id, time: { created: item.info.time.created } })))
-      const next = response.response.headers.get("x-next-cursor") ?? undefined
-      if (!next) break
-      before = next
-    }
+    // Optimistically clear the displayed messages so the page empties right away.
+    // The background compaction below preserves the conversation as hidden
+    // context, so the Companion keeps continuity without showing it.
+    sync().set(
+      produce((draft) => {
+        const ids = (draft.message[sessionID] ?? []).map((message) => message.id)
+        draft.message[sessionID] = []
+        for (const id of ids) delete draft.part[id]
+      }),
+    )
 
-    const removed = [...messages].sort((a, b) => b.time.created - a.time.created || (a.id < b.id ? 1 : -1))
-    for (const message of removed) {
-      await sdk()
-        .client.session.deleteMessage({ sessionID, messageID: message.id })
-        .catch((err) => {
-          showToast({
-            title: language.t("session.clear.failed.title"),
-            description: errorMessage(err),
-          })
-          return undefined
+    // Non-blocking: the server compacts the conversation into a hidden summary
+    // and then removes the original messages.
+    void sdk()
+      .client.session.compactClear({ sessionID })
+      .catch((err) => {
+        showToast({
+          title: language.t("session.clear.failed.title"),
+          description: errorMessage(err),
         })
-    }
+      })
     return true
   }
   const deleteSession = async (sessionID: string) => {

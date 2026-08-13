@@ -47,23 +47,29 @@ export function createTimelineProjection(input: {
     if (input.status().type === "idle") return
     return input.messages().findLast((message) => message.role === "user")?.id
   })
+  // A clear-triggered compaction (CompactionPart.hidden) must not render: its
+  // compaction user message (and the summary turn under it) are display noise.
+  const isHiddenCompaction = (message: UserMessage) =>
+    input.parts(message.id).some((part) => part.type === "compaction" && part.hidden === true)
   const messageRowMemos = createMemo(
-    mapArray(input.userMessages, (userMessage, indexAccessor) =>
-      createMemo((previous: TimelineRow.TimelineRow[] | undefined) =>
-        reuseTimelineRows(
-          previous,
-          Timeline.constructMessageRows(
-            userMessage,
-            input.parts,
-            assistantMessagesByParent().get(userMessage.id) ?? emptyAssistantMessages,
-            indexAccessor(),
-            input.showReasoningSummaries(),
-            input.status().type,
-            activeMessageID() === userMessage.id,
-            input.inlineComments(),
+    mapArray(
+      () => input.userMessages().filter((message) => !isHiddenCompaction(message)),
+      (userMessage, indexAccessor) =>
+        createMemo((previous: TimelineRow.TimelineRow[] | undefined) =>
+          reuseTimelineRows(
+            previous,
+            Timeline.constructMessageRows(
+              userMessage,
+              input.parts,
+              assistantMessagesByParent().get(userMessage.id) ?? emptyAssistantMessages,
+              indexAccessor(),
+              input.showReasoningSummaries(),
+              input.status().type,
+              activeMessageID() === userMessage.id,
+              input.inlineComments(),
+            ),
           ),
         ),
-      ),
     ),
   )
   const rows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) =>

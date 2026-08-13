@@ -182,7 +182,8 @@ export interface Interface {
     model: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
     auto: boolean
     overflow?: boolean
-  }) => Effect.Effect<void>
+    hidden?: boolean
+  }) => Effect.Effect<MessageID>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@newhorse/SessionCompaction") {}
@@ -555,6 +556,7 @@ const layer = Layer.effect(
       model: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
       auto: boolean
       overflow?: boolean
+      hidden?: boolean
     }) {
       const msg = yield* session.updateMessage({
         id: MessageID.ascending(),
@@ -571,7 +573,9 @@ const layer = Layer.effect(
         type: "compaction",
         auto: input.auto,
         overflow: input.overflow,
+        hidden: input.hidden,
       })
+      return msg.id
     })
 
     return Service.of({

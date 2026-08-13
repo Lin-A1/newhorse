@@ -297,6 +297,63 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
+    // Companion "clear chat history": non-blocking. Compacts the conversation
+    // into a hidden summary (used as context for future turns) and removes the
+    // displayed messages, so the Companion keeps continuity without cluttering
+    // the page. Runs in the background; the HTTP call returns immediately.
+    const runCompactClear = Effect.fn("SessionHttpApi.runCompactClear")(function* (sessionID: SessionID) {
+      const original = yield* SessionError.mapStorageNotFound(session.messages({ sessionID }))
+      const lastUser = original.findLast((message) => message.info.role === "user")
+      if (!lastUser || lastUser.info.role !== "user") return
+      const defaultAgent = yield* agentSvc.defaultAgent()
+      const parentID = yield* compactSvc.create({
+        sessionID,
+        agent: lastUser.info.agent ?? defaultAgent,
+        model: {
+          providerID: lastUser.info.model.providerID,
+          modelID: lastUser.info.model.modelID,
+        },
+        auto: false,
+        hidden: true,
+      })
+      const current = yield* SessionError.mapStorageNotFound(session.messages({ sessionID }))
+      yield* compactSvc
+        .process({
+          parentID,
+          messages: current,
+          sessionID,
+          auto: false,
+        })
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.gen(function* () {
+              yield* Effect.logError("compact_clear: compaction failed, clearing anyway", { sessionID, cause })
+            }),
+          ),
+        )
+      // Remove the original conversation messages. The (hidden) compaction user
+      // + summary remain as context for future turns; messages created during
+      // compaction are untouched.
+      for (const message of original) {
+        yield* session.removeMessage({ sessionID, messageID: message.info.id }).pipe(Effect.orDie)
+      }
+    })
+
+    const compactClear = Effect.fn("SessionHttpApi.compactClear")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      yield* runCompactClear(ctx.params.sessionID).pipe(
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            yield* Effect.logError("compact_clear failed", { sessionID: ctx.params.sessionID, cause })
+          }),
+        ),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+      return HttpApiSchema.NoContent.make()
+    })
+
     const prompt = Effect.fn("SessionHttpApi.prompt")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
@@ -433,6 +490,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("share", share)
       .handle("unshare", unshare)
       .handle("summarize", summarize)
+      .handle("compactClear", compactClear)
       .handle("prompt", prompt)
       .handle("promptAsync", promptAsync)
       .handle("command", command)

@@ -624,6 +624,7 @@ export type CompactionPart = {
   auto: boolean
   overflow?: boolean
   tail_start_id?: string
+  hidden?: boolean
 }
 
 export type Part =
@@ -1701,6 +1702,12 @@ export type ProfilesConfig = {
   }
 }
 
+export type AgentFallbackChainEntry = {
+  providers: Array<string>
+  model: string
+  variant?: string
+}
+
 export type PermissionActionConfig = "ask" | "allow" | "deny"
 
 export type PermissionObjectConfig = {
@@ -1732,6 +1739,7 @@ export type PermissionConfig =
 
 export type AgentConfig = {
   model?: string
+  fallbackChain?: Array<AgentFallbackChainEntry>
   variant?: string
   temperature?: number
   top_p?: number
@@ -1756,6 +1764,7 @@ export type AgentConfig = {
   [key: string]:
     | unknown
     | string
+    | Array<AgentFallbackChainEntry>
     | number
     | {
         [key: string]: boolean
@@ -12208,6 +12217,41 @@ export type SessionSummarizeResponses = {
 }
 
 export type SessionSummarizeResponse = SessionSummarizeResponses[keyof SessionSummarizeResponses]
+
+export type SessionCompactClearData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/session/{sessionID}/compact-clear"
+}
+
+export type SessionCompactClearErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionCompactClearError = SessionCompactClearErrors[keyof SessionCompactClearErrors]
+
+export type SessionCompactClearResponses = {
+  /**
+   * Compacted and cleared session
+   */
+  204: void
+}
+
+export type SessionCompactClearResponse = SessionCompactClearResponses[keyof SessionCompactClearResponses]
 
 export type SessionPromptAsyncData = {
   body?: {

@@ -94,6 +94,7 @@ export const SessionPaths = {
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
   summarize: `${root}/:sessionID/summarize`,
+  compactClear: `${root}/:sessionID/compact-clear`,
   prompt: `${root}/:sessionID/message`,
   promptAsync: `${root}/:sessionID/prompt_async`,
   command: `${root}/:sessionID/command`,
@@ -313,6 +314,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.summarize",
             summary: "Summarize session",
             description: "Generate a concise summary of the session using AI compaction to preserve key information.",
+          }),
+        ),
+        HttpApiEndpoint.post("compactClear", SessionPaths.compactClear, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(HttpApiSchema.NoContent, "Compacted and cleared session"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.compact_clear",
+            summary: "Compact and clear session",
+            description:
+              "Non-blocking. Background-compacts the conversation into context (not rendered) and removes the displayed messages, preserving continuity.",
           }),
         ),
         HttpApiEndpoint.post("prompt", SessionPaths.prompt, {

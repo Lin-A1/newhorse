@@ -198,6 +198,9 @@ export const CompactionPart = Schema.Struct({
   auto: Schema.Boolean,
   overflow: Schema.optional(Schema.Boolean),
   tail_start_id: Schema.optional(MessageID),
+  // A clear-triggered compaction whose artifacts (user + summary) must not be
+  // rendered in the timeline — used by the Companion "clear chat history" flow.
+  hidden: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "CompactionPart" })
 export type CompactionPart = Types.DeepMutable<Schema.Schema.Type<typeof CompactionPart>>
 
