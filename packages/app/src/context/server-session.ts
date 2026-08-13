@@ -794,6 +794,14 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
         setData("session_status", props.sessionID, reconcile(props.status))
         return
       }
+      case "session.idle": {
+        // Redundant terminal signal: the server also publishes `session.idle`
+        // when a run goes idle. If `session.status idle` is ever dropped from
+        // an SSE batch, this guarantees the "thinking" indicator clears.
+        const props = event.properties as { sessionID: string }
+        setData("session_status", props.sessionID, { type: "idle" })
+        return
+      }
       case "message.updated": {
         const info = cleanMessage((event.properties as { info: Message }).info)
         const load = messageLoads.get(info.sessionID)

@@ -233,7 +233,16 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     last = Date.now()
     const output = coalesceServerEvents(events)
     batch(() => {
-      output.forEach((event) => emitter.emit(event.directory, event.payload))
+      for (const event of output) {
+        try {
+          emitter.emit(event.directory, event.payload)
+        } catch (error) {
+          // One bad event must not drop the rest of this batch — the batch can
+          // contain the terminal `session.status idle` that clears the UI's
+          // "thinking" indicator, and the volatile v1/v2 streams never replay.
+          console.error("error applying server event", error, event)
+        }
+      }
     })
 
     buffer.length = 0
