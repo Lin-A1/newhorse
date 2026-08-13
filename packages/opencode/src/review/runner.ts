@@ -37,10 +37,10 @@ import { resolveComment } from "./position"
 import { buildFilterCommentsJSON, parseFilterResponse } from "./filter-comments"
 import type { DiffMode, ReviewComment, ReviewDiff } from "./types"
 
-import mainTaskSystem from "./templates/main_task_system.md?raw"
-import mainTaskUser from "./templates/main_task_user.md?raw"
-import reviewFilterSystem from "./templates/review_filter_task_system.md?raw"
-import reviewFilterUser from "./templates/review_filter_task_user.md?raw"
+import mainTaskSystem from "./templates/main_task_system.txt"
+import mainTaskUser from "./templates/main_task_user.txt"
+import reviewFilterSystem from "./templates/review_filter_task_system.txt"
+import reviewFilterUser from "./templates/review_filter_task_user.txt"
 
 export interface ReviewSessionInput {
   readonly cwd: string
