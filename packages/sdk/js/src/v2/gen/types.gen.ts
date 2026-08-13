@@ -2823,6 +2823,27 @@ export type Session1 = {
   }
 }
 
+export type SessionUsage = {
+  id: string
+  cost: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  tokens: {
+    input: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    output: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    reasoning: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    cache: {
+      read: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      write: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+  }
+  time: {
+    created?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  model?: {
+    id: string
+    providerID: string
+  }
+}
+
 export type Session2 = {
   id: string
   slug: string
@@ -11604,6 +11625,31 @@ export type SessionStatusResponses = {
 }
 
 export type SessionStatusResponse = SessionStatusResponses[keyof SessionStatusResponses]
+
+export type SessionUsageData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/session/usage"
+}
+
+export type SessionUsageErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type SessionUsageError = SessionUsageErrors[keyof SessionUsageErrors]
+
+export type SessionUsageResponses = {
+  /**
+   * Archived session usage
+   */
+  200: Array<SessionUsage>
+}
+
+export type SessionUsageResponse = SessionUsageResponses[keyof SessionUsageResponses]
 
 export type SessionDeleteData = {
   body?: never

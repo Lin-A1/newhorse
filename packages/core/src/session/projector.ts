@@ -13,7 +13,14 @@ import { SessionMessageUpdater } from "./message-updater"
 import { SessionInput } from "./input"
 import { WorkspaceV2 } from "../workspace"
 import { SessionContextEpoch } from "./context-epoch"
-import { MessageTable, PartTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
+import {
+  MessageTable,
+  PartTable,
+  SessionInputTable,
+  SessionMessageTable,
+  SessionTable,
+  SessionUsageTable,
+} from "./sql"
 import type { DeepMutable } from "../schema"
 
 type DatabaseService = Database.Interface["db"]
@@ -258,7 +265,38 @@ const layer = Layer.effectDiscard(
       }),
     )
     yield* events.project(SessionV1.Event.Deleted, (event) =>
-      db.delete(SessionTable).where(eq(SessionTable.id, event.data.sessionID)).run().pipe(Effect.orDie),
+      Effect.gen(function* () {
+        // Archive the session's usage BEFORE the row is deleted, so deleting a
+        // session does not erase its token/cost contribution from the usage
+        // stats. The archive table is not cascade-linked to the session.
+        const row = yield* db
+          .select()
+          .from(SessionTable)
+          .where(eq(SessionTable.id, event.data.sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (row) {
+          yield* db
+            .insert(SessionUsageTable)
+            .values({
+              session_id: row.id,
+              directory: row.directory,
+              cost: row.cost,
+              tokens_input: row.tokens_input,
+              tokens_output: row.tokens_output,
+              tokens_reasoning: row.tokens_reasoning,
+              tokens_cache_read: row.tokens_cache_read,
+              tokens_cache_write: row.tokens_cache_write,
+              model_id: row.model?.id,
+              provider_id: row.model?.providerID,
+              time_created: row.time_created,
+            })
+            .onConflictDoNothing()
+            .run()
+            .pipe(Effect.orDie)
+        }
+        yield* db.delete(SessionTable).where(eq(SessionTable.id, event.data.sessionID)).run().pipe(Effect.orDie)
+      }),
     )
     yield* events.project(SessionV1.Event.MessageUpdated, (event) =>
       Effect.gen(function* () {

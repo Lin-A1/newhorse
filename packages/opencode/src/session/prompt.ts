@@ -1437,6 +1437,8 @@ const layer = Layer.effect(
             // reply. Background (never blocks the turn), fires only on the
             // final answer (intermediate tool-call rounds never reach here),
             // and lands as `proposed` for human review in the Memory Center.
+            // Gate skips and LLM failures are logged inside the extract; an
+            // unexpected failure is logged here instead of silently ignored.
             yield* extract
               .extract({
                 sessionID,
@@ -1448,7 +1450,15 @@ const layer = Layer.effect(
                 lastUser,
                 lastAssistant: handle.message,
               })
-              .pipe(Effect.ignore, Effect.forkIn(scope))
+              .pipe(
+                Effect.catchCause((cause) =>
+                  Effect.logError("memory extract failed", {
+                    "session.id": sessionID,
+                    error: Cause.pretty(cause),
+                  }),
+                ),
+                Effect.forkIn(scope),
+              )
 
             if (result === "stop") return "break" as const
             if (result === "compact") {

@@ -80,6 +80,7 @@ export const PermissionResponsePayload = Schema.Struct({
 export const SessionPaths = {
   list: root,
   status: `${root}/status`,
+  usage: `${root}/usage`,
   get: `${root}/:sessionID`,
   children: `${root}/:sessionID/children`,
   todo: `${root}/:sessionID/todo`,
@@ -130,6 +131,16 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.status",
             summary: "Get session status",
             description: "Retrieve the current status of all sessions, including active, idle, and completed states.",
+          }),
+        ),
+        HttpApiEndpoint.get("usage", SessionPaths.usage, {
+          success: described(Schema.Array(Session.UsageInfo), "Archived session usage"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.usage",
+            summary: "List archived session usage",
+            description:
+              "Usage of sessions that have been deleted, preserved so the usage stats do not lose their token/cost contribution.",
           }),
         ),
         HttpApiEndpoint.get("get", SessionPaths.get, {

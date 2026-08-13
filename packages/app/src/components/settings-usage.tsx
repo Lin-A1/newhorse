@@ -145,8 +145,21 @@ export function SettingsUsage() {
   const [range, setRange] = createSignal<RangeKey>("7d")
 
   const [raw, { refetch }] = createResource(async () => {
-    const res = await serverSDK().client.session.list({ limit: 1000 })
-    return (res.data ?? []) as SessionUsage[]
+    const [sessionsRes, archivedRes] = await Promise.all([
+      serverSDK().client.session.list({ limit: 1000 }),
+      // Archived usage of deleted sessions. Graceful when the server is older
+      // or slow: race it with a short timeout so the usage tab never hangs.
+      Promise.race([
+        serverSDK()
+          .client.session.usage()
+          .then((res) => (res.data ?? []) as SessionUsage[]),
+        new Promise<SessionUsage[]>((resolve) => setTimeout(() => resolve([]), 3000)),
+      ]).catch(() => [] as SessionUsage[]),
+    ])
+    const sessions = (sessionsRes.data ?? []) as SessionUsage[]
+    // Active sessions + usage of deleted sessions, so clearing a session does
+    // not erase its token/cost contribution from the stats.
+    return [...sessions, ...archivedRes]
   })
 
   const usage = createMemo(() => {

@@ -200,16 +200,29 @@ const layer = Layer.effect(
     const run = Effect.fn("MemoryExtract.run")(function* (input: ExtractInput) {
       // Skip gates: Companion (continuous) scenario only, memory must be
       // enabled, and never from forked sub-sessions (the main turn already
-      // proposes; a fork would just duplicate proposals).
-      if (input.profile.kind !== "companion") return
-      if (input.profile.memory === "off") return
-      if (input.session.parentID) return
+      // proposes; a fork would just duplicate proposals). Logged so a silent
+      // "memory never fires" is diagnosable.
+      if (input.profile.kind !== "companion") {
+        yield* Effect.logDebug("memory extract skipped", { "session.id": input.sessionID, reason: "profile_not_companion" })
+        return
+      }
+      if (input.profile.memory === "off") {
+        yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "memory_off" })
+        return
+      }
+      if (input.session.parentID) {
+        yield* Effect.logDebug("memory extract skipped", { "session.id": input.sessionID, reason: "forked" })
+        return
+      }
 
       // The user's own words (non-synthetic parts) must exist — proactive
       // triggers and synthetic turns carry no user content to extract from.
       const userMsg = input.messages.find((m) => m.info.id === input.lastUser.id)
       const userWords = userMsg ? textOf(userMsg) : ""
-      if (!userWords.trim()) return
+      if (!userWords.trim()) {
+        yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "no_user_text" })
+        return
+      }
 
       // The just-finished assistant reply is not in the caller's loaded
       // history, so fetch the latest message and use it only if it is ours.
@@ -218,7 +231,10 @@ const layer = Layer.effect(
         latest && latest.info.id === input.lastAssistant.id ? textOf(latest) : ""
 
       const excerpt = buildExcerpt(input.messages, input.lastUser, assistantText)
-      if (!excerpt.trim()) return
+      if (!excerpt.trim()) {
+        yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "empty_excerpt" })
+        return
+      }
 
       // (a) Related existing memories as the dedup reference.
       const query = excerpt.slice(0, 500)
@@ -241,7 +257,10 @@ const layer = Layer.effect(
           }).pipe(Effect.as(undefined)),
         ),
       )
-      if (!result || result.memories.length === 0) return
+      if (!result || result.memories.length === 0) {
+        yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "no_memories_from_llm" })
+        return
+      }
 
       // (c) Dedup against existing memories AND against candidates already
       // accepted from this same batch (the LLM can propose near-identical
@@ -258,7 +277,10 @@ const layer = Layer.effect(
         candidates.push({ content })
         acceptedContents.push(content)
       }
-      if (candidates.length === 0) return
+      if (candidates.length === 0) {
+        yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "all_duplicates" })
+        return
+      }
 
       yield* Effect.logInfo("memory extract proposing", { "session.id": input.sessionID, count: candidates.length })
       yield* Effect.forEach(

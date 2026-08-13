@@ -382,6 +382,21 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`session_usage\` (
+          \`session_id\` text PRIMARY KEY,
+          \`directory\` text NOT NULL,
+          \`cost\` real DEFAULT 0 NOT NULL,
+          \`tokens_input\` integer DEFAULT 0 NOT NULL,
+          \`tokens_output\` integer DEFAULT 0 NOT NULL,
+          \`tokens_reasoning\` integer DEFAULT 0 NOT NULL,
+          \`tokens_cache_read\` integer DEFAULT 0 NOT NULL,
+          \`tokens_cache_write\` integer DEFAULT 0 NOT NULL,
+          \`model_id\` text,
+          \`provider_id\` text,
+          \`time_created\` integer
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`todo\` (
           \`session_id\` text NOT NULL,
           \`content\` text NOT NULL,
@@ -499,6 +514,7 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_profile_idx\` ON \`session\` (\`profile_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
+      yield* tx.run(`CREATE INDEX \`session_usage_directory_idx\` ON \`session_usage\` (\`directory\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
       yield* tx.run(`CREATE INDEX \`policy_audit_time_idx\` ON \`policy_audit\` (\`time\`);`)
       yield* tx.run(`CREATE INDEX \`policy_audit_action_idx\` ON \`policy_audit\` (\`action\`,\`time\`);`)

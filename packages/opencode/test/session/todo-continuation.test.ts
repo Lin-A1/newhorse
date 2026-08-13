@@ -284,6 +284,7 @@ const makeMocks = (input: { todos: Todo.Info[]; agent: Agent.Info; parentID?: Se
       // Unused by the enforcer:
       list: () => Effect.succeed([]),
       listGlobal: () => Effect.succeed([]),
+      listUsage: () => Effect.succeed([]),
       create: () => Effect.succeed(sessionInfo()),
       fork: () => Effect.succeed(sessionInfo()),
       touch: () => Effect.void,

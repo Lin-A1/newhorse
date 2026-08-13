@@ -74,6 +74,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       })
     })
 
+    const usage = Effect.fn("SessionHttpApi.usage")(function* () {
+      return yield* session.listUsage()
+    })
+
     const status = Effect.fn("SessionHttpApi.status")(function* () {
       return Object.fromEntries(yield* statusSvc.list())
     })
@@ -475,6 +479,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     return handlers
       .handle("list", list)
       .handle("status", status)
+      .handle("usage", usage)
       .handle("get", get)
       .handle("children", children)
       .handle("todo", todo)

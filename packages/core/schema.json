@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "2b09fdd2-9515-486a-925d-8a34d1e0c631",
+  "id": "7f04f7ff-c622-445f-8956-b7e79c32d438",
   "prevIds": [
-    "dc45b3c4-e058-48f9-a52a-3fdcdc1ecbb2"
+    "2b09fdd2-9515-486a-925d-8a34d1e0c631"
   ],
   "ddl": [
     {
@@ -112,6 +112,10 @@
     },
     {
       "name": "session",
+      "entityType": "tables"
+    },
+    {
+      "name": "session_usage",
       "entityType": "tables"
     },
     {
@@ -2648,6 +2652,116 @@
     },
     {
       "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "directory",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "cost",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "tokens_input",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "tokens_output",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "tokens_reasoning",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "tokens_cache_read",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "tokens_cache_write",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model_id",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "provider_id",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "session_usage"
+    },
+    {
+      "type": "text",
       "notNull": true,
       "autoincrement": false,
       "default": null,
@@ -3364,6 +3478,15 @@
       "nameExplicit": false,
       "name": "session_pk",
       "table": "session",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "session_id"
+      ],
+      "nameExplicit": false,
+      "name": "session_usage_pk",
+      "table": "session_usage",
       "entityType": "pks"
     },
     {
@@ -4139,6 +4262,20 @@
       "name": "session_parent_idx",
       "entityType": "indexes",
       "table": "session"
+    },
+    {
+      "columns": [
+        {
+          "value": "directory",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "session_usage_directory_idx",
+      "entityType": "indexes",
+      "table": "session_usage"
     },
     {
       "columns": [

@@ -281,6 +281,8 @@ import type {
   SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
+  SessionUsageErrors,
+  SessionUsageResponses,
   SkillImportErrors,
   SkillImportResponses,
   SubtaskPartInput,
@@ -4758,6 +4760,18 @@ export class Session2 extends HeyApiClient {
       url: "/session/status",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * List archived session usage
+   *
+   * Usage of sessions that have been deleted, preserved so the usage stats do not lose their token/cost contribution.
+   */
+  public usage<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<SessionUsageResponses, SessionUsageErrors, ThrowOnError>({
+      url: "/session/usage",
+      ...options,
     })
   }
 

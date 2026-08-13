@@ -49,6 +49,9 @@ test("usage tab aggregates model cost and cache stats", async ({ page }) => {
     },
   })
   await page.route("**/global/config*", async (route) => route.fulfill({ json: {} }))
+  // The usage tab also reads archived usage of deleted sessions; the mock
+  // serves none here.
+  await page.route("**/session/usage", async (route) => route.fulfill({ json: [] }))
 
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
   await page.keyboard.press("Control+,")

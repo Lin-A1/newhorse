@@ -129,7 +129,7 @@ export function readNewhorse(
   end: number,
 ): Effect.Effect<DailyEntry[]> {
   return Effect.gen(function* () {
-    const sessions = yield* session.listGlobal({ start, limit: 500 })
+    const sessions = yield* session.listGlobal({ start, limit: 500, archived: true })
     const today = sessions.filter((s) => (s.time?.updated ?? 0) < end)
     const groups: Record<"work" | "companion", Session.GlobalInfo[]> = { work: [], companion: [] }
     for (const s of today) {

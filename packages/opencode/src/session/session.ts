@@ -26,7 +26,7 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
-import { PartTable, SessionTable } from "@newhorse/core/session/sql"
+import { PartTable, SessionTable, SessionUsageTable } from "@newhorse/core/session/sql"
 import { ProjectTable } from "@newhorse/core/project/sql"
 import { MessageV2 } from "./message-v2"
 import type { InstanceContext } from "../project/instance-context"
@@ -261,6 +261,33 @@ export const GlobalInfo = Schema.Struct({
 }).annotate({ identifier: "GlobalSession" })
 export type GlobalInfo = Types.DeepMutable<Schema.Schema.Type<typeof GlobalInfo>>
 
+// Usage of sessions that have been deleted, preserved so the usage stats do
+// not lose their token/cost contribution. Shape mirrors what the app usage tab
+// aggregates (cost/tokens/time/model).
+export const UsageInfo = Schema.Struct({
+  id: SessionID,
+  cost: Schema.Number,
+  tokens: Schema.Struct({
+    input: Schema.Number,
+    output: Schema.Number,
+    reasoning: Schema.Number,
+    cache: Schema.Struct({
+      read: Schema.Number,
+      write: Schema.Number,
+    }),
+  }),
+  time: Schema.Struct({
+    created: Schema.optional(Schema.Number),
+  }),
+  model: Schema.optional(
+    Schema.Struct({
+      id: Schema.String,
+      providerID: Schema.String,
+    }),
+  ),
+}).annotate({ identifier: "SessionUsage" })
+export type UsageInfo = Types.DeepMutable<Schema.Schema.Type<typeof UsageInfo>>
+
 export const CreateInput = Schema.optional(
   Schema.Struct({
     parentID: Schema.optional(SessionID),
@@ -420,6 +447,7 @@ export type NotFound = NotFoundError
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<Info[]>
   readonly listGlobal: (input?: GlobalListInput) => Effect.Effect<GlobalInfo[]>
+  readonly listUsage: () => Effect.Effect<UsageInfo[]>
   readonly create: (input?: {
     parentID?: SessionID
     title?: string
@@ -606,6 +634,31 @@ const layer: Layer.Layer<
         }
       }
       return rows.map((row) => ({ ...fromRow(row), project: projects.get(row.project_id) ?? null }))
+    })
+
+    const listUsage: Interface["listUsage"] = Effect.fn("Session.listUsage")(function* () {
+      const rows = yield* db
+        .select()
+        .from(SessionUsageTable)
+        .orderBy(desc(SessionUsageTable.time_created))
+        .limit(1000)
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map((row) => ({
+        id: row.session_id,
+        cost: row.cost,
+        tokens: {
+          input: row.tokens_input,
+          output: row.tokens_output,
+          reasoning: row.tokens_reasoning,
+          cache: { read: row.tokens_cache_read, write: row.tokens_cache_write },
+        },
+        time: { created: row.time_created ?? undefined },
+        model:
+          row.model_id && row.provider_id
+            ? { id: row.model_id, providerID: row.provider_id }
+            : undefined,
+      }))
     })
 
     const children = Effect.fn("Session.children")(function* (parentID: SessionID) {
@@ -944,6 +997,7 @@ const layer: Layer.Layer<
     return Service.of({
       list,
       listGlobal,
+      listUsage,
       create,
       fork,
       touch,

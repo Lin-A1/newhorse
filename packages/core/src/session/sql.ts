@@ -81,6 +81,27 @@ export const MessageTable = sqliteTable(
   (table) => [index("message_session_time_created_id_idx").on(table.session_id, table.time_created, table.id)],
 )
 
+// Preserves a deleted session's usage so the usage stats do not lose the
+// session's token/cost contribution. Intentionally NOT foreign-keyed to
+// SessionTable (and not cascade-deleted): it outlives the session row.
+export const SessionUsageTable = sqliteTable(
+  "session_usage",
+  {
+    session_id: text().$type<SessionSchema.ID>().primaryKey(),
+    directory: DatabasePath.directoryColumn().notNull(),
+    cost: real().notNull().default(0),
+    tokens_input: integer().notNull().default(0),
+    tokens_output: integer().notNull().default(0),
+    tokens_reasoning: integer().notNull().default(0),
+    tokens_cache_read: integer().notNull().default(0),
+    tokens_cache_write: integer().notNull().default(0),
+    model_id: text(),
+    provider_id: text(),
+    time_created: integer(),
+  },
+  (table) => [index("session_usage_directory_idx").on(table.directory)],
+)
+
 export const PartTable = sqliteTable(
   "part",
   {

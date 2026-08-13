@@ -53,5 +53,6 @@ export const migrations = (
     import("./migration/20260806042148_simple_nova"),
     import("./migration/20260808185428_daily_summary"),
     import("./migration/20260812160231_add_memory_fts_entity_history"),
+    import("./migration/20260813155258_fluffy_bruce_banner"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

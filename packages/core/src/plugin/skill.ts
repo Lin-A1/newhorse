@@ -6,9 +6,11 @@ import { define } from "./internal"
 import { Effect } from "effect"
 import { AbsolutePath } from "../schema"
 import { SkillV2 } from "../skill"
-import customizeOpencodeContent from "./skill/customize-opencode.md" with { type: "text" }
+import customizeNewhorseContent from "./skill/customize-newhorse.md" with { type: "text" }
+import newhorseCapabilitiesContent from "./skill/newhorse-capabilities.md" with { type: "text" }
 
-export const CustomizeOpencodeContent = customizeOpencodeContent
+export const CustomizeNewhorseContent = customizeNewhorseContent
+export const NewhorseCapabilitiesContent = newhorseCapabilitiesContent
 
 export const Plugin = define({
   id: "skill",
@@ -18,11 +20,23 @@ export const Plugin = define({
         SkillV2.EmbeddedSource.make({
           type: "embedded",
           skill: SkillV2.Info.make({
-            name: "customize-opencode",
+            name: "newhorse-capabilities",
             description:
-              "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, commands, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself.",
-            location: AbsolutePath.make("/builtin/customize-opencode.md"),
-            content: CustomizeOpencodeContent,
+              "What newhorse is and what it can do. Use when the user asks about the product itself: 'can newhorse do...', 'does newhorse have...', 'what features does newhorse have', or how newhorse differs from OpenCode.",
+            location: AbsolutePath.make("/builtin/newhorse-capabilities.md"),
+            content: NewhorseCapabilitiesContent,
+          }),
+        }),
+      )
+      draft.source(
+        SkillV2.EmbeddedSource.make({
+          type: "embedded",
+          skill: SkillV2.Info.make({
+            name: "customize-newhorse",
+            description:
+              "Use ONLY when the user is editing or creating newhorse's own configuration: newhorse.json, newhorse.jsonc, opencode.json or opencode.jsonc (legacy), files under .newhorse/ or .opencode/ (legacy), or files under ~/.config/newhorse/ or ~/.config/opencode/ (legacy). Also use when creating or fixing newhorse agents, subagents, commands, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring newhorse itself.",
+            location: AbsolutePath.make("/builtin/customize-newhorse.md"),
+            content: CustomizeNewhorseContent,
           }),
         }),
       )

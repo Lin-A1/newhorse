@@ -33,10 +33,15 @@ const SKILL_PATTERN = "**/SKILL.md"
 // invalid config, so users hit cryptic startup errors. Loading this skill when
 // the model is asked to touch newhorse's own config files gives it the actual
 // schemas instead of guesses.
-const CUSTOMIZE_OPENCODE_SKILL_NAME = "customize-opencode"
+const CUSTOMIZE_OPENCODE_SKILL_NAME = "customize-newhorse"
 const CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION =
   "Use ONLY when the user is editing or creating newhorse's own configuration: newhorse.json, newhorse.jsonc, opencode.json or opencode.jsonc (legacy), files under .newhorse/ or .opencode/ (legacy), or files under ~/.config/newhorse/ or ~/.config/opencode/ (legacy). Also use when creating or fixing newhorse agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring newhorse itself."
-const CUSTOMIZE_OPENCODE_SKILL_BODY = SkillPlugin.CustomizeOpencodeContent
+const CUSTOMIZE_OPENCODE_SKILL_BODY = SkillPlugin.CustomizeNewhorseContent
+
+const NEWHORSE_CAPABILITIES_SKILL_NAME = "newhorse-capabilities"
+const NEWHORSE_CAPABILITIES_SKILL_DESCRIPTION =
+  "What newhorse is and what it can do. Use when the user asks about the product itself: 'can newhorse do...', 'does newhorse have...', 'what features does newhorse have', or how newhorse differs from OpenCode."
+const NEWHORSE_CAPABILITIES_SKILL_BODY = SkillPlugin.NewhorseCapabilitiesContent
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -314,13 +319,19 @@ const layer = Layer.effect(
     const state = yield* InstanceState.make(
       Effect.fn("Skill.state")(function* () {
         const s: State = { skills: {}, dirs: new Set() }
-        // Register the built-in skill BEFORE disk discovery so a user-disk
-        // skill with the same name can override it.
+        // Register the built-in skills BEFORE disk discovery so a user-disk
+        // skill with the same name can override them.
         s.skills[CUSTOMIZE_OPENCODE_SKILL_NAME] = {
           name: CUSTOMIZE_OPENCODE_SKILL_NAME,
           description: CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION,
           location: "<built-in>",
           content: CUSTOMIZE_OPENCODE_SKILL_BODY,
+        }
+        s.skills[NEWHORSE_CAPABILITIES_SKILL_NAME] = {
+          name: NEWHORSE_CAPABILITIES_SKILL_NAME,
+          description: NEWHORSE_CAPABILITIES_SKILL_DESCRIPTION,
+          location: "<built-in>",
+          content: NEWHORSE_CAPABILITIES_SKILL_BODY,
         }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
