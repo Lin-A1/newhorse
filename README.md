@@ -12,6 +12,8 @@
 
 Newhorse is an independent [OpenCode](https://github.com/anomalyco/opencode) fork that extends a coding-agent runtime into a broader work and life environment. The same runtime powers the desktop app, web app, TUI, SDK, automation, models, tools, MCP servers, sessions, and workspaces.
 
+> newhorse is a **personal tool** built by its author for their own workflow habits — a single-owner workspace, not a team product.
+
 Two product profiles share that runtime:
 
 - **Assistant** focuses on project execution: code, files, terminals, research, plans, tasks, and workspaces.
@@ -77,6 +79,38 @@ Important packages include:
 - `packages/sdk/js` — generated and handwritten JavaScript/TypeScript SDK surfaces
 - `packages/ui` and `packages/session-ui` — shared UI and session components
 - `packages/web` — marketing/documentation site, not the product web client
+
+## What newhorse adds on top of OpenCode
+
+Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific capabilities on top — personal continuity, deterministic tooling, and production hardening:
+
+**Memory & personal continuity**
+- Structured SQLite memory with scope/provenance/status/expiration and an accept/reject proposal lifecycle (Memory Center)
+- Post-turn auto-extraction of memory proposals (review-gated) with same-batch dedup
+- FTS5/BM25 retrieval plus entity extraction & boost — no embedding model required
+- Persistent reminders, follow-ups, continuity grants, and Companion Plan
+- Daily activity summaries across newhorse, Claude Code, and Codex sessions
+- Todo-continuation enforcer (auto-resume on idle with open todos)
+
+**Deterministic tooling & agents**
+- Native code-review engine (exact diff, deterministic file filtering, line-level AI comments, falsify-filter)
+- ast-grep structural search/replace; split LSP tools (definition/references/rename/symbols/diagnostics)
+- MultiEdit batch editing; browser automation (agent-browser, on-demand)
+- Multi-model fallback chains with availability-aware resolution
+- Execution-phase plugin hooks (permission decisions, end-of-turn continuation)
+- Cross-session plan resume (boulder-state)
+
+**Trust & safety**
+- Central trust policy with content-free audit; content-scope isolation across project/personal/relationship
+- Sensitive-content rejection and memory-policy gating
+- Execution-phase permission decisions exposed to plugins
+
+**Desktop & product**
+- Tray-resident background mode with a close-action choice (quit vs minimize to tray)
+- Tool descriptions localized to Chinese
+- Native code review surfaced in the app's review tab
+
+Several of these are ported from or inspired by open-source reference projects (OpenCodeReview, oh-my-opencode, mem0, and Claude Code's formats), respecting their licenses.
 
 ## Current status
 

@@ -12,6 +12,8 @@
 
 Newhorse 是一个独立的 [OpenCode](https://github.com/anomalyco/opencode) 分支，把编码智能体运行时扩展成更完整的工作与生活环境。相同的运行时同时支撑桌面端、Web 端、TUI、SDK、自动化、模型、工具、MCP Server、Session 和 Workspace。
 
+> newhorse 是**作者为个人工作习惯打造的个人工具** —— 单所有者工作空间，不是团队产品。
+
 同一套运行时下有两种产品 Profile：
 
 - **Assistant** 面向项目执行：代码、文件、终端、研究、计划、任务和 Workspace。
@@ -77,6 +79,38 @@ Newhorse 将智能体产品中常被混在一起的职责拆分为：
 - `packages/sdk/js` — 自动生成及手写的 JavaScript/TypeScript SDK
 - `packages/ui`、`packages/session-ui` — 通用 UI 与 Session 组件
 - `packages/web` — 营销/文档站点，不是产品 Web Client
+
+## 在 OpenCode 基础上优化了什么
+
+Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续性、确定性工具和生产级加固的新horse 专属能力：
+
+**记忆与个人连续性**
+- 结构化 SQLite 记忆（scope/provenance/status/expiration），proposal 接受/拒绝生命周期（Memory Center）
+- 回合后自动提取记忆提案（审核门控）+ 同批去重
+- FTS5/BM25 检索 + 实体提取与加权 —— **无需嵌入模型**
+- 持久 Reminder、Follow-up、Continuity Grant 与 Companion Plan
+- 每日活动总结（覆盖 newhorse、Claude Code、Codex 会话）
+- Todo 续跑执行器（idle 且有未完成任务时自动恢复）
+
+**确定性工具与智能体**
+- 原生代码评审引擎（精确 diff、确定性文件过滤、行级 AI 评论、falsify 过滤）
+- ast-grep 结构化搜索/替换；拆分后的 LSP 工具（定义/引用/重命名/符号/诊断）
+- MultiEdit 批量编辑；浏览器自动化（agent-browser，按需下载）
+- 多模型回退链（可用性感知解析）
+- 执行期插件 Hooks（权限决策、轮末续跑）
+- 跨会话 Plan 恢复（boulder-state）
+
+**信任与安全**
+- 中央信任策略 + 无内容审计；project/personal/relationship 内容域隔离
+- 敏感内容拒绝 + 记忆策略门控
+- 执行期权限决策开放给插件
+
+**桌面与产品**
+- 托盘常驻后台模式，关闭动作可选（退出或最小化到托盘）
+- 工具描述汉化
+- 原生代码评审展示在 app 的 review tab
+
+其中多项移植自或参考自开源参考项目（OpenCodeReview、oh-my-opencode、mem0、Claude Code 的格式），并遵守其许可证。
 
 ## 当前状态
 
