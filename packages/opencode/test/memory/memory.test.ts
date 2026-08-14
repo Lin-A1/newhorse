@@ -188,8 +188,14 @@ describe("Memory", () => {
         expect(Exit.isFailure(rejected)).toBe(true)
 
         expect((yield* memory.retrieve()).map((item) => item.content)).toEqual(["not relationship memory"])
-        expect((yield* memory.list()).map((item) => item.content)).toEqual(["not relationship memory"])
-        expect(yield* memory.count()).toBe(1)
+        // The Memory Center viewer (list/page/count) is the user's own memory
+        // hub: in a personal context it shows relationship memories too, even
+        // without a profileID. Retrieval isolation stays in `retrieve`.
+        const listed = yield* memory.list()
+        expect(listed.map((item) => item.content)).toEqual(
+          expect.arrayContaining(["not relationship memory", "likes a quiet check-in", "assistant relationship"]),
+        )
+        expect(yield* memory.count()).toBe(3)
         expect((yield* memory.export()).map((item) => item.content)).toEqual(["not relationship memory"])
         const retrieved = yield* memory.retrieve({ profileID: "companion", relationshipOnly: true })
         expect(retrieved.map((item) => item.id)).toEqual([companion.id])

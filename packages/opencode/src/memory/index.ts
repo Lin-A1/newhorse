@@ -647,8 +647,13 @@ const layer = Layer.effect(
         visibleFilter(owner, input?.includeGlobal ?? true),
         inArray(MemoryTable.status, input?.status ?? DEFAULT_STATUSES),
       ]
+      // The Memory Center (page/list/count) is the user's own memory hub: in a
+      // personal context, show relationship (Companion) memories too, even
+      // without a profileID. Without this, model-extracted companion proposals
+      // were invisible. Project contexts still exclude relationship memories;
+      // retrieval/search enforce content-scope isolation separately.
       if (owner.policy.contentScope !== "personal") conditions.push(ne(MemoryTable.kind, "relationship"))
-      else conditions.push(relationshipProfileFilter(input?.profileID))
+      else if (input?.profileID) conditions.push(relationshipProfileFilter(input.profileID))
       if (input?.profileID) {
         conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
       }

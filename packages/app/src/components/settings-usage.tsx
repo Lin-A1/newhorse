@@ -145,8 +145,11 @@ export function SettingsUsage() {
   const [range, setRange] = createSignal<RangeKey>("7d")
 
   const [raw, { refetch }] = createResource(async () => {
+    // Use the global session list so the usage stats cover ALL projects, not
+    // just the current one — otherwise a session created in another project
+    // makes today's usage look empty.
     const [sessionsRes, archivedRes] = await Promise.all([
-      serverSDK().client.session.list({ limit: 1000 }),
+      serverSDK().client.experimental.session.list({ limit: 1000 }),
       // Archived usage of deleted sessions. Graceful when the server is older
       // or slow: race it with a short timeout so the usage tab never hangs.
       Promise.race([

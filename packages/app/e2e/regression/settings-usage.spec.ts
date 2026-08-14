@@ -49,6 +49,26 @@ test("usage tab aggregates model cost and cache stats", async ({ page }) => {
     },
   })
   await page.route("**/global/config*", async (route) => route.fulfill({ json: {} }))
+  // The usage tab reads the global session list (all projects).
+  await page.route(/experimental\/session/, async (route) =>
+    route.fulfill({
+      json: [
+        {
+          id: sessionID,
+          slug: sessionID,
+          projectID: "proj_usage",
+          directory,
+          workspaceID,
+          profileID: "assistant",
+          title: "Usage Test",
+          version: "dev",
+          time: { created: now, updated: now },
+          cost: 1.25,
+          tokens: { input: 1000, output: 500, reasoning: 100, cache: { read: 800, write: 50 } },
+        },
+      ],
+    }),
+  )
   // The usage tab also reads archived usage of deleted sessions; the mock
   // serves none here.
   await page.route("**/session/usage", async (route) => route.fulfill({ json: [] }))
