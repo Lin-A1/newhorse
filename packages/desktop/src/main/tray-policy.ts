@@ -7,14 +7,13 @@
 //       "tray" → hide the window to the system tray
 //       "ask"  → show a dialog asking, with an option to remember the choice
 //
-// Minimize always hides to the tray (when the tray exists) — minimizing means
-// "park it in the tray", closing is the only ambiguous action.
+// Minimize always minimizes to the taskbar (normal behavior) — only closing a
+// window ever parks it in the tray.
 export type CloseAction = "quit" | "tray" | "ask"
 
 export type TrayResidentWindow = {
   hide(): void
   on(event: "close", handler: (event: { preventDefault(): void }) => void): void
-  on(event: "minimize", handler: () => void): void
 }
 
 export type CloseActionDeps = {
@@ -41,10 +40,6 @@ export function wireTrayResidentClose(win: TrayResidentWindow, deps: CloseAction
       })
       return
     }
-    win.hide()
-  })
-  win.on("minimize", () => {
-    if (deps.isQuitting() || !deps.isTrayEnabled()) return
     win.hide()
   })
 }

@@ -1069,6 +1069,11 @@ export const dict = {
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL 集成",
   "settings.desktop.wsl.description": "在 Windows 的 WSL 环境中运行 newhorse 服务器。",
+  "desktop.close.title": "关闭 newhorse？",
+  "desktop.close.description": "最小化到系统托盘后，newhorse 会继续在后台运行（记忆、提醒、每日总结不受影响），随时可恢复；也可以选择完全退出。",
+  "desktop.close.tray": "最小化到托盘",
+  "desktop.close.quit": "退出 newhorse",
+  "desktop.close.remember": "记住我的选择",
 
   "settings.general.row.downloadPath.title": "默认下载文件夹",
   "settings.general.row.downloadPath.description": "你保存或下载的文件（例如记忆导出）将默认保存到此文件夹。留空则使用系统默认值。",

@@ -88,6 +88,12 @@ const api: ElectronAPI = {
     ipcRenderer.on("deep-link", handler)
     return () => ipcRenderer.removeListener("deep-link", handler)
   },
+  onCloseChoice: (cb) => {
+    const handler = () => cb()
+    ipcRenderer.on("close-choice-request", handler)
+    return () => ipcRenderer.removeListener("close-choice-request", handler)
+  },
+  replyCloseChoice: (payload) => ipcRenderer.send("close-choice-reply", payload),
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),
   openFilePicker: (opts) => ipcRenderer.invoke("open-file-picker", opts),

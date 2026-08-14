@@ -189,47 +189,61 @@ function mockEnv(config: MockConfig = {}) {
 describe("MemoryExtract", () => {
   // ------------------------------------------------------------------ skip gates
   describe("skip gates", () => {
-    const env = mockEnv({ llmText: '{"memories":[{"kind":"preference","content":"The user prefers dark mode"}]}' })
-    testEffect(env.layer).effect("does not run for non-companion profiles", () =>
-      Effect.gen(function* () {
-        const extract = yield* MemoryExtract.Service
-        yield* extract.extract(makeInput({ profile: runtimeProfile({ kind: "assistant" }) }))
-        expect(env.saveCalls).toHaveLength(0)
-        expect(env.llmCalls()).toBe(0)
-      }),
+    const LLM_TEXT = '{"memories":[{"kind":"preference","content":"The user prefers dark mode"}]}'
+    const workEnv = mockEnv({ llmText: LLM_TEXT })
+    const offEnv = mockEnv({ llmText: LLM_TEXT })
+    const forkedEnv = mockEnv({ llmText: LLM_TEXT })
+    const syntheticEnv = mockEnv({ llmText: LLM_TEXT })
+
+    testEffect(workEnv.layer).effect(
+      "runs for work (assistant) profiles and saves the proposed kind",
+      () =>
+        Effect.gen(function* () {
+          const extract = yield* MemoryExtract.Service
+          yield* extract.extract(makeInput({ profile: runtimeProfile({ kind: "assistant", id: Profile.ID.make("assistant") }) }))
+          expect(workEnv.saveCalls).toHaveLength(1)
+          expect(workEnv.saveCalls[0]!.kind).toBe("preference")
+          expect(workEnv.llmCalls()).toBe(1)
+        }),
     )
 
-    testEffect(env.layer).effect("does not run when memory policy is off", () =>
-      Effect.gen(function* () {
-        const extract = yield* MemoryExtract.Service
-        yield* extract.extract(makeInput({ profile: runtimeProfile({ memory: "off" }) }))
-        expect(env.saveCalls).toHaveLength(0)
-        expect(env.llmCalls()).toBe(0)
-      }),
+    testEffect(offEnv.layer).effect(
+      "does not run when memory policy is off",
+      () =>
+        Effect.gen(function* () {
+          const extract = yield* MemoryExtract.Service
+          yield* extract.extract(makeInput({ profile: runtimeProfile({ memory: "off" }) }))
+          expect(offEnv.saveCalls).toHaveLength(0)
+          expect(offEnv.llmCalls()).toBe(0)
+        }),
     )
 
-    testEffect(env.layer).effect("does not run for forked child sessions", () =>
-      Effect.gen(function* () {
-        const extract = yield* MemoryExtract.Service
-        yield* extract.extract(makeInput({ session: sessionInfo("sess_parent") }))
-        expect(env.saveCalls).toHaveLength(0)
-        expect(env.llmCalls()).toBe(0)
-      }),
+    testEffect(forkedEnv.layer).effect(
+      "does not run for forked child sessions",
+      () =>
+        Effect.gen(function* () {
+          const extract = yield* MemoryExtract.Service
+          yield* extract.extract(makeInput({ session: sessionInfo("sess_parent") }))
+          expect(forkedEnv.saveCalls).toHaveLength(0)
+          expect(forkedEnv.llmCalls()).toBe(0)
+        }),
     )
 
-    testEffect(env.layer).effect("does not run when the user turn has no real text", () =>
-      Effect.gen(function* () {
-        const extract = yield* MemoryExtract.Service
-        const synthetic = userMessage(USER_ID, "synthetic text has no extractable user words", { synthetic: true })
-        yield* extract.extract(
-          makeInput({
-            messages: [synthetic],
-            lastUser: synthetic.info as SessionV1.User,
-          }),
-        )
-        expect(env.saveCalls).toHaveLength(0)
-        expect(env.llmCalls()).toBe(0)
-      }),
+    testEffect(syntheticEnv.layer).effect(
+      "does not run when the user turn has no real text",
+      () =>
+        Effect.gen(function* () {
+          const extract = yield* MemoryExtract.Service
+          const synthetic = userMessage(USER_ID, "synthetic text has no extractable user words", { synthetic: true })
+          yield* extract.extract(
+            makeInput({
+              messages: [synthetic],
+              lastUser: synthetic.info as SessionV1.User,
+            }),
+          )
+          expect(syntheticEnv.saveCalls).toHaveLength(0)
+          expect(syntheticEnv.llmCalls()).toBe(0)
+        }),
     )
   })
 

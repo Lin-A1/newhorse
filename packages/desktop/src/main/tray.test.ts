@@ -196,21 +196,11 @@ describe("close-to-tray policy", () => {
     expect(win.hidden).toBe(0)
   })
 
-  test("minimize hides to the tray only when not quitting and a tray exists", () => {
-    const hide = fakeWindow()
-    wireTrayResidentClose(hide, { isQuitting: () => false, isTrayEnabled: () => true, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
-    hide.emitMinimize()
-    expect(hide.hidden).toBe(1)
-
-    const quitting = fakeWindow()
-    wireTrayResidentClose(quitting, { isQuitting: () => true, isTrayEnabled: () => true, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
-    quitting.emitMinimize()
-    expect(quitting.hidden).toBe(0)
-
-    const noTray = fakeWindow()
-    wireTrayResidentClose(noTray, { isQuitting: () => false, isTrayEnabled: () => false, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
-    noTray.emitMinimize()
-    expect(noTray.hidden).toBe(0)
+  test("minimize is left to the taskbar (never parks in the tray)", () => {
+    const win = fakeWindow()
+    wireTrayResidentClose(win, { isQuitting: () => false, isTrayEnabled: () => true, getCloseAction: () => "tray" as CloseAction, askCloseAction: async () => "tray" as CloseAction, quit: () => {} })
+    win.emitMinimize()
+    expect(win.hidden).toBe(0)
   })
 
   test("re-reads the live quitting and tray flags on every event", () => {

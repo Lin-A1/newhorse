@@ -2,6 +2,7 @@ import "@/index.css"
 import * as Sentry from "@sentry/solid"
 import { I18nProvider } from "@newhorse/ui/context"
 import { DialogProvider } from "@newhorse/ui/context/dialog"
+import { CloseChoiceListener } from "@/components/close-choice-dialog"
 import { FileComponentProvider } from "@newhorse/ui/context/file"
 import { MarkedProvider } from "@newhorse/ui/context/marked"
 import { File } from "@newhorse/session-ui/file"
@@ -393,6 +394,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
               <QueryProvider>
                 <WslServersProvider>
                   <DialogProvider>
+                    <CloseChoiceListener />
                     <MarkedProvider>
                       <FileComponentProvider component={File}>{props.children}</FileComponentProvider>
                     </MarkedProvider>

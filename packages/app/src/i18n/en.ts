@@ -1177,6 +1177,11 @@ export const dict = {
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL integration",
   "settings.desktop.wsl.description": "Run the newhorse server inside WSL on Windows.",
+  "desktop.close.title": "Close newhorse?",
+  "desktop.close.description": "Minimize to the system tray and newhorse keeps running in the background (memory, reminders, and daily summaries stay active); or quit entirely.",
+  "desktop.close.tray": "Minimize to tray",
+  "desktop.close.quit": "Quit newhorse",
+  "desktop.close.remember": "Remember my choice",
 
   "settings.general.row.downloadPath.title": "Default download folder",
   "settings.general.row.downloadPath.description": "Files you save or download (e.g. Memory exports) default to this folder. Leave empty to use the system default.",

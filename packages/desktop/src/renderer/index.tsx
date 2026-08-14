@@ -245,6 +245,9 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
 
     recordFatalRendererError: (error) => window.api.recordFatalRendererError(error),
 
+    onCloseChoice: (cb) => window.api.onCloseChoice(cb),
+    replyCloseChoice: (payload) => window.api.replyCloseChoice(payload),
+
     restart: async () => {
       await window.api.killSidecar().catch(() => undefined)
       window.api.relaunch()

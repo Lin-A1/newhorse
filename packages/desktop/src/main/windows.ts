@@ -4,7 +4,7 @@ import type { DesktopTheme } from "@newhorse/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
 import { randomUUID } from "node:crypto"
 import { rmSync } from "node:fs"
-import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
+import { app, BrowserWindow, dialog, ipcMain, net, nativeImage, nativeTheme, protocol } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -288,27 +288,30 @@ function registerWindow(win: BrowserWindow, id: string) {
     isQuitting: isAppQuitting,
     isTrayEnabled: () => trayEnabled,
     getCloseAction: () => (getStore().get(CLOSE_ACTION_KEY) as CloseAction | undefined) ?? "ask",
-    askCloseAction: () => askCloseActionDialog(win),
+    askCloseAction: () => askCloseActionFromRenderer(win),
     quit: () => app.quit(),
   })
   win.on("closed", () => registry.closed(id))
 }
 
-function askCloseActionDialog(win: BrowserWindow): Promise<CloseAction> {
-  return dialog.showMessageBox(win, {
-    type: "question",
-    title: "newhorse",
-    message: "Close newhorse?",
-    detail: "Minimize to the system tray to keep newhorse running in the background, or quit entirely.",
-    buttons: ["Minimize to tray", "Quit newhorse"],
-    defaultId: 0,
-    cancelId: 0,
-    checkboxLabel: "Always do this",
-    checkboxChecked: false,
-  }).then(({ response, checkboxChecked }) => {
-    const action: CloseAction = response === 1 ? "quit" : "tray"
-    if (checkboxChecked) getStore().set(CLOSE_ACTION_KEY, action)
-    return action
+// Asks the renderer to show the close-choice dialog (Chinese, matches the app
+// theme) instead of a native OS dialog. The renderer replies over IPC with the
+// chosen action and whether to remember it.
+function askCloseActionFromRenderer(win: BrowserWindow): Promise<CloseAction> {
+  return new Promise((resolve) => {
+    const onReply = (event: Electron.IpcMainEvent, payload: { action?: CloseAction; always?: boolean }) => {
+      if (event.sender !== win.webContents) return
+      ipcMain.removeListener("close-choice-reply", onReply)
+      if (payload?.always) getStore().set(CLOSE_ACTION_KEY, payload.action ?? "tray")
+      resolve(payload?.action ?? "tray")
+    }
+    ipcMain.on("close-choice-reply", onReply)
+    if (win.isDestroyed()) {
+      ipcMain.removeListener("close-choice-reply", onReply)
+      resolve("tray")
+      return
+    }
+    win.webContents.send("close-choice-request")
   })
 }
 

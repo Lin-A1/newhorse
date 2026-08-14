@@ -53,6 +53,11 @@ type PlatformBase = {
   /** Send a system notification (optional deep link) */
   notify(title: string, description?: string, href?: string): Promise<void>
 
+  /** Desktop only: the main process asks the renderer to show the close-action
+   * dialog (quit vs. minimize to tray) when the user closes a window. */
+  onCloseChoice?(cb: () => void): () => void
+  replyCloseChoice?(payload: { action: "quit" | "tray" | "ask"; always?: boolean }): void
+
   /** Open a native attachment picker and read selected files sequentially (desktop only) */
   openAttachmentPickerDialog?(
     opts: OpenAttachmentPickerOptions,

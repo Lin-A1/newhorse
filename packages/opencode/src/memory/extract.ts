@@ -6,6 +6,7 @@ import { SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
 import { Profile } from "@/profile"
 import { Memory, MemoryPolicyRejected, SensitiveMemoryRejected } from "@/memory"
+import type { MemoryKind } from "@newhorse/core/memory/sql"
 import { LLM } from "@/session/llm"
 import { Agent } from "@/agent/agent"
 import { Provider } from "@/provider/provider"
@@ -198,14 +199,12 @@ const layer = Layer.effect(
     })
 
     const run = Effect.fn("MemoryExtract.run")(function* (input: ExtractInput) {
-      // Skip gates: Companion (continuous) scenario only, memory must be
-      // enabled, and never from forked sub-sessions (the main turn already
-      // proposes; a fork would just duplicate proposals). Logged so a silent
-      // "memory never fires" is diagnosable.
-      if (input.profile.kind !== "companion") {
-        yield* Effect.logDebug("memory extract skipped", { "session.id": input.sessionID, reason: "profile_not_companion" })
-        return
-      }
+      // Skip gates: memory must be enabled, and never from forked sub-sessions
+      // (the main turn already proposes; a fork would just duplicate proposals).
+      // Companion sessions store relationship memories; work (assistant)
+      // sessions store durable preferences/facts. Logged so a silent "memory
+      // never fires" is diagnosable.
+      const companion = input.profile.kind === "companion"
       if (input.profile.memory === "off") {
         yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "memory_off" })
         return
@@ -241,7 +240,7 @@ const layer = Layer.effect(
       const related = yield* memory.search({
         query,
         profileID: input.profile.id,
-        relationshipOnly: true,
+        relationshipOnly: companion,
         status: ["active", "proposed"],
         limit: 10,
         userRuleset: input.session.permission,
@@ -265,8 +264,9 @@ const layer = Layer.effect(
       // (c) Dedup against existing memories AND against candidates already
       // accepted from this same batch (the LLM can propose near-identical
       // variants in a single reply), then cap, then save each as a
-      // model_inferred proposal.
-      const candidates: { content: string }[] = []
+      // model_inferred proposal. Companion memories are relationship; work
+      // sessions keep the kind the LLM proposed (preference/fact/goal/event).
+      const candidates: { content: string; kind: string }[] = []
       const acceptedContents: string[] = []
       for (const item of result.memories) {
         if (candidates.length >= MAX_MEMORIES) break
@@ -274,7 +274,7 @@ const layer = Layer.effect(
         if (content.length === 0) continue
         if (isDuplicate(content, relatedContents)) continue
         if (isDuplicate(content, acceptedContents)) continue
-        candidates.push({ content })
+        candidates.push({ content, kind: item.kind ?? "fact" })
         acceptedContents.push(content)
       }
       if (candidates.length === 0) {
@@ -291,7 +291,9 @@ const layer = Layer.effect(
               content: item.content,
               // Companion memory lives in the relationship store so it is
               // re-surfaced in the Companion's relationship-memory context.
-              kind: "relationship",
+              // Work sessions keep the kind the LLM proposed (preference/fact/
+              // goal/event), scoped by the trust policy to the workspace.
+              kind: companion ? "relationship" : (item.kind as MemoryKind),
               provenance: "model_inferred",
               profileID: input.profile.id,
               sourceSessionID: input.sessionID,

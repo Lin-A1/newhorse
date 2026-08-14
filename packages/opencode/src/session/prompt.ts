@@ -1336,23 +1336,23 @@ const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const [relationshipMemories, continuityContext] = yield* Effect.all([
-              profile.kind === "companion" && profile.memory !== "off"
+              profile.memory !== "off"
                 ? Effect.gen(function* () {
                     const query = memoryRecallQuery(lastUserMsg)
                     const found = yield* memory.search({
                       query,
                       profileID: profile.id,
-                      relationshipOnly: true,
+                      relationshipOnly: profile.kind === "companion",
                       limit: 5,
                       userRuleset: session.permission,
                     })
                     if (found.length > 0) return found
-                    // No keyword match: fall back to the most recent relationship
-                    // memories so the Companion still has some context. Relevance
-                    // first, recency second — never the full history.
+                    // No keyword match: fall back to the most recent memories
+                    // so the assistant still has some context. Relevance first,
+                    // recency second — never the full history.
                     return yield* memory.retrieve({
                       profileID: profile.id,
-                      relationshipOnly: true,
+                      relationshipOnly: profile.kind === "companion",
                       limit: 5,
                       userRuleset: session.permission,
                     })
