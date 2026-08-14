@@ -87,7 +87,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
         ? language.t("settings.memory.scope.user_global")
         : target === "relationship"
           ? language.t("settings.memory.clear.relationship")
-          : memoryScopeLabel(language.t, target)
+          : language.t("settings.memory.scope.workspace")
     const confirmed = await confirm({
       title: language.t("common.clear"),
       message: language.t("settings.memory.clear.confirm", { target: label }),
@@ -198,22 +198,6 @@ export function SettingsMemory(props: { sessionID?: string }) {
                   <div class="flex flex-wrap items-center gap-2">
                     <Show when={memory.state.mutating === item.id}>
                       <Spinner class="size-3.5 shrink-0 text-text-weak" />
-                    </Show>
-                    <Show when={item.status === "proposed"}>
-                      <Button
-                        size="small"
-                        disabled={!!memory.state.mutating}
-                        onClick={() => void memory.decide(item, "accept").catch(fail)}
-                      >
-                        {language.t("common.accept")}
-                      </Button>
-                      <Button
-                        size="small"
-                        disabled={!!memory.state.mutating}
-                        onClick={() => void memory.decide(item, "reject").catch(fail)}
-                      >
-                        {language.t("common.reject")}
-                      </Button>
                     </Show>
                     <Show
                       when={editing() === item.id}

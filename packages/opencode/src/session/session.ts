@@ -637,11 +637,16 @@ const layer: Layer.Layer<
     })
 
     const listUsage: Interface["listUsage"] = Effect.fn("Session.listUsage")(function* () {
+      // The whole point of this table is to preserve a deleted session's usage
+      // so the stats do not lose it — a low cap silently drops old deletions
+      // (the same way session.list truncation would). Keep the bound generous
+      // enough that realistic usage never hits it while still bounding the
+      // response for the app's periodic usage refresh.
       const rows = yield* db
         .select()
         .from(SessionUsageTable)
         .orderBy(desc(SessionUsageTable.time_created))
-        .limit(1000)
+        .limit(50_000)
         .all()
         .pipe(Effect.orDie)
       return rows.map((row) => ({

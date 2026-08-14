@@ -21,13 +21,13 @@ import { LLMEvent } from "@newhorse/llm"
  *   1. Fetches related existing memories (dedup reference).
  *   2. Makes a single ADD-only LLM call that returns structured memory
  *      proposals about the user, given the recent exchange + existing memories.
- *   3. Dedups, caps, and saves each proposal via Memory.Service.save with
- *      provenance "model_inferred" — the standard review-gated path that lands
- *      in the Memory Center as a `proposed` memory for human decide/accept.
+ *   3. Dedups, caps, and saves each memory via Memory.Service.save with
+ *      provenance "model_inferred" — saved directly as active memory (no
+ *      approval gate).
  *
  * The memory:ask tool permission is intentionally bypassed here (internal
- * service call, not a model tool invocation); proposals are still human-gated
- * by the existing `proposed` status flow.
+ * service call, not a model tool invocation); memories are stored as active
+ * and can be edited or removed later in the Memory Center.
  */
 
 const MAX_MEMORIES = 5
@@ -268,7 +268,7 @@ const layer = Layer.effect(
       // (c) Dedup against existing memories AND against candidates already
       // accepted from this same batch (the LLM can propose near-identical
       // variants in a single reply), then cap, then save each as a
-      // model_inferred proposal. Companion memories are relationship; work
+      // model_inferred active memory. Companion memories are relationship; work
       // sessions keep the kind the LLM proposed (preference/fact/goal/event).
       const candidates: { content: string; kind: string }[] = []
       const acceptedContents: string[] = []
@@ -286,7 +286,7 @@ const layer = Layer.effect(
         return
       }
 
-      yield* Effect.logInfo("memory extract proposing", { "session.id": input.sessionID, count: candidates.length })
+      yield* Effect.logInfo("memory extract saving", { "session.id": input.sessionID, count: candidates.length })
       yield* Effect.forEach(
         candidates,
         Effect.fnUntraced(function* (item) {
@@ -299,7 +299,7 @@ const layer = Layer.effect(
               // user-global (apply across projects), other kinds stay scoped to
               // the workspace by the trust policy.
               kind: companion ? "relationship" : (item.kind as MemoryKind),
-              scope: companion || item.kind !== "preference" ? undefined : "user_global",
+              scope: companion ? "relationship" : item.kind === "preference" ? "user_global" : undefined,
               provenance: "model_inferred",
               profileID: input.profile.id,
               sourceSessionID: input.sessionID,
@@ -311,7 +311,7 @@ const layer = Layer.effect(
                 SensitiveMemoryRejected: () =>
                   Effect.logWarning("memory extract skipped sensitive proposal", { "session.id": input.sessionID }),
                 MemoryPolicyRejected: (error) =>
-                  Effect.logWarning("memory extract skipped policy-rejected proposal", {
+                  Effect.logWarning("memory extract skipped policy-rejected memory", {
                     "session.id": input.sessionID,
                     reason: error.reason,
                   }),

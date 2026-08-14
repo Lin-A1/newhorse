@@ -1,8 +1,8 @@
 存储并检索跨会话保留的长期记忆。
 
-仅当用户明确要求你记住某件事，或你推断出值得提议的持久性信息时，
-才使用 action "save"。所有由工具发起的保存都会作为不受信任的提议存储；
-只有用户才能在记忆中心（Memory Center）接受或拒绝它们。
+仅当用户明确要求你记住某件事，或你推断出值得持久化的信息时，
+才使用 action "save"。保存会直接存储为有效记忆，可在记忆中心
+（Memory Center）中编辑或删除。
 
 仅在需要适用于每个工作区的持久性个人偏好时，才使用 scope "user_global"。
 其他一切内容都保持限定在当前工作区。
@@ -14,7 +14,7 @@ Actions:
 - list: 显示当前 Profile 可见的最近 50 条记忆
 - search: 查找与查询相关的记忆（query 为必填）。可通过可选的 kind 缩小结果范围。
   最多返回 10 条匹配。当你需要某个具体事实而非近期历史时，优先用 search 而不是 list
-- save: 提议一条新条目供用户审阅。需要 content 和 kind
+- save: 直接保存一条新条目。需要 content 和 kind
   （preference、fact、goal、event、relationship 或 summary）。当该 profile
   的记忆功能被禁用时会失败
 - forget: 需要 id。永久删除当前 Profile 可见的一条条目

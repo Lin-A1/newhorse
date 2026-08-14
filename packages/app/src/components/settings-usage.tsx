@@ -1,8 +1,8 @@
 import { Button } from "@newhorse/ui/button"
 import { Spinner } from "@newhorse/ui/spinner"
-import { For, Show, createMemo, createResource, createSignal, type JSX } from "solid-js"
+import { For, Show, createMemo, createResource, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { useServerSDK } from "@/context/server-sdk"
+import { useServerSDK, type ServerSDK } from "@/context/server-sdk"
 
 type SessionUsage = {
   cost?: number
@@ -139,6 +139,31 @@ function aggregate(sessions: SessionUsage[], range: RangeKey, now: number): Usag
 
 const RANGES: RangeKey[] = ["today", "7d", "30d", "all"]
 
+const SESSION_LIST_PAGE_SIZE = 1000
+const MAX_SESSION_LIST_PAGES = 100
+
+// session.list is capped per request; follow the x-next-cursor header to fetch
+// every page so usage beyond the first page of sessions is not silently dropped
+// from the stats. Archived sessions are included (archived is not deleted; their
+// usage stays in the session row, so skipping them would drop whole sessions).
+async function listAllSessions(serverSDK: () => ServerSDK): Promise<SessionUsage[]> {
+  const sessions: SessionUsage[] = []
+  let cursor: number | undefined
+  for (let page = 0; page < MAX_SESSION_LIST_PAGES; page++) {
+    const res = await serverSDK().client.experimental.session.list({
+      limit: SESSION_LIST_PAGE_SIZE,
+      archived: true,
+      ...(cursor !== undefined ? { cursor } : {}),
+    })
+    const pageSessions = (res.data ?? []) as SessionUsage[]
+    sessions.push(...pageSessions)
+    const next = res.response?.headers.get("x-next-cursor")
+    if (!next || pageSessions.length === 0) break
+    cursor = Number(next)
+  }
+  return sessions
+}
+
 export function SettingsUsage() {
   const language = useLanguage()
   const serverSDK = useServerSDK()
@@ -148,8 +173,8 @@ export function SettingsUsage() {
     // Use the global session list so the usage stats cover ALL projects, not
     // just the current one — otherwise a session created in another project
     // makes today's usage look empty.
-    const [sessionsRes, archivedRes] = await Promise.all([
-      serverSDK().client.experimental.session.list({ limit: 1000 }),
+    const [sessions, archivedRes] = await Promise.all([
+      listAllSessions(serverSDK),
       // Archived usage of deleted sessions. Graceful when the server is older
       // or slow: race it with a short timeout so the usage tab never hangs.
       Promise.race([
@@ -159,10 +184,34 @@ export function SettingsUsage() {
         new Promise<SessionUsage[]>((resolve) => setTimeout(() => resolve([]), 3000)),
       ]).catch(() => [] as SessionUsage[]),
     ])
-    const sessions = (sessionsRes.data ?? []) as SessionUsage[]
-    // Active sessions + usage of deleted sessions, so clearing a session does
-    // not erase its token/cost contribution from the stats.
+    // Active + archived sessions, plus usage of deleted sessions, so clearing a
+    // session does not erase its token/cost contribution from the stats.
     return [...sessions, ...archivedRes]
+  })
+
+  // The stats are only as fresh as the last fetch, so keep them current while
+  // the tab is mounted: a 5s poll plus a refetch when the tab regains focus.
+  // refetch keeps the previous values rendered until the new data arrives, so
+  // the panel does not flicker; the loading/refreshing guard avoids stacking
+  // fetches when a refresh is already in flight.
+  onMount(() => {
+    const refresh = () => {
+      // loading is true for both the initial load and any in-flight refetch
+      // (Solid's "refreshing" state), so this also prevents stacking fetches.
+      if (raw.loading) return
+      void refetch()
+    }
+    const timer = setInterval(refresh, 5_000)
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh()
+    }
+    window.addEventListener("focus", refresh)
+    document.addEventListener("visibilitychange", onVisibility)
+    onCleanup(() => {
+      clearInterval(timer)
+      window.removeEventListener("focus", refresh)
+      document.removeEventListener("visibilitychange", onVisibility)
+    })
   })
 
   const usage = createMemo(() => {
@@ -214,7 +263,10 @@ export function SettingsUsage() {
           </div>
         </div>
 
-        <Show when={!raw.loading} fallback={<div>{language.t("settings.usage.loading")}</div>}>
+        {/* Only swap to the loading spinner when there is nothing to show yet.
+            A refetch (the 5s poll, focus, or the refresh button) keeps the
+            previous stats rendered via raw() while loading is true. */}
+        <Show when={!raw.loading || raw() !== undefined} fallback={<div>{language.t("settings.usage.loading")}</div>}>
           <Show
             when={!raw.error}
             fallback={

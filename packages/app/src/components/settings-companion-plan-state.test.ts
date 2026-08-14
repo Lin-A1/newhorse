@@ -14,7 +14,7 @@ function memory(id: string, status: MemoryInfo["status"]): MemoryInfo {
     content: `Memory ${id}`,
     kind: "fact",
     status,
-    scope: "workspace",
+    scope: "project",
     provenance: "user_explicit",
     sensitivity: "normal",
     timeCreated: 1000,

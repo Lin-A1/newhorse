@@ -196,7 +196,7 @@ describe("MemoryExtract", () => {
     const syntheticEnv = mockEnv({ llmText: LLM_TEXT })
 
     testEffect(workEnv.layer).effect(
-      "runs for work (assistant) profiles and saves the proposed kind",
+      "runs for work (assistant) profiles and saves the user-global preference",
       () =>
         Effect.gen(function* () {
           const extract = yield* MemoryExtract.Service
@@ -507,7 +507,7 @@ describe("MemoryExtract", () => {
   // ------------------------------------------------------------ save semantics
   describe("save semantics", () => {
     const save = mockEnv({ llmText: '{"memories":[{"kind":"preference","content":"The user prefers dark mode"}]}' })
-    testEffect(save.layer).effect("saves proposals as model_inferred relationship memory with source attribution", () =>
+    testEffect(save.layer).effect("saves model_inferred relationship memory with source attribution", () =>
       Effect.gen(function* () {
         const extract = yield* MemoryExtract.Service
         yield* extract.extract(makeInput())
@@ -515,6 +515,7 @@ describe("MemoryExtract", () => {
         expect(save.saveCalls[0]).toMatchObject({
           content: "The user prefers dark mode",
           kind: "relationship",
+          scope: "relationship",
           provenance: "model_inferred",
           profileID: "companion",
           sourceSessionID: SESSION_ID,
@@ -525,7 +526,7 @@ describe("MemoryExtract", () => {
     )
 
     const search = mockEnv({ llmText: '{"memories":[{"kind":"preference","content":"The user prefers dark mode"}]}' })
-    testEffect(search.layer).effect("queries related memory as relationship-only proposals for the profile", () =>
+    testEffect(search.layer).effect("queries related memory as relationship-only for the profile", () =>
       Effect.gen(function* () {
         const extract = yield* MemoryExtract.Service
         yield* extract.extract(makeInput())

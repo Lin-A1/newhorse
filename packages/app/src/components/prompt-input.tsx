@@ -1681,7 +1681,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                           props.controls.agents.select(option?.id)
                           restoreFocus()
                         }}
-                        class="capitalize max-w-[160px] text-text-base"
+                        class="capitalize min-w-[120px] max-w-[240px] text-text-base"
                         valueClass="truncate text-13-regular text-text-base"
                         triggerStyle={control()}
                         triggerProps={{ "data-action": "prompt-agent" }}
@@ -1786,7 +1786,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                               props.controls.model.selection.variant.set(value === "default" ? undefined : value)
                               restoreFocus()
                             }}
-                            class="capitalize max-w-[160px] text-text-base"
+                            class="capitalize min-w-[120px] max-w-[240px] text-text-base"
                             valueClass="truncate text-13-regular text-text-base"
                             triggerStyle={control()}
                             triggerProps={{ "data-action": "prompt-model-variant" }}

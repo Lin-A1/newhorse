@@ -85,12 +85,14 @@ Important packages include:
 Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific capabilities on top — personal continuity, deterministic tooling, and production hardening:
 
 **Memory & personal continuity**
-- Structured SQLite memory with scope/provenance/status/expiration and an accept/reject proposal lifecycle (Memory Center)
-- Post-turn auto-extraction of memory proposals (review-gated) with same-batch dedup
+- Structured SQLite memory across four content scopes — project / personal / relationship / user-global — with provenance, status, and expiration (Memory Center)
+- Auto-extraction applies immediately (no manual accept/reject): extracted and tool-saved memories become active directly, and stay editable/deletable in the Memory Center
+- Extraction classifies memory into project context vs user-global preference, so project instructions stay project-scoped and are never promoted into cross-project preferences
+- Both Companion and work sessions get memory injected into context (Companion: relationship memories; work: project/user-global memories), not just on-demand tool lookup
 - FTS5/BM25 retrieval plus entity extraction & boost — no embedding model required
 - Persistent reminders, follow-ups, continuity grants, and Companion Plan
 - Daily activity summaries across newhorse, Claude Code, and Codex sessions, including archived (non-deleted) sessions
-- Observable memory extraction: every auto-extraction gate logs its skip reason, so a Companion session that never proposes memories is diagnosable
+- Observable memory extraction: every auto-extraction gate logs its skip reason, so a session that never proposes memories is diagnosable
 - "Clear chat history" on a Companion session clears the displayed chat and background-compacts the conversation into hidden context — continuity is kept without showing the compacted content
 - Todo-continuation enforcer (auto-resume on idle with open todos)
 
@@ -108,10 +110,12 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - Execution-phase permission decisions exposed to plugins
 
 **Desktop & product**
-- Tray-resident background mode with a close-action choice (quit vs minimize to tray)
+- Tray-resident background mode: a Chinese close-action dialog (minimize to tray vs quit, rememberable choice); minimize always goes to the taskbar — only closing parks the window in the tray
+- Agent selector in the composer widened and polished (comfortable min width, two-line name + description, no truncation)
+- Add-server dialog keeps inputs editable during health checks (no more input freeze)
 - Tool descriptions localized to Chinese
 - Native code review surfaced in the app's review tab
-- Deleted sessions keep their token/cost contribution in the usage stats via a `session_usage` archive table and the `/session/usage` endpoint; the usage tab merges active and archived usage
+- Usage stats are accurate and live: deleted sessions keep their contribution via a `session_usage` archive table; the tab pages through the full session list (no 1000-row cutoff), includes archived sessions, and auto-refreshes on an interval and on window focus
 - Companion session rename: the pinned Companion session can be renamed and the header keeps the custom title
 
 **Self-awareness & docs**
@@ -132,15 +136,19 @@ Major foundations already implemented include:
 - Daily activity summaries (session readers, 23:00 scheduler, HTTP list/generate, sidebar timeline), including archived (non-deleted) sessions
 - Server-backed dynamic model/provider catalogs
 - Legacy and v2 settings layouts
-- Memory retrieval upgrades: FTS5/BM25 search, entity extraction + boost, and post-turn auto-extraction (review-gated)
+- Memory retrieval upgrades: FTS5/BM25 search, entity extraction + boost, and post-turn auto-extraction that applies immediately (no approval gate)
+- Memory layering: four content scopes (project / personal / relationship / user-global) with automatic migration of existing memories
+- Memory no-approval: extracted and tool-saved memories become active directly; Memory Center is edit/delete/pause, with per-scope labels and no accept/reject step
+- Work-session memory injection: assistant sessions get project/user-global memories in context, not just on-demand tool lookup
 - Execution-phase plugin hooks (permission decisions, end-of-turn continuation)
-- Tray-resident desktop mode (close-to-tray keeps the server and background agents running)
+- Tray-resident desktop mode with a Chinese close-action dialog (minimize to tray vs quit, rememberable); minimize always goes to the taskbar
+- Agent selector UI polish (composer dropdown widened, two-line entries) and add-server dialog input-freeze fix
 - Tool descriptions localized to Chinese
 - Linux and Windows portable CLI export
 - Windows NSIS and Linux desktop packaging paths
 - newhorse identity and capability self-awareness (system prompt presents the agent as newhorse; built-in `newhorse-capabilities` skill)
 - Built-in `customize-newhorse` skill replaces `customize-opencode` (newhorse config paths; opencode paths marked legacy)
-- Usage archiving: deleting a session no longer erases its token/cost from the usage stats (session_usage archive table + /session/usage endpoint; usage tab merges active and archived usage)
+- Usage stats are accurate and live: deleted sessions keep their token/cost via a `session_usage` archive table; the tab pages through the full session list (no cutoff), includes archived sessions, and auto-refreshes on an interval and on window focus
 - Observable memory extraction (per-gate skip-reason logging)
 - Companion "clear chat history" = optimistic clear + hidden background compaction (continuity kept)
 - Companion session rename

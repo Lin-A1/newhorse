@@ -33,13 +33,13 @@ describe("Memory", () => {
       })
 
       expect(saved.status).toBe("active")
-      expect(saved.scope).toBe("workspace")
+      expect(saved.scope).toBe("project")
       expect(saved.id.startsWith("mem_")).toBe(true)
     }),
   )
 
-  // Inference must never become an asserted fact on its own.
-  it.instance("stores inferred memory as a proposal only", () =>
+  // No-approval: model-inferred memories take effect immediately.
+  it.instance("stores inferred memory as active without an approval gate", () =>
     Effect.gen(function* () {
       const memory = yield* Memory.Service
       const saved = yield* memory.save({
@@ -48,14 +48,14 @@ describe("Memory", () => {
         provenance: "model_inferred",
       })
 
-      expect(saved.status).toBe("proposed")
+      expect(saved.status).toBe("active")
 
       const retrieved = yield* memory.retrieve()
-      expect(retrieved.find((item) => item.id === saved.id)).toBeUndefined()
+      expect(retrieved.find((item) => item.id === saved.id)).toBeDefined()
     }),
   )
 
-  it.instance("promotes a proposal once accepted", () =>
+  it.instance("decide is a no-op for already-active memories", () =>
     Effect.gen(function* () {
       const memory = yield* Memory.Service
       const saved = yield* memory.save({
@@ -63,7 +63,7 @@ describe("Memory", () => {
         content: "uses pnpm",
         provenance: "model_inferred",
       })
-      yield* memory.decide({ id: saved.id, decision: "accept" })
+      expect(yield* memory.decide({ id: saved.id, decision: "accept" })).toBeUndefined()
 
       const retrieved = yield* memory.retrieve()
       expect(retrieved.some((item) => item.id === saved.id)).toBe(true)
@@ -199,8 +199,8 @@ describe("Memory", () => {
         expect((yield* memory.export()).map((item) => item.content)).toEqual(["not relationship memory"])
         const retrieved = yield* memory.retrieve({ profileID: "companion", relationshipOnly: true })
         expect(retrieved.map((item) => item.id)).toEqual([companion.id])
-        expect(yield* memory.forget(assistant.id, "workspace", "companion")).toBe(false)
-        expect(yield* memory.forget(companion.id, "workspace", "companion")).toBe(true)
+        expect(yield* memory.forget(assistant.id, "relationship", "companion")).toBe(false)
+        expect(yield* memory.forget(companion.id, "relationship", "companion")).toBe(true)
       }),
     ),
   )
@@ -232,6 +232,7 @@ describe("Memory", () => {
   it.instance("blocks relationship lifecycle operations without the matching profile", () =>
     personal(
       Effect.gen(function* () {
+        const { db } = yield* Database.Service
         const memory = yield* Memory.Service
         const active = yield* memory.save({
           kind: "relationship",
@@ -245,6 +246,9 @@ describe("Memory", () => {
           provenance: "model_inferred",
           profileID: "companion",
         })
+        // No-approval saves as active; mark it as a legacy proposed row so the
+        // decide authority checks below still exercise the legacy accept path.
+        yield* db.run(sql`UPDATE memory SET status = 'proposed' WHERE id = ${proposed.id}`)
 
         expect(yield* memory.update({ id: active.id, content: "changed without profile" })).toBeUndefined()
         expect(
@@ -255,15 +259,15 @@ describe("Memory", () => {
         expect(yield* memory.decide({ id: proposed.id, decision: "accept" })).toBeUndefined()
         expect(yield* memory.decide({ id: proposed.id, decision: "accept", profileID: "assistant" })).toBeUndefined()
         expect(yield* memory.forget(active.id)).toBe(false)
-        expect(yield* memory.forget(active.id, "workspace", "assistant")).toBe(false)
+        expect(yield* memory.forget(active.id, "relationship", "assistant")).toBe(false)
 
         expect(
-          yield* memory.update({ id: active.id, content: "companion changed", profileID: "companion" }),
+          yield* memory.update({ id: active.id, scope: "relationship", content: "companion changed", profileID: "companion" }),
         ).toMatchObject({ content: "companion changed" })
-        expect(yield* memory.pause({ id: active.id, paused: true, profileID: "companion" })).toMatchObject({
+        expect(yield* memory.pause({ id: active.id, scope: "relationship", paused: true, profileID: "companion" })).toMatchObject({
           status: "paused",
         })
-        expect(yield* memory.decide({ id: proposed.id, decision: "accept", profileID: "companion" })).toMatchObject({
+        expect(yield* memory.decide({ id: proposed.id, scope: "relationship", decision: "accept", profileID: "companion" })).toMatchObject({
           status: "active",
         })
       }),
@@ -285,6 +289,7 @@ describe("Memory", () => {
         expect(yield* memory.update({ id: ordinary.id, kind: "relationship", profileID: "assistant" })).toBeUndefined()
         expect(yield* memory.update({ id: ordinary.id, kind: "relationship", profileID: "companion" })).toMatchObject({
           kind: "relationship",
+          scope: "relationship",
           profileID: "companion",
         })
       }),
@@ -334,8 +339,12 @@ describe("Memory", () => {
             projectID: ProjectV2.ID.global,
           }),
         )
-      expect(yield* count({ profileID: "assistant" })).toBe(2)
-      expect(yield* count({ profileID: "companion", status: ["active"] })).toBe(1)
+      // The assistant "fact" was saved with only WorkspaceRef (no personal
+      // metadata), so it now lands project scope and is isolated from this
+      // personal-workspace view — the user-global preference and the
+      // relationship memory remain (both active under no-approval).
+      expect(yield* count({ profileID: "assistant" })).toBe(1)
+      expect(yield* count({ profileID: "companion", status: ["active"] })).toBe(2)
       expect(yield* count({ profileID: "companion" })).toBe(2)
       expect(yield* count({ includeGlobal: false, profileID: "companion" })).toBe(1)
       expect(yield* memory.count({ profileID: "assistant" })).toBe(1)
@@ -389,13 +398,13 @@ describe("Memory", () => {
     }),
   )
 
-  it.instance("applies proposal decisions once and records confirmation", () =>
+  it.instance("no-approval: inferred memories are active and decide is a no-op", () =>
     Effect.gen(function* () {
       const memory = yield* Memory.Service
       const saved = yield* memory.save({ kind: "fact", content: "uses Bun", provenance: "model_inferred" })
-      const accepted = yield* memory.decide({ id: saved.id, decision: "accept" })
 
-      expect(accepted).toMatchObject({ status: "active", provenance: "user_confirmed" })
+      expect(saved).toMatchObject({ status: "active", provenance: "model_inferred" })
+      expect(yield* memory.decide({ id: saved.id, decision: "accept" })).toBeUndefined()
       expect(yield* memory.decide({ id: saved.id, decision: "reject" })).toBeUndefined()
     }),
   )
@@ -603,6 +612,9 @@ describe("Memory", () => {
         content: "Prefers PostgreSQL",
         provenance: "model_inferred",
       })
+      // No-approval saves as active; mark it as a legacy proposed row so the
+      // decide accept path (and its history event) is still exercised.
+      yield* db.run(sql`UPDATE memory SET status = 'proposed' WHERE id = ${saved.id}`)
       const history = (id: string) =>
         db.all<{ event: string }>(sql`SELECT event FROM memory_history WHERE memory_id = ${id} ORDER BY created_at, id`)
       expect((yield* history(saved.id)).map((row) => row.event)).toEqual(["ADD"])
@@ -640,6 +652,9 @@ describe("Memory", () => {
       const { db } = yield* Database.Service
       const memory = yield* Memory.Service
       const saved = yield* memory.save({ kind: "fact", content: "rejected fact", provenance: "model_inferred" })
+      // Simulate a legacy proposed row so the decide-reject path (REJECT
+      // history + rejected status) is still exercised before pruning.
+      yield* db.run(sql`UPDATE memory SET status = 'proposed' WHERE id = ${saved.id}`)
       yield* memory.decide({ id: saved.id, decision: "reject" })
       yield* db.run(
         sql`UPDATE memory SET time_created = ${Date.now() - 40 * 24 * 60 * 60 * 1000} WHERE id = ${saved.id}`,

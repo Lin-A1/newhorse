@@ -23,7 +23,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, like, lt, ne, or, sql } from "
 import fuzzysort from "fuzzysort"
 import { Context, Effect, Layer, Ref, Schema } from "effect"
 
-export const Scope = Schema.Literals(["workspace", "user_global"])
+export const Scope = Schema.Literals(["project", "personal", "relationship", "user_global"])
 export const Kind = Schema.Literals(["preference", "fact", "goal", "event", "relationship", "summary"])
 export const Provenance = Schema.Literals(["user_explicit", "user_confirmed", "model_inferred"])
 export const Sensitivity = Schema.Literals(["normal", "sensitive"])
@@ -465,34 +465,80 @@ const layer = Layer.effect(
       isNull(MemoryTable.directory),
     )
 
-    const workspaceFilter = (owner: { workspaceID?: WorkspaceV2.ID; directory: string }) =>
+    type Owner = { workspaceID?: WorkspaceV2.ID; directory: string; policy: WorkspacePolicy.Info }
+
+    // Relationship rows are written with the owner's workspace_id/directory, so
+    // every relationship filter keeps owner isolation — one personal workspace
+    // must not see another's relationship memories that happen to share a
+    // profile_id (e.g. "companion").
+    const ownerIsolation = (owner: Owner) =>
       owner.workspaceID
-        ? and(eq(MemoryTable.scope, "workspace"), eq(MemoryTable.workspace_id, owner.workspaceID))
-        : and(
-            eq(MemoryTable.scope, "workspace"),
-            isNull(MemoryTable.workspace_id),
-            eq(MemoryTable.directory, owner.directory),
-          )
+        ? eq(MemoryTable.workspace_id, owner.workspaceID)
+        : and(isNull(MemoryTable.workspace_id), eq(MemoryTable.directory, owner.directory))
 
-    const ownerFilter = (scope: MemoryScope, owner: { workspaceID?: WorkspaceV2.ID; directory: string }) =>
-      scope === "user_global" ? globalFilter : workspaceFilter(owner)
+    const projectFilter = (owner: Owner) => and(eq(MemoryTable.scope, "project"), ownerIsolation(owner))
 
-    const visibleFilter = (owner: { workspaceID?: WorkspaceV2.ID; directory: string }, includeGlobal: boolean) =>
-      includeGlobal ? or(workspaceFilter(owner), globalFilter) : workspaceFilter(owner)
+    const personalFilter = (owner: Owner) => and(eq(MemoryTable.scope, "personal"), ownerIsolation(owner))
 
-    const relationshipProfileFilter = (profileID?: string) =>
+    const relationshipScopeFilter = (owner: Owner) => and(eq(MemoryTable.scope, "relationship"), ownerIsolation(owner))
+
+    // Exclusion helper: non-relationship memories always pass; relationship
+    // memories pass only when profileID matches (workspace-isolated).
+    const relationshipProfileFilter = (owner: Owner, profileID?: string) =>
       profileID
-        ? or(ne(MemoryTable.kind, "relationship"), eq(MemoryTable.profile_id, profileID))!
-        : ne(MemoryTable.kind, "relationship")
+        ? or(ne(MemoryTable.scope, "relationship"), and(relationshipScopeFilter(owner), eq(MemoryTable.profile_id, profileID)))!
+        : ne(MemoryTable.scope, "relationship")
 
-    const mutationFilter = (
-      scope: MemoryScope,
-      owner: { workspaceID?: WorkspaceV2.ID; directory: string },
-      profileID?: string,
-    ) =>
-      scope === "workspace"
-        ? and(ownerFilter(scope, owner), relationshipProfileFilter(profileID))
-        : ownerFilter(scope, owner)
+    // Current workspace scope (project or personal per the workspace policy)
+    // plus, in a personal context, the workspace's relationship memories so the
+    // Memory Center viewer shows Companion memories. Optional user-global.
+    const visibleFilter = (owner: Owner, includeGlobal: boolean) => {
+      const current =
+        owner.policy.contentScope === "personal"
+          ? or(personalFilter(owner), relationshipScopeFilter(owner))
+          : projectFilter(owner)
+      return includeGlobal ? or(current, globalFilter) : current
+    }
+
+    const mutationFilter = (scope: MemoryScope, owner: Owner, profileID?: string) => {
+      if (scope === "user_global") return globalFilter
+      if (scope === "relationship") {
+        // Relationship rows are only mutable by the matching profile.
+        return profileID
+          ? and(relationshipScopeFilter(owner), eq(MemoryTable.profile_id, profileID))
+          : eq(MemoryTable.id, "")
+      }
+      const workspace = scope === "personal" ? personalFilter(owner) : projectFilter(owner)
+      // Workspace-scope mutations also reach relationship rows owned by the
+      // matching profile (preserves the pre-split behavior where relationship
+      // rows lived inside the workspace scope), never relationship rows of a
+      // different profile.
+      return profileID
+        ? or(workspace, and(relationshipScopeFilter(owner), eq(MemoryTable.profile_id, profileID)))!
+        : workspace
+    }
+
+    // Destination scope for the trust-policy content-flow decision, derived
+    // from trusted state only (never accepted from the caller as authority).
+    // user_global is explicit; a relationship kind always lands in the
+    // relationship scope (existing callers save relationship memories via kind
+    // alone, and the scope default in a personal context would otherwise be
+    // "personal"); explicit personal maps directly; everything else falls back
+    // to the current workspace's content scope.
+    const destinationScope = (input: {
+      scope: MemoryScope
+      kind: MemoryKind
+      policy: WorkspacePolicy.Info
+    }): TrustPolicy.ContentScope =>
+      input.scope === "user_global"
+        ? "user_global"
+        : input.kind === "relationship"
+          ? "relationship"
+          : input.scope === "relationship"
+            ? "relationship"
+            : input.scope === "personal"
+              ? "personal"
+              : input.policy.contentScope
 
     const validate = Effect.fn("Memory.validate")(function* (input: {
       scope: MemoryScope
@@ -512,12 +558,7 @@ const layer = Layer.effect(
       // Content-flow is decided by the central TrustPolicy matrix using only
       // trusted Workspace metadata and the memory scope/kind. The destination
       // scope is derived here, never accepted from the caller as authority.
-      const destination: TrustPolicy.ContentScope =
-        input.scope === "user_global"
-          ? "user_global"
-          : input.kind === "relationship"
-            ? "relationship"
-            : input.policy.contentScope
+      const destination = destinationScope(input)
       const flow = yield* trustPolicy.decide({
         action: "memory.save",
         source: input.policy.contentScope,
@@ -595,7 +636,8 @@ const layer = Layer.effect(
 
     const save: Interface["save"] = Effect.fn("Memory.save")(function* (input) {
       const owner = yield* context
-      const scope = input.scope ?? "workspace"
+      const scope = input.scope ?? owner.policy.contentScope
+      const effectiveScope = destinationScope({ scope, kind: input.kind, policy: owner.policy })
       const profileID = yield* resolveSource(input, owner)
       yield* validate({
         scope,
@@ -610,10 +652,10 @@ const layer = Layer.effect(
       const now = Date.now()
       const row = {
         id: Identifier.ascending("memory"),
-        workspace_id: scope === "user_global" ? null : (owner.workspaceID ?? null),
-        directory: scope === "user_global" || owner.workspaceID ? null : owner.directory,
-        scope,
-        profile_id: scope === "user_global" ? null : (profileID ?? null),
+        workspace_id: effectiveScope === "user_global" ? null : (owner.workspaceID ?? null),
+        directory: effectiveScope === "user_global" || owner.workspaceID ? null : owner.directory,
+        scope: effectiveScope,
+        profile_id: effectiveScope === "user_global" ? null : (profileID ?? null),
         kind: input.kind,
         content: input.content.trim(),
         source_session_id: input.sourceSessionID ?? null,
@@ -621,7 +663,11 @@ const layer = Layer.effect(
         provenance: input.provenance,
         confidence: input.confidence ?? null,
         sensitivity: "normal" as const,
-        status: input.provenance === "model_inferred" ? ("proposed" as const) : ("active" as const),
+        // No-approval: auto-extracted / tool-saved memories take effect
+        // immediately. The `proposed` status is retained in the enum for
+        // historical rows only; decide() remains as a legacy-compat no-op
+        // for those rows.
+        status: "active" as const,
         time_created: now,
         time_updated: now,
         time_expires: input.expiresAt ?? null,
@@ -652,8 +698,8 @@ const layer = Layer.effect(
       // without a profileID. Without this, model-extracted companion proposals
       // were invisible. Project contexts still exclude relationship memories;
       // retrieval/search enforce content-scope isolation separately.
-      if (owner.policy.contentScope !== "personal") conditions.push(ne(MemoryTable.kind, "relationship"))
-      else if (input?.profileID) conditions.push(relationshipProfileFilter(input.profileID))
+      if (owner.policy.contentScope !== "personal") conditions.push(ne(MemoryTable.scope, "relationship"))
+      else if (input?.profileID) conditions.push(relationshipProfileFilter(owner, input.profileID))
       if (input?.profileID) {
         conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
       }
@@ -721,9 +767,9 @@ const layer = Layer.effect(
         or(isNull(MemoryTable.time_expires), gt(MemoryTable.time_expires, Date.now())),
       ]
       if (input?.relationshipOnly) {
-        conditions.push(eq(MemoryTable.kind, "relationship"), eq(MemoryTable.profile_id, input.profileID!))
+        conditions.push(eq(MemoryTable.scope, "relationship"), eq(MemoryTable.profile_id, input.profileID!))
       } else {
-        conditions.push(relationshipProfileFilter(input?.profileID))
+        conditions.push(relationshipProfileFilter(owner, input?.profileID))
         if (input?.profileID) {
           conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
         }
@@ -763,9 +809,9 @@ const layer = Layer.effect(
       ]
       if (input?.kind) conditions.push(eq(MemoryTable.kind, input.kind))
       if (input?.relationshipOnly) {
-        conditions.push(eq(MemoryTable.kind, "relationship"), eq(MemoryTable.profile_id, input.profileID!))
+        conditions.push(eq(MemoryTable.scope, "relationship"), eq(MemoryTable.profile_id, input.profileID!))
       } else {
-        conditions.push(relationshipProfileFilter(input?.profileID))
+        conditions.push(relationshipProfileFilter(owner, input?.profileID))
         if (input?.profileID) {
           conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
         }
@@ -864,7 +910,7 @@ const layer = Layer.effect(
 
     const update: Interface["update"] = Effect.fn("Memory.update")(function* (input) {
       const owner = yield* context
-      const scope = input.scope ?? "workspace"
+      const scope = input.scope ?? owner.policy.contentScope
       const current = yield* db
         .select()
         .from(MemoryTable)
@@ -875,8 +921,11 @@ const layer = Layer.effect(
       const kind = input.kind ?? current.kind
       if (kind === "relationship" && (!input.profileID || current.profile_id !== input.profileID)) return undefined
       const content = input.content ?? current.content
+      // A memory converted to (or kept as) relationship kind must live in the
+      // relationship scope; the trust-policy destination then reflects where
+      // the data actually lands.
       yield* validate({
-        scope,
+        scope: kind === "relationship" ? "relationship" : scope,
         kind,
         content,
         profileID: current.profile_id ?? undefined,
@@ -898,6 +947,7 @@ const layer = Layer.effect(
                 kind,
                 content: content.trim(),
                 ...(input.expiresAt !== undefined ? { time_expires: input.expiresAt } : {}),
+                ...(kind === "relationship" ? { scope: "relationship" as const } : {}),
                 time_updated: Date.now(),
               })
               .where(and(eq(MemoryTable.id, input.id), mutationFilter(scope, owner, input.profileID)))
@@ -920,7 +970,7 @@ const layer = Layer.effect(
 
     const decide: Interface["decide"] = Effect.fn("Memory.decide")(function* (input) {
       const owner = yield* context
-      const scope = input.scope ?? "workspace"
+      const scope = input.scope ?? owner.policy.contentScope
       const row = yield* db
         .transaction(
           Effect.fnUntraced(function* (tx) {
@@ -954,7 +1004,7 @@ const layer = Layer.effect(
 
     const pause: Interface["pause"] = Effect.fn("Memory.pause")(function* (input) {
       const owner = yield* context
-      const scope = input.scope ?? "workspace"
+      const scope = input.scope ?? owner.policy.contentScope
       const row = yield* db
         .transaction(
           Effect.fnUntraced(function* (tx) {
@@ -980,8 +1030,9 @@ const layer = Layer.effect(
       return row ? decode(row) : undefined
     })
 
-    const forget: Interface["forget"] = Effect.fn("Memory.forget")(function* (id, scope = "workspace", profileID) {
+    const forget: Interface["forget"] = Effect.fn("Memory.forget")(function* (id, scope, profileID) {
       const owner = yield* context
+      const effectiveScope = scope ?? owner.policy.contentScope
       yield* ensureFts()
       const row = yield* db
         .transaction(
@@ -989,7 +1040,7 @@ const layer = Layer.effect(
             const target = yield* tx
               .select({ id: MemoryTable.id, content: MemoryTable.content })
               .from(MemoryTable)
-              .where(and(eq(MemoryTable.id, id), mutationFilter(scope, owner, profileID)))
+              .where(and(eq(MemoryTable.id, id), mutationFilter(effectiveScope, owner, profileID)))
               .get()
             if (!target) return undefined
             // Deindex FTS and drop entities before the row disappears.
@@ -997,7 +1048,7 @@ const layer = Layer.effect(
             yield* tx.delete(MemoryEntityTable).where(eq(MemoryEntityTable.memory_id, id)).run()
             yield* tx
               .delete(MemoryTable)
-              .where(and(eq(MemoryTable.id, id), mutationFilter(scope, owner, profileID)))
+              .where(and(eq(MemoryTable.id, id), mutationFilter(effectiveScope, owner, profileID)))
               .run()
             yield* writeHistory(tx, "DELETE", id, { oldContent: target.content, actorID: profileID })
             return { id }
@@ -1010,7 +1061,13 @@ const layer = Layer.effect(
     const clear: Interface["clear"] = Effect.fn("Memory.clear")(function* (input) {
       const owner = yield* context
       const target = input?.target ?? "workspace"
-      let condition = workspaceFilter(owner)
+      // Legacy "workspace" target = everything non-global in this workspace:
+      // the current workspace scope (project or personal) plus its relationship
+      // rows, mirroring the pre-split workspace semantics.
+      let condition =
+        owner.policy.contentScope === "personal"
+          ? or(personalFilter(owner), relationshipScopeFilter(owner))
+          : projectFilter(owner)
       if (target === "user_global") condition = globalFilter
       if (target === "relationship") {
         if (owner.policy.contentScope !== "personal") {
@@ -1025,11 +1082,7 @@ const layer = Layer.effect(
             message: "Relationship memory requires a trusted Profile",
           })
         }
-        condition = and(
-          workspaceFilter(owner),
-          eq(MemoryTable.kind, "relationship"),
-          eq(MemoryTable.profile_id, input.profileID),
-        )!
+        condition = and(relationshipScopeFilter(owner), eq(MemoryTable.profile_id, input.profileID))!
       }
       yield* ensureFts()
       return yield* db
@@ -1058,8 +1111,8 @@ const layer = Layer.effect(
     const exportRecords: Interface["export"] = Effect.fn("Memory.export")(function* (input) {
       const owner = yield* context
       const conditions = [visibleFilter(owner, input?.includeGlobal ?? true), ne(MemoryTable.status, "deleted")]
-      if (owner.policy.contentScope !== "personal") conditions.push(ne(MemoryTable.kind, "relationship"))
-      else conditions.push(relationshipProfileFilter(input?.profileID))
+      if (owner.policy.contentScope !== "personal") conditions.push(ne(MemoryTable.scope, "relationship"))
+      else conditions.push(relationshipProfileFilter(owner, input?.profileID))
       if (input?.profileID) {
         conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
       }

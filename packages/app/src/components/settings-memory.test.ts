@@ -5,7 +5,7 @@ import { exportMemory } from "./settings-memory-export"
 const records = [
   {
     id: "mem_1",
-    scope: "workspace",
+    scope: "project",
     kind: "preference",
     content: "concise",
     provenance: "user_confirmed",

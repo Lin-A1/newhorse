@@ -8,6 +8,7 @@ import { ProjectTable } from "@newhorse/core/project/sql"
 import { WorkspaceV2 } from "@newhorse/core/workspace"
 import { mkdir, rm } from "node:fs/promises"
 import { Effect, Layer } from "effect"
+import { sql } from "drizzle-orm"
 import { HttpClientResponse } from "effect/unstable/http"
 import { Memory } from "@/memory"
 import { personalDirectory } from "@/control-plane/adapters/personal"
@@ -95,6 +96,9 @@ const seedPersonalMemory = Effect.acquireRelease(
           provenance: "model_inferred",
           profileID: companion,
         })
+        // No-approval saves as active; mark it as a legacy proposed row so the
+        // decide endpoint still has a legacy accept path to exercise.
+        yield* db.run(sql`UPDATE memory SET status = 'proposed' WHERE id = ${proposal.id}`)
         const remove = yield* memory.save({
           kind: "relationship",
           content: "companion remove target",

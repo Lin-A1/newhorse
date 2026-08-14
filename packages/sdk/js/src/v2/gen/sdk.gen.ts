@@ -3201,7 +3201,7 @@ export class Memory extends HeyApiClient {
       directory?: string
       workspace?: string
       session?: string
-      scope?: "workspace" | "user_global"
+      scope?: "project" | "personal" | "relationship" | "user_global"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3235,7 +3235,7 @@ export class Memory extends HeyApiClient {
       directory?: string
       workspace?: string
       session?: string
-      scope?: "workspace" | "user_global"
+      scope?: "project" | "personal" | "relationship" | "user_global"
       kind?: "preference" | "fact" | "goal" | "event" | "relationship" | "summary"
       content?: string
       expiresAt?: number
@@ -3282,7 +3282,7 @@ export class Memory extends HeyApiClient {
       directory?: string
       workspace?: string
       session?: string
-      scope?: "workspace" | "user_global"
+      scope?: "project" | "personal" | "relationship" | "user_global"
       decision?: "accept" | "reject"
     },
     options?: Options<never, ThrowOnError>,
@@ -3323,7 +3323,7 @@ export class Memory extends HeyApiClient {
       directory?: string
       workspace?: string
       session?: string
-      scope?: "workspace" | "user_global"
+      scope?: "project" | "personal" | "relationship" | "user_global"
       paused?: boolean
     },
     options?: Options<never, ThrowOnError>,

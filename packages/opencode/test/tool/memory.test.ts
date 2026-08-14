@@ -32,7 +32,7 @@ const personal = {
 }
 
 describe("tool.memory", () => {
-  it.instance("creates proposals and asks before model mutations", () =>
+  it.instance("saves memories and asks before model mutations", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const memory = yield* Memory.Service
@@ -63,10 +63,13 @@ describe("tool.memory", () => {
         { action: "save", content: "probably prefers concise replies", kind: "preference" },
         ctx,
       )
-      expect(saved).toMatchObject({ title: "Memory proposed", metadata: { status: "proposed" } })
+      expect(saved).toMatchObject({ title: "Memory saved", metadata: { status: "active" } })
       expect(asked).toHaveLength(1)
       expect(asked[0]).toMatchObject({ permission: "memory" })
-      expect(yield* memory.retrieve({ profileID: "companion" })).toEqual([])
+      // No-approval: the saved memory is active and immediately visible.
+      expect((yield* memory.retrieve({ profileID: "companion" })).map((item) => item.content)).toContain(
+        "probably prefers concise replies",
+      )
 
       const listed = yield* tool.execute({ action: "list" }, ctx)
       expect(listed.output).toContain("probably prefers concise replies")

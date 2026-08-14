@@ -3,7 +3,7 @@ import { Timestamps } from "../database/schema.sql"
 import { WorkspaceV2 } from "../workspace"
 import type { SessionSchema } from "../session/schema"
 
-export type MemoryScope = "workspace" | "user_global"
+export type MemoryScope = "project" | "personal" | "relationship" | "user_global"
 export type MemoryKind = "preference" | "fact" | "goal" | "event" | "relationship" | "summary"
 export type MemoryProvenance = "user_explicit" | "user_confirmed" | "model_inferred"
 export type MemorySensitivity = "normal" | "sensitive"

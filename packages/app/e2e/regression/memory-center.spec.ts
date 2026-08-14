@@ -21,14 +21,14 @@ for (const layout of ["legacy", "v2"] as const) {
   test(`manages every scoped Memory action in ${layout} settings`, async ({ page }) => {
     const requests: MemoryRequest[] = []
     let records = [
-      memory("mem_accept", "Proposal to accept", "proposed", "workspace", {
+      memory("mem_accept", "Saved preference", "active", "project", {
         provenance: "model_inferred",
         sourceMessageID: "msg_memory_source",
       }),
-      memory("mem_reject", "Proposal to reject", "proposed", "workspace", { provenance: "model_inferred" }),
-      memory("mem_active", "Active goal", "active", "workspace", { kind: "goal" }),
-      memory("mem_delete", "Delete me", "active", "workspace"),
-      memory("mem_relationship", "Relationship note", "active", "workspace", { kind: "relationship" }),
+      memory("mem_reject", "Second saved fact", "active", "project", { provenance: "model_inferred" }),
+      memory("mem_active", "Active goal", "active", "project", { kind: "goal" }),
+      memory("mem_delete", "Delete me", "active", "project"),
+      memory("mem_relationship", "Relationship note", "active", "relationship", { kind: "relationship" }),
       memory("mem_global", "Global preference", "active", "user_global"),
     ]
 
@@ -59,15 +59,12 @@ for (const layout of ["legacy", "v2"] as const) {
     await expect(settings).toBeVisible()
     await settings.getByRole("tab", { name: "Memory Center" }).click()
 
-    const accepted = settings.locator('[data-memory-id="mem_accept"]')
-    await expect(accepted).toContainText("Proposal to accept")
-    await expect(accepted).toContainText("message msg_memory_source")
-    await accepted.getByRole("button", { name: "Accept" }).click()
-    await expect(accepted).toContainText("confirmed")
+    const saved = settings.locator('[data-memory-id="mem_accept"]')
+    await expect(saved).toContainText("Saved preference")
+    await expect(saved).toContainText("message msg_memory_source")
 
-    const rejected = settings.locator('[data-memory-id="mem_reject"]')
-    await rejected.getByRole("button", { name: "Reject" }).click()
-    await expect(rejected).toHaveCount(0)
+    const other = settings.locator('[data-memory-id="mem_reject"]')
+    await expect(other).toContainText("Second saved fact")
 
     const active = settings.locator('[data-memory-id="mem_active"]')
     await active.getByRole("button", { name: "Edit" }).click()
@@ -104,16 +101,14 @@ for (const layout of ["legacy", "v2"] as const) {
 
     expect(requests).toEqual(
       expect.arrayContaining([
-        mutation("/memory/mem_accept/decision", { scope: "workspace", decision: "accept" }),
-        mutation("/memory/mem_reject/decision", { scope: "workspace", decision: "reject" }),
         mutation("/memory/mem_active", {
-          scope: "workspace",
+          scope: "project",
           content: "Updated goal",
           kind: "summary",
           expiresAt: new Date("2030-01-02T03:04").getTime(),
         }),
-        mutation("/memory/mem_active/pause", { scope: "workspace", paused: true }),
-        mutation("/memory/mem_active/pause", { scope: "workspace", paused: false }),
+        mutation("/memory/mem_active/pause", { scope: "project", paused: true }),
+        mutation("/memory/mem_active/pause", { scope: "project", paused: false }),
         expect.objectContaining({
           path: "/memory/mem_delete",
           workspace: workspaceID,
@@ -148,8 +143,8 @@ test("loads additional Memory pages", async ({ page }) => {
       list: () => {
         requests += 1
         return requests === 1
-          ? { items: [memory("mem_first", "First page", "active", "workspace")], nextCursor: "mem_cursor" }
-          : { items: [memory("mem_second", "Second page", "active", "workspace")] }
+          ? { items: [memory("mem_first", "First page", "active", "project")], nextCursor: "mem_cursor" }
+          : { items: [memory("mem_second", "Second page", "active", "project")] }
       },
     },
   })
@@ -189,17 +184,17 @@ test("discards an in-flight Memory page after switching Sessions", async ({ page
       list: async (query) => {
         const requestedSession = query.get("session")
         if (requestedSession === switchedSessionID)
-          return { items: [memory("mem_switched", "Switched Session Memory", "active", "workspace")] }
+          return { items: [memory("mem_switched", "Switched Session Memory", "active", "project")] }
         if (query.get("cursor")) {
           markPageRequested()
           await pageReady
           return {
-            items: [memory("mem_stale_page", "Stale paginated Memory", "active", "workspace")],
+            items: [memory("mem_stale_page", "Stale paginated Memory", "active", "project")],
             nextCursor: "stale_cursor",
           }
         }
         return {
-          items: [memory("mem_page_source", "Original Session Memory", "active", "workspace")],
+          items: [memory("mem_page_source", "Original Session Memory", "active", "project")],
           nextCursor: "page_cursor",
         }
       },
@@ -269,7 +264,7 @@ test("waits for Session metadata after a route change before loading Memory", as
               query.get("session") === delayedSessionID ? "mem_delayed" : "mem_initial",
               query.get("session") === delayedSessionID ? "Trusted Session Memory" : "Initial Session Memory",
               "active",
-              "workspace",
+              "project",
             ),
           ],
         }
@@ -340,8 +335,8 @@ async function installMock(
             target === "user_global"
               ? item.scope !== "user_global"
               : target === "relationship"
-                ? item.kind !== "relationship"
-                : item.scope !== "workspace",
+                ? item.scope !== "relationship"
+                : item.scope !== "user_global",
           )
           setRecords(records)
           return { cleared: 1 }
@@ -446,8 +441,8 @@ function memory(
 ): MemoryInfo {
   return {
     id,
-    workspaceID: scope === "workspace" ? workspaceID : undefined,
-    profileID: scope === "workspace" ? "companion" : undefined,
+    workspaceID: scope === "user_global" ? undefined : workspaceID,
+    profileID: scope === "user_global" ? undefined : "companion",
     scope,
     kind: input.kind ?? "preference",
     content,

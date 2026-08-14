@@ -296,7 +296,7 @@ function memory(id: string, content: string, status: MemoryInfo["status"]): Memo
     id,
     workspaceID,
     profileID: "assistant",
-    scope: "workspace",
+    scope: "project",
     kind: "preference",
     content,
     provenance: "model_inferred",

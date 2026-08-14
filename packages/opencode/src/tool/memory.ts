@@ -14,7 +14,8 @@ export const Parameters = Schema.Struct({
     description: "Category of the memory (required for save, optional filter for search)",
   }),
   scope: Schema.optional(Memory.Scope).annotate({
-    description: "Defaults to workspace. Use user_global only for durable cross-workspace preferences.",
+    description:
+      "Defaults to the current workspace (project or personal). Use user_global only for durable cross-workspace preferences; use relationship only for Companion relationship memory.",
   }),
   query: Schema.optional(Schema.String).annotate({
     description: "Search text to find relevant memories (required for search)",
@@ -156,9 +157,9 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
                 }),
               )
             return {
-              title: "Memory proposed",
+              title: "Memory saved",
               metadata: { id: saved.id, status: saved.status },
-              output: `Proposed [${saved.id}]: ${saved.content}`,
+              output: `Saved [${saved.id}]: ${saved.content}`,
             }
           }
 

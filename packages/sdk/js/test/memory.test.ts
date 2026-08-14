@@ -43,14 +43,14 @@ test("serializes every Memory SDK operation with Workspace routing", async () =>
   await client.memory.update({
     session,
     memoryID: "mem_sdk",
-    scope: "workspace",
+    scope: "project",
     content: "updated",
     kind: "goal",
     expiresAt: 1_900_000_000_000,
   })
-  await client.memory.decide({ session, memoryID: "mem_sdk", scope: "workspace", decision: "accept" })
-  await client.memory.pause({ session, memoryID: "mem_sdk", scope: "workspace", paused: true })
-  await client.memory.remove({ session, memoryID: "mem_sdk", scope: "workspace" })
+  await client.memory.decide({ session, memoryID: "mem_sdk", scope: "project", decision: "accept" })
+  await client.memory.pause({ session, memoryID: "mem_sdk", scope: "project", paused: true })
+  await client.memory.remove({ session, memoryID: "mem_sdk", scope: "project" })
   await client.memory.export({ session, includeGlobal: "true" })
   await client.memory.clear({ session, target: "workspace" })
 
@@ -78,13 +78,13 @@ test("serializes every Memory SDK operation with Workspace routing", async () =>
   expect(requests[0]!.query.get("limit")).toBe("25")
   expect(requests[0]!.query.get("cursor")).toBe("mem_cursor")
   expect(requests[1]!.body).toEqual({
-    scope: "workspace",
+    scope: "project",
     content: "updated",
     kind: "goal",
     expiresAt: 1_900_000_000_000,
   })
-  expect(requests[2]!.body).toEqual({ scope: "workspace", decision: "accept" })
-  expect(requests[3]!.body).toEqual({ scope: "workspace", paused: true })
+  expect(requests[2]!.body).toEqual({ scope: "project", decision: "accept" })
+  expect(requests[3]!.body).toEqual({ scope: "project", paused: true })
   expect(requests[6]!.body).toEqual({ target: "workspace" })
 })
 
@@ -92,7 +92,7 @@ function memory() {
   return {
     id: "mem_sdk",
     workspaceID: "wrk_memory_sdk",
-    scope: "workspace",
+    scope: "project",
     kind: "goal",
     content: "updated",
     provenance: "user_confirmed",

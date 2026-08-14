@@ -13,7 +13,7 @@ import { createEventSource, createFetch, directory } from "./fixture/tui-sdk"
 
 const memory = {
   id: "mem_smoke",
-  scope: "workspace",
+  scope: "project",
   kind: "preference",
   content: "Use concise progress updates",
   provenance: "model_inferred",
@@ -168,7 +168,7 @@ test("opens /memory and accepts a proposal through the full TUI", async () => {
         if (url.pathname === "/memory" && request.method === "GET")
           return Response.json({ items: [{ ...memory, status }], nextCursor: undefined })
         if (url.pathname === "/memory/mem_smoke/decision" && request.method === "POST") {
-          expect(await request.json()).toEqual({ scope: "workspace", decision: "accept" })
+          expect(await request.json()).toEqual({ scope: "project", decision: "accept" })
           status = "active"
           return Response.json({ ...memory, status })
         }

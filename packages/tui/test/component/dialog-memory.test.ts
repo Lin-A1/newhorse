@@ -14,7 +14,7 @@ import {
 
 const record = (id: string, content = id): MemoryInfo => ({
   id,
-  scope: "workspace",
+  scope: "project",
   kind: "preference",
   content,
   provenance: "model_inferred",
@@ -28,7 +28,7 @@ const record = (id: string, content = id): MemoryInfo => ({
 describe("dialog Memory state", () => {
   test("formats source, scope, provenance and expiry details", () => {
     expect(memoryDetails({ ...record("mem_1"), timeExpires: Date.parse("2030-01-02T03:04:00Z") })).toEqual([
-      "preference · workspace · model inferred",
+      "preference · project · model inferred",
       "message msg_source",
       "expires 2030-01-02T03:04:00.000Z",
     ])
@@ -77,21 +77,21 @@ describe("dialog Memory state", () => {
         method: "POST",
         path: "/memory/mem_1/decision",
         query: "?session=ses_memory",
-        body: { scope: "workspace", decision: "accept" },
+        body: { scope: "project", decision: "accept" },
       },
       {
         method: "POST",
         path: "/memory/mem_1/pause",
         query: "?session=ses_memory",
-        body: { scope: "workspace", paused: true },
+        body: { scope: "project", paused: true },
       },
       {
         method: "PATCH",
         path: "/memory/mem_1",
         query: "?session=ses_memory",
-        body: { scope: "workspace", content: "updated", kind: "summary", clearExpiry: true },
+        body: { scope: "project", content: "updated", kind: "summary", clearExpiry: true },
       },
-      { method: "DELETE", path: "/memory/mem_1", query: "?session=ses_memory&scope=workspace", body: undefined },
+      { method: "DELETE", path: "/memory/mem_1", query: "?session=ses_memory&scope=project", body: undefined },
       {
         method: "POST",
         path: "/memory/clear",

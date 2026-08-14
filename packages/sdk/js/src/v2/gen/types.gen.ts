@@ -2584,7 +2584,7 @@ export type MemoryInfo = {
   id: string
   workspaceID?: string
   profileID?: string
-  scope: "workspace" | "user_global"
+  scope: "project" | "personal" | "relationship" | "user_global"
   kind: "preference" | "fact" | "goal" | "event" | "relationship" | "summary"
   content: string
   sourceSessionID?: string
@@ -10195,7 +10195,7 @@ export type MemoryRemoveData = {
     directory?: string
     workspace?: string
     session?: string
-    scope?: "workspace" | "user_global"
+    scope?: "project" | "personal" | "relationship" | "user_global"
   }
   url: "/memory/{memoryID}"
 }
@@ -10220,7 +10220,7 @@ export type MemoryRemoveResponse = MemoryRemoveResponses[keyof MemoryRemoveRespo
 
 export type MemoryUpdateData = {
   body?: {
-    scope?: "workspace" | "user_global"
+    scope?: "project" | "personal" | "relationship" | "user_global"
     kind?: "preference" | "fact" | "goal" | "event" | "relationship" | "summary"
     content?: string
     expiresAt?: number
@@ -10257,7 +10257,7 @@ export type MemoryUpdateResponse = MemoryUpdateResponses[keyof MemoryUpdateRespo
 
 export type MemoryDecideData = {
   body?: {
-    scope?: "workspace" | "user_global"
+    scope?: "project" | "personal" | "relationship" | "user_global"
     decision: "accept" | "reject"
   }
   path: {
@@ -10291,7 +10291,7 @@ export type MemoryDecideResponse = MemoryDecideResponses[keyof MemoryDecideRespo
 
 export type MemoryPauseData = {
   body?: {
-    scope?: "workspace" | "user_global"
+    scope?: "project" | "personal" | "relationship" | "user_global"
     paused: boolean
   }
   path: {
