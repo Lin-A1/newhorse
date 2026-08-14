@@ -97,10 +97,14 @@ export interface ToastV2Options {
 
 export function showToastV2(options: ToastV2Options | string) {
   const opts = typeof options === "string" ? { description: options } : options
+  // Never let a toast hang forever: default to a 5s auto-dismiss unless the
+  // caller explicitly marks it persistent. Kobalte otherwise falls back to its
+  // own default, which a stale context could turn into Infinity.
+  const duration = opts.persistent ? undefined : (opts.duration ?? 5000)
   return toaster.show((props) => {
     const resolvedIcon = children(() => opts.icon)
     return (
-      <ToastV2 toastId={props.toastId} duration={opts.duration} persistent={opts.persistent}>
+      <ToastV2 toastId={props.toastId} duration={duration} persistent={opts.persistent}>
         <div data-slot="toast-v2-header">
           <Show when={resolvedIcon()}>
             <ToastV2.Icon>{resolvedIcon()}</ToastV2.Icon>

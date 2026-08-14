@@ -117,10 +117,13 @@ export interface ToastOptions {
 
 export function showToast(options: ToastOptions | string) {
   const opts = typeof options === "string" ? { description: options } : options
+  // Never let a toast hang forever: default to a 5s auto-dismiss unless the
+  // caller explicitly marks it persistent.
+  const duration = opts.persistent ? undefined : (opts.duration ?? 5000)
   return toaster.show((props) => (
     <Toast
       toastId={props.toastId}
-      duration={opts.duration}
+      duration={duration}
       persistent={opts.persistent}
       data-variant={opts.variant ?? "default"}
     >
