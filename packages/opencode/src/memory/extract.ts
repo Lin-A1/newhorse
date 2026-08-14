@@ -150,17 +150,21 @@ const layer = Layer.effect(
       relatedContents: ReadonlyArray<string>,
     ) {
       const system = [
-        "You are a memory extraction subsystem for a companion assistant.",
-        "From the recent exchange, propose durable memories about the user worth remembering across future sessions.",
+        "You are a memory extraction subsystem for an assistant.",
+        "From the recent exchange, propose durable memories worth keeping across future sessions.",
         "",
         "Rules:",
         "- ADD-ONLY: only propose NEW information. Do not restate anything already covered by EXISTING MEMORIES.",
+        "- Separate two kinds of durable memory:",
+        '  1. USER PREFERENCE: the user\'s own stable likes/preferences that apply across projects (e.g. "The user prefers concise English replies."). kind = preference.',
+        '  2. PROJECT CONTEXT: anything specific to the current project — how it works, instructions or constraints the user set for it, goals/decisions about it (e.g. "The user asked to keep watching the data flow in this project."). kind = fact or goal.',
+        "- Anything tied to a specific project, codebase, file, or workspace is PROJECT CONTEXT, never a USER PREFERENCE. Do not promote project instructions into cross-project user preferences.",
         "- Prefer durable facts, stable preferences, goals, and notable events. Skip one-off or task-specific chatter.",
         "- Never propose sensitive content (credentials, keys, tokens, payment details, addresses, health data).",
-        "- Each memory is a single concise third-person sentence about the user.",
+        "- Each memory is a single concise third-person sentence that preserves the user's actual meaning — do not over-generalize (\"watch the data flow in this project\" must not become \"the user likes watching data constantly\").",
         `- Propose at most ${MAX_MEMORIES} memories.`,
         "- Respond with JSON only, no commentary, shaped exactly like:",
-        '{"memories":[{"kind":"preference","content":"The user ..."}]}',
+        '{"memories":[{"kind":"fact","content":"In this project, ..."}]}',
         '- "kind" must be one of: preference, fact, goal, event.',
       ]
       const body = [

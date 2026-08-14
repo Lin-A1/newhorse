@@ -541,6 +541,53 @@ describe("MemoryExtract", () => {
     )
   })
 
+  // ------------------------------------------------------------ work-session scoping
+  describe("work-session scoping", () => {
+    const projectContext = mockEnv({
+      llmText: JSON.stringify({
+        memories: [
+          { kind: "fact", content: "The user asked to keep watching the data flow in this project" },
+          { kind: "goal", content: "This project must fail fast on broken pipeline builds" },
+        ],
+      }),
+    })
+    testEffect(projectContext.layer).effect(
+      "keeps project-level fact/goal scoped to the workspace (not user-global)",
+      () =>
+        Effect.gen(function* () {
+          const extract = yield* MemoryExtract.Service
+          yield* extract.extract(
+            makeInput({ profile: runtimeProfile({ kind: "assistant", id: Profile.ID.make("assistant") }) }),
+          )
+          expect(projectContext.saveCalls).toHaveLength(2)
+          expect(projectContext.saveCalls[0]).toMatchObject({ kind: "fact", scope: undefined })
+          expect(projectContext.saveCalls[1]).toMatchObject({ kind: "goal", scope: undefined })
+        }),
+    )
+
+    // The extractor keeps whatever scope the trust policy derives from kind;
+    // preference stays user-global, everything else stays in the workspace.
+    const mixed = mockEnv({
+      llmText: JSON.stringify({
+        memories: [
+          { kind: "preference", content: "The user prefers concise English replies" },
+          { kind: "fact", content: "In this project, the CI must stay green" },
+        ],
+      }),
+    })
+    testEffect(mixed.layer).effect("only a true preference is saved user-global; project facts stay in workspace", () =>
+      Effect.gen(function* () {
+        const extract = yield* MemoryExtract.Service
+        yield* extract.extract(
+          makeInput({ profile: runtimeProfile({ kind: "assistant", id: Profile.ID.make("assistant") }) }),
+        )
+        expect(mixed.saveCalls).toHaveLength(2)
+        expect(mixed.saveCalls[0]).toMatchObject({ kind: "preference", scope: "user_global" })
+        expect(mixed.saveCalls[1]).toMatchObject({ kind: "fact", scope: undefined })
+      }),
+    )
+  })
+
   // ------------------------------------------------------------ save failure handling
   describe("save failure handling", () => {
     const sensitive = mockEnv({

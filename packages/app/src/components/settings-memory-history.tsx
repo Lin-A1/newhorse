@@ -18,7 +18,7 @@ export function MemoryHistoryPanel(props: {
   return (
     <Show
       when={history()}
-      fallback={<MemoryHistoryFallback error={history.error()} onRetry={() => setAttempt((count) => count + 1)} />}
+      fallback={<MemoryHistoryFallback error={history.error} onRetry={() => setAttempt((count) => count + 1)} />}
     >
       {(entries) => (
         <Show
