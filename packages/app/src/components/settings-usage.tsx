@@ -45,7 +45,8 @@ type UsageTotals = {
   trend: TrendPoint[]
 }
 
-function rangeStart(range: RangeKey, now: number): number | undefined {
+/** @internal Exported for unit tests. */
+export function rangeStart(range: RangeKey, now: number): number | undefined {
   const startOfToday = new Date(now)
   startOfToday.setHours(0, 0, 0, 0)
   const start = startOfToday.getTime()
@@ -60,7 +61,8 @@ function dayLabel(ts: number) {
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-function aggregate(sessions: SessionUsage[], range: RangeKey, now: number): UsageTotals {
+/** @internal Exported for unit tests. */
+export function aggregate(sessions: SessionUsage[], range: RangeKey, now: number): UsageTotals {
   const start = rangeStart(range, now)
   const filtered = start === undefined ? sessions : sessions.filter((s) => (s.time?.created ?? now) >= start)
 
@@ -146,7 +148,8 @@ const MAX_SESSION_LIST_PAGES = 100
 // every page so usage beyond the first page of sessions is not silently dropped
 // from the stats. Archived sessions are included (archived is not deleted; their
 // usage stays in the session row, so skipping them would drop whole sessions).
-async function listAllSessions(serverSDK: () => ServerSDK): Promise<SessionUsage[]> {
+/** @internal Exported for unit tests. */
+export async function listAllSessions(serverSDK: () => ServerSDK): Promise<SessionUsage[]> {
   const sessions: SessionUsage[] = []
   let cursor: number | undefined
   for (let page = 0; page < MAX_SESSION_LIST_PAGES; page++) {

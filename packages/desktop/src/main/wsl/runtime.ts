@@ -260,12 +260,41 @@ export async function installWslDistro(name: string, opts?: RunWslOptions) {
 }
 
 export async function installWslOpencode(version: string, distro: string, opts?: RunWslOptions) {
+  // Install the newhorse CLI from the newhorse GitHub release into
+  // $HOME/.newhorse/bin/nh. Historically this downloaded upstream opencode via
+  // https://opencode.ai/install; newhorse now ships its own CLI. The function
+  // name/type are kept for compatibility — see installOpencode in servers.ts.
+  const script = [
+    "set -e",
+    'mkdir -p "$HOME/.newhorse/bin"',
+    'TMP_ARCHIVE="/tmp/newhorse-$$.tar.gz"',
+    'ARCH=$(uname -m)',
+    'case "$ARCH" in',
+    '  x86_64|amd64) TARGET="linux-x64" ;;',
+    '  aarch64|arm64) TARGET="linux-arm64" ;;',
+    '  *) echo "unsupported architecture: $ARCH" >&2; exit 1 ;;',
+    "esac",
+    `VERSION=${shellEscape(version)}`,
+    'BASE_URL="https://github.com/Lin-A1/newhorse/releases/download/v$VERSION/newhorse-$TARGET.tar.gz"',
+    "# On x64, prefer the AVX2 build and fall back to the baseline build when it 404s.",
+    'if [ "$TARGET" = "linux-x64" ]; then',
+    '  if ! curl -fsSL -o "$TMP_ARCHIVE" "$BASE_URL"; then',
+    '    BASE_URL="https://github.com/Lin-A1/newhorse/releases/download/v$VERSION/newhorse-linux-x64-baseline.tar.gz"',
+    '    curl -fsSL -o "$TMP_ARCHIVE" "$BASE_URL"',
+    "  fi",
+    "else",
+    '  curl -fsSL -o "$TMP_ARCHIVE" "$BASE_URL"',
+    "fi",
+    "# The release archive contains the nh binary directly (build.ts packs `*` from dist/<name>/bin).",
+    'tar -xzf "$TMP_ARCHIVE" -C "$HOME/.newhorse/bin"',
+    'chmod +x "$HOME/.newhorse/bin/nh"',
+    "# Print the installed version and fail the install if the binary cannot execute.",
+    '"$HOME/.newhorse/bin/nh" --version',
+    'rm -f "$TMP_ARCHIVE"',
+  ].join("\n")
   return runInteractiveCommand(
     resolveSystem32Command("wsl.exe"),
-    wslArgs(
-      ["bash", "-lc", `curl -fsSL https://opencode.ai/install | bash -s -- --version ${shellEscape(version)}`],
-      distro,
-    ),
+    wslArgs(["bash", "-lc", script], distro),
     withTimeout(opts, DEFAULT_WSL_INSTALL_TIMEOUT_MS),
     DEFAULT_WSL_INSTALL_TIMEOUT_MS,
   )
@@ -306,7 +335,7 @@ export async function resolveWslOpencode(distro: string, opts?: RunWslOptions) {
   return firstLine(
     (
       await runWslSh(
-        'if [ -x "$HOME/.opencode/bin/opencode" ]; then printf "%s\\n" "$HOME/.opencode/bin/opencode"; fi',
+        'if [ -x "$HOME/.newhorse/bin/nh" ]; then printf "%s\\n" "$HOME/.newhorse/bin/nh"; fi',
         distro,
         opts,
       )

@@ -52,7 +52,7 @@ describe("WSL server settings presentation", () => {
     expect(
       wslOpencodeAction({
         distro: "Debian",
-        resolvedPath: "/usr/local/bin/opencode",
+        resolvedPath: "/usr/local/bin/nh",
         version: "1.2.2",
         expectedVersion: "1.2.3",
         matchesDesktop: false,
@@ -62,7 +62,7 @@ describe("WSL server settings presentation", () => {
     expect(
       wslOpencodeAction({
         distro: "Debian",
-        resolvedPath: "/usr/local/bin/opencode",
+        resolvedPath: "/usr/local/bin/nh",
         version: "1.2.3",
         expectedVersion: "1.2.3",
         matchesDesktop: true,
@@ -191,11 +191,11 @@ describe("WSL server settings presentation", () => {
         opencodeChecks: {
           Debian: {
             distro: "Debian",
-            resolvedPath: "/home/me/.opencode/bin/opencode",
+            resolvedPath: "/home/me/.newhorse/bin/nh",
             version: null,
             expectedVersion: "1.2.3",
             matchesDesktop: null,
-            error: "opencode is installed but could not run",
+            error: "newhorse is installed but could not run",
           },
         },
       },

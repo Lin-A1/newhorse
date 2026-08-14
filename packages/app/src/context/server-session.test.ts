@@ -1333,7 +1333,38 @@ describe("server session", () => {
 
     await store.sync("child", { force: true })
 
-    expect(store.data.message.child).toEqual([boundary, older])
+    expect(store.data.message.child).toEqual([older, boundary])
+  })
+
+  test("orders messages by time_created across the 48-bit ID rollover", async () => {
+    // Legacy IDs embed a timestamp near the top of the 48-bit field ("ff…"), while
+    // post-rollover IDs wrap to small values ("00…"). Ordering must follow
+    // time_created, not the ID string, so the newer wrapped-ID message sorts last.
+    const old = userMessage("msg_ffffffffffff", { time: { created: 1 } })
+    const latest = userMessage("msg_000000000001", { time: { created: 2 } })
+    const store = createServerSession(
+      messageClient(response([{ info: latest, parts: [] }, { info: old, parts: [] }])),
+    )
+    await store.sync("child")
+
+    expect(store.data.message.child.map((message) => message.id)).toEqual([
+      "msg_ffffffffffff",
+      "msg_000000000001",
+    ])
+  })
+
+  test("inserts a post-rollover message event in time order", async () => {
+    const old = userMessage("msg_ffffffffffff", { time: { created: 1 } })
+    const latest = userMessage("msg_000000000001", { time: { created: 2 } })
+    const store = createServerSession(messageClient(response([{ info: old, parts: [] }])))
+    await store.sync("child")
+
+    store.apply({ type: "message.updated", properties: { info: latest } })
+
+    expect(store.data.message.child.map((message) => message.id)).toEqual([
+      "msg_ffffffffffff",
+      "msg_000000000001",
+    ])
   })
 
   test("preserves a part update for a message being loaded from history", async () => {

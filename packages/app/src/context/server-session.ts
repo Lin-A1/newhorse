@@ -17,9 +17,9 @@ import { diffs as cleanDiffs, message as cleanMessage } from "@/utils/diffs"
 import { sessionNotFoundError } from "@/utils/server-errors"
 import { rootSession } from "@/utils/session-route"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
+import { cmpMessage, mergeMessages, sortMessages } from "@/utils/message-order"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-const cmpMessage = (a: Message, b: Message) => a.time.created - b.time.created || cmp(a.id, b.id)
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const initialMessagePageSize = 20
 const historyMessagePageSize = 200
@@ -65,17 +65,23 @@ function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) {
   const part = new Map(page.part.map((item) => [item.id, item.part]))
   const observed: { messageID: string; parts: Part[] }[] = []
   for (const item of items) {
-    const result = Binary.search(session, item.message.id, (message) => message.id)
-    if (!result.found) session.splice(result.index, 0, item.message)
+    // `session` is ordered by (time_created, id); look the optimistic message up
+    // by id (its echoed time_created may differ) and otherwise insert it in time order.
+    const existing = session.findIndex((message) => message.id === item.message.id)
+    const found = existing !== -1
+    if (!found) {
+      const result = Binary.searchBy(session, item.message, cmpMessage)
+      session.splice(result.index, 0, item.message)
+    }
     const current = part.get(item.message.id)
-    const confirmed = result.found
+    const confirmed = found
       ? item.parts.filter((part) => Binary.search(current ?? [], part.id, (value) => value.id).found)
       : []
-    if (result.found) observed.push({ messageID: item.message.id, parts: confirmed })
+    if (found) observed.push({ messageID: item.message.id, parts: confirmed })
     part.set(
       item.message.id,
       merge(
-        result.found ? (current ?? []) : merge(item.confirmedParts ?? [], current ?? []),
+        found ? (current ?? []) : merge(item.confirmedParts ?? [], current ?? []),
         item.parts.filter((part) => !confirmed.includes(part)),
       ),
     )
@@ -113,6 +119,7 @@ function reconcileFetched<T extends { id: string }>(
     removed?: ReadonlySet<string>
     preserveUnfetched?: boolean | ((item: T) => boolean)
   } = {},
+  sort: (a: T, b: T) => number = (a, b) => cmp(a.id, b.id),
 ) {
   const result = new Map(fetched.map((item) => [item.id, item]))
   const live = new Map(current.map((item) => [item.id, item]))
@@ -134,7 +141,7 @@ function reconcileFetched<T extends { id: string }>(
     if (!item) result.delete(id)
   }
   for (const id of options.removed ?? emptyIDs) result.delete(id)
-  return [...result.values()].sort((a, b) => cmp(a.id, b.id))
+  return [...result.values()].sort(sort)
 }
 
 export function createServerSession(client: OpencodeClient, options?: { retry?: typeof retry }) {
@@ -344,7 +351,7 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
     if (!load) return
     // A part event keeps an existing parent when the fetched page omits it without overriding fetched metadata.
     const messages = data.message[sessionID]
-    if (messages && Binary.search(messages, messageID, (message) => message.id).found)
+    if (messages && messages.some((message) => message.id === messageID))
       load.retainedMessages.add(messageID)
     const parts = load.touchedParts.get(messageID)
     if (parts) {
@@ -368,7 +375,7 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
       load.touchedParts.set(messageID, new Set(parts))
       load.carriedDeltaParts.set(messageID, new Set(parts))
       const messages = data.message[sessionID]
-      if (messages && Binary.search(messages, messageID, (message) => message.id).found)
+      if (messages && messages.some((message) => message.id === messageID))
         load.retainedMessages.add(messageID)
     }
     for (const [messageID, parts] of load.removedParts) {
@@ -376,7 +383,7 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
       parts.forEach((partID) => touched.add(partID))
       load.touchedParts.set(messageID, touched)
       const messages = data.message[sessionID]
-      if (messages && Binary.search(messages, messageID, (message) => message.id).found)
+      if (messages && messages.some((message) => message.id === messageID))
         load.retainedMessages.add(messageID)
     }
     for (const [messageID, parts] of load.optimisticParts) {
@@ -476,7 +483,7 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
     })
     const items = (response.data ?? []).filter((item) => !!item?.info?.id)
     return {
-      session: items.map((item) => cleanMessage(item.info)).sort((a, b) => cmp(a.id, b.id)),
+      session: sortMessages(items.map((item) => cleanMessage(item.info))),
       part: items.map((item) => ({
         id: item.info.id,
         part: item.parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id)),
@@ -576,12 +583,17 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
       if (!load?.clearedMessageParts.has(item.messageID)) confirmOptimistic(sessionID, item.messageID, item.parts)
     })
     const touchedMessages = new Set([...(load?.touchedMessages ?? []), ...(removedMessages.get(sessionID) ?? [])])
-    const messages = reconcileFetched(merged.session, data.message[sessionID] ?? [], {
-      touched: touchedMessages,
-      retained: load?.retainedMessages,
-      removed: load?.removedMessages,
-      preserveUnfetched,
-    })
+    const messages = reconcileFetched(
+      merged.session,
+      data.message[sessionID] ?? [],
+      {
+        touched: touchedMessages,
+        retained: load?.retainedMessages,
+        removed: load?.removedMessages,
+        preserveUnfetched,
+      },
+      cmpMessage,
+    )
     batch(() => {
       const messageIDs = replaceMessages(sessionID, messages)
       replaceParts(sessionID, merged.part, messageIDs, load)
@@ -667,7 +679,7 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
           ? page
           : {
               ...page,
-              session: merge(
+              session: mergeMessages(
                 page.session,
                 parents.map((parent) => parent.message),
               ),
@@ -824,14 +836,20 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
           setData("message", info.sessionID, [info])
           return
         }
-        const result = Binary.search(messages, info.id, (message) => message.id)
-        if (result.found) setData("message", info.sessionID, result.index, reconcile(info))
-        if (!result.found)
-          setData("message", info.sessionID, (value = []) => {
-            const next = value.slice()
-            next.splice(result.index, 0, info)
-            return next
-          })
+        // Messages are ordered by (time_created, id). The same id can already exist
+        // (an optimistic echo) with a slightly different time_created, so reconcile
+        // by id before falling back to a time-ordered insert.
+        const existing = messages.findIndex((message) => message.id === info.id)
+        if (existing !== -1) {
+          setData("message", info.sessionID, existing, reconcile(info))
+          return
+        }
+        const result = Binary.searchBy(messages, info, cmpMessage)
+        setData("message", info.sessionID, (value = []) => {
+          const next = value.slice()
+          next.splice(result.index, 0, info)
+          return next
+        })
         return
       }
       case "message.removed": {
@@ -854,8 +872,8 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
           produce((draft) => {
             const messages = draft.message[props.sessionID]
             if (messages) {
-              const result = Binary.search(messages, props.messageID, (message) => message.id)
-              if (result.found) messages.splice(result.index, 1)
+              const index = messages.findIndex((message) => message.id === props.messageID)
+              if (index !== -1) messages.splice(index, 1)
             }
             deleteMessageParts(draft, props.messageID)
           }),
@@ -867,7 +885,7 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
         if (SKIP_PARTS.has(part.type)) return
         const messages = data.message[part.sessionID]
         const load = messageLoads.get(part.sessionID)
-        const missing = !messages || !Binary.search(messages, part.messageID, (message) => message.id).found
+        const missing = !messages || !messages.some((message) => message.id === part.messageID)
         // Outside a page load, accepting a part without its ordered parent event would create an unbounded orphan.
         if (
           missing &&
@@ -1111,7 +1129,7 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
         if (items) items.set(input.message.id, { ...input, parts, confirmedParts: [] })
         if (!items)
           optimistic.set(input.sessionID, new Map([[input.message.id, { ...input, parts, confirmedParts: [] }]]))
-        setData("message", input.sessionID, (messages = []) => merge(messages, [input.message]))
+        setData("message", input.sessionID, (messages = []) => mergeMessages(messages, [input.message]))
         setData(
           "part_text_accum_delta",
           produce((draft) => {

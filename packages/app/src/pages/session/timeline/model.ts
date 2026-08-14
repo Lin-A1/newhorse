@@ -104,6 +104,11 @@ export function isTimelineReady(messages: Message[] | undefined, loading: boolea
 
 export function selectVisibleUserMessages(messages: UserMessage[], revertMessageID?: string) {
   if (!revertMessageID) return messages
+  // Messages are ordered by time_created, so the revert boundary is the revert
+  // message's position. Fall back to an ID comparison when the revert message is
+  // not loaded (older history), preserving legacy behavior for that case.
+  const index = messages.findIndex((message) => message.id === revertMessageID)
+  if (index !== -1) return messages.slice(0, index)
   return messages.filter((message) => message.id < revertMessageID)
 }
 

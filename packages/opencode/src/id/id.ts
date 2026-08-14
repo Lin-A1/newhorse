@@ -15,6 +15,15 @@ const prefixes = {
 
 const LENGTH = 26
 
+// Legacy IDs packed a timestamp into a 6-byte (48-bit) field, which rolled over
+// every ~795 days (most recently 2026-08-14T11:19:55Z) and made post-rollover IDs
+// string-sort before older ones. Current IDs use a 7-byte time field that holds a
+// full timestamp until the year ~2527. Ascending IDs additionally carry a leading
+// "z" (the largest base62 char) so they string-sort after every legacy ID, keeping
+// ID-ordered collections correct when old and new IDs share a store.
+const timeBytes = 7
+const timeHexChars = timeBytes * 2
+
 // State for monotonic ID generation
 let lastTimestamp = 0
 let counter = 0
@@ -61,18 +70,22 @@ export function create(prefix: string, direction: "descending" | "ascending", ti
 
   now = direction === "descending" ? ~now : now
 
-  const timeBytes = Buffer.alloc(6)
-  for (let i = 0; i < 6; i++) {
-    timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff))
+  const timeBytesBuffer = Buffer.alloc(timeBytes)
+  for (let i = 0; i < timeBytes; i++) {
+    timeBytesBuffer[i] = Number((now >> BigInt((timeBytes - 1) * 8 - 8 * i)) & BigInt(0xff))
   }
 
-  return prefix + "_" + timeBytes.toString("hex") + randomBase62(LENGTH - 12)
+  const marker = direction === "descending" ? "" : "z"
+  return prefix + "_" + marker + timeBytesBuffer.toString("hex") + randomBase62(LENGTH - timeHexChars - (marker ? 1 : 0))
 }
 
 /** Extract timestamp from an ascending ID. Does not work with descending IDs. */
 export function timestamp(id: string): number {
   const prefix = id.split("_")[0]
-  const hex = id.slice(prefix.length + 1, prefix.length + 13)
+  const payload = id.slice(prefix.length + 1)
+  // Legacy IDs use a 12-hex time field; current ascending IDs use "z" + 14 hex.
+  const marker = payload.startsWith("z") ? 1 : 0
+  const hex = payload.slice(marker, marker + (marker ? 14 : 12))
   const encoded = BigInt("0x" + hex)
   return Number(encoded / BigInt(0x1000))
 }

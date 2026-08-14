@@ -414,6 +414,28 @@ describe("applyDirectoryEvent", () => {
     expect(store.part.msg_2).toBeUndefined()
   })
 
+  test("inserts a post-rollover message event in time order", () => {
+    const sessionID = "ses_1"
+    const old = { ...userMessage("msg_ffffffffffff", sessionID), time: { created: 1 } }
+    const latest = { ...userMessage("msg_000000000001", sessionID), time: { created: 2 } }
+    const [store, setStore] = createStore(
+      baseState({
+        message: { [sessionID]: [old] },
+      }),
+    )
+
+    applyDirectoryEvent({
+      event: { type: "message.updated", properties: { info: latest } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+
+    expect(store.message[sessionID]?.map((x) => x.id)).toEqual(["msg_ffffffffffff", "msg_000000000001"])
+  })
+
   test("upserts and prunes message parts", () => {
     const sessionID = "ses_1"
     const messageID = "msg_1"

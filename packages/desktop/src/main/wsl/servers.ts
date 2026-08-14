@@ -358,6 +358,9 @@ export function createWslServersController(
       })
     },
 
+    // Installs the newhorse CLI (see installWslOpencode in runtime.ts). The
+    // "opencode" IPC/controller/method names are legacy — they are kept to
+    // avoid a large rename but refer to the newhorse CLI, not upstream opencode.
     async installOpencode(name: string) {
       await runJob({ kind: "install-opencode", distro: name, startedAt: Date.now() }, async (abort) => {
         const result = await installWslOpencode(appVersion, name, { signal: abort.signal })
@@ -475,7 +478,7 @@ function opencodeCheck(
       version: null,
       expectedVersion,
       matchesDesktop: null,
-      error: "opencode is not installed in this distro",
+      error: "newhorse is not installed in this distro",
     }
   }
   if (!version) {
@@ -485,7 +488,7 @@ function opencodeCheck(
       version: null,
       expectedVersion,
       matchesDesktop: null,
-      error: "opencode is installed but could not run",
+      error: "newhorse is installed but could not run",
     }
   }
   return {

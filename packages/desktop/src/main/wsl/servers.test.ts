@@ -55,7 +55,7 @@ test("clears cached distro probes when removing a WSL server", () => {
       {
         Debian: {
           distro: "Debian",
-          resolvedPath: "/home/luke/.opencode/bin/opencode",
+          resolvedPath: "/home/luke/.newhorse/bin/nh",
           version: "1.16.2",
           expectedVersion: "1.16.2",
           matchesDesktop: true,
@@ -164,7 +164,7 @@ test("probes addable distros in parallel before checking newhorse", async () => 
     },
     resolveOpencode: async (distro) => {
       opencode.push(distro)
-      return "/home/me/.opencode/bin/opencode"
+      return "/home/me/.newhorse/bin/nh"
     },
   })
 
@@ -195,7 +195,7 @@ test("does not check newhorse in addable distros that cannot execute commands", 
     }),
     resolveOpencode: async (distro) => {
       opencode.push(distro)
-      return "/home/me/.opencode/bin/opencode"
+      return "/home/me/.newhorse/bin/nh"
     },
   })
 
@@ -225,7 +225,7 @@ function testControllerOptions() {
       await new Promise<void>((resolve) => {
         releaseOpencodeResolve = resolve
       })
-      return "/home/me/.opencode/bin/opencode"
+      return "/home/me/.newhorse/bin/nh"
     },
   }
 }

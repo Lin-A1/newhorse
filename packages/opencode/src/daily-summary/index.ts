@@ -149,27 +149,37 @@ const layer = Layer.effect(
       return rows.map((row) => ({ date: row.date, content: row.content, timeCreated: row.time_created }))
     })
 
-    // Every minute: if it's past 23:00 local, dailySummary is on, and today has
-    // no summary yet, generate it once.
+    // Every minute: once past 23:00 local, generate today's summary if missing;
+    // if today is already summarized but yesterday was missed (e.g. the app
+    // wasn't running in yesterday's 23:00 window), backfill one day.
     const maybeGenerateToday = Effect.fn("DailySummary.maybeGenerateToday")(function* () {
       const now = Date.now()
       const start = dayStartMs(new Date(now))
-      const dateKey = localDateKey(start)
       if (now < start + 23 * 3_600_000) return
       const runtime = yield* profile
         .runtime(Profile.ID.make("companion"))
         .pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (!runtime?.dailySummary) return
-      const existing = yield* db
-        .select({ date: DailySummaryTable.date })
-        .from(DailySummaryTable)
-        .where(eq(DailySummaryTable.date, dateKey))
-        .get()
-        .pipe(Effect.orDie)
-      if (existing) return
-      yield* generate({ date: now }).pipe(
-        Effect.catchCause((cause) => Effect.logWarning("daily summary generation failed", { cause })),
-      )
+
+      const hasSummary = (ts: number) =>
+        db
+          .select({ date: DailySummaryTable.date })
+          .from(DailySummaryTable)
+          .where(eq(DailySummaryTable.date, localDateKey(dayStartMs(new Date(ts)))))
+          .get()
+          .pipe(Effect.map((row) => row !== undefined), Effect.orDie)
+
+      const ensure = (ts: number) =>
+        generate({ date: ts }).pipe(
+          Effect.catchCause((cause) => Effect.logWarning("daily summary generation failed", { cause })),
+        )
+
+      if (!(yield* hasSummary(start))) {
+        yield* ensure(start)
+      } else if (!(yield* hasSummary(start - 86_400_000))) {
+        // Today is done but yesterday was missed; backfill exactly one day.
+        yield* ensure(start - 86_400_000)
+      }
     })
 
     yield* maybeGenerateToday().pipe(

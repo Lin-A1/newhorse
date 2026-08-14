@@ -8,6 +8,14 @@ const prefixes = {
 } as const
 
 const LENGTH = 26
+// Legacy IDs packed a timestamp into a 6-byte (48-bit) field, which rolled over
+// every ~795 days (most recently 2026-08-14T11:19:55Z) and made post-rollover IDs
+// string-sort before older ones. Current IDs use a 7-byte time field that holds a
+// full timestamp until the year ~2527. Ascending IDs additionally carry a leading
+// "z" (the largest base62 char) so they string-sort after every legacy ID, keeping
+// ID-ordered collections correct when old and new IDs share a store.
+const TIME_BYTES = 7
+const TIME_HEX_CHARS = TIME_BYTES * 2
 let lastTimestamp = 0
 let counter = 0
 
@@ -50,12 +58,18 @@ function create(prefix: Prefix, descending: boolean, timestamp?: number): string
     now = ~now
   }
 
-  const timeBytes = new Uint8Array(6)
-  for (let i = 0; i < 6; i += 1) {
-    timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff))
+  const timeBytes = new Uint8Array(TIME_BYTES)
+  for (let i = 0; i < TIME_BYTES; i += 1) {
+    timeBytes[i] = Number((now >> BigInt((TIME_BYTES - 1) * 8 - 8 * i)) & BigInt(0xff))
   }
 
-  return prefixes[prefix] + "_" + bytesToHex(timeBytes) + randomBase62(LENGTH - 12)
+  return (
+    prefixes[prefix] +
+    "_" +
+    (descending ? "" : "z") +
+    bytesToHex(timeBytes) +
+    randomBase62(LENGTH - TIME_HEX_CHARS - (descending ? 0 : 1))
+  )
 }
 
 function bytesToHex(bytes: Uint8Array): string {

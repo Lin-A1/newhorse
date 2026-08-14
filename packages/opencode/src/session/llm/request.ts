@@ -2,7 +2,7 @@ import { PermissionV1 } from "@newhorse/core/v1/permission"
 import type { Auth } from "@/auth"
 import { SessionV1 } from "@newhorse/core/v1/session"
 import type { RuntimeFlags } from "@/effect/runtime-flags"
-import { InstanceState } from "@/effect/instance-state"
+import { InstanceRef } from "@/effect/instance-ref"
 import { Permission } from "@/permission"
 import { Agent } from "@/agent/agent"
 import type { MessageV2 } from "../message-v2"
@@ -181,8 +181,11 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     })
   }
 
+  // InstanceRef is a Context.Reference defaulting to undefined; absent in
+  // background/global fibers (daily summary, scheduler, reminders). The project
+  // header is optional — mirror the non-opencode branch and proceed without it.
   const opencodeProjectID = input.model.providerID.startsWith("opencode")
-    ? (yield* InstanceState.context).project.id
+    ? (yield* InstanceRef)?.project.id
     : undefined
 
   return {

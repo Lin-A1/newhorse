@@ -48,7 +48,10 @@ export function create(prefix: string, direction: "descending" | "ascending", ti
 /** Extract timestamp from an ascending ID. Does not work with descending IDs. */
 export function timestamp(id: string): number {
   const prefix = id.split("_")[0]
-  const hex = id.slice(prefix.length + 1, prefix.length + 13)
+  const payload = id.slice(prefix.length + 1)
+  // Legacy IDs use a 12-hex time field; current ascending IDs use "z" + 14 hex.
+  const marker = payload.startsWith("z") ? 1 : 0
+  const hex = payload.slice(marker, marker + (marker ? 14 : 12))
   const encoded = BigInt("0x" + hex)
   return Number(encoded / BigInt(0x1000))
 }

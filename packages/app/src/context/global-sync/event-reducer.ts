@@ -15,6 +15,7 @@ import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
 import { diffs as list, message as clean } from "@/utils/diffs"
+import { cmpMessage } from "@/utils/message-order"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const SESSION_CONTENT_EVENTS = new Set([
@@ -209,11 +210,15 @@ export function applyDirectoryEvent(input: {
         input.setStore("message", info.sessionID, [info])
         break
       }
-      const result = Binary.search(messages, info.id, (m) => m.id)
-      if (result.found) {
-        input.setStore("message", info.sessionID, result.index, reconcile(info))
+      // Messages are ordered by (time_created, id). The same id can already exist
+      // (an optimistic echo) with a slightly different time_created, so reconcile
+      // by id before falling back to a time-ordered insert.
+      const existing = messages.findIndex((m) => m.id === info.id)
+      if (existing !== -1) {
+        input.setStore("message", info.sessionID, existing, reconcile(info))
         break
       }
+      const result = Binary.searchBy(messages, info, cmpMessage)
       input.setStore(
         "message",
         info.sessionID,
@@ -229,8 +234,8 @@ export function applyDirectoryEvent(input: {
         produce((draft) => {
           const messages = draft.message[props.sessionID]
           if (messages) {
-            const result = Binary.search(messages, props.messageID, (m) => m.id)
-            if (result.found) messages.splice(result.index, 1)
+            const index = messages.findIndex((m) => m.id === props.messageID)
+            if (index !== -1) messages.splice(index, 1)
           }
           const parts = draft.part[props.messageID]
           if (parts) {

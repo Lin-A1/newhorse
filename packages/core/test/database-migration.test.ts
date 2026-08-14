@@ -16,6 +16,7 @@ import contextEpochAgentMigration from "@newhorse/core/database/migration/202606
 import addMemoryMigration from "@newhorse/core/database/migration/20260725172900_add_memory"
 import addScheduledEventMigration from "@newhorse/core/database/migration/20260727010000_add_scheduled_event"
 import memoryLifecycleMigration from "@newhorse/core/database/migration/20260728215711_memory_lifecycle"
+import memoryScopeFourLevelMigration from "@newhorse/core/database/migration/20260814120000_memory_scope_four_level"
 import schedulerReliableDeliveryMigration from "@newhorse/core/database/migration/20260801103914_scheduler_reliable_delivery"
 import schedulerDeliveryEligibilityMigration from "@newhorse/core/database/migration/20260801104307_scheduler_delivery_eligibility"
 import schedulerDirectoryScopeMigration from "@newhorse/core/database/migration/20260801110000_scheduler_directory_scope"
@@ -530,6 +531,39 @@ describe("DatabaseMigration", () => {
           { id: "mem_bound_workspace", directory: null },
           { id: "mem_global", directory: null },
           { id: "mem_with_source", directory: "/work/project" },
+        ])
+      }),
+    )
+  })
+
+  test("four-level scope migration reclassifies legacy workspace rows", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE session (id text PRIMARY KEY)`)
+        yield* DatabaseMigration.applyOnly(db, [addMemoryMigration])
+        yield* db.run(sql`
+          INSERT INTO memory (
+            id, scope, profile_id, kind, content, source_session_id,
+            provenance, sensitivity, status, time_created, time_updated
+          ) VALUES
+            ('mem_rel', 'workspace', 'companion', 'relationship', 'rel', NULL,
+             'user_explicit', 'normal', 'active', 1, 1),
+            ('mem_ws_fact', 'workspace', 'assistant', 'fact', 'fact', NULL,
+             'user_explicit', 'normal', 'active', 1, 1),
+            ('mem_ws_pref', 'workspace', NULL, 'preference', 'pref', NULL,
+             'user_explicit', 'normal', 'active', 1, 1),
+            ('mem_global', 'user_global', NULL, 'preference', 'global', NULL,
+             'user_explicit', 'normal', 'active', 1, 1)
+        `)
+
+        yield* DatabaseMigration.applyOnly(db, [memoryScopeFourLevelMigration])
+
+        expect(yield* db.all(sql`SELECT id, scope, kind FROM memory ORDER BY id`)).toEqual([
+          { id: "mem_global", scope: "user_global", kind: "preference" },
+          { id: "mem_rel", scope: "relationship", kind: "relationship" },
+          { id: "mem_ws_fact", scope: "project", kind: "fact" },
+          { id: "mem_ws_pref", scope: "project", kind: "preference" },
         ])
       }),
     )

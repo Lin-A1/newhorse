@@ -19,6 +19,31 @@ export namespace Binary {
     return { found: false, index: left }
   }
 
+  /** Comparator-based binary search over an array ordered by `compare`. */
+  export function searchBy<T>(
+    array: readonly T[],
+    target: T,
+    compare: (a: T, b: T) => number,
+  ): { found: boolean; index: number } {
+    let left = 0
+    let right = array.length - 1
+
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2)
+      const order = compare(array[mid], target)
+
+      if (order === 0) {
+        return { found: true, index: mid }
+      } else if (order < 0) {
+        left = mid + 1
+      } else {
+        right = mid - 1
+      }
+    }
+
+    return { found: false, index: left }
+  }
+
   export function insert<T>(array: T[], item: T, compare: (item: T) => string): T[] {
     const id = compare(item)
     let left = 0

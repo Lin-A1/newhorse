@@ -70,6 +70,8 @@ import { type ServerHealth } from "@/utils/server-health"
 import { Persist, persisted } from "@/utils/persist"
 import { useMarked } from "@newhorse/ui/context/marked"
 import { preloadMarkdown } from "@newhorse/session-ui/markdown-cache"
+import { SidebarTimeline } from "@/components/sidebar-timeline"
+import { Drawer, DrawerContent, DrawerClose } from "@/components/ui/drawer"
 import { archiveHomeSession } from "./home-session-archive"
 import { shouldOpenSessionInBackground } from "./home-session-open"
 import { showToast } from "@/utils/toast"
@@ -311,6 +313,7 @@ export function NewHome() {
   let sessionViewport: HTMLDivElement | undefined
   const [sessionThumbTrack, setSessionThumbTrack] = createSignal<HTMLDivElement>()
   const [sessionHoverTarget, setSessionHoverTarget] = createSignal<HTMLElement>()
+  const [dailySummaryOpen, setDailySummaryOpen] = createSignal(false)
   const [state, setState] = createStore({
     search: "",
     searchFocused: false,
@@ -638,7 +641,8 @@ export function NewHome() {
   }
 
   return (
-    <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
+    <>
+      <div class="rounded-[10px] shadow-[var(--v2-elevation-raised)] m-2 min-h-0 overflow-hidden bg-v2-background-bg-base self-stretch flex-1">
       <ScrollView
         class="h-full [container-type:size]"
         thumbContainer={sessionThumbTrack}
@@ -679,6 +683,7 @@ export function NewHome() {
             unseenCount={unseenCount}
             openSettings={openSettings}
             openHelp={() => platform.openLink("https://github.com/Lin-A1/newhorse/issues")}
+            openDailySummary={() => setDailySummaryOpen(true)}
             language={language}
             onWheel={(event) => {
               if (sessionViewport) containHomeWheel(event, sessionViewport)
@@ -793,11 +798,30 @@ export function NewHome() {
             class="flex lg:hidden"
             openSettings={openSettings}
             openHelp={() => platform.openLink("https://github.com/Lin-A1/newhorse/issues")}
+            openDailySummary={() => setDailySummaryOpen(true)}
             language={language}
           />
         </div>
       </ScrollView>
-    </div>
+      </div>
+      <Drawer open={dailySummaryOpen()} onOpenChange={setDailySummaryOpen} side="right">
+        <DrawerContent>
+          <div class="flex w-full shrink-0 items-center justify-end border-b border-v2-border-border-muted px-3 py-2">
+            <DrawerClose
+              as={IconButtonV2}
+              type="button"
+              size="small"
+              variant="ghost-muted"
+              aria-label={language.t("common.close")}
+              icon={<IconV2 name="xmark-small" />}
+            />
+          </div>
+          <div class="flex min-h-0 w-full flex-col" style={{ height: "min(520px, calc(100vh - 84px))" }}>
+            <SidebarTimeline />
+          </div>
+        </DrawerContent>
+      </Drawer>
+    </>
   )
 }
 
@@ -817,6 +841,7 @@ function HomeProjectColumn(props: {
   unseenCount: (server: ServerConnection.Any, project: LocalProject) => number
   openSettings: () => void
   openHelp: () => void
+  openDailySummary: () => void
   language: ReturnType<typeof useLanguage>
   onWheel: (event: WheelEvent) => void
 }) {
@@ -922,6 +947,7 @@ function HomeProjectColumn(props: {
         class="mb-8 mt-4 hidden shrink-0 lg:flex"
         openSettings={props.openSettings}
         openHelp={props.openHelp}
+        openDailySummary={props.openDailySummary}
         language={props.language}
       />
     </aside>
@@ -932,10 +958,19 @@ function HomeUtilityNav(props: {
   class?: string
   openSettings: () => void
   openHelp: () => void
+  openDailySummary: () => void
   language: ReturnType<typeof useLanguage>
 }) {
   return (
     <div class={`${props.class ?? ""} min-w-0 flex-col gap-1 pr-3`}>
+      <button
+        type="button"
+        class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}
+        onClick={props.openDailySummary}
+      >
+        <IconV2 name="bullet-list" size="small" />
+        <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("sidebar.dailySummary")}</span>
+      </button>
       <button
         type="button"
         class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}

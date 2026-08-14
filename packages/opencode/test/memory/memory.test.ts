@@ -352,6 +352,148 @@ describe("Memory", () => {
     }),
   )
 
+  // Two personal workspaces that happen to share the same profile_id (e.g. two
+  // "companion" profiles) must not see each other's relationship or personal
+  // memories. Relationship rows carry the writer's workspace_id, so every read
+  // filter keeps owner isolation even when the profile matches; user-global
+  // preferences remain visible from both workspaces by design.
+  it.instance("isolates relationship and personal memories across workspaces sharing a profile", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const wsA = WorkspaceV2.ID.make("wrk_mem_iso_a")
+      const wsB = WorkspaceV2.ID.make("wrk_mem_iso_b")
+      const metaA = { id: wsA, type: "personal" as const, projectID: ProjectV2.ID.global }
+      const metaB = { id: wsB, type: "personal" as const, projectID: ProjectV2.ID.global }
+      const inA = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(
+          Effect.provideService(WorkspaceRef, wsA),
+          Effect.provideService(WorkspaceMetadataRef, metaA),
+        )
+      const inB = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(
+          Effect.provideService(WorkspaceRef, wsB),
+          Effect.provideService(WorkspaceMetadataRef, metaB),
+        )
+
+      const relA = yield* inA(
+        memory.save({
+          kind: "relationship",
+          content: "companion A relationship",
+          provenance: "user_explicit",
+          profileID: "companion",
+        }),
+      )
+      const relB = yield* inB(
+        memory.save({
+          kind: "relationship",
+          content: "companion B relationship",
+          provenance: "user_explicit",
+          profileID: "companion",
+        }),
+      )
+      yield* inA(
+        memory.save({
+          kind: "preference",
+          content: "personal A preference",
+          provenance: "user_explicit",
+          profileID: "companion",
+          scope: "personal",
+        }),
+      )
+      yield* inB(
+        memory.save({
+          kind: "preference",
+          content: "personal B preference",
+          provenance: "user_explicit",
+          profileID: "companion",
+          scope: "personal",
+        }),
+      )
+      yield* memory.save({ kind: "preference", content: "global preference", provenance: "user_explicit", scope: "user_global" })
+
+      // The Memory Center view (list/page) shows only this workspace's personal
+      // + relationship rows plus user-global, never the sibling workspace's.
+      expect((yield* inA(memory.list())).map((item) => item.content).toSorted()).toEqual([
+        "companion A relationship",
+        "global preference",
+        "personal A preference",
+      ])
+      expect((yield* inB(memory.list())).map((item) => item.content).toSorted()).toEqual([
+        "companion B relationship",
+        "global preference",
+        "personal B preference",
+      ])
+
+      // Retrieval with the shared profile surfaces only this workspace's rows.
+      expect((yield* inA(memory.retrieve({ profileID: "companion" }))).map((item) => item.content).toSorted()).toEqual([
+        "companion A relationship",
+        "global preference",
+        "personal A preference",
+      ])
+
+      // Relationship search is workspace-isolated even when the profile matches.
+      const aSearch = yield* inA(memory.search({ query: "companion", profileID: "companion", relationshipOnly: true }))
+      expect(aSearch.map((item) => item.id)).toEqual([relA.id])
+      const bSearch = yield* inB(memory.search({ query: "companion", profileID: "companion", relationshipOnly: true }))
+      expect(bSearch.map((item) => item.id)).toEqual([relB.id])
+
+      // Cross-workspace mutation is blocked; the owning workspace can act.
+      expect(yield* inA(memory.forget(relB.id, "relationship", "companion"))).toBe(false)
+      expect(yield* inA(memory.pause({ id: relB.id, scope: "relationship", paused: true, profileID: "companion" }))).toBeUndefined()
+      expect(yield* inA(memory.update({ id: relB.id, scope: "relationship", content: "nope", profileID: "companion" }))).toBeUndefined()
+      expect(yield* inB(memory.forget(relB.id, "relationship", "companion"))).toBe(true)
+    }),
+  )
+
+  // Project workspaces are likewise isolated by workspace_id: a fact saved in
+  // one project never surfaces in a sibling project even when both use the same
+  // profile. user-global preferences cross the boundary.
+  it.instance("isolates project memories across project workspaces", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      const wsA = WorkspaceV2.ID.make("wrk_mem_proj_a")
+      const wsB = WorkspaceV2.ID.make("wrk_mem_proj_b")
+      const metaA = { id: wsA, type: "project" as const, projectID: ProjectV2.ID.make("proj_mem_a") }
+      const metaB = { id: wsB, type: "project" as const, projectID: ProjectV2.ID.make("proj_mem_b") }
+      const inA = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(
+          Effect.provideService(WorkspaceRef, wsA),
+          Effect.provideService(WorkspaceMetadataRef, metaA),
+        )
+      const inB = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        effect.pipe(
+          Effect.provideService(WorkspaceRef, wsB),
+          Effect.provideService(WorkspaceMetadataRef, metaB),
+        )
+
+      yield* inA(
+        memory.save({ kind: "fact", content: "project A fact", provenance: "user_explicit", profileID: "assistant" }),
+      )
+      yield* inB(
+        memory.save({ kind: "fact", content: "project B fact", provenance: "user_explicit", profileID: "assistant" }),
+      )
+      yield* memory.save({ kind: "preference", content: "global preference", provenance: "user_explicit", scope: "user_global" })
+
+      expect((yield* inA(memory.list())).map((item) => item.content).toSorted()).toEqual([
+        "global preference",
+        "project A fact",
+      ])
+      expect((yield* inB(memory.list())).map((item) => item.content).toSorted()).toEqual([
+        "global preference",
+        "project B fact",
+      ])
+      expect((yield* inA(memory.retrieve({ profileID: "assistant" }))).map((item) => item.content).toSorted()).toEqual([
+        "global preference",
+        "project A fact",
+      ])
+      // A different profile in the same project workspace sees only global
+      // preferences — never the sibling project's or the assistant's facts.
+      expect((yield* inA(memory.retrieve({ profileID: "companion" }))).map((item) => item.content)).toEqual([
+        "global preference",
+      ])
+    }),
+  )
+
   it.instance("rejects sensitive content even when caller marks it normal", () =>
     Effect.gen(function* () {
       const memory = yield* Memory.Service
