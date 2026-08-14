@@ -203,6 +203,8 @@ describe("MemoryExtract", () => {
           yield* extract.extract(makeInput({ profile: runtimeProfile({ kind: "assistant", id: Profile.ID.make("assistant") }) }))
           expect(workEnv.saveCalls).toHaveLength(1)
           expect(workEnv.saveCalls[0]!.kind).toBe("preference")
+          // Preferences are user-global so they apply across projects.
+          expect(workEnv.saveCalls[0]!.scope).toBe("user_global")
           expect(workEnv.llmCalls()).toBe(1)
         }),
     )

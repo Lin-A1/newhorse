@@ -291,9 +291,11 @@ const layer = Layer.effect(
               content: item.content,
               // Companion memory lives in the relationship store so it is
               // re-surfaced in the Companion's relationship-memory context.
-              // Work sessions keep the kind the LLM proposed (preference/fact/
-              // goal/event), scoped by the trust policy to the workspace.
+              // Work sessions keep the kind the LLM proposed: preferences are
+              // user-global (apply across projects), other kinds stay scoped to
+              // the workspace by the trust policy.
               kind: companion ? "relationship" : (item.kind as MemoryKind),
+              scope: companion || item.kind !== "preference" ? undefined : "user_global",
               provenance: "model_inferred",
               profileID: input.profile.id,
               sourceSessionID: input.sessionID,
