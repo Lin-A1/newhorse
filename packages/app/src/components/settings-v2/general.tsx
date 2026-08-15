@@ -5,7 +5,6 @@ import { SelectV2 } from "@newhorse/ui/v2/select-v2"
 import { Switch } from "@newhorse/ui/v2/switch-v2"
 import { TextInputV2 } from "@newhorse/ui/v2/text-input-v2"
 import { useTheme, type ColorScheme } from "@newhorse/ui/theme/context"
-import { useDialog } from "@newhorse/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
@@ -28,7 +27,6 @@ import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "../link"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
-import { LayoutRetirementNotice, LayoutTransitionToggle } from "./interface-transition"
 import "./settings-v2.css"
 
 let demoSoundState = {
@@ -89,7 +87,6 @@ export const SettingsGeneralV2: Component<{
   const language = useLanguage()
   const permission = usePermission()
   const platform = usePlatform()
-  const dialog = useDialog()
   const settings = useSettings()
   const serverSync = useServerSync()
   const serverSdk = useServerSDK()
@@ -248,76 +245,6 @@ export const SettingsGeneralV2: Component<{
       playDemoSound(option.id)
     },
   })
-
-  const InterfaceSection = () => (
-    <>
-      <LayoutTransitionToggle
-        title={language.t("settings.general.row.newInterface.title")}
-        badge={language.t("settings.general.row.newInterface.badge")}
-        description={language.t("settings.general.row.newInterface.description")}
-        checked={settings.general.newLayoutDesigns()}
-        onChange={(checked) => {
-          settings.general.setNewLayoutDesigns(checked)
-          if (checked) return
-          void import("@/components/dialog-settings").then((module) => {
-            void dialog.show(() => <module.DialogSettings directory={props.directory} />)
-          })
-        }}
-      />
-      <div class="settings-v2-section">
-        <SettingsListV2>
-          <SettingsRowV2
-            title={language.t("settings.general.row.downloadPath.title")}
-            description={language.t("settings.general.row.downloadPath.description")}
-          >
-            <div class="w-full sm:w-[220px]">
-              <TextInputV2
-                data-action="settings-general-download-path"
-                type="text"
-                appearance="base"
-                value={settings.general.downloadPath()}
-                onInput={(event) => settings.general.setDownloadPath(event.currentTarget.value)}
-                placeholder={language.t("settings.general.row.downloadPath.placeholder")}
-                spellcheck={false}
-                autocorrect="off"
-                aria-label={language.t("settings.general.row.downloadPath.title")}
-              />
-            </div>
-          </SettingsRowV2>
-          <SettingsRowV2
-            title={language.t("settings.general.row.fontLanguage.title")}
-            description={language.t("settings.general.row.fontLanguage.description")}
-          >
-            <div data-action="settings-general-font-language" class="flex flex-wrap gap-1.5">
-              {(["system", "zh", "en"] as const).map((value) => (
-                <ButtonV2
-                  type="button"
-                  size="small"
-                  variant={settings.general.fontLanguage() === value ? "contrast" : "ghost-muted"}
-                  onClick={() => settings.general.setFontLanguage(value)}
-                >
-                  {value === "system"
-                    ? language.t("settings.general.row.fontLanguage.system")
-                    : value === "zh"
-                      ? language.t("settings.general.row.fontLanguage.zh")
-                      : language.t("settings.general.row.fontLanguage.en")}
-                </ButtonV2>
-              ))}
-            </div>
-          </SettingsRowV2>
-        </SettingsListV2>
-      </div>
-    </>
-  )
-
-  const InterfaceNoticeSection = () => (
-    <LayoutRetirementNotice
-      title={language.t("settings.general.row.newInterfaceNotice.title")}
-      description={language.t("settings.general.row.newInterfaceNotice.description")}
-      dismiss={language.t("settings.general.row.newInterfaceNotice.dismiss")}
-      onDismiss={settings.general.dismissNewInterfaceNotice}
-    />
-  )
 
   const GeneralSection = () => (
     <div class="settings-v2-section">
@@ -778,14 +705,6 @@ export const SettingsGeneralV2: Component<{
       </div>
 
       <div class="settings-v2-tab-body">
-        <Show when={settings.general.layoutTransitionAvailable()}>
-          <InterfaceSection />
-        </Show>
-
-        <Show when={settings.general.newInterfaceNoticeVisible()}>
-          <InterfaceNoticeSection />
-        </Show>
-
         <GeneralSection />
 
         <AppearanceSection />

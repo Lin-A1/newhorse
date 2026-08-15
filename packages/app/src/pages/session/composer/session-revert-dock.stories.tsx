@@ -71,9 +71,6 @@ function Stage(props: { count: number }) {
         <button style={btn()} onClick={reset}>
           Reset ({props.count})
         </button>
-        <button style={btn(v2())} onClick={() => settings.general.setNewLayoutDesigns(!v2())}>
-          Layout: {v2() ? "v2" : "v1"}
-        </button>
       </div>
 
       {/* Reproduce the real composer stack: dock + card overlapping the dock's bottom by lift() = 18px */}

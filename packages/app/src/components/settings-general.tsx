@@ -5,9 +5,7 @@ import { Select } from "@newhorse/ui/select"
 import { Switch } from "@newhorse/ui/switch"
 import { TextField } from "@newhorse/ui/text-field"
 import { Tooltip } from "@newhorse/ui/tooltip"
-import { Tag } from "@newhorse/ui/v2/badge-v2"
 import { useTheme, type ColorScheme } from "@newhorse/ui/theme/context"
-import { useDialog } from "@newhorse/ui/context/dialog"
 import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
@@ -87,7 +85,6 @@ export const SettingsGeneral: Component<{ directory?: string }> = (props) => {
   const language = useLanguage()
   const permission = usePermission()
   const platform = usePlatform()
-  const dialog = useDialog()
   const params = useParams()
   const settings = useSettings()
 
@@ -253,28 +250,6 @@ export const SettingsGeneral: Component<{ directory?: string }> = (props) => {
     <div class="flex flex-col gap-1">
       <SettingsList>
         <SettingsRow
-          title={
-            <span class="flex items-center gap-2">
-              {language.t("settings.general.row.newInterface.title")}
-              <Tag variant="accent">{language.t("settings.general.row.newInterface.badge")}</Tag>
-            </span>
-          }
-          description={language.t("settings.general.row.newInterface.description")}
-        >
-          <div data-action="settings-new-layout-designs">
-            <Switch
-              checked={settings.general.newLayoutDesigns()}
-              onChange={(checked) => {
-                settings.general.setNewLayoutDesigns(checked)
-                if (!checked) return
-                void import("@/components/settings-v2").then((module) => {
-                  void dialog.show(() => <module.DialogSettings directory={props.directory} />)
-                })
-              }}
-            />
-          </div>
-        </SettingsRow>
-        <SettingsRow
           title={language.t("settings.general.row.downloadPath.title")}
           description={language.t("settings.general.row.downloadPath.description")}
         >
@@ -315,21 +290,6 @@ export const SettingsGeneral: Component<{ directory?: string }> = (props) => {
               </button>
             ))}
           </div>
-        </SettingsRow>
-      </SettingsList>
-    </div>
-  )
-
-  const InterfaceNoticeSection = () => (
-    <div class="flex flex-col gap-1">
-      <SettingsList>
-        <SettingsRow
-          title={language.t("settings.general.row.newInterfaceNotice.title")}
-          description={language.t("settings.general.row.newInterfaceNotice.description")}
-        >
-          <Button size="small" variant="ghost" onClick={settings.general.dismissNewInterfaceNotice}>
-            {language.t("settings.general.row.newInterfaceNotice.dismiss")}
-          </Button>
         </SettingsRow>
       </SettingsList>
     </div>
@@ -786,13 +746,7 @@ export const SettingsGeneral: Component<{ directory?: string }> = (props) => {
       </div>
 
       <div class="flex flex-col gap-8 w-full">
-        <Show when={settings.general.layoutTransitionAvailable()}>
-          <InterfaceSection />
-        </Show>
-
-        <Show when={settings.general.newInterfaceNoticeVisible()}>
-          <InterfaceNoticeSection />
-        </Show>
+        <InterfaceSection />
 
         <GeneralSection />
 

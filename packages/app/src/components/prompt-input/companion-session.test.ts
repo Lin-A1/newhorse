@@ -30,17 +30,17 @@ describe("ensureCompanionSession", () => {
   })
 
   test("reuses the pinned session from its own directory", async () => {
-    pinCompanion(scope, "ses_pinned", "C:/Old/Project")
-    const existing = { id: "ses_pinned", directory: "C:/Old/Project", profileID: "companion" } as Session
+    pinCompanion(scope, "ses_pinned", directory)
+    const existing = { id: "ses_pinned", directory, profileID: "companion" } as Session
     const result = await ensureCompanionSession({
       client: fakeClient({}),
       directory,
       scope,
-      fetch: async (dir, id) => (dir === "C:/Old/Project" && id === "ses_pinned" ? existing : undefined),
+      fetch: async (dir, id) => (dir === directory && id === "ses_pinned" ? existing : undefined),
       list: async () => [],
     })
     expect(result.session.id).toBe("ses_pinned")
-    expect(result.directory).toBe("C:/Old/Project")
+    expect(result.directory).toBe(directory)
   })
 
   test("adopts the most recent existing companion session when nothing is pinned", async () => {
@@ -108,23 +108,24 @@ describe("ensureCompanionSession", () => {
     expect(getPinnedCompanion(scope)?.sessionID).toBe("ses_companion")
   })
 
-  test("uses a Companion session from another directory in the global list", async () => {
-    const existing = { id: "ses_global", directory: "C:/Personal", profileID: "companion", time: { updated: 300 } } as Session
+  test("ignores a Companion session from another directory and adopts the one in the home directory", async () => {
+    const foreign = { id: "ses_foreign", directory: "C:/Personal", profileID: "companion", time: { updated: 400 } } as Session
+    const home = { id: "ses_home", directory, profileID: "companion", time: { updated: 300 } } as Session
     const result = await ensureCompanionSession({
       client: fakeClient({}),
       directory,
       scope,
       fetch: async () => undefined,
-      globalList: async () => [existing],
+      globalList: async () => [foreign, home],
       list: async () => [],
     })
-    expect(result.session.id).toBe("ses_global")
-    expect(result.directory).toBe("C:/Personal")
+    expect(result.session.id).toBe("ses_home")
+    expect(result.directory).toBe(directory)
   })
 
   test("does not create when the pinned lookup fails with a non-404 error", async () => {
     let creates = 0
-    pinCompanion(scope, "ses_error", "C:/Personal")
+    pinCompanion(scope, "ses_error", directory)
     await expect(
       ensureCompanionSession({
         client: fakeClient({ create: () => { creates++; return { id: "unexpected" } } }),
