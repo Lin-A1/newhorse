@@ -1,21 +1,29 @@
-查询每日活动总结（Daily Summary），了解用户最近做了什么。
+查询或生成每日活动总结（Daily Summary），了解用户最近做了什么，或主动为用户生成、更新当天的总结。
 
-每日总结是应用在每天 23 点后自动生成的，把当天你在本机各 AI 工具
-（newhorse work 会话、newhorse 陪伴会话、Claude Code、Codex）中的
-会话内容汇总成一段简洁的中文总结，包含当天的进展、结论和成果。
+每日总结把某一天你在本机各 AI 工具（newhorse work 会话、newhorse 陪伴会话、Claude Code、Codex）中的会话内容汇总成一段简洁的中文总结，包含当天的进展、结论和成果。应用每天 23 点后会自动生成当天总结；你也可以随时通过本工具主动生成或管理。
+
+操作（action）：
+- list（默认）：查询最近的每日总结
+- generate：为某一天生成总结。如果当天已有总结，会返回已有内容和新生成的内容，由你自主决定是否覆盖；如需覆盖，请再次调用并传入 "overwrite": true
 
 何时调用：
 - 用户问 "我昨天/最近做了什么"、"最近都在忙什么" 之类的问题时
 - 想了解用户最近的工作和陪伴会话内容，以便延续之前的对话
 - 需要主动关怀用户时，先查看最近的总结了解其状态和关注点
+- 需要主动为用户生成或更新每日总结时
 
 参数：
-- limit：返回的总结条数，按日期倒序，默认 7，最多 30
-- from / to：可选时间范围（Unix 毫秒时间戳），只返回在该时间段内生成的总结
+- action："list" 或 "generate"，默认 "list"
+- limit：list 返回的总结条数，按日期倒序，默认 7，最多 30
+- from / to：list 可选时间范围（Unix 毫秒时间戳），只返回在该时间段内生成的总结
+- date：generate 的目标日期（Unix 毫秒时间戳），默认当天（本地时间）
+- overwrite：generate 时是否覆盖当天已有的总结，默认 false
 
 示例：
-- daily-summary                    # 最近 7 天的总结
-- daily-summary { "limit": 14 }    # 最近 14 天的总结
+- daily-summary                                    # 最近 7 天的总结
+- daily-summary { "limit": 14 }                    # 最近 14 天的总结
 - daily-summary { "from": <某天0点>, "to": <某天24点> }   # 只看某几天的总结
+- daily-summary { "action": "generate" }           # 为今天生成总结（已有则返回已有+新内容，不覆盖）
+- daily-summary { "action": "generate", "overwrite": true }   # 覆盖今天已有的总结
 
-返回每条总结的日期和正文，按日期倒序排列。
+list 返回每条总结的日期和正文，按日期倒序排列。generate 返回生成的总结正文；若当天已有总结且未指定 overwrite，会同时返回已有内容和新内容，由你自主决定是否覆盖。

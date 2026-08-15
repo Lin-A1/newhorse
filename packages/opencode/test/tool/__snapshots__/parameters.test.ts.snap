@@ -602,6 +602,18 @@ exports[`tool parameters JSON Schema (wire shape) daily-summary 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "action": {
+      "description": "Operation to perform: list recent daily summaries, or generate (propose/overwrite) one",
+      "enum": [
+        "list",
+        "generate",
+      ],
+      "type": "string",
+    },
+    "date": {
+      "description": "Target date for generate, ms since epoch (default today, local time)",
+      "type": "number",
+    },
     "from": {
       "description": "Start of the summary creation-time range, inclusive, ms since epoch",
       "type": "number",
@@ -611,6 +623,10 @@ exports[`tool parameters JSON Schema (wire shape) daily-summary 1`] = `
       "exclusiveMinimum": 0,
       "maximum": 30,
       "type": "integer",
+    },
+    "overwrite": {
+      "description": "generate: replace the existing summary for the target date. Without it an existing summary is left untouched",
+      "type": "boolean",
     },
     "to": {
       "description": "End of the summary creation-time range, exclusive, ms since epoch",

@@ -18,8 +18,18 @@ const it = testEffect(
   ),
 )
 
-function mockService(list: DailySummary.Interface["list"], generate: DailySummary.Interface["generate"]) {
-  return DailySummary.Service.of({ list, generate })
+function mockService(input: {
+  list?: DailySummary.Interface["list"]
+  generate?: DailySummary.Interface["generate"]
+  draft?: DailySummary.Interface["draft"]
+  get?: DailySummary.Interface["get"]
+} = {}) {
+  return DailySummary.Service.of({
+    list: input.list ?? (() => Effect.succeed([])),
+    generate: input.generate ?? (() => Effect.succeed("")),
+    draft: input.draft ?? (() => Effect.succeed("")),
+    get: input.get ?? (() => Effect.succeed(undefined)),
+  })
 }
 
 describe("tool.daily-summary", () => {
@@ -28,15 +38,14 @@ describe("tool.daily-summary", () => {
       const sessions = yield* Session.Service
       const session = yield* sessions.create({ profileID: Profile.ID.make("assistant") })
 
-      const mock = mockService(
-        () =>
+      const mock = mockService({
+        list: () =>
           Effect.succeed([
             { date: "2026-08-14", content: "完成了每日总结工具的接入。", timeCreated: 1_000 },
             { date: "2026-08-13", content: "修复了 session 权限问题。", timeCreated: 900 },
             { date: "2026-08-12", content: "梳理了 v1 路线图。", timeCreated: 800 },
           ]),
-        () => Effect.succeed(""),
-      )
+      })
 
       const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
       const tool = yield* info.init()
@@ -64,7 +73,7 @@ describe("tool.daily-summary", () => {
       const sessions = yield* Session.Service
       const session = yield* sessions.create({ profileID: Profile.ID.make("assistant") })
 
-      const mock = mockService(() => Effect.succeed([]), () => Effect.succeed(""))
+      const mock = mockService()
       const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
       const tool = yield* info.init()
       const result = yield* tool.execute(
@@ -92,10 +101,12 @@ describe("tool.daily-summary", () => {
       const session = yield* sessions.create({ profileID: Profile.ID.make("assistant") })
 
       let captured: { from?: number; to?: number } | undefined
-      const mock = mockService((input) => {
-        captured = input
-        return Effect.succeed([])
-      }, () => Effect.succeed(""))
+      const mock = mockService({
+        list: (input) => {
+          captured = input
+          return Effect.succeed([])
+        },
+      })
       const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
       const tool = yield* info.init()
       yield* tool.execute(
@@ -112,6 +123,139 @@ describe("tool.daily-summary", () => {
       )
 
       expect(captured).toEqual({ from: 100, to: 200 })
+    }),
+  )
+
+  it.instance("generates and persists a fresh summary when none exists", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ profileID: Profile.ID.make("assistant") })
+
+      let generatedWith: { date?: number } | undefined
+      const mock = mockService({
+        generate: (input) => {
+          generatedWith = input
+          return Effect.succeed("今天完成了每日总结工具的接入。")
+        },
+      })
+      const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
+      const tool = yield* info.init()
+      const result = yield* tool.execute(
+        { action: "generate" },
+        {
+          sessionID: session.id,
+          messageID: MessageID.make("msg_daily_summary_generate"),
+          agent: "build",
+          abort: AbortSignal.any([]),
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+
+      expect(generatedWith?.date).toBeTypeOf("number")
+      expect(result.metadata).toMatchObject({ count: 1, profile: Profile.ID.make("assistant") })
+      expect(result.metadata).not.toHaveProperty("alreadyExists")
+      expect(result.output).toBe("今天完成了每日总结工具的接入。")
+    }),
+  )
+
+  it.instance("reports existing + fresh draft without persisting when a summary already exists", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ profileID: Profile.ID.make("assistant") })
+
+      let generateCalled = false
+      const mock = mockService({
+        get: () =>
+          Effect.succeed({ date: "2026-08-15", content: "已有总结：上午修了 bug。", timeCreated: 1_000 }),
+        draft: () => Effect.succeed("新总结：下午接入每日总结工具。"),
+        generate: () => {
+          generateCalled = true
+          return Effect.succeed("should not be reached")
+        },
+      })
+      const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
+      const tool = yield* info.init()
+      const result = yield* tool.execute(
+        { action: "generate" },
+        {
+          sessionID: session.id,
+          messageID: MessageID.make("msg_daily_summary_exists"),
+          agent: "build",
+          abort: AbortSignal.any([]),
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+
+      expect(generateCalled).toBe(false)
+      expect(result.metadata).toMatchObject({ count: 1, profile: Profile.ID.make("assistant"), alreadyExists: true })
+      expect(result.output).toContain("已有总结：上午修了 bug。")
+      expect(result.output).toContain("新总结：下午接入每日总结工具。")
+      expect(result.output).toContain("overwrite")
+    }),
+  )
+
+  it.instance("overwrites the existing summary when overwrite is true", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ profileID: Profile.ID.make("assistant") })
+
+      let generatedWith: { date?: number } | undefined
+      const mock = mockService({
+        get: () =>
+          Effect.succeed({ date: "2026-08-15", content: "已有总结：上午修了 bug。", timeCreated: 1_000 }),
+        generate: (input) => {
+          generatedWith = input
+          return Effect.succeed("覆盖后的总结。")
+        },
+      })
+      const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
+      const tool = yield* info.init()
+      const result = yield* tool.execute(
+        { action: "generate", overwrite: true },
+        {
+          sessionID: session.id,
+          messageID: MessageID.make("msg_daily_summary_overwrite"),
+          agent: "build",
+          abort: AbortSignal.any([]),
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+
+      expect(generatedWith?.date).toBeTypeOf("number")
+      expect(result.metadata).toMatchObject({ count: 1, profile: Profile.ID.make("assistant"), overwritten: true })
+      expect(result.output).toBe("覆盖后的总结。")
+    }),
+  )
+
+  it.instance("reports no activity when generate finds no sessions", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ profileID: Profile.ID.make("assistant") })
+
+      const mock = mockService({ generate: () => Effect.succeed(undefined) })
+      const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
+      const tool = yield* info.init()
+      const result = yield* tool.execute(
+        { action: "generate" },
+        {
+          sessionID: session.id,
+          messageID: MessageID.make("msg_daily_summary_no_activity"),
+          agent: "build",
+          abort: AbortSignal.any([]),
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        } satisfies Tool.Context,
+      )
+
+      expect(result.metadata).toMatchObject({ count: 0, profile: Profile.ID.make("assistant") })
+      expect(result.output).toContain("没有可总结的会话活动")
     }),
   )
 })

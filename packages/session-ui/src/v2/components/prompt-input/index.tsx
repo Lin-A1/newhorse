@@ -580,7 +580,7 @@ export function PromptInputV2Select(props: {
                     <span class="flex min-w-0 flex-col">
                       <span class="truncate leading-5">{option.label}</span>
                       <Show when={option.description}>
-                        <span class="truncate text-[11px] font-[440] leading-4 text-v2-text-text-muted">
+                        <span class="whitespace-pre-line break-words text-[11px] font-[440] leading-4 text-v2-text-text-muted">
                           {option.description}
                         </span>
                       </Show>

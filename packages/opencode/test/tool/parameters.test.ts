@@ -112,12 +112,19 @@ describe("tool parameters", () => {
   })
 
   describe("daily-summary", () => {
-    test("accepts empty object", () => {
+    test("accepts empty object (defaults to list)", () => {
       expect(parse(DailySummary, {})).toEqual({})
     })
     test("accepts limit, from, and to", () => {
       const parsed = parse(DailySummary, { limit: 7, from: 100, to: 200 })
       expect(parsed).toEqual({ limit: 7, from: 100, to: 200 })
+    })
+    test("accepts generate action with date and overwrite", () => {
+      const parsed = parse(DailySummary, { action: "generate", date: 100, overwrite: true })
+      expect(parsed).toEqual({ action: "generate", date: 100, overwrite: true })
+    })
+    test("rejects unknown action", () => {
+      expect(accepts(DailySummary, { action: "delete" })).toBe(false)
     })
     test("rejects limit below 1", () => {
       expect(accepts(DailySummary, { limit: 0 })).toBe(false)

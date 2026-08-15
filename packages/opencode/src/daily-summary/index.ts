@@ -38,8 +38,12 @@ export const Info = Schema.Struct({
 export type Info = Schema.Schema.Type<typeof Info>
 
 export interface Interface {
-  /** Generate (or regenerate) the summary for a date. Returns the text, or undefined when no sessions that day. */
+  /** Generate (or regenerate) the summary for a date, persisting it. Returns the text, or undefined when no sessions that day. */
   readonly generate: (input?: { date?: number }) => Effect.Effect<string | undefined>
+  /** Draft a fresh summary for a date WITHOUT persisting it. Returns the text, or undefined when no sessions that day. */
+  readonly draft: (input?: { date?: number }) => Effect.Effect<string | undefined>
+  /** Fetch the stored summary for the local date of a ms timestamp, if any. */
+  readonly get: (input: { date: number }) => Effect.Effect<Info | undefined>
   /** List summaries between from/to (inclusive, ms timestamps). */
   readonly list: (input?: { from?: number; to?: number }) => Effect.Effect<Info[]>
 }
@@ -105,7 +109,7 @@ const layer = Layer.effect(
       return cleaned || fallbackSummary(entries)
     })
 
-    const generate = Effect.fn("DailySummary.generate")(function* (input?: { date?: number }) {
+    const draft = Effect.fn("DailySummary.draft")(function* (input?: { date?: number }) {
       const date = new Date(input?.date ?? Date.now())
       const start = dayStartMs(date)
       const end = dayEndMs(date)
@@ -121,16 +125,38 @@ const layer = Layer.effect(
       ]
       if (entries.length === 0) return undefined
       const dateKey = localDateKey(start)
-      const content = yield* generateText(entries, dateKey)
+      return yield* generateText(entries, dateKey)
+    })
+
+    const persist = Effect.fn("DailySummary.persist")(function* (input: { date: number; content: string }) {
+      const dateKey = localDateKey(dayStartMs(new Date(input.date)))
       yield* db
         .insert(DailySummaryTable)
-        .values({ date: dateKey, content })
+        .values({ date: dateKey, content: input.content })
         .onConflictDoUpdate({
           target: DailySummaryTable.date,
-          set: { content, time_updated: Date.now() },
+          set: { content: input.content, time_updated: Date.now() },
         })
         .pipe(Effect.orDie)
+    })
+
+    const generate = Effect.fn("DailySummary.generate")(function* (input?: { date?: number }) {
+      const content = yield* draft(input)
+      if (!content) return undefined
+      yield* persist({ date: input?.date ?? Date.now(), content })
       return content
+    })
+
+    const get = Effect.fn("DailySummary.get")(function* (input: { date: number }) {
+      const key = localDateKey(dayStartMs(new Date(input.date)))
+      const row = yield* db
+        .select()
+        .from(DailySummaryTable)
+        .where(eq(DailySummaryTable.date, key))
+        .get()
+        .pipe(Effect.orDie)
+      if (!row) return undefined
+      return { date: row.date, content: row.content, timeCreated: row.time_created }
     })
 
     const list = Effect.fn("DailySummary.list")(function* (input?: { from?: number; to?: number }) {
@@ -187,7 +213,7 @@ const layer = Layer.effect(
       Effect.forkScoped({ startImmediately: true }),
     )
 
-    return Service.of({ generate, list })
+    return Service.of({ generate, draft, get, list })
   }),
 )
 
