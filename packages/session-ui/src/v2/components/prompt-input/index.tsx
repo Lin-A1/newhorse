@@ -568,13 +568,13 @@ export function PromptInputV2Select(props: {
           </span>
         </MenuV2.Trigger>
         <MenuV2.Portal>
-          <MenuV2.Content class="!min-w-[400px]">
+          <MenuV2.Content class="!min-w-[280px]">
             <MenuV2.RadioGroup value={props.current} onChange={props.onSelect}>
               <For each={props.options}>
                 {(option) => (
                   <MenuV2.RadioItem
                     value={option.id}
-                    class={`capitalize ${option.description ? "!h-auto min-h-9 py-1.5" : ""}`}
+                    class={`capitalize ${option.description ? "!h-auto min-h-10 py-2" : ""}`}
                     closeOnSelect
                   >
                     <span class="flex min-w-0 flex-col">
