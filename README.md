@@ -1,3 +1,13 @@
+<p align="center">
+<pre>
+██      ██  ██████████  ██      ██  ██      ██  ██████████  ████████    ██████████  ██████████
+████    ██  ██          ██      ██  ██      ██  ██      ██  ██      ██  ██          ██
+██  ██  ██  ████████    ██  ██  ██  ██████████  ██      ██  ██████      ████████    ████████
+██    ████  ██          ████  ████  ██      ██  ██      ██  ██  ██              ██  ██
+██      ██  ██████████  ██      ██  ██      ██  ██████████  ██    ██    ██████████  ██████████
+</pre>
+</p>
+
 <p align="center"><strong>newhorse</strong></p>
 <p align="center">A local-first programmable AI workspace for project work, personal continuity, and multi-surface agent workflows.</p>
 
@@ -38,7 +48,7 @@ Profiles are not storage boundaries. Persistent content stays isolated by scope 
 ### Assistant and Companion
 
 - Immutable session bindings for workspace and profile
-- One server-scoped pinned Companion session, reused across projects
+- One Companion session pinned to a personal workspace, decoupled from whichever project is currently open
 - Configurable Companion persona, quiet hours, proactive frequency, and safety context
 - Structured memory proposals with explicit accept/reject/forget lifecycle
 - Persistent reminders with create, pause, resume, cancel, lease, and idempotent delivery
@@ -141,7 +151,7 @@ Major foundations already implemented include:
 - Daily activity summaries (session readers, 23:00 scheduler, HTTP list/generate, sidebar timeline), including archived (non-deleted) sessions
 - Structured daily report page (`/daily`): AI overview + deterministic work output, per-session detail with todos, and usage/cost rollup, stored as a versioned JSON report with backward-compatible rendering of older plain-text summaries
 - Server-backed dynamic model/provider catalogs
-- Legacy and v2 settings layouts
+- v2-only layout (the legacy interface and its retirement migration were removed)
 - Memory retrieval upgrades: FTS5/BM25 search, entity extraction + boost, and post-turn auto-extraction that applies immediately (no approval gate)
 - Memory layering: four content scopes (project / personal / relationship / user-global) with automatic migration of existing memories
 - Memory no-approval: extracted and tool-saved memories become active directly; Memory Center is edit/delete/pause, with per-scope labels and no accept/reject step

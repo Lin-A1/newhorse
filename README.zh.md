@@ -1,3 +1,13 @@
+<p align="center">
+<pre>
+██      ██  ██████████  ██      ██  ██      ██  ██████████  ████████    ██████████  ██████████
+████    ██  ██          ██      ██  ██      ██  ██      ██  ██      ██  ██          ██
+██  ██  ██  ████████    ██  ██  ██  ██████████  ██      ██  ██████      ████████    ████████
+██    ████  ██          ████  ████  ██      ██  ██      ██  ██  ██              ██  ██
+██      ██  ██████████  ██      ██  ██      ██  ██████████  ██    ██    ██████████  ██████████
+</pre>
+</p>
+
 <p align="center"><strong>newhorse</strong></p>
 <p align="center">一个本地优先、可编程的 AI 工作空间，用于项目协作、个人连续性和多端智能体工作流。</p>
 
@@ -38,7 +48,7 @@ Profile 不是存储边界。持久内容会按作用域和策略隔离：项目
 ### Assistant 与 Companion
 
 - Session 对 Workspace 与 Profile 的不可变绑定
-- 每个 Server 复用唯一固定 Companion Session，跨项目不会新建一条对话
+- 唯一固定 Companion Session 固定在 personal 工作区，与当前打开的项目解耦
 - 可配置 Companion Persona、Quiet Hours、主动频率与安全上下文
 - 结构化 Memory proposal，具备 accept/reject/forget 生命周期
 - 持久 Reminder，支持创建、暂停、恢复、取消、lease 与幂等投递
@@ -133,7 +143,7 @@ Newhorse 仍在持续开发中。当前支持源码构建、本地 Web/Desktop �
 - 每日活动总结（Session Reader、23:00 调度器、HTTP list/generate、Sidebar 时间线，含归档未删除会话）
 - 结构化每日报告页（`/daily`）：AI 概览 + 工作产出 + 会话明细（含待办）+ 用量成本，JSON 存储且向后兼容旧纯文本总结
 - 服务端动态 Model/Provider Catalog
-- Legacy 与 v2 两套 Settings 布局
+- 仅保留 v2 布局（已移除旧界面及其退役迁移机制）
 - 记忆检索升级：FTS5/BM25 检索、实体提取与加权、回合后自动提取（审核门控）
 - 执行期插件 Hooks（权限决策、轮末续跑）
 - 桌面端托盘常驻（关窗进托盘，Server 与后台 Agent 持续运行）
