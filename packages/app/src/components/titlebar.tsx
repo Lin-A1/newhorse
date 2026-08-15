@@ -343,7 +343,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                   const target = dir === directory ? client : serverSDK.createClient({ directory: dir, throwOnError: true })
                   return target.session.list({ directory: dir }).then((r) => r.data ?? [])
                 },
-                resolvePersonal: () => ensurePersonalWorkspace(client),
+                resolvePersonal: () => ensurePersonalWorkspace(client, serverSDK.scope),
                 createClient: (opts) => serverSDK.createClient({ ...opts, throwOnError: true }),
               }).catch((err) => {
                 showToast({

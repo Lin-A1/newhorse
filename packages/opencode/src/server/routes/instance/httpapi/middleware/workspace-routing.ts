@@ -76,17 +76,22 @@ function configuredWorkspaceID(): WorkspaceV2.ID | undefined {
   return Flag.OPENCODE_WORKSPACE_ID ? WorkspaceV2.ID.make(Flag.OPENCODE_WORKSPACE_ID) : undefined
 }
 
-function selectedWorkspaceID(url: URL, sessionWorkspaceID?: WorkspaceV2.ID): WorkspaceV2.ID | undefined {
-  const workspaceParam = url.searchParams.get("workspace")
+function selectedWorkspaceID(
+  url: URL,
+  sessionWorkspaceID: WorkspaceV2.ID | undefined,
+  headerWorkspaceID?: string | undefined,
+): WorkspaceV2.ID | undefined {
+  const workspaceParam = url.searchParams.get("workspace") ?? headerWorkspaceID
   return sessionWorkspaceID ?? (workspaceParam ? WorkspaceV2.ID.make(workspaceParam) : undefined)
 }
 
 function selectedV2WorkspaceID(
   url: URL,
-  sessionWorkspaceID?: WorkspaceV2.ID,
+  sessionWorkspaceID: WorkspaceV2.ID | undefined,
+  headerWorkspaceID?: string | undefined,
 ): WorkspaceV2.ID | typeof InvalidWorkspaceID | undefined {
   if (sessionWorkspaceID) return sessionWorkspaceID
-  const workspaceParam = url.searchParams.get("workspace")
+  const workspaceParam = url.searchParams.get("workspace") ?? headerWorkspaceID
   if (!workspaceParam) return undefined
   const workspaceID = Schema.decodeUnknownOption(WorkspaceV2.ID)(workspaceParam)
   if (Option.isNone(workspaceID)) return InvalidWorkspaceID
@@ -182,9 +187,13 @@ function planRequest(
     const url = requestURL(request)
     const envWorkspaceID = configuredWorkspaceID()
     const trustedSession = !envWorkspaceID || session?.workspaceID === envWorkspaceID ? session : undefined
+    // SDK clients send directory/workspace via headers; GET requests are also
+    // rewritten to query params, but POST/PATCH/DELETE keep them in headers, so
+    // the header must be read here too (mirrors defaultDirectory below).
+    const headerWorkspaceID = request.headers["x-opencode-workspace"]
     const workspaceID = url.pathname.startsWith("/api/")
-      ? selectedV2WorkspaceID(url, trustedSession?.workspaceID)
-      : selectedWorkspaceID(url, trustedSession?.workspaceID)
+      ? selectedV2WorkspaceID(url, trustedSession?.workspaceID, headerWorkspaceID)
+      : selectedWorkspaceID(url, trustedSession?.workspaceID, headerWorkspaceID)
     if (workspaceID === InvalidWorkspaceID) return RequestPlan.InvalidWorkspace()
     const workspace = yield* resolveWorkspace(workspaceID, envWorkspaceID)
 

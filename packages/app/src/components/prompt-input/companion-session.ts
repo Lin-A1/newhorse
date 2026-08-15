@@ -38,7 +38,28 @@ export type CompanionSessionResult = { session: Session; directory: string }
 
 export type PersonalWorkspaceRef = { directory: string; workspaceID: string }
 
+const PERSONAL_WORKSPACE_KEY = "newhorse.personal-workspace.v1"
 const companionLocks = new Map<string, Promise<CompanionSessionResult>>()
+
+function readPersonalWorkspaces(): Record<string, PersonalWorkspaceRef> {
+  try {
+    const raw = localStorage.getItem(PERSONAL_WORKSPACE_KEY)
+    const parsed = raw ? (JSON.parse(raw) as Record<string, PersonalWorkspaceRef>) : {}
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writePersonalWorkspace(scope: string, ref: PersonalWorkspaceRef) {
+  try {
+    const all = readPersonalWorkspaces()
+    all[scope] = ref
+    localStorage.setItem(PERSONAL_WORKSPACE_KEY, JSON.stringify(all))
+  } catch {
+    // Storage unavailable — the resolved workspace still works for this turn.
+  }
+}
 
 function isNotFound(error: unknown) {
   if (!error || typeof error !== "object") return false
@@ -52,21 +73,35 @@ function isNotFound(error: unknown) {
  * policy rejects `relationship` writes from a project scope — so the pinned
  * Companion session must live in a personal workspace for memory extraction to
  * stick and for the Memory Center to surface it.
+ *
+ * The resolved workspace is cached per server scope so opening the Companion
+ * again reuses it instead of creating a fresh personal workspace every time.
  */
 export async function ensurePersonalWorkspace(
   client: DirectorySDK["client"],
+  scope?: string,
 ): Promise<PersonalWorkspaceRef | undefined> {
+  if (scope) {
+    const cached = readPersonalWorkspaces()[scope]
+    if (cached?.directory && cached.workspaceID) return cached
+  }
   const existing = await client.experimental.workspace
     .personal({})
     .then((result) => result.data ?? [])
     .catch(() => [] as { id: string; name: string; directory: string; notes: number }[])
   const first = existing.find((item) => item.directory)
-  if (first?.directory) return { directory: first.directory, workspaceID: first.id }
+  if (first?.directory) {
+    const ref: PersonalWorkspaceRef = { directory: first.directory, workspaceID: first.id }
+    if (scope) writePersonalWorkspace(scope, ref)
+    return ref
+  }
   const created = await client.experimental.workspace
     .create({ type: "personal", branch: null, extra: null })
     .then((result) => result.data)
   if (!created?.directory) return undefined
-  return { directory: created.directory, workspaceID: created.id }
+  const ref: PersonalWorkspaceRef = { directory: created.directory, workspaceID: created.id }
+  if (scope) writePersonalWorkspace(scope, ref)
+  return ref
 }
 
 async function resolveCompanionSession(input: {

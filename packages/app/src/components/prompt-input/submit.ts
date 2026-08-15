@@ -348,7 +348,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           const target = directory === projectDirectory ? client : sdk().createClient({ directory, throwOnError: true })
           return target.session.list({ directory }).then((response) => response.data ?? [])
         },
-        resolvePersonal: () => ensurePersonalWorkspace(client),
+        resolvePersonal: () => ensurePersonalWorkspace(client, sdk().scope),
         createClient: (opts) => sdk().createClient({ ...opts, throwOnError: true }),
       }).catch((err) => {
         showToast({
