@@ -1,62 +1,41 @@
-import { createResource, createSignal, For, Show } from "solid-js"
+import { createResource, For, Show } from "solid-js"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
-import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
-import { LoaderV2 } from "@newhorse/ui/v2/loader-v2"
-import { showToast } from "@/utils/toast"
 
-export function SidebarTimeline() {
+/**
+ * Daily summary timeline: renders the date + content list produced by the
+ * newhorse `daily-summary` tool (auto-generated each day, no manual trigger).
+ *
+ * Embeddable in a sidebar: `showHeader` hides the built-in title when a custom
+ * header is provided, `class` constrains the root height (e.g. `max-h-52` to
+ * cap the block and enable internal scrolling), and `bodyClass` tunes padding.
+ */
+export function SidebarTimeline(props: {
+  /** Show the built-in "Daily summary" header. Defaults to true. */
+  showHeader?: boolean
+  /** Extra classes for the root, e.g. `max-h-52` to cap height and enable scrolling. */
+  class?: string
+  /** Extra classes for the scrollable body (padding, etc). */
+  bodyClass?: string
+}) {
   const serverSDK = useServerSDK()
   const language = useLanguage()
-  const [summaries, { refetch }] = createResource(async () => {
+  const [summaries] = createResource(async () => {
     const res = await serverSDK().client.dailySummary.list()
     return res.data ?? []
   })
-  const [generating, setGenerating] = createSignal(false)
-
-  async function generate() {
-    if (generating()) return
-    setGenerating(true)
-    try {
-      const res = await serverSDK().client.dailySummary.generate({})
-      await refetch()
-      if (res.data) {
-        showToast({ variant: "success", title: language.t("sidebar.dailySummary.generate.success") })
-      } else {
-        showToast({ title: language.t("sidebar.dailySummary.generate.noActivity") })
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      showToast({
-        variant: "error",
-        title: language.t("sidebar.dailySummary.generate.failed"),
-        description: message,
-      })
-    } finally {
-      setGenerating(false)
-    }
-  }
+  const showHeader = props.showHeader ?? true
 
   return (
-    <div class="flex h-full min-w-0 flex-col overflow-hidden">
-      <div class="flex items-center justify-between gap-2 px-5 pt-5 pb-3">
-        <h2 class="text-[15px] font-medium tracking-[-0.13px] text-v2-text-text-strong">
-          {language.t("sidebar.dailySummary")}
-        </h2>
-        <ButtonV2
-          type="button"
-          size="small"
-          variant={generating() ? "loading" : "ghost-muted"}
-          disabled={generating()}
-          onClick={generate}
-          aria-label={language.t("sidebar.dailySummary.generate")}
-        >
-          <Show when={generating()} fallback={language.t("sidebar.dailySummary.generate")}>
-            <LoaderV2 />
-          </Show>
-        </ButtonV2>
-      </div>
-      <div class="flex-1 min-h-0 overflow-y-auto px-5 pb-6 no-scrollbar">
+    <div class={`flex min-w-0 min-h-0 flex-col overflow-hidden ${props.class ?? ""}`}>
+      <Show when={showHeader}>
+        <div class="flex items-center justify-between gap-2 px-5 pt-5 pb-3">
+          <h2 class="text-[15px] font-medium tracking-[-0.13px] text-v2-text-text-strong">
+            {language.t("sidebar.dailySummary")}
+          </h2>
+        </div>
+      </Show>
+      <div class={`flex-[1_1_auto] min-h-0 overflow-y-auto no-scrollbar ${props.bodyClass ?? "px-5 pb-6"}`}>
         <Show
           when={!summaries.loading && (summaries()?.length ?? 0) > 0}
           fallback={
