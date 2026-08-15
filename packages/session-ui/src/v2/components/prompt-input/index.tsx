@@ -568,7 +568,7 @@ export function PromptInputV2Select(props: {
           </span>
         </MenuV2.Trigger>
         <MenuV2.Portal>
-          <MenuV2.Content class="!min-w-[360px]">
+          <MenuV2.Content class="!min-w-[480px]">
             <MenuV2.RadioGroup value={props.current} onChange={props.onSelect}>
               <For each={props.options}>
                 {(option) => (

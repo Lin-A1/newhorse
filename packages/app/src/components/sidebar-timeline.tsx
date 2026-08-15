@@ -18,7 +18,7 @@ export function SidebarTimeline() {
     if (generating()) return
     setGenerating(true)
     try {
-      const res = await serverSDK().client.dailySummary.generate()
+      const res = await serverSDK().client.dailySummary.generate({})
       await refetch()
       if (res.data) {
         showToast({ variant: "success", title: language.t("sidebar.dailySummary.generate.success") })
