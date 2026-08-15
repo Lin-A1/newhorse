@@ -108,7 +108,7 @@ describe("ensureCompanionSession", () => {
     expect(getPinnedCompanion(scope)?.sessionID).toBe("ses_companion")
   })
 
-  test("ignores a Companion session from another directory and adopts the one in the home directory", async () => {
+  test("adopts the most recent existing Companion session regardless of directory", async () => {
     const foreign = { id: "ses_foreign", directory: "C:/Personal", profileID: "companion", time: { updated: 400 } } as Session
     const home = { id: "ses_home", directory, profileID: "companion", time: { updated: 300 } } as Session
     const result = await ensureCompanionSession({
@@ -119,8 +119,8 @@ describe("ensureCompanionSession", () => {
       globalList: async () => [foreign, home],
       list: async () => [],
     })
-    expect(result.session.id).toBe("ses_home")
-    expect(result.directory).toBe(directory)
+    expect(result.session.id).toBe("ses_foreign")
+    expect(result.directory).toBe("C:/Personal")
   })
 
   test("does not create when the pinned lookup fails with a non-404 error", async () => {
