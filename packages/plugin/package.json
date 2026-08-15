@@ -9,13 +9,48 @@
     "build": "tsc"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./tool": "./src/tool.ts",
-    "./tui": "./src/tui.ts",
-    "./v2/effect": "./src/v2/effect/index.ts",
-    "./v2/effect/integration": "./src/v2/effect/integration.ts",
-    "./v2/effect/plugin": "./src/v2/effect/plugin.ts",
-    "./v2/promise": "./src/v2/promise/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./tool": {
+      "types": "./src/tool.ts",
+      "bun": "./src/tool.ts",
+      "development": "./src/tool.ts",
+      "default": "./dist/tool.js"
+    },
+    "./tui": {
+      "types": "./src/tui.ts",
+      "bun": "./src/tui.ts",
+      "development": "./src/tui.ts",
+      "default": "./dist/tui.js"
+    },
+    "./v2/effect": {
+      "types": "./src/v2/effect/index.ts",
+      "bun": "./src/v2/effect/index.ts",
+      "development": "./src/v2/effect/index.ts",
+      "default": "./dist/v2/effect/index.js"
+    },
+    "./v2/effect/integration": {
+      "types": "./src/v2/effect/integration.ts",
+      "bun": "./src/v2/effect/integration.ts",
+      "development": "./src/v2/effect/integration.ts",
+      "default": "./dist/v2/effect/integration.js"
+    },
+    "./v2/effect/plugin": {
+      "types": "./src/v2/effect/plugin.ts",
+      "bun": "./src/v2/effect/plugin.ts",
+      "development": "./src/v2/effect/plugin.ts",
+      "default": "./dist/v2/effect/plugin.js"
+    },
+    "./v2/promise": {
+      "types": "./src/v2/promise/index.ts",
+      "bun": "./src/v2/promise/index.ts",
+      "development": "./src/v2/promise/index.ts",
+      "default": "./dist/v2/promise/index.js"
+    }
   },
   "files": [
     "dist"
