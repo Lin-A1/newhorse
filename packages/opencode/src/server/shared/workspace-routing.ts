@@ -19,6 +19,11 @@ export function isLocalWorkspaceRoute(method: string, path: string) {
 
 export function getWorkspaceRouteSessionID(url: URL) {
   if (url.pathname === "/session/status") return null
+  // `/session/usage` and `/session/list` are collection routes without a
+  // session ID — they must not match the `:sessionID` shape below, otherwise
+  // "usage"/"list" get parsed as a SessionID and the make() brand validation
+  // throws ("Expected a string starting with \"ses\"").
+  if (url.pathname === "/session/usage" || url.pathname === "/session") return null
 
   const id =
     url.pathname.match(/^\/session\/([^/]+)(?:\/|$)/)?.[1] ??

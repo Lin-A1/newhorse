@@ -559,22 +559,30 @@ const layer = Layer.effect(
       }
 
       yield* WorkspaceAdapterRuntime.create(adapter, config, env)
-      yield* Effect.all(
-        [
-          waitEvent({
-            timeout: TIMEOUT,
-            fn(event) {
-              if (event.workspace === info.id && event.payload.type === Event.Status.type) {
-                const { status } = event.payload.properties
-                return status === "error" || status === "connected"
-              }
-              return false
-            },
-          }),
-          startSync(info),
-        ],
-        { concurrency: 2, discard: true },
-      )
+      if (config.type === PERSONAL_ADAPTER_TYPE) {
+        // Personal workspaces are local-only and "connected" immediately — there
+        // is no remote sync to wait for, and racing `startSync`'s synchronous
+        // setStatus against waitEvent's listener yields a spurious 5s timeout
+        // that fails companion session creation.
+        yield* startSync(info)
+      } else {
+        yield* Effect.all(
+          [
+            waitEvent({
+              timeout: TIMEOUT,
+              fn(event) {
+                if (event.workspace === info.id && event.payload.type === Event.Status.type) {
+                  const { status } = event.payload.properties
+                  return status === "error" || status === "connected"
+                }
+                return false
+              },
+            }),
+            startSync(info),
+          ],
+          { concurrency: 2, discard: true },
+        )
+      }
 
       return info
     })

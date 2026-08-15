@@ -1326,6 +1326,8 @@ export const dict = {
   "session.clear.confirm": '清空“{{name}}”的全部聊天记录？',
   "session.clear.button": "清空聊天记录",
   "session.clear.failed.title": "清空聊天记录失败",
+  "session.clear.inProgress": "正在压缩保存对话，稍候…",
+  "session.clear.success": "聊天记录已清空（对话已压缩保留为上下文）。",
   "workspace.delete.failed.title": "删除工作区失败",
   "workspace.resetting.title": "正在重置工作区",
   "workspace.resetting.description": "这可能需要一点时间。",

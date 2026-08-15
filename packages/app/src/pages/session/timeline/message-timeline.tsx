@@ -880,13 +880,27 @@ export function MessageTimeline(props: {
     )
 
     // Non-blocking: the server compacts the conversation into a hidden summary
-    // and then removes the original messages.
+    // and then removes the original messages. Surface progress so the user isn't
+    // left staring at an empty page with no idea whether it worked.
+    showToast({
+      title: language.t("session.clear.title"),
+      description: language.t("session.clear.inProgress"),
+      variant: "default",
+    })
     void sdk()
       .client.session.compactClear({ sessionID })
+      .then(() => {
+        showToast({
+          title: language.t("session.clear.title"),
+          description: language.t("session.clear.success"),
+          variant: "success",
+        })
+      })
       .catch((err) => {
         showToast({
           title: language.t("session.clear.failed.title"),
           description: errorMessage(err),
+          variant: "error",
         })
       })
     return true

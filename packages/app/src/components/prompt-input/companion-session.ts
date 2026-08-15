@@ -79,8 +79,22 @@ async function resolveCompanionSession(input: {
   resolvePersonal?: () => Promise<PersonalWorkspaceRef | undefined>
   createClient?: (opts: { directory: string; experimental_workspaceID?: string }) => DirectorySDK["client"]
 }): Promise<CompanionSessionResult> {
+  // The Companion is a single global continuous session, never scoped to the
+  // currently-open project. Resolve the Personal workspace FIRST so the session
+  // always lives in a personal directory (relationship memories pass the trust
+  // policy and surface in the Memory Center). Falls back to the current
+  // directory only when no personal workspace can be resolved.
+  const personal = await input.resolvePersonal?.().catch(() => undefined)
+  const homeDirectory = personal?.directory ?? input.directory
+  const client = personal && input.createClient
+    ? input.createClient({ directory: personal.directory, experimental_workspaceID: personal.workspaceID })
+    : input.client
+
+  // A previously-pinned session is only honored when it already lives in the
+  // personal directory — a legacy pin under a project directory (e.g. G:\tmp)
+  // must not keep the Companion attached to a project.
   const pinned = getPinnedCompanion(input.scope)
-  if (pinned) {
+  if (pinned && pinned.directory === homeDirectory) {
     let existing: Session | undefined
     try {
       existing = await input.fetch(pinned.directory, pinned.sessionID)
@@ -93,35 +107,32 @@ async function resolveCompanionSession(input: {
   }
   if (input.globalList) {
     const existing = (await input.globalList())
-      .filter((session) => session.profileID === "companion" && !session.time?.archived)
+      .filter(
+        (session) =>
+          session.profileID === "companion" &&
+          !session.time?.archived &&
+          session.directory === homeDirectory,
+      )
       .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))[0]
     if (existing) {
-      pinCompanion(input.scope, existing.id, existing.directory ?? input.directory)
-      return { session: existing, directory: existing.directory ?? input.directory }
+      pinCompanion(input.scope, existing.id, existing.directory ?? homeDirectory)
+      return { session: existing, directory: existing.directory ?? homeDirectory }
     }
   }
   if (input.list) {
-    const existing = (await input.list(input.directory))
-      .filter((session) => session.profileID === "companion")
+    const existing = (await input.list(homeDirectory))
+      .filter((session) => session.profileID === "companion" && session.directory === homeDirectory)
       .sort((a, b) => (b.time?.updated ?? 0) - (a.time?.updated ?? 0))[0]
     if (existing) {
-      pinCompanion(input.scope, existing.id, existing.directory ?? input.directory)
-      return { session: existing, directory: existing.directory ?? input.directory }
+      pinCompanion(input.scope, existing.id, existing.directory ?? homeDirectory)
+      return { session: existing, directory: existing.directory ?? homeDirectory }
     }
   }
 
-  // Create the Companion session inside a Personal workspace so relationship
-  // memories pass the trust policy and surface in the Memory Center. Falls back
-  // to the current directory when no personal workspace can be resolved.
-  const personal = await input.resolvePersonal?.().catch(() => undefined)
-  const client = personal && input.createClient
-    ? input.createClient({ directory: personal.directory, experimental_workspaceID: personal.workspaceID })
-    : input.client
   const created = await client.session.create({ profileID: "companion" }).then((result) => result.data)
   if (!created) throw new Error("Failed to create companion session")
-  const directory = personal?.directory ?? input.directory
-  pinCompanion(input.scope, created.id, directory)
-  return { session: created, directory }
+  pinCompanion(input.scope, created.id, homeDirectory)
+  return { session: created, directory: homeDirectory }
 }
 
 export async function ensureCompanionSession(input: {

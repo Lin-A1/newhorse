@@ -1472,6 +1472,8 @@ export const dict = {
   "session.clear.confirm": 'Clear all chat records for "{{name}}"?',
   "session.clear.button": "Clear chat history",
   "session.clear.failed.title": "Failed to clear chat history",
+  "session.clear.inProgress": "Compacting and saving the conversation…",
+  "session.clear.success": "Chat history cleared (conversation compacted into context).",
   "workspace.delete.failed.title": "Failed to delete workspace",
   "workspace.resetting.title": "Resetting workspace",
   "workspace.resetting.description": "This may take a minute.",
