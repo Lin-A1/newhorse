@@ -22,6 +22,8 @@ import { ReminderTool } from "./reminder"
 import { FollowTool } from "./follow"
 import { node as followNode } from "@/follow"
 import { CapabilityTool } from "./capability"
+import { DailySummaryTool } from "./daily-summary"
+import { DailySummary } from "@/daily-summary"
 import { Memory } from "@/memory"
 import { Scheduler } from "@/scheduler"
 import { Profile } from "@/profile"
@@ -144,6 +146,7 @@ const layer = Layer.effect(
     const memorytool = yield* MemoryTool
     const remindertool = yield* ReminderTool
     const followtool = yield* FollowTool
+    const dailySummaryTool = yield* DailySummaryTool
     const agent = yield* Agent.Service
     const lspGotoDefinition = yield* LspGotoDefinitionTool
     const lspFindReferences = yield* LspFindReferencesTool
@@ -296,6 +299,7 @@ const layer = Layer.effect(
           memory: Tool.init(memorytool),
           reminder: Tool.init(remindertool),
           follow: Tool.init(followtool),
+          "daily-summary": Tool.init(dailySummaryTool),
           capability: Tool.init(capabilityInfo),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
@@ -336,9 +340,12 @@ const layer = Layer.effect(
           tool.skill,
           tool.memory,
           tool.reminder,
+          tool.follow,
+          tool["daily-summary"],
           tool.capability,
           tool.patch,
           ...(tool.execute ? [tool.execute] : []),
+          tool.lsp,
           ...(flags.experimentalLspTool
             ? [
                 tool.lspGotoDefinition,
@@ -575,6 +582,7 @@ export const node = LayerNode.make({
     Scheduler.node,
     followNode,
     Capability.node,
+    DailySummary.node,
   ],
 })
 

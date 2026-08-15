@@ -57,8 +57,8 @@ import * as Tool from "./tool"
 /**
  * Version of the agent-browser CLI these tools target. The CLI serves its own
  * bundled skills (`agent-browser skills get core`) that always match the
- * installed binary, so this only pins the expected release assets for a future
- * vendor step — it does not enforce a running-binary version.
+ * installed binary, so this only pins the expected release asset used by the
+ * auto-download — it does not enforce a running-binary version.
  */
 export const BROWSER_VERSION = "0.34.0"
 
@@ -77,10 +77,11 @@ export const BROWSER_PLATFORM = {
 } as const
 
 /**
- * TODO(browser): pin sha256 for each BROWSER_PLATFORM asset and implement the
- * download/extract step (see `RipgrepBinary` in core for the reference
- * pattern). Until then the tool only resolves an already-present binary and
- * otherwise errors with install instructions.
+ * TODO(browser): pin sha256 for each BROWSER_PLATFORM asset and fill
+ * `BROWSER_CHECKSUMS` (computed from the actual release assets). The download
+ * step is wired up (`downloadAgentBrowser`); when a checksum is present for the
+ * running platform it is verified before the binary is cached. Until pinned,
+ * verification is skipped and a size sanity check is used instead.
  */
 export const BROWSER_CHECKSUMS: Record<string, string> = {}
 
@@ -96,6 +97,14 @@ const MAX_SCRIPT_LENGTH = 20_000
 const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024
 
 const PERMISSION = "browser"
+
+/**
+ * Thrown by `resolveAgentBrowserPath` when no agent-browser binary is found
+ * (and no `AGENT_BROWSER_PATH` override was set). `ensureAgentBrowserBinary`
+ * catches this specifically to attempt an auto-download before surfacing the
+ * install-instructions error.
+ */
+export class AgentBrowserNotFoundError extends Error {}
 
 // ---------------------------------------------------------------------------
 // Binary resolution
@@ -116,7 +125,7 @@ function notFoundMessage(cached: string): string {
     `  3. Build from source: cargo install agent-browser.`,
     ``,
     `Locations checked, in order: AGENT_BROWSER_PATH -> PATH -> ${cached}`,
-    `TODO(browser): checksum-pinned download of the release binary is not wired up yet.`,
+    `Automatic download of the pinned release binary was attempted but failed.`,
   ].join("\n")
 }
 
@@ -138,7 +147,96 @@ export function resolveAgentBrowserPath(opts: ResolveBrowserPathOptions = {}): s
   if (onPath) return onPath
   const cached = path.join(opts.binDir ?? Global.Path.bin, BINARY_NAME)
   if (fs.existsSync(cached)) return cached
-  throw new Error(notFoundMessage(cached))
+  throw new AgentBrowserNotFoundError(notFoundMessage(cached))
+}
+
+// ---------------------------------------------------------------------------
+// Auto-download (first-use)
+// ---------------------------------------------------------------------------
+
+/** agent-browser's release assets are raw executables; anything under this size is a truncated/HTML download. */
+const MIN_BINARY_BYTES = 100_000
+
+let downloadPromise: Promise<string | null> | null = null
+
+/** Test seam (mirrors ast-grep's `setAstGrepRunnerForTest`). Reset with null. */
+let downloadOverride: ((binDir?: string) => Promise<string | null>) | undefined
+export function setBrowserDownloadForTest(fn: ((binDir?: string) => Promise<string | null>) | null): void {
+  downloadOverride = fn ?? undefined
+}
+
+/**
+ * Download the pinned agent-browser release binary for the running platform
+ * into `Global.Path.bin` (or `binDir`) and cache it there. Returns the cached
+ * path, or null when the platform is unsupported or the download failed.
+ */
+export function downloadAgentBrowser(binDir?: string): Promise<string | null> {
+  const fn = downloadOverride
+  if (fn) return fn(binDir)
+  if (downloadPromise) return downloadPromise
+  downloadPromise = doDownload(binDir)
+    .catch((error: unknown) => {
+      console.error(
+        `[agent-browser] failed to download binary: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      return null
+    })
+    .finally(() => {
+      downloadPromise = null
+    })
+  return downloadPromise
+}
+
+async function doDownload(binDir?: string): Promise<string | null> {
+  const target = path.join(binDir ?? Global.Path.bin, BINARY_NAME)
+  if (fs.existsSync(target) && fs.statSync(target).size > MIN_BINARY_BYTES) return target
+
+  const platformKey = `${process.arch}-${process.platform}` as keyof typeof BROWSER_PLATFORM
+  const config = BROWSER_PLATFORM[platformKey]
+  if (!config) {
+    console.error(`[agent-browser] unsupported platform: ${platformKey}`)
+    return null
+  }
+
+  const url = `https://github.com/vercel-labs/agent-browser/releases/download/v${BROWSER_VERSION}/${config.asset}`
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  const response = await fetch(url, { redirect: "follow" })
+  if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`)
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  if (bytes.byteLength < MIN_BINARY_BYTES) throw new Error(`download from ${url} looks invalid (${bytes.byteLength} bytes)`)
+
+  // Checksum verification runs only when a sha256 is pinned for this platform.
+  const expected = BROWSER_CHECKSUMS[platformKey]
+  if (expected) {
+    const digest = await sha256Hex(bytes)
+    if (digest !== expected) throw new Error(`sha256 mismatch for agent-browser: expected ${expected}, got ${digest}`)
+  }
+
+  fs.writeFileSync(target, bytes)
+  if (process.platform !== "win32") fs.chmodSync(target, 0o755)
+  return target
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const { createHash } = await import("node:crypto")
+  return createHash("sha256").update(bytes).digest("hex")
+}
+
+/**
+ * Resolve the agent-browser executable, auto-downloading the pinned release
+ * binary on first use. Precedence: `AGENT_BROWSER_PATH` → `PATH` → cached
+ * download. An explicit `AGENT_BROWSER_PATH` that does not exist is never
+ * overridden. Throws the install-instructions error when nothing can be found.
+ */
+export async function ensureAgentBrowserBinary(opts: ResolveBrowserPathOptions = {}): Promise<string> {
+  try {
+    return resolveAgentBrowserPath(opts)
+  } catch (error) {
+    if (!(error instanceof AgentBrowserNotFoundError)) throw error
+    const downloaded = await downloadAgentBrowser(opts.binDir)
+    if (downloaded) return downloaded
+    throw error
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -441,7 +539,7 @@ export const BrowserOpenTool = Tool.define(
             always: ["*"],
             metadata: { command: "open", url: params.url, headed: params.headed },
           })
-          const binary = resolveAgentBrowserPath()
+          const binary = yield* Effect.promise(() => ensureAgentBrowserBinary())
           const sessionName = agentBrowserSessionName(String(ctx.sessionID))
           const result = yield* runBrowser(
             binary,
@@ -496,7 +594,7 @@ export const BrowserSnapshotTool = Tool.define(
             always: ["*"],
             metadata: { command: "snapshot", selector: params.selector, interactive: params.interactive },
           })
-          const binary = resolveAgentBrowserPath()
+          const binary = yield* Effect.promise(() => ensureAgentBrowserBinary())
           const sessionName = agentBrowserSessionName(String(ctx.sessionID))
           const result = yield* runBrowser(
             binary,
@@ -554,7 +652,7 @@ export const BrowserClickTool = Tool.define(
             always: ["*"],
             metadata: { command: "click", selector: params.selector, newTab: params.newTab },
           })
-          const binary = resolveAgentBrowserPath()
+          const binary = yield* Effect.promise(() => ensureAgentBrowserBinary())
           const sessionName = agentBrowserSessionName(String(ctx.sessionID))
           const result = yield* runBrowser(
             binary,
@@ -611,7 +709,7 @@ export const BrowserTypeTool = Tool.define(
             always: ["*"],
             metadata: { command: "type", selector: params.selector, clear: params.clear },
           })
-          const binary = resolveAgentBrowserPath()
+          const binary = yield* Effect.promise(() => ensureAgentBrowserBinary())
           const sessionName = agentBrowserSessionName(String(ctx.sessionID))
           const result = yield* runBrowser(
             binary,
@@ -660,7 +758,7 @@ export const BrowserEvalTool = Tool.define(
             always: ["*"],
             metadata: { command: "eval", script: params.script },
           })
-          const binary = resolveAgentBrowserPath()
+          const binary = yield* Effect.promise(() => ensureAgentBrowserBinary())
           const sessionName = agentBrowserSessionName(String(ctx.sessionID))
           const result = yield* runBrowser(binary, { kind: "eval", script: params.script }, sessionName, {
             timeoutMs: timeoutSeconds(params.timeout, 60_000),
@@ -715,7 +813,7 @@ export const BrowserScreenshotTool = Tool.define(
             always: ["*"],
             metadata: { command: "screenshot", selector: params.selector, full: params.full },
           })
-          const binary = resolveAgentBrowserPath()
+          const binary = yield* Effect.promise(() => ensureAgentBrowserBinary())
           const sessionName = agentBrowserSessionName(String(ctx.sessionID))
           const result = yield* runBrowser(
             binary,
@@ -790,7 +888,7 @@ export const BrowserSessionTool = Tool.define(
             always: ["*"],
             metadata: { command: "session", action: params.action },
           })
-          const binary = resolveAgentBrowserPath()
+          const binary = yield* Effect.promise(() => ensureAgentBrowserBinary())
           const sessionName = agentBrowserSessionName(String(ctx.sessionID))
           const result = yield* runBrowser(
             binary,

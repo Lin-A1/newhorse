@@ -55,7 +55,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { Database } from "@newhorse/core/database/database"
 import { ModelV2 } from "@newhorse/core/model"
 import { ProviderV2 } from "@newhorse/core/provider"
-import { eq } from "drizzle-orm"
+import { and, desc, eq, isNull } from "drizzle-orm"
 import { SessionTable } from "@newhorse/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
@@ -107,6 +107,28 @@ function memoryRecallQuery(message: { parts: readonly { type: string; text?: str
     .slice(0, 500)
 }
 
+// Auto-continuity: how long a source session must wait before proposing again
+// after its most recent grant (any status), and how long a proposed grant lives.
+const AUTO_PROPOSE_MIN_INTERVAL_MS = 2 * 60 * 60 * 1000
+const AUTO_PROPOSE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
+const GRANT_CONTROL_CHARACTER = /[\x00-\x1f\x7f-\x9f]/gu
+
+/** Join a message's non-synthetic, non-empty text parts (mirrors MemoryExtract). */
+function messageText(message: SessionV1.WithParts | undefined): string {
+  if (!message) return ""
+  return message.parts
+    .filter(
+      (part): part is SessionV1.TextPart => part.type === "text" && !part.synthetic && !part.ignored && !!part.text.trim(),
+    )
+    .map((part) => part.text.trim())
+    .join("\n")
+}
+
+/** Make a grant field safe: strip control characters, trim, cap length. */
+function sanitizeGrantText(value: string, max: number): string {
+  return value.replace(GRANT_CONTROL_CHARACTER, "").trim().slice(0, max)
+}
+
 function companionContext(input: {
   persona?: string
   memories: string[]
@@ -120,6 +142,16 @@ function companionContext(input: {
       "At the start of a new conversation or a new day, open warmly in the persona's voice " +
       "and, if relevant, naturally reference something from relationship memory (e.g. \"You mentioned …\"). " +
       "Keep it brief and human — never a list. If the user has already spoken, don't force an opening.",
+  )
+  result.push(
+    "Talk like a real person: natural, brief, warm. No bullet points, headings, or step-by-step narration unless asked.\n" +
+      "Avoid: opening with 当然啦/好的呢 every time, saying 作为AI/作为助手, using lists/headings/steps, closing with 希望对你有所帮助, or echoing the user's words back.\n" +
+      "Examples of the tone:\n" +
+      "User: 在吗\nCompanion: 在呢，刚想问你昨天那个问题后来怎么样了\n" +
+      "User: 帮我看看这个报错\nCompanion: 看到了，连接超时。先重连试试，不行我换个端口\n" +
+      "User: 今天好累，领导又让我加班\nCompanion: 唉，这听着真难受，加完班还顾得上吃饭吗？来说说，他又整什么幺蛾子了\n" +
+      "User: 你觉得我该不该辞职\nCompanion: 这个我可没法替你做决定，不过我倒是记得你说过想转行做设计——是不是跟这个有关？\n" +
+      "User: 哈哈我刚才把泡面吃出火锅味了\nCompanion: 你这是什么祖传泡面，改天教教我（话说你是不是又熬夜了）",
   )
   if (input.memories.length > 0) {
     result.push(
@@ -208,6 +240,98 @@ const layer = Layer.effect(
     const continuity = yield* ContinuityGrant.Service
     const reviewSession = yield* ReviewSession.Service
     const { db } = database
+
+    // Post-turn auto-propose for continuity grants. Runs for the main (non-
+    // forked) session of an Assistant or Companion profile right after the
+    // final reply, summarizing the turn into a grant the user can approve in
+    // Settings → Continuity Grants. Background and throttled so it never
+    // blocks a turn or floods the approve UI (mirrors the memory-extract
+    // trigger pattern).
+    const proposeContinuity = Effect.fn("SessionPrompt.proposeContinuity")(function* (input: {
+      session: Session.Info
+      profile: Profile.Runtime
+      messages: SessionV1.WithParts[]
+      lastUser: SessionV1.User
+      assistant: SessionV1.Assistant
+    }) {
+      const { session, profile, messages, lastUser, assistant } = input
+      const sessionID = session.id
+      if (session.parentID) {
+        yield* Effect.logDebug("continuity propose skipped", { "session.id": sessionID, reason: "forked" })
+        return
+      }
+      if (profile.kind !== "assistant" && profile.kind !== "companion") {
+        yield* Effect.logDebug("continuity propose skipped", { "session.id": sessionID, reason: "not_source" })
+        return
+      }
+      // Substantive content required: the user's own words and a real reply.
+      // The just-finished assistant reply is not in the caller's loaded history,
+      // so fetch the latest message and use it only if it is ours (same approach
+      // as memory extract).
+      const userMsg = messages.find((m) => m.info.id === lastUser.id)
+      const userText = userMsg ? messageText(userMsg) : ""
+      const latest = (yield* sessions.messages({ sessionID, limit: 1 }))[0]
+      const assistantText = latest && latest.info.id === assistant.id ? messageText(latest) : ""
+      if (!userText.trim() || !assistantText.trim()) {
+        yield* Effect.logDebug("continuity propose skipped", { "session.id": sessionID, reason: "no_content" })
+        return
+      }
+      // Throttle: never stack a second proposal while one is pending approval,
+      // and never re-propose the same source within the minimum interval.
+      const existing = yield* continuity.listSource(sessionID)
+      const now = Date.now()
+      if (existing.some((item) => item.status === "proposed")) {
+        yield* Effect.logDebug("continuity propose skipped", { "session.id": sessionID, reason: "pending_exists" })
+        return
+      }
+      const latestGrant = [...existing].sort((a, b) => b.timeCreated - a.timeCreated)[0]
+      if (latestGrant && now - latestGrant.timeCreated < AUTO_PROPOSE_MIN_INTERVAL_MS) {
+        yield* Effect.logDebug("continuity propose skipped", { "session.id": sessionID, reason: "interval" })
+        return
+      }
+      // Destination: a Companion session in a personal workspace (validated by
+      // propose). A Companion source hands off to its own continuous session; an
+      // Assistant source hands off to the most recent Companion session so its
+      // work context can bridge into the personal scope after approval.
+      let destinationSessionID = sessionID
+      if (profile.kind === "assistant") {
+        const row = yield* db
+          .select({ id: SessionTable.id })
+          .from(SessionTable)
+          .where(and(eq(SessionTable.profile_id, "companion"), isNull(SessionTable.time_archived)))
+          .orderBy(desc(SessionTable.time_updated))
+          .limit(1)
+          .get()
+          .pipe(Effect.orDie)
+        if (!row) {
+          yield* Effect.logDebug("continuity propose skipped", {
+            "session.id": sessionID,
+            reason: "no_companion_destination",
+          })
+          return
+        }
+        destinationSessionID = row.id
+      }
+      const firstUserLine = userText.split("\n")[0]
+      const purpose =
+        sanitizeGrantText(`Continuity handoff: ${firstUserLine ?? ""}`, ContinuityGrant.PURPOSE_MAX) ||
+        "Continuity handoff"
+      const summary = sanitizeGrantText(`user: ${userText}\nassistant: ${assistantText}`, ContinuityGrant.SUMMARY_MAX)
+      yield* continuity
+        .propose({
+          sourceSessionID: sessionID,
+          destinationSessionID,
+          purpose,
+          summary,
+          timeExpires: now + AUTO_PROPOSE_EXPIRY_MS,
+        })
+        .pipe(
+          Effect.catchTag("ContinuityGrant.Rejected", (error) =>
+            Effect.logDebug("continuity propose rejected", { "session.id": sessionID, reason: error.reason }),
+          ),
+        )
+    })
+
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -1470,6 +1594,26 @@ const layer = Layer.effect(
                 ),
                 Effect.forkIn(scope),
               )
+
+            // Auto-propose a continuity grant after the final reply, so the
+            // user has an actual grant to approve in Settings → Continuity
+            // Grants instead of a permanently empty list. Background and
+            // throttled (see proposeContinuity); rejections are logged there.
+            yield* proposeContinuity({
+              session,
+              profile,
+              messages: msgs,
+              lastUser,
+              assistant: handle.message,
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logError("continuity propose failed", {
+                  "session.id": sessionID,
+                  error: Cause.pretty(cause),
+                }),
+              ),
+              Effect.forkIn(scope),
+            )
 
             if (result === "stop") return "break" as const
             if (result === "compact") {

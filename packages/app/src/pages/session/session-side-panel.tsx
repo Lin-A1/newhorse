@@ -30,10 +30,13 @@ import { useDialog } from "@newhorse/ui/context/dialog"
 import FileTree from "@/components/file-tree"
 import { normalizeFileTreeV2Path } from "@/components/file-tree-v2-model"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { SidebarTimeline } from "@/components/sidebar-timeline"
 
 const reviewTabID = "session-side-panel-review-tab"
 const reviewTabPanelID = "session-side-panel-review-tabpanel"
 const fileBrowserTabPanelID = "session-side-panel-file-browser-tabpanel"
+const dailySummaryTabID = "session-side-panel-daily-summary-tab"
+const dailySummaryTabPanelID = "session-side-panel-daily-summary-tabpanel"
 import { SessionContextTab, SortableTab, SortableTabV2, FileVisual } from "@/components/session"
 import { OpenInAppV2 } from "@/components/session/open-in-app-v2"
 import { useCommand } from "@/context/command"
@@ -45,6 +48,7 @@ import { useSettings } from "@/context/settings"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { FileTabContent } from "@/pages/session/file-tabs"
 import {
+  DAILY_SUMMARY_TAB,
   SESSION_OPEN_FILE_TAB,
   createOpenSessionFileTab,
   createSessionTabs,
@@ -184,6 +188,7 @@ export function SessionSidePanel(props: {
     review: reviewTab,
     hasReview: props.canReview,
     fileBrowser: () => !!props.fileBrowserState,
+    dailySummary: () => true,
   })
   const contextOpen = tabState.contextOpen
   const openFileOpen = tabState.openFileOpen
@@ -242,7 +247,7 @@ export function SessionSidePanel(props: {
   })
   const fileBrowserVisible = createMemo(() => {
     const active = activeTab()
-    return active !== "review" && active !== "context" && active !== "empty"
+    return active !== "review" && active !== "context" && active !== DAILY_SUMMARY_TAB && active !== "empty"
   })
   const openFileKeybind = createMemo(() => command.keybindParts("file.open"))
   const closeTabKeybind = createMemo(() => command.keybindParts("tab.close"))
@@ -396,6 +401,18 @@ export function SessionSidePanel(props: {
                                   </div>
                                 </Tabs.Trigger>
                               </Show>
+                              <Tabs.Trigger
+                                value={DAILY_SUMMARY_TAB}
+                                id={dailySummaryTabID}
+                                aria-controls={
+                                  activeTab() === DAILY_SUMMARY_TAB ? dailySummaryTabPanelID : undefined
+                                }
+                              >
+                                <div class="flex items-center gap-1.5">
+                                  <Icon name="bullet-list" size="small" />
+                                  <div>{language.t("sidebar.dailySummary")}</div>
+                                </div>
+                              </Tabs.Trigger>
                               <SortableProvider ids={openedTabs()}>
                                 <For each={panelTabs()}>
                                   {(tab) => (
@@ -500,6 +517,18 @@ export function SessionSidePanel(props: {
                             <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
                               <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
                                 <SessionContextTab />
+                              </div>
+                            </Tabs.Content>
+                          </Show>
+
+                          <Show when={activeTab() === DAILY_SUMMARY_TAB}>
+                            <Tabs.Content
+                              value={DAILY_SUMMARY_TAB}
+                              id={dailySummaryTabPanelID}
+                              class="flex flex-col h-full overflow-hidden contain-strict"
+                            >
+                              <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                                <SidebarTimeline />
                               </div>
                             </Tabs.Content>
                           </Show>
@@ -612,6 +641,18 @@ export function SessionSidePanel(props: {
                                 </div>
                               </Tabs.Trigger>
                             </Show>
+                            <Tabs.Trigger
+                              value={DAILY_SUMMARY_TAB}
+                              id={dailySummaryTabID}
+                              aria-controls={
+                                activeTab() === DAILY_SUMMARY_TAB ? dailySummaryTabPanelID : undefined
+                              }
+                            >
+                              <div class="flex items-center gap-1.5">
+                                <Icon name="bullet-list" size="small" />
+                                <div>{language.t("sidebar.dailySummary")}</div>
+                              </div>
+                            </Tabs.Trigger>
                             <For each={panelTabs()}>
                               {(tab) => (
                                 <Show
@@ -731,6 +772,18 @@ export function SessionSidePanel(props: {
                           <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
                             <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
                               <SessionContextTab />
+                            </div>
+                          </Tabs.Content>
+                        </Show>
+
+                        <Show when={activeTab() === DAILY_SUMMARY_TAB}>
+                          <Tabs.Content
+                            value={DAILY_SUMMARY_TAB}
+                            id={dailySummaryTabPanelID}
+                            class="flex flex-col h-full overflow-hidden contain-strict"
+                          >
+                            <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                              <SidebarTimeline />
                             </div>
                           </Tabs.Content>
                         </Show>

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import path from "path"
 import fs from "node:fs"
@@ -9,6 +9,8 @@ import {
   assertSafeText,
   assertSafeUrl,
   agentBrowserSessionName,
+  ensureAgentBrowserBinary,
+  setBrowserDownloadForTest,
   BrowserEvalParameters,
   BrowserOpenParameters,
   BrowserSnapshotParameters,
@@ -320,5 +322,32 @@ describe("runAgentBrowser", () => {
     const result = await runAgentBrowser(process.execPath, ["-e", "setTimeout(()=>{}, 10000)"], { timeoutMs: 300 })
     expect(result.timedOut).toBe(true)
     expect(result.stdout).toBe("")
+  })
+})
+
+describe("ensureAgentBrowserBinary", () => {
+  afterEach(() => setBrowserDownloadForTest(null))
+
+  test("auto-downloads when no binary is present", async () => {
+    const dir = makeTempDir()
+    const downloaded = path.join(dir, "downloaded-agent-browser")
+    setBrowserDownloadForTest(() => Promise.resolve(downloaded))
+    const result = await ensureAgentBrowserBinary({ env: { PATH: "" }, binDir: dir })
+    expect(result).toBe(downloaded)
+  })
+
+  test("surfaces install instructions when the download fails", async () => {
+    const dir = makeTempDir()
+    setBrowserDownloadForTest(() => Promise.resolve(null))
+    await expect(ensureAgentBrowserBinary({ env: { PATH: "" }, binDir: dir })).rejects.toThrow(
+      /agent-browser binary not found/,
+    )
+  })
+
+  test("does not override an explicit AGENT_BROWSER_PATH with a download", async () => {
+    const dir = makeTempDir()
+    setBrowserDownloadForTest(() => Promise.resolve(path.join(dir, "should-not-be-used")))
+    const env = { AGENT_BROWSER_PATH: "C:/definitely/missing/agent-browser", PATH: "" }
+    await expect(ensureAgentBrowserBinary({ env, binDir: dir })).rejects.toThrow(/AGENT_BROWSER_PATH/)
   })
 })

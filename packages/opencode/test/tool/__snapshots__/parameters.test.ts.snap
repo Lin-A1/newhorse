@@ -235,9 +235,11 @@ exports[`tool parameters JSON Schema (wire shape) memory 1`] = `
       "type": "string",
     },
     "scope": {
-      "description": "Defaults to workspace. Use user_global only for durable cross-workspace preferences.",
+      "description": "Defaults to the current workspace (project or personal). Use user_global only for durable cross-workspace preferences; use relationship only for Companion relationship memory.",
       "enum": [
-        "workspace",
+        "project",
+        "personal",
+        "relationship",
         "user_global",
       ],
       "type": "string",
@@ -592,6 +594,29 @@ exports[`tool parameters JSON Schema (wire shape) write 1`] = `
     "content",
     "filePath",
   ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) daily-summary 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "from": {
+      "description": "Start of the summary creation-time range, inclusive, ms since epoch",
+      "type": "number",
+    },
+    "limit": {
+      "description": "Number of daily summaries to return (default 7, max 30)",
+      "exclusiveMinimum": 0,
+      "maximum": 30,
+      "type": "integer",
+    },
+    "to": {
+      "description": "End of the summary creation-time range, exclusive, ms since epoch",
+      "type": "number",
+    },
+  },
   "type": "object",
 }
 `;

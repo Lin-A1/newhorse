@@ -4,6 +4,7 @@ import DESCRIPTION from "./memory.txt"
 import { Memory, MemoryPolicyRejected, SensitiveMemoryRejected } from "@/memory"
 import { Session } from "@/session/session"
 import { Profile } from "@/profile"
+import { Agent } from "@/agent/agent"
 
 export const Parameters = Schema.Struct({
   action: Schema.Literals(["list", "search", "save", "forget", "consolidate", "archive", "clear"]).annotate({
@@ -44,12 +45,17 @@ type Metadata = {
   status?: string
 }
 
-export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Service | Session.Service | Profile.Service>(
+export const MemoryTool = Tool.define<
+  typeof Parameters,
+  Metadata,
+  Memory.Service | Session.Service | Profile.Service | Agent.Service
+>(
   "memory",
   Effect.gen(function* () {
     const memory = yield* Memory.Service
     const sessions = yield* Session.Service
     const profiles = yield* Profile.Service
+    const agents = yield* Agent.Service
 
     return {
       description: DESCRIPTION,
@@ -58,6 +64,11 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
         Effect.gen(function* () {
           const session = yield* sessions.get(ctx.sessionID)
           const profile = yield* profiles.runtime(session.profileID ?? Profile.ID.make("assistant"))
+          const agent = yield* agents.get(ctx.agent)
+          // Content-flow tightening must see the FULL effective ruleset (agent
+          // config + session rules), not just the session's raw rules — otherwise
+          // a configured "memory.save": "deny" never reaches the trust policy.
+          const ruleset = Agent.effectivePermission(agent, session.permission ?? [])
 
           if (params.action === "list") {
             const page = yield* memory.page({ profileID: profile.id, limit: 50 })
@@ -77,7 +88,7 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
               kind: params.kind,
               profileID: profile.id,
               relationshipOnly: profile.kind === "companion",
-              userRuleset: session.permission,
+              userRuleset: ruleset,
               limit: 10,
             })
             return {
@@ -148,7 +159,7 @@ export const MemoryTool = Tool.define<typeof Parameters, Metadata, Memory.Servic
                 sourceSessionID: ctx.sessionID,
                 sourceMessageID: ctx.messageID,
                 profileID: profile.id,
-                userRuleset: session.permission,
+                userRuleset: ruleset,
               })
               .pipe(
                 Effect.catchTags({

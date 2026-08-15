@@ -520,7 +520,7 @@ describe("MemoryExtract", () => {
           profileID: "companion",
           sourceSessionID: SESSION_ID,
           sourceMessageID: MessageID.make(ASST_ID),
-          userRuleset: allowAll,
+          userRuleset: expect.arrayContaining(allowAll),
         })
       }),
     )
@@ -536,7 +536,7 @@ describe("MemoryExtract", () => {
           relationshipOnly: true,
           status: ["active", "proposed"],
           limit: 10,
-          userRuleset: allowAll,
+          userRuleset: expect.arrayContaining(allowAll),
         })
       }),
     )

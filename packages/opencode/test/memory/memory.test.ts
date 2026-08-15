@@ -189,13 +189,15 @@ describe("Memory", () => {
 
         expect((yield* memory.retrieve()).map((item) => item.content)).toEqual(["not relationship memory"])
         // The Memory Center viewer (list/page/count) is the user's own memory
-        // hub: in a personal context it shows relationship memories too, even
-        // without a profileID. Retrieval isolation stays in `retrieve`.
-        const listed = yield* memory.list()
-        expect(listed.map((item) => item.content)).toEqual(
-          expect.arrayContaining(["not relationship memory", "likes a quiet check-in", "assistant relationship"]),
+        // hub: in a personal context it shows relationship (Companion) memories
+        // only to a TRUSTED profile (a profileID). Without one, relationship
+        // rows stay excluded — same as `retrieve`/`export`.
+        expect((yield* memory.list()).map((item) => item.content)).toEqual(["not relationship memory"])
+        expect((yield* memory.list({ profileID: "companion" })).map((item) => item.content)).toEqual(
+          expect.arrayContaining(["not relationship memory", "likes a quiet check-in"]),
         )
-        expect(yield* memory.count()).toBe(3)
+        expect(yield* memory.count()).toBe(1)
+        expect(yield* memory.count({ profileID: "companion" })).toBe(2)
         expect((yield* memory.export()).map((item) => item.content)).toEqual(["not relationship memory"])
         const retrieved = yield* memory.retrieve({ profileID: "companion", relationshipOnly: true })
         expect(retrieved.map((item) => item.id)).toEqual([companion.id])
@@ -413,15 +415,21 @@ describe("Memory", () => {
 
       // The Memory Center view (list/page) shows only this workspace's personal
       // + relationship rows plus user-global, never the sibling workspace's.
-      expect((yield* inA(memory.list())).map((item) => item.content).toSorted()).toEqual([
+      // Relationship rows surface to the (trusted) matching profile only.
+      expect((yield* inA(memory.list({ profileID: "companion" }))).map((item) => item.content).toSorted()).toEqual([
         "companion A relationship",
         "global preference",
         "personal A preference",
       ])
-      expect((yield* inB(memory.list())).map((item) => item.content).toSorted()).toEqual([
+      expect((yield* inB(memory.list({ profileID: "companion" }))).map((item) => item.content).toSorted()).toEqual([
         "companion B relationship",
         "global preference",
         "personal B preference",
+      ])
+      // Without a trusted profile, relationship rows are excluded from the hub.
+      expect((yield* inA(memory.list())).map((item) => item.content).toSorted()).toEqual([
+        "global preference",
+        "personal A preference",
       ])
 
       // Retrieval with the shared profile surfaces only this workspace's rows.

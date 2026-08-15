@@ -109,6 +109,20 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("exposes the combined lsp tool by default", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("lsp")
+    }),
+  )
+
+  it.instance("exposes the follow tool by default", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("follow")
+    }),
+  )
+
   it.instance("exposes redacted capability inspection", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

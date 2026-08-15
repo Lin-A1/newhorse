@@ -17,6 +17,7 @@ import addMemoryMigration from "@newhorse/core/database/migration/20260725172900
 import addScheduledEventMigration from "@newhorse/core/database/migration/20260727010000_add_scheduled_event"
 import memoryLifecycleMigration from "@newhorse/core/database/migration/20260728215711_memory_lifecycle"
 import memoryScopeFourLevelMigration from "@newhorse/core/database/migration/20260814120000_memory_scope_four_level"
+import memoryPersonalScopeFixMigration from "@newhorse/core/database/migration/20260815000000_memory_personal_scope_fix"
 import schedulerReliableDeliveryMigration from "@newhorse/core/database/migration/20260801103914_scheduler_reliable_delivery"
 import schedulerDeliveryEligibilityMigration from "@newhorse/core/database/migration/20260801104307_scheduler_delivery_eligibility"
 import schedulerDirectoryScopeMigration from "@newhorse/core/database/migration/20260801110000_scheduler_directory_scope"
@@ -564,6 +565,44 @@ describe("DatabaseMigration", () => {
           { id: "mem_rel", scope: "relationship", kind: "relationship" },
           { id: "mem_ws_fact", scope: "project", kind: "fact" },
           { id: "mem_ws_pref", scope: "project", kind: "preference" },
+        ])
+      }),
+    )
+  })
+
+  test("personal-scope repair reclassifies rows the four-level split mislabeled in personal workspaces", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE session (id text PRIMARY KEY)`)
+        yield* db.run(sql`CREATE TABLE workspace (id text PRIMARY KEY, type text NOT NULL)`)
+        yield* db.run(sql`INSERT INTO workspace (id, type) VALUES ('wrk_personal', 'personal'), ('wrk_project', 'project')`)
+        yield* DatabaseMigration.applyOnly(db, [addMemoryMigration])
+        yield* db.run(sql`
+          INSERT INTO memory (
+            id, workspace_id, scope, profile_id, kind, content, source_session_id,
+            provenance, sensitivity, status, time_created, time_updated
+          ) VALUES
+            ('mem_personal_ws', 'wrk_personal', 'workspace', 'companion', 'fact', 'old personal note', NULL,
+             'user_explicit', 'normal', 'active', 1, 1),
+            ('mem_project_ws', 'wrk_project', 'workspace', 'assistant', 'fact', 'real project fact', NULL,
+             'user_explicit', 'normal', 'active', 1, 1),
+            ('mem_rel', 'wrk_personal', 'workspace', 'companion', 'relationship', 'old relationship', NULL,
+             'user_explicit', 'normal', 'active', 1, 1),
+            ('mem_global', NULL, 'user_global', NULL, 'preference', 'global', NULL,
+             'user_explicit', 'normal', 'active', 1, 1)
+        `)
+
+        // Full upgrade path: the four-level split maps every workspace row to
+        // project (relationship kind -> relationship), then the repair moves the
+        // personal workspace's rows back to personal.
+        yield* DatabaseMigration.applyOnly(db, [memoryScopeFourLevelMigration, memoryPersonalScopeFixMigration])
+
+        expect(yield* db.all(sql`SELECT id, scope FROM memory ORDER BY id`)).toEqual([
+          { id: "mem_global", scope: "user_global" },
+          { id: "mem_personal_ws", scope: "personal" },
+          { id: "mem_project_ws", scope: "project" },
+          { id: "mem_rel", scope: "relationship" },
         ])
       }),
     )

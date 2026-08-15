@@ -9,6 +9,7 @@ import { Memory, MemoryPolicyRejected, SensitiveMemoryRejected } from "@/memory"
 import type { MemoryKind } from "@newhorse/core/memory/sql"
 import { LLM } from "@/session/llm"
 import { Agent } from "@/agent/agent"
+import { Permission } from "@/permission"
 import { Provider } from "@/provider/provider"
 import { LLMEvent } from "@newhorse/llm"
 
@@ -213,6 +214,23 @@ const layer = Layer.effect(
         yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "memory_off" })
         return
       }
+      // Respect the session/agent memory permission. The memory tool's own
+      // ctx.ask gate is intentionally bypassed here (internal background call,
+      // not a model tool invocation), so enforce the same deny up front: if the
+      // effective ruleset denies the memory tool or the memory.save content-flow,
+      // extraction must not write memories anyway.
+      const effective = Agent.effectivePermission(input.agent, input.session.permission ?? [])
+      const memoryToolAction = Permission.evaluate("memory", "*", effective).action
+      const memorySaveAction = Permission.evaluate("memory.save", "*", effective).action
+      if (memoryToolAction === "deny" || memorySaveAction === "deny") {
+        yield* Effect.logInfo("memory extract skipped", {
+          "session.id": input.sessionID,
+          reason: "permission_denied",
+          memory: memoryToolAction,
+          "memory.save": memorySaveAction,
+        })
+        return
+      }
       if (input.session.parentID) {
         yield* Effect.logDebug("memory extract skipped", { "session.id": input.sessionID, reason: "forked" })
         return
@@ -247,7 +265,7 @@ const layer = Layer.effect(
         relationshipOnly: companion,
         status: ["active", "proposed"],
         limit: 10,
-        userRuleset: input.session.permission,
+        userRuleset: effective,
       })
       const relatedContents = related.map((item) => item.content)
 
@@ -304,7 +322,7 @@ const layer = Layer.effect(
               profileID: input.profile.id,
               sourceSessionID: input.sessionID,
               sourceMessageID: input.lastAssistant.id,
-              userRuleset: input.session.permission,
+              userRuleset: effective,
             })
             .pipe(
               Effect.catchTags({

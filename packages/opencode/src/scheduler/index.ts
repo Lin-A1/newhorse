@@ -21,8 +21,11 @@ import { Follow, node as followNode, computeValueFor } from "@/follow"
 import { TrustPolicy } from "@/trust-policy"
 import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import { normalizeRule, nextOccurrence, occurrencesAfter } from "./recurrence"
+import { MemoryTable } from "@newhorse/core/memory/sql"
+import { DailySummaryTable } from "@newhorse/core/daily-summary/sql"
+import { SessionTable } from "@newhorse/core/session/sql"
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm"
-import { Context, Duration, Effect, Layer, Ref, Schedule, Schema } from "effect"
+import { Cause, Context, Duration, Effect, Layer, Ref, Schedule, Schema } from "effect"
 import { randomUUID } from "node:crypto"
 
 export const ID = Schema.String.pipe(Schema.brand("Scheduler.ID"))
@@ -152,6 +155,9 @@ const RETRY_BASE_MS = 60_000
 const RETRY_CAP_MS = 60 * 60 * 1000
 const POLICY_RECHECK_MS = 15 * 60 * 1000
 const AUDIT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
+// Auto check-in: never interrupt a profile whose most recent session was
+// updated within this window (the user is mid-conversation).
+const AUTO_CHECK_IN_IDLE_MS = 30 * 60 * 1000
 
 function localMinute(now: number, timezone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -185,6 +191,12 @@ function validTimezone(timezone: string) {
   } catch {
     return false
   }
+}
+
+/** Local date key YYYY-MM-DD (same convention as the daily-summary module). */
+function localDateKey(ts: number) {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
 function normalizeSchedule(input: { scheduleAt: number; timezone: string; recurrenceRule?: string }) {
@@ -1284,7 +1296,126 @@ const layer = Layer.effect(
       )
     })
 
+    // Dynamic proactive-care body: combine the Companion's recent relationship
+    // memories with today's daily summary when available. Read-only composition
+    // for the same actor (the profile's own memory), going straight to the
+    // tables so the scheduler keeps no LLM/provider dependencies.
+    const composeCheckInBody = Effect.fn("Scheduler.composeCheckInBody")(function* (profileID: string, now: number) {
+      const memories = yield* db
+        .select({ content: MemoryTable.content })
+        .from(MemoryTable)
+        .where(
+          and(
+            eq(MemoryTable.scope, "relationship"),
+            eq(MemoryTable.profile_id, profileID),
+            eq(MemoryTable.status, "active"),
+          ),
+        )
+        .orderBy(desc(MemoryTable.id))
+        .limit(3)
+        .all()
+        .pipe(Effect.orDie)
+      const summary = yield* db
+        .select({ content: DailySummaryTable.content })
+        .from(DailySummaryTable)
+        .where(eq(DailySummaryTable.date, localDateKey(now)))
+        .get()
+        .pipe(Effect.orDie)
+      const parts: string[] = []
+      if (summary) parts.push(`今天的每日小结：${summary.content}`)
+      if (memories.length > 0) parts.push(`最近记得你：${memories.map((m) => m.content).join("；")}`)
+      parts.push("想聊聊今天过得怎么样吗？")
+      return parts.join("\n")
+    })
+
+    // Auto-trigger proactive care for subscribed profiles. Runs on every tick;
+    // the per-profile guards (quiet hours, no stacking, frequency, idle) keep it
+    // from creating more than proactiveFrequency allows. The created event flows
+    // through the normal claim→stage→dispatch pipeline, which re-checks quiet
+    // hours and frequency before delivery.
+    const autoScheduleCheckIns = Effect.fn("Scheduler.autoScheduleCheckIns")(function* (now: number) {
+      const infos = yield* profiles.list()
+      for (const info of infos) {
+        if (!info.proactive) continue
+        const runtime = yield* profiles.runtime(info.id).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        if (!runtime || runtime.proactivePaused) continue
+        if (runtime.quietHours && isQuiet(now, runtime.quietHours)) continue
+        const profileID = info.id
+        // No stacking: never create a second proactive event while one is pending.
+        const pending = yield* db
+          .select({ id: ScheduledEventTable.id })
+          .from(ScheduledEventTable)
+          .where(
+            and(
+              eq(ScheduledEventTable.profile_id, profileID),
+              inArray(ScheduledEventTable.type, ["check_in", "follow_up"]),
+              inArray(ScheduledEventTable.status, ["pending", "dispatching"]),
+            ),
+          )
+          .get()
+          .pipe(Effect.orDie)
+        if (pending) continue
+        // Frequency: same 24h window / min-interval as evaluateAndStage.
+        const deliveredSince = now - 24 * 60 * 60 * 1000
+        const effectiveDeliveryAt = sql<number>`coalesce(${ScheduledEventDeliveryTable.time_delivered}, ${ScheduledEventDeliveryTable.occurrence_at})`
+        const last = yield* db
+          .select({
+            count: sql<number>`count(*)`,
+            latest: sql<number | null>`max(${effectiveDeliveryAt})`,
+          })
+          .from(ScheduledEventDeliveryTable)
+          .where(
+            and(
+              eq(ScheduledEventDeliveryTable.profile_id, profileID),
+              inArray(ScheduledEventDeliveryTable.event_type, ["check_in", "follow_up"]),
+              inArray(ScheduledEventDeliveryTable.status, ["pending", "retry", "delivered"]),
+              gte(effectiveDeliveryAt, deliveredSince),
+            ),
+          )
+          .get()
+          .pipe(Effect.orDie)
+        const minInterval = runtime.proactiveFrequency.minIntervalMinutes * 60 * 1000
+        if (
+          (last?.count ?? 0) >= runtime.proactiveFrequency.maxPerDay ||
+          (last?.latest !== null && last?.latest !== undefined && now - last.latest < minInterval)
+        )
+          continue
+        // Idle: don't interrupt an active conversation for this profile, and
+        // require an established session (nothing to check in on otherwise, and
+        // no notification link target).
+        const latestSession = yield* db
+          .select({ id: SessionTable.id, updated: SessionTable.time_updated })
+          .from(SessionTable)
+          .where(eq(SessionTable.profile_id, profileID))
+          .orderBy(desc(SessionTable.time_updated))
+          .limit(1)
+          .get()
+          .pipe(Effect.orDie)
+        if (!latestSession) continue
+        if (now - (latestSession.updated ?? 0) < AUTO_CHECK_IN_IDLE_MS) continue
+        const timezone = runtime.quietHours?.timezone ?? "UTC"
+        const body = yield* composeCheckInBody(profileID, now)
+        yield* create({
+          profileID,
+          sessionID: latestSession.id,
+          type: "check_in",
+          title: "主动关心",
+          body,
+          scheduleAt: now,
+          timezone,
+        }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("proactive check-in scheduling failed", {
+              profileID,
+              error: Cause.squash(cause),
+            }),
+          ),
+        )
+      }
+    })
+
     const tick = Effect.fn("Scheduler.tick")(function* (now = Date.now()) {
+      yield* autoScheduleCheckIns(now)
       yield* pruneAudit(now)
       yield* failExhaustedDeliveries(now)
       yield* recoverExpiredDeliveries(now)

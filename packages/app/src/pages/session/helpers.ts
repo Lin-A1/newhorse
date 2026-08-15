@@ -6,6 +6,9 @@ import { SESSION_OPEN_FILE_TAB } from "@/context/layout-tabs"
 
 export { SESSION_OPEN_FILE_TAB } from "@/context/layout-tabs"
 
+/** Tab value for the always-visible "每日总结" (daily summary) panel tab. */
+export const DAILY_SUMMARY_TAB = "daily-summary"
+
 const emptyTabs: string[] = []
 
 type Tabs = {
@@ -20,6 +23,7 @@ type TabsInput = {
   review?: Accessor<boolean>
   hasReview?: Accessor<boolean>
   fileBrowser?: Accessor<boolean>
+  dailySummary?: Accessor<boolean>
 }
 
 export const getSessionKey = (dir: string | undefined, id: string | undefined) => `${dir ?? ""}${id ? `/${id}` : ""}`
@@ -32,6 +36,7 @@ export const createSessionTabs = (input: TabsInput) => {
   const review = input.review ?? (() => false)
   const hasReview = input.hasReview ?? (() => false)
   const fileBrowser = input.fileBrowser ?? (() => false)
+  const dailySummary = input.dailySummary ?? (() => false)
   const contextOpen = createMemo(() => input.tabs().active() === "context" || input.tabs().all().includes("context"))
   const openFileOpen = createMemo(
     () =>
@@ -65,6 +70,7 @@ export const createSessionTabs = (input: TabsInput) => {
     if (active === SESSION_OPEN_FILE_TAB && openFileOpen()) return active
     if (active === "review" && review()) return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
+    if (active === DAILY_SUMMARY_TAB && dailySummary()) return active
 
     const first = openedTabs()[0]
     if (first) return first

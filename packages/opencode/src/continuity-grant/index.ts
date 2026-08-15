@@ -108,8 +108,8 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@newhorse/ContinuityGrant") {}
 
-const PURPOSE_MAX = 500
-const SUMMARY_MAX = 4_000
+export const PURPOSE_MAX = 500
+export const SUMMARY_MAX = 4_000
 const MAX_LIFETIME_MS = 30 * 24 * 60 * 60 * 1_000
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f-\u009f]/u
 
@@ -254,12 +254,17 @@ const layer = Layer.effect(
               const destinationProfile = yield* profiles
                 .get(Profile.ID.make(destination.profileID))
                 .pipe(Effect.catchTag("ProfileNotFoundError", () => Effect.succeed(undefined)))
-              if (sourceProfile?.kind !== "assistant")
+              // Both Assistant (work) and Companion (continuous) sessions may
+              // be grant sources. Assistant→Companion bridges the work scope
+              // into the Companion's personal scope (approval-gated by the
+              // trust policy); Companion→Companion is a same-scope personal
+              // handoff that still requires the user's approval to inject.
+              if (sourceProfile?.kind !== "assistant" && sourceProfile?.kind !== "companion")
                 return {
                   type: "error" as const,
                   error: new Rejected({
-                    reason: "source_not_assistant",
-                    message: "Continuity grants require an Assistant source",
+                    reason: "source_not_trusted",
+                    message: "Continuity grants require a trusted Assistant or Companion source",
                   }),
                 }
               if (destinationProfile?.kind !== "companion")

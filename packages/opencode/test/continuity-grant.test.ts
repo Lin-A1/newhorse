@@ -222,13 +222,20 @@ describe("ContinuityGrant domain", () => {
       const seeded = yield* seed
       const service = yield* ContinuityGrant.Service
 
+      // Companion sources are trusted too: the auto-propose flow lets a
+      // Companion hand off its own continuous context to itself.
       yield* seeded.db
         .update(SessionTable)
         .set({ profile_id: companionID })
         .where(eq(SessionTable.id, seeded.sourceSessionID))
         .run()
         .pipe(Effect.orDie)
-      expect((yield* Effect.flip(propose(service, seeded))).reason).toBe("source_not_assistant")
+      const companionSource = yield* propose(service, seeded)
+      expect(companionSource).toMatchObject({
+        sourceSessionID: seeded.sourceSessionID,
+        destinationSessionID: seeded.destinationSessionID,
+        status: "proposed",
+      })
 
       yield* seeded.db
         .update(SessionTable)

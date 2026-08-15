@@ -523,8 +523,11 @@ const layer = Layer.effect(
     // user_global is explicit; a relationship kind always lands in the
     // relationship scope (existing callers save relationship memories via kind
     // alone, and the scope default in a personal context would otherwise be
-    // "personal"); explicit personal maps directly; everything else falls back
-    // to the current workspace's content scope.
+    // "personal"); explicit personal/project map directly so the trust policy
+    // can reject cross-scope writes instead of silently collapsing them (an
+    // explicit project scope in a personal context must be denied, not saved as
+    // personal); everything else falls back to the current workspace's content
+    // scope.
     const destinationScope = (input: {
       scope: MemoryScope
       kind: MemoryKind
@@ -538,7 +541,9 @@ const layer = Layer.effect(
             ? "relationship"
             : input.scope === "personal"
               ? "personal"
-              : input.policy.contentScope
+              : input.scope === "project"
+                ? "project"
+                : input.policy.contentScope
 
     const validate = Effect.fn("Memory.validate")(function* (input: {
       scope: MemoryScope
@@ -694,12 +699,16 @@ const layer = Layer.effect(
         inArray(MemoryTable.status, input?.status ?? DEFAULT_STATUSES),
       ]
       // The Memory Center (page/list/count) is the user's own memory hub: in a
-      // personal context, show relationship (Companion) memories too, even
-      // without a profileID. Without this, model-extracted companion proposals
-      // were invisible. Project contexts still exclude relationship memories;
-      // retrieval/search enforce content-scope isolation separately.
-      if (owner.policy.contentScope !== "personal") conditions.push(ne(MemoryTable.scope, "relationship"))
-      else if (input?.profileID) conditions.push(relationshipProfileFilter(owner, input.profileID))
+      // personal context it shows that profile's relationship (Companion)
+      // memories — but only to a TRUSTED profile. Relationship rows are
+      // sensitive; without a trusted profile (session-less request, a
+      // client-declared profileID is never authority) they are excluded, exactly
+      // like `retrieve`/`export` do. Project contexts always exclude them.
+      if (owner.policy.contentScope !== "personal" || !input?.profileID) {
+        conditions.push(ne(MemoryTable.scope, "relationship"))
+      } else {
+        conditions.push(relationshipProfileFilter(owner, input.profileID))
+      }
       if (input?.profileID) {
         conditions.push(or(eq(MemoryTable.scope, "user_global"), eq(MemoryTable.profile_id, input.profileID))!)
       }

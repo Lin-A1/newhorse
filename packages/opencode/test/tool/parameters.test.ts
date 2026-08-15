@@ -10,6 +10,7 @@ import { ToolJsonSchema } from "../../src/tool/json-schema"
 // provider-compatible while tools use Effect Schema internally.
 
 import { Parameters as ApplyPatch } from "../../src/tool/apply_patch"
+import { Parameters as DailySummary } from "../../src/tool/daily-summary"
 import { Parameters as Edit } from "../../src/tool/edit"
 import { Parameters as Glob } from "../../src/tool/glob"
 import { Parameters as Grep } from "../../src/tool/grep"
@@ -56,6 +57,7 @@ describe("tool parameters", () => {
     test("webfetch", () => expect(toJsonSchema(WebFetch)).toMatchSnapshot())
     test("websearch", () => expect(toJsonSchema(WebSearch)).toMatchSnapshot())
     test("write", () => expect(toJsonSchema(Write)).toMatchSnapshot())
+    test("daily-summary", () => expect(toJsonSchema(DailySummary)).toMatchSnapshot())
 
     test("inlines named child schemas for provider compatibility", () => {
       const schema = toJsonSchema(Question)
@@ -106,6 +108,22 @@ describe("tool parameters", () => {
     })
     test("rejects non-string patchText", () => {
       expect(accepts(ApplyPatch, { patchText: 123 })).toBe(false)
+    })
+  })
+
+  describe("daily-summary", () => {
+    test("accepts empty object", () => {
+      expect(parse(DailySummary, {})).toEqual({})
+    })
+    test("accepts limit, from, and to", () => {
+      const parsed = parse(DailySummary, { limit: 7, from: 100, to: 200 })
+      expect(parsed).toEqual({ limit: 7, from: 100, to: 200 })
+    })
+    test("rejects limit below 1", () => {
+      expect(accepts(DailySummary, { limit: 0 })).toBe(false)
+    })
+    test("rejects limit above 30", () => {
+      expect(accepts(DailySummary, { limit: 31 })).toBe(false)
     })
   })
 

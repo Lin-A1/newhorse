@@ -703,6 +703,107 @@ it.instance(
 )
 
 it.instance(
+  "Assistant turns auto-propose a continuity grant to the Companion session",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const continuity = yield* ContinuityGrant.Service
+      const { db } = yield* Database.Service
+      const assistantID = Profile.ID.make("assistant")
+      const companionID = Profile.ID.make("companion")
+      const source = yield* sessions.create({ title: "Assistant source", profileID: assistantID })
+      const workspaceID = WorkspaceV2.ID.make(`wrk_prompt_auto_propose_${crypto.randomUUID()}`)
+      yield* db
+        .insert(WorkspaceTable)
+        .values({
+          id: workspaceID,
+          type: "personal",
+          name: "Auto propose",
+          directory: dir,
+          project_id: source.projectID,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      const destination = yield* sessions.create({
+        title: "Companion destination",
+        workspaceID,
+        profileID: companionID,
+      })
+
+      yield* user(source.id, "We made real progress on the auth refactor and decided to go with OAuth2")
+      yield* llm.text("Agreed, OAuth2 it is.")
+      yield* prompt.loop({ sessionID: source.id })
+
+      const grant = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const grants = yield* continuity.listSource(source.id)
+          return grants[0]
+        }),
+        "auto-proposed continuity grant was never created",
+        "10 seconds",
+      )
+      expect(grant).toMatchObject({
+        sourceSessionID: source.id,
+        destinationSessionID: destination.id,
+        status: "proposed",
+      })
+      expect(grant.purpose).toContain("auth refactor")
+      expect(grant.summary).toContain("OAuth2")
+    }),
+  20_000,
+)
+
+it.instance(
+  "Companion turns auto-propose a self-handoff continuity grant",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const continuity = yield* ContinuityGrant.Service
+      const { db } = yield* Database.Service
+      const assistantID = Profile.ID.make("assistant")
+      const companionID = Profile.ID.make("companion")
+      const seed = yield* sessions.create({ title: "seed", profileID: assistantID })
+      const workspaceID = WorkspaceV2.ID.make(`wrk_prompt_auto_propose_companion_${crypto.randomUUID()}`)
+      yield* db
+        .insert(WorkspaceTable)
+        .values({
+          id: workspaceID,
+          type: "personal",
+          name: "Auto propose companion",
+          directory: dir,
+          project_id: seed.projectID,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      const chat = yield* sessions.create({ title: "Companion", workspaceID, profileID: companionID })
+
+      yield* user(chat.id, "今天有点累，项目又延期了，心里很烦")
+      yield* llm.text("辛苦你了，要不要先歇一会儿？")
+      yield* prompt.loop({ sessionID: chat.id })
+
+      const grant = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const grants = yield* continuity.listSource(chat.id)
+          return grants[0]
+        }),
+        "auto-proposed companion self-handoff was never created",
+        "10 seconds",
+      )
+      expect(grant).toMatchObject({
+        sourceSessionID: chat.id,
+        destinationSessionID: chat.id,
+        status: "proposed",
+      })
+      expect(grant.summary).toContain("项目")
+    }),
+  20_000,
+)
+
+it.instance(
   "Companion requests retain the protected safety contract after adversarial persona context",
   () =>
     Effect.gen(function* () {

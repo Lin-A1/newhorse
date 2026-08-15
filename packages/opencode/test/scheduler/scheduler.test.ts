@@ -8,9 +8,17 @@ import {
   ScheduledEventDeliveryTable,
   ScheduledEventTable,
 } from "@newhorse/core/scheduler/sql"
+import { DailySummaryTable } from "@newhorse/core/daily-summary/sql"
+import { MemoryTable } from "@newhorse/core/memory/sql"
+import { ProjectV2 } from "@newhorse/core/project"
+import { ProjectTable } from "@newhorse/core/project/sql"
+import { AbsolutePath } from "@newhorse/core/schema"
+import { SessionSchema } from "@newhorse/core/session/schema"
+import { SessionTable } from "@newhorse/core/session/sql"
 import { eq } from "drizzle-orm"
 import { Deferred, Fiber, Effect, Stream } from "effect"
 import { Scheduler } from "@/scheduler"
+import { Follow } from "@/follow"
 import { SchedulerEvent } from "@newhorse/schema/scheduler-event"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Profile } from "@/profile"
@@ -20,8 +28,44 @@ import { testEffect } from "../lib/effect"
 import { TestInstance } from "../fixture/fixture"
 
 const it = testEffect(
-  LayerNode.compile(LayerNode.group([Scheduler.node, EventV2Bridge.node, Profile.node, Database.node])),
+  LayerNode.compile(
+    LayerNode.group([Scheduler.node, Follow.node, EventV2Bridge.node, Profile.node, Database.node]),
+  ),
 )
+
+/** Seed a personal-project project + an aged Companion session for auto check-in tests. */
+const seedCompanionSession = (db: Database.Interface["db"], updated: number) =>
+  Effect.gen(function* () {
+    yield* db
+      .insert(ProjectTable)
+      .values({ id: ProjectV2.ID.global, worktree: AbsolutePath.make("/"), sandboxes: [] })
+      .onConflictDoNothing()
+      .run()
+      .pipe(Effect.orDie)
+    const sessionID = SessionSchema.ID.make(`ses_auto_check_${crypto.randomUUID()}`)
+    yield* db
+      .insert(SessionTable)
+      .values({
+        id: sessionID,
+        project_id: ProjectV2.ID.global,
+        profile_id: "companion",
+        slug: sessionID,
+        directory: AbsolutePath.make("/tmp"),
+        title: "Companion",
+        version: "0.0.0-test",
+        time_created: updated,
+        time_updated: updated,
+      })
+      .run()
+      .pipe(Effect.orDie)
+    return sessionID
+  })
+
+/** Local date key YYYY-MM-DD (matches the scheduler's daily-summary lookup). */
+function localDateKeyOf(ts: number) {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
 
 describe("Scheduler", () => {
   it.instance("creates reminders idempotently and supports pause resume cancel", () =>
@@ -152,6 +196,39 @@ describe("Scheduler", () => {
       )
       expect((yield* scheduler.list())[0]?.status).toBe("delivered")
       expect(yield* scheduler.tick(now + 1000)).toBe(0)
+    }),
+  )
+
+  it.instance("publishes a due event when a deadline follow changes value", () =>
+    Effect.gen(function* () {
+      const scheduler = yield* Scheduler.Service
+      const follow = yield* Follow.Service
+      const events = yield* EventV2Bridge.Service
+      const due = yield* events.subscribe(SchedulerEvent.Due).pipe(Stream.take(1), Stream.runCollect, Effect.forkScoped)
+      yield* Effect.yieldNow
+      const now = Date.now()
+      const created = yield* follow.create({
+        kind: "deadline",
+        topic: "2099-01-01",
+        checkIntervalMinutes: 1,
+        profileID: "assistant",
+        directory: "/workspace/follow-test",
+      })
+
+      // Follows are delivered as Due events, not via the delivery table, so the
+      // tick return value (delivered count) stays 0.
+      expect(yield* scheduler.tick(now)).toBe(0)
+      const [event] = Array.from(yield* Fiber.join(due))
+      expect(event?.data).toMatchObject({
+        id: created.id,
+        eventType: "follow",
+        title: "2099-01-01",
+        profileID: "assistant",
+        deliveryKey: `follow:${created.id}`,
+      })
+      const updated = (yield* follow.list()).find((item) => item.id === created.id)
+      expect(updated?.lastValue).not.toBeNull()
+      expect(updated?.lastCheckedAt).not.toBeNull()
     }),
   )
 
@@ -971,6 +1048,122 @@ describe("Scheduler", () => {
       expect(new Set([first.id, otherProfile.id, otherWorkspace.id]).size).toBe(3)
       expect(yield* scheduler.list().pipe(Effect.provideService(WorkspaceRef, one))).toHaveLength(2)
       expect(yield* scheduler.list().pipe(Effect.provideService(WorkspaceRef, two))).toHaveLength(1)
+    }),
+  )
+
+  it.instance("auto-schedules an idle proactive check-in with a dynamic body", () =>
+    Effect.gen(function* () {
+      const scheduler = yield* Scheduler.Service
+      const profiles = yield* Profile.Service
+      const { db } = yield* Database.Service
+      const now = Date.UTC(2030, 0, 1, 12)
+      yield* profiles.update(Profile.ID.make("companion"), {
+        proactive: true,
+        proactiveFrequency: { maxPerDay: 3, minIntervalMinutes: 120 },
+      })
+      yield* seedCompanionSession(db, now - 2 * 60 * 60 * 1000)
+      yield* db
+        .insert(MemoryTable)
+        .values({
+          id: crypto.randomUUID(),
+          scope: "relationship",
+          profile_id: "companion",
+          kind: "relationship",
+          content: "用户喜欢在早晨散步",
+          provenance: "model_inferred",
+          status: "active",
+          time_created: now - 60_000,
+          time_updated: now - 60_000,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(DailySummaryTable)
+        .values({
+          date: localDateKeyOf(now),
+          content: "今天完成了认证模块的重构",
+          time_created: now - 60_000,
+          time_updated: now - 60_000,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      yield* scheduler.tick(now)
+      const rows = yield* scheduler.list()
+      const checkIn = rows.find((item) => item.type === "check_in" && item.scheduleAt === now)
+      expect(checkIn).toMatchObject({
+        profileID: "companion",
+        type: "check_in",
+        title: "主动关心",
+        status: "delivered",
+      })
+      expect(checkIn?.sessionID).toBeDefined()
+      expect(checkIn?.body).toContain("散步")
+      expect(checkIn?.body).toContain("认证模块")
+    }),
+  )
+
+  it.instance("does not auto-schedule when proactive is off", () =>
+    Effect.gen(function* () {
+      const scheduler = yield* Scheduler.Service
+      const profiles = yield* Profile.Service
+      const { db } = yield* Database.Service
+      const now = Date.UTC(2030, 0, 1, 12)
+      yield* profiles.update(Profile.ID.make("companion"), { proactive: false })
+      yield* seedCompanionSession(db, now - 2 * 60 * 60 * 1000)
+
+      yield* scheduler.tick(now)
+      expect((yield* scheduler.list()).filter((item) => item.type === "check_in")).toEqual([])
+    }),
+  )
+
+  it.instance("does not auto-schedule during quiet hours", () =>
+    Effect.gen(function* () {
+      const scheduler = yield* Scheduler.Service
+      const profiles = yield* Profile.Service
+      const { db } = yield* Database.Service
+      const now = Date.UTC(2030, 0, 1, 23, 30)
+      yield* profiles.update(Profile.ID.make("companion"), {
+        proactive: true,
+        quietHours: { start: "22:00", end: "08:00", timezone: "UTC" },
+      })
+      yield* seedCompanionSession(db, now - 2 * 60 * 60 * 1000)
+
+      yield* scheduler.tick(now)
+      expect((yield* scheduler.list()).filter((item) => item.type === "check_in")).toEqual([])
+    }),
+  )
+
+  it.instance("respects maxPerDay and does not re-create a delivered check-in", () =>
+    Effect.gen(function* () {
+      const scheduler = yield* Scheduler.Service
+      const profiles = yield* Profile.Service
+      const { db } = yield* Database.Service
+      const now = Date.UTC(2030, 0, 1, 12)
+      yield* profiles.update(Profile.ID.make("companion"), {
+        proactive: true,
+        proactiveFrequency: { maxPerDay: 1, minIntervalMinutes: 60 },
+      })
+      yield* seedCompanionSession(db, now - 2 * 60 * 60 * 1000)
+
+      yield* scheduler.tick(now)
+      expect((yield* scheduler.list()).filter((item) => item.type === "check_in")).toHaveLength(1)
+      yield* scheduler.tick(now + 5 * 60 * 1000)
+      expect((yield* scheduler.list()).filter((item) => item.type === "check_in")).toHaveLength(1)
+    }),
+  )
+
+  it.instance("does not auto-schedule while the session is still active", () =>
+    Effect.gen(function* () {
+      const scheduler = yield* Scheduler.Service
+      const profiles = yield* Profile.Service
+      const { db } = yield* Database.Service
+      const now = Date.UTC(2030, 0, 1, 12)
+      yield* profiles.update(Profile.ID.make("companion"), { proactive: true })
+      yield* seedCompanionSession(db, now - 5 * 60 * 1000)
+
+      yield* scheduler.tick(now)
+      expect((yield* scheduler.list()).filter((item) => item.type === "check_in")).toEqual([])
     }),
   )
 })
