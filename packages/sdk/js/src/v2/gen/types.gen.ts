@@ -2769,6 +2769,46 @@ export type ProviderAuthError1 = {
   }
 }
 
+export type DailyReport = {
+  date: string
+  overview: string
+  work: Array<{
+    title: string
+    body: string
+  }>
+  sessions: Array<{
+    sessionID: string
+    title: string
+    source: "work" | "companion"
+    directory: string
+    model?: string
+    filesChanged: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    additions: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    deletions: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    files: Array<string>
+    todos: Array<{
+      content: string
+      status: string
+      priority: string
+    }>
+  }>
+  usage: {
+    cost: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    tokens: {
+      input: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      output: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      reasoning: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      cache: {
+        read: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        write: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    }
+    sessions: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    models: Array<string>
+  }
+  generatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
 export type Session1 = {
   id: string
   slug: string
@@ -11478,13 +11518,9 @@ export type DailySummaryListError = DailySummaryListErrors[keyof DailySummaryLis
 
 export type DailySummaryListResponses = {
   /**
-   * Daily activity summaries
+   * Daily activity reports
    */
-  200: Array<{
-    date: string
-    content: string
-    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }>
+  200: Array<DailyReport>
 }
 
 export type DailySummaryListResponse = DailySummaryListResponses[keyof DailySummaryListResponses]
@@ -11509,9 +11545,9 @@ export type DailySummaryGenerateError = DailySummaryGenerateErrors[keyof DailySu
 
 export type DailySummaryGenerateResponses = {
   /**
-   * Generated daily summary text
+   * Generated daily report
    */
-  200: string
+  200: DailyReport
 }
 
 export type DailySummaryGenerateResponse = DailySummaryGenerateResponses[keyof DailySummaryGenerateResponses]

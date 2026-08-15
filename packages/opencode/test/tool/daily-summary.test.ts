@@ -24,12 +24,31 @@ function mockService(input: {
   draft?: DailySummary.Interface["draft"]
   get?: DailySummary.Interface["get"]
 } = {}) {
+  const emptyReport: DailySummary.Report = {
+    date: "2026-08-15",
+    overview: "",
+    work: [],
+    sessions: [],
+    usage: { cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, sessions: 0, models: [] },
+    generatedAt: 0,
+  }
   return DailySummary.Service.of({
     list: input.list ?? (() => Effect.succeed([])),
-    generate: input.generate ?? (() => Effect.succeed("")),
-    draft: input.draft ?? (() => Effect.succeed("")),
+    generate: input.generate ?? (() => Effect.succeed(emptyReport)),
+    draft: input.draft ?? (() => Effect.succeed(emptyReport)),
     get: input.get ?? (() => Effect.succeed(undefined)),
   })
+}
+
+function report(date: string, overview: string, generatedAt = 1_000): DailySummary.Report {
+  return {
+    date,
+    overview,
+    work: [],
+    sessions: [],
+    usage: { cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }, sessions: 0, models: [] },
+    generatedAt,
+  }
 }
 
 describe("tool.daily-summary", () => {
@@ -41,9 +60,9 @@ describe("tool.daily-summary", () => {
       const mock = mockService({
         list: () =>
           Effect.succeed([
-            { date: "2026-08-14", content: "完成了每日总结工具的接入。", timeCreated: 1_000 },
-            { date: "2026-08-13", content: "修复了 session 权限问题。", timeCreated: 900 },
-            { date: "2026-08-12", content: "梳理了 v1 路线图。", timeCreated: 800 },
+            report("2026-08-14", "完成了每日总结工具的接入。"),
+            report("2026-08-13", "修复了 session 权限问题。", 900),
+            report("2026-08-12", "梳理了 v1 路线图。", 800),
           ]),
       })
 
@@ -64,7 +83,7 @@ describe("tool.daily-summary", () => {
 
       expect(result.title).toBe("2 daily summaries")
       expect(result.metadata).toMatchObject({ count: 2, profile: Profile.ID.make("assistant") })
-      expect(result.output).toBe("2026-08-14: 完成了每日总结工具的接入。\n\n2026-08-13: 修复了 session 权限问题。")
+      expect(result.output).toBe("2026-08-14：\n完成了每日总结工具的接入。\n\n2026-08-13：\n修复了 session 权限问题。")
     }),
   )
 
@@ -135,7 +154,7 @@ describe("tool.daily-summary", () => {
       const mock = mockService({
         generate: (input) => {
           generatedWith = input
-          return Effect.succeed("今天完成了每日总结工具的接入。")
+          return Effect.succeed(report("2026-08-15", "今天完成了每日总结工具的接入。"))
         },
       })
       const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
@@ -168,11 +187,11 @@ describe("tool.daily-summary", () => {
       let generateCalled = false
       const mock = mockService({
         get: () =>
-          Effect.succeed({ date: "2026-08-15", content: "已有总结：上午修了 bug。", timeCreated: 1_000 }),
-        draft: () => Effect.succeed("新总结：下午接入每日总结工具。"),
+          Effect.succeed(report("2026-08-15", "已有总结：上午修了 bug。")),
+        draft: () => Effect.succeed(report("2026-08-15", "新总结：下午接入每日总结工具。")),
         generate: () => {
           generateCalled = true
-          return Effect.succeed("should not be reached")
+          return Effect.succeed(report("2026-08-15", "should not be reached"))
         },
       })
       const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))
@@ -206,10 +225,10 @@ describe("tool.daily-summary", () => {
       let generatedWith: { date?: number } | undefined
       const mock = mockService({
         get: () =>
-          Effect.succeed({ date: "2026-08-15", content: "已有总结：上午修了 bug。", timeCreated: 1_000 }),
+          Effect.succeed(report("2026-08-15", "已有总结：上午修了 bug。")),
         generate: (input) => {
           generatedWith = input
-          return Effect.succeed("覆盖后的总结。")
+          return Effect.succeed(report("2026-08-15", "覆盖后的总结。"))
         },
       })
       const info = yield* DailySummaryTool.pipe(Effect.provideService(DailySummary.Service, mock))

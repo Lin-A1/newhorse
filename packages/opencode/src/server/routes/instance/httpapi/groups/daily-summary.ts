@@ -20,13 +20,13 @@ export const DailySummaryApi = HttpApi.make("daily-summary").add(
     .add(
       HttpApiEndpoint.get("list", root, {
         query: ListQuery,
-        success: described(Schema.Array(DailySummary.Info), "Daily activity summaries"),
-      }).annotateMerge(OpenApi.annotations({ identifier: "daily-summary.list", summary: "List daily summaries" })),
+        success: described(Schema.Array(DailySummary.Report), "Daily activity reports"),
+      }).annotateMerge(OpenApi.annotations({ identifier: "daily-summary.list", summary: "List daily reports" })),
       HttpApiEndpoint.post("generate", `${root}/generate`, {
         payload: Schema.optional(GeneratePayload),
-        success: described(Schema.NullOr(Schema.String), "Generated daily summary text"),
-      }).annotateMerge(OpenApi.annotations({ identifier: "daily-summary.generate", summary: "Generate daily summary" })),
+        success: described(Schema.NullOr(DailySummary.Report), "Generated daily report"),
+      }).annotateMerge(OpenApi.annotations({ identifier: "daily-summary.generate", summary: "Generate daily report" })),
     )
-    .annotateMerge(OpenApi.annotations({ title: "daily-summary", description: "Daily activity summaries." }))
+    .annotateMerge(OpenApi.annotations({ title: "daily-summary", description: "Daily activity reports." }))
     .middleware(Authorization),
 )

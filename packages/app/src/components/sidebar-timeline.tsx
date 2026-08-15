@@ -1,10 +1,13 @@
 import { createResource, For, Show } from "solid-js"
+import { DateTime } from "luxon"
+import { useNavigate } from "@solidjs/router"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
 
 /**
- * Daily summary timeline: renders the date + content list produced by the
- * newhorse `daily-summary` tool (auto-generated each day, no manual trigger).
+ * Daily summary timeline: a day-granularity axis — one node per day, joined by
+ * a vertical line, showing the AI-generated digest the newhorse `daily-summary`
+ * tool produces (auto-generated each day, no manual trigger).
  *
  * Embeddable in a sidebar: `showHeader` hides the built-in title when a custom
  * header is provided, `class` constrains the root height (e.g. `max-h-52` to
@@ -20,11 +23,21 @@ export function SidebarTimeline(props: {
 }) {
   const serverSDK = useServerSDK()
   const language = useLanguage()
+  const navigate = useNavigate()
   const [summaries] = createResource(async () => {
     const res = await serverSDK().client.dailySummary.list()
     return res.data ?? []
   })
   const showHeader = props.showHeader ?? true
+
+  const label = (date: string) => {
+    const parsed = DateTime.fromISO(date)
+    if (!parsed.isValid) return date
+    const now = DateTime.local()
+    if (parsed.hasSame(now, "day")) return language.t("home.sessions.group.today")
+    if (parsed.hasSame(now.minus({ days: 1 }), "day")) return language.t("home.sessions.group.yesterday")
+    return parsed.toFormat(parsed.year === now.year ? "M月d日" : "yyyy年M月d日")
+  }
 
   return (
     <div class={`flex min-w-0 min-h-0 flex-col overflow-hidden ${props.class ?? ""}`}>
@@ -45,10 +58,23 @@ export function SidebarTimeline(props: {
           <div class="flex flex-col">
             <For each={summaries()}>
               {(s) => (
-                <div class="border-l border-v2-border-border-muted pl-4 pb-5">
-                  <div class="text-[12px] font-medium leading-4 text-v2-text-text-muted">{s.date}</div>
-                  <p class="mt-1 whitespace-pre-line text-[13px] leading-5 text-v2-text-text-base">{s.content}</p>
-                </div>
+                <button
+                  type="button"
+                  class="relative block w-full border-l border-v2-border-border-muted pl-4 pb-5 text-left last:pb-0"
+                  onClick={() => navigate("/daily")}
+                >
+                  <span
+                    aria-hidden="true"
+                    class="absolute -left-[5px] top-1 size-2 rounded-full bg-v2-background-bg-layer-04 ring-2 ring-v2-background-bg-base"
+                  />
+                  <div class="text-[12px] font-medium leading-4 text-v2-text-text-muted">{label(s.date)}</div>
+                  <div class="text-[11px] leading-4 text-v2-text-text-faint">
+                    {DateTime.fromISO(s.date).isValid ? DateTime.fromISO(s.date).toFormat("yyyy-MM-dd") : s.date}
+                  </div>
+                  <p class="mt-1 line-clamp-3 whitespace-pre-line text-[13px] leading-5 text-v2-text-text-base">
+                    {s.overview}
+                  </p>
+                </button>
               )}
             </For>
           </div>

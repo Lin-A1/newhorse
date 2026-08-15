@@ -8,6 +8,6 @@ export const dailySummaryHandlers = HttpApiBuilder.group(InstanceHttpApi, "daily
     const service = yield* DailySummary.Service
     return handlers
       .handle("list", (ctx) => service.list({ from: ctx.query.from, to: ctx.query.to }))
-      .handle("generate", (ctx) => service.generate({ date: ctx.payload?.date }).pipe(Effect.map((v) => v ?? "")))
+      .handle("generate", (ctx) => service.generate({ date: ctx.payload?.date }).pipe(Effect.map((v) => v ?? null)))
   }),
 )

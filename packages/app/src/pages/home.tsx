@@ -941,26 +941,36 @@ function HomeProjectColumn(props: {
 // the settings/help nav). Defaults to visible; the header toggles collapse.
 function HomeDailySummary(props: { focusedServer: () => ServerConnection.Any | undefined }) {
   const language = useLanguage()
+  const navigate = useNavigate()
   const [expanded, setExpanded] = createSignal(true)
 
   return (
     <section class="flex min-h-0 min-w-0 shrink-0 flex-col" aria-label={language.t("sidebar.dailySummary")}>
-      <button
-        type="button"
-        class={HOME_DAILY_SUMMARY_HEADER}
-        onClick={() => setExpanded((value) => !value)}
-        aria-expanded={expanded()}
-      >
-        <IconV2
-          name="chevron-down"
-          size="small"
-          class="shrink-0 text-v2-icon-icon-muted transition-transform duration-150 ease-in-out"
-          style={{ transform: `rotate(${expanded() ? 0 : -90}deg)` }}
-        />
-        <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-          {language.t("sidebar.dailySummary")}
-        </span>
-      </button>
+      <div class="flex items-center">
+        <button
+          type="button"
+          class={HOME_DAILY_SUMMARY_HEADER}
+          onClick={() => setExpanded((value) => !value)}
+          aria-expanded={expanded()}
+        >
+          <IconV2
+            name="chevron-down"
+            size="small"
+            class="shrink-0 text-v2-icon-icon-muted transition-transform duration-150 ease-in-out"
+            style={{ transform: `rotate(${expanded() ? 0 : -90}deg)` }}
+          />
+          <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+            {language.t("sidebar.dailySummary")}
+          </span>
+        </button>
+        <button
+          type="button"
+          class="shrink-0 pr-3 text-[11px] text-v2-text-text-faint hover:text-v2-text-text-muted"
+          onClick={() => navigate("/daily")}
+        >
+          {language.t("dailyReport.title")}
+        </button>
+      </div>
       <Show when={expanded()}>
         <ServerSDKProvider server={props.focusedServer}>
           <SidebarTimeline showHeader={false} class="max-h-52" bodyClass="px-3 pb-3 pt-1" />

@@ -36,12 +36,37 @@ export function pinCompanion(scope: string, sessionID: string, directory: string
 
 export type CompanionSessionResult = { session: Session; directory: string }
 
+export type PersonalWorkspaceRef = { directory: string; workspaceID: string }
+
 const companionLocks = new Map<string, Promise<CompanionSessionResult>>()
 
 function isNotFound(error: unknown) {
   if (!error || typeof error !== "object") return false
   const value = error as { status?: unknown; response?: { status?: unknown }; cause?: { status?: unknown } }
   return value.status === 404 || value.response?.status === 404 || value.cause?.status === 404
+}
+
+/**
+ * Resolve (or create) the user's Personal workspace. The Companion's
+ * relationship memories are only permitted in a Personal scope — the trust
+ * policy rejects `relationship` writes from a project scope — so the pinned
+ * Companion session must live in a personal workspace for memory extraction to
+ * stick and for the Memory Center to surface it.
+ */
+export async function ensurePersonalWorkspace(
+  client: DirectorySDK["client"],
+): Promise<PersonalWorkspaceRef | undefined> {
+  const existing = await client.experimental.workspace
+    .personal({})
+    .then((result) => result.data ?? [])
+    .catch(() => [] as { id: string; name: string; directory: string; notes: number }[])
+  const first = existing.find((item) => item.directory)
+  if (first?.directory) return { directory: first.directory, workspaceID: first.id }
+  const created = await client.experimental.workspace
+    .create({ type: "personal", branch: null, extra: null })
+    .then((result) => result.data)
+  if (!created?.directory) return undefined
+  return { directory: created.directory, workspaceID: created.id }
 }
 
 async function resolveCompanionSession(input: {
@@ -51,6 +76,8 @@ async function resolveCompanionSession(input: {
   fetch: (directory: string, sessionID: string) => Promise<Session | undefined>
   globalList?: () => Promise<Session[]>
   list?: (directory: string) => Promise<Session[]>
+  resolvePersonal?: () => Promise<PersonalWorkspaceRef | undefined>
+  createClient?: (opts: { directory: string; experimental_workspaceID?: string }) => DirectorySDK["client"]
 }): Promise<CompanionSessionResult> {
   const pinned = getPinnedCompanion(input.scope)
   if (pinned) {
@@ -82,10 +109,19 @@ async function resolveCompanionSession(input: {
       return { session: existing, directory: existing.directory ?? input.directory }
     }
   }
-  const created = await input.client.session.create({ profileID: "companion" }).then((result) => result.data)
+
+  // Create the Companion session inside a Personal workspace so relationship
+  // memories pass the trust policy and surface in the Memory Center. Falls back
+  // to the current directory when no personal workspace can be resolved.
+  const personal = await input.resolvePersonal?.().catch(() => undefined)
+  const client = personal && input.createClient
+    ? input.createClient({ directory: personal.directory, experimental_workspaceID: personal.workspaceID })
+    : input.client
+  const created = await client.session.create({ profileID: "companion" }).then((result) => result.data)
   if (!created) throw new Error("Failed to create companion session")
-  pinCompanion(input.scope, created.id, input.directory)
-  return { session: created, directory: input.directory }
+  const directory = personal?.directory ?? input.directory
+  pinCompanion(input.scope, created.id, directory)
+  return { session: created, directory }
 }
 
 export async function ensureCompanionSession(input: {
@@ -95,6 +131,8 @@ export async function ensureCompanionSession(input: {
   fetch: (directory: string, sessionID: string) => Promise<Session | undefined>
   globalList?: () => Promise<Session[]>
   list?: (directory: string) => Promise<Session[]>
+  resolvePersonal?: () => Promise<PersonalWorkspaceRef | undefined>
+  createClient?: (opts: { directory: string; experimental_workspaceID?: string }) => DirectorySDK["client"]
 }): Promise<CompanionSessionResult> {
   const active = companionLocks.get(input.scope)
   if (active) return active

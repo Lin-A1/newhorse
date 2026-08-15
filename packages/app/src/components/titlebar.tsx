@@ -26,7 +26,7 @@ import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { tabKey, useTabs } from "@/context/tabs"
 import type { PromptSession } from "@/context/prompt"
-import { ensureCompanionSession } from "@/components/prompt-input/companion-session"
+import { ensureCompanionSession, ensurePersonalWorkspace } from "@/components/prompt-input/companion-session"
 import { legacySessionHref } from "@/utils/session-route"
 import { showToast } from "@/utils/toast"
 import { errorMessage } from "@/pages/layout/helpers"
@@ -343,6 +343,8 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                   const target = dir === directory ? client : serverSDK.createClient({ directory: dir, throwOnError: true })
                   return target.session.list({ directory: dir }).then((r) => r.data ?? [])
                 },
+                resolvePersonal: () => ensurePersonalWorkspace(client),
+                createClient: (opts) => serverSDK.createClient({ ...opts, throwOnError: true }),
               }).catch((err) => {
                 showToast({
                   title: language.t("prompt.toast.sessionCreateFailed.title"),

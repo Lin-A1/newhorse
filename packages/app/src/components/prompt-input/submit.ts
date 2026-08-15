@@ -16,7 +16,7 @@ import { useSync, type DirectorySync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
-import { ensureCompanionSession } from "./companion-session"
+import { ensureCompanionSession, ensurePersonalWorkspace } from "./companion-session"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
@@ -348,6 +348,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           const target = directory === projectDirectory ? client : sdk().createClient({ directory, throwOnError: true })
           return target.session.list({ directory }).then((response) => response.data ?? [])
         },
+        resolvePersonal: () => ensurePersonalWorkspace(client),
+        createClient: (opts) => sdk().createClient({ ...opts, throwOnError: true }),
       }).catch((err) => {
         showToast({
           title: language.t("prompt.toast.sessionCreateFailed.title"),

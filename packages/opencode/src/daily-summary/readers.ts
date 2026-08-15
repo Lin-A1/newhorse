@@ -2,20 +2,14 @@ import type { FSUtil } from "@newhorse/core/fs-util"
 import { Global } from "@newhorse/core/global"
 import path from "path"
 import { Effect } from "effect"
-import { Session } from "@/session/session"
-import type { SessionV1 } from "@newhorse/core/v1/session"
 
 const SNIPPET_LIMIT = 400
 const MAX_ENTRIES_PER_SOURCE = 20
 const MAX_FILES_PER_SOURCE = 200
 
-export type DailyEntry = {
-  source: "work" | "companion" | "claude" | "codex"
-  title: string
-  snippet: string
-}
+export type DailySource = "work" | "companion" | "claude" | "codex"
 
-function truncate(text: string, limit = SNIPPET_LIMIT) {
+export function truncate(text: string, limit = SNIPPET_LIMIT) {
   const t = text.trim().replace(/\s+/g, " ")
   return t.length > limit ? t.slice(0, limit) + "…" : t
 }
@@ -26,6 +20,12 @@ export function dayStartMs(date: Date) {
 
 export function dayEndMs(date: Date) {
   return dayStartMs(new Date(date.getTime() + 86_400_000))
+}
+
+/** Local date key YYYY-MM-DD. */
+export function localDateKey(ts: number) {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
 function within(ts: number, start: number, end: number) {
@@ -110,40 +110,22 @@ export function readCodex(fs: FSUtil.Interface, date: Date, start: number, end: 
   }).pipe(Effect.catch(() => Effect.succeed([])))
 }
 
-function messageSnippet(messages: SessionV1.WithParts[]): string {
-  for (const message of messages) {
-    if (message.info.role !== "user") continue
-    const text = message.parts
-      .filter((part) => part.type === "text")
-      .map((part) => (part as { text?: string }).text ?? "")
-      .join(" ")
-    if (text.trim()) return truncate(text)
+/**
+ * Extract the human-readable overview from a stored `daily_summary.content`.
+ *
+ * New reports are stored as a JSON object (`{ overview, work, sessions, usage }`);
+ * older rows are a plain-text blob. This returns the overview text for either
+ * shape so consumers (the scheduler's proactive check-in, the sidebar preview)
+ * never have to know which format a row is in.
+ */
+export function overviewFromContent(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as { overview?: unknown }
+    if (parsed && typeof parsed === "object" && typeof parsed.overview === "string" && parsed.overview.trim()) {
+      return parsed.overview
+    }
+  } catch {
+    // fall through to raw text
   }
-  return ""
-}
-
-/** newhorse work + companion sessions for the day, split by profile. */
-export function readNewhorse(
-  session: Session.Interface,
-  start: number,
-  end: number,
-): Effect.Effect<DailyEntry[]> {
-  return Effect.gen(function* () {
-    const sessions = yield* session.listGlobal({ start, limit: 500, archived: true })
-    const today = sessions.filter((s) => (s.time?.updated ?? 0) < end)
-    const groups: Record<"work" | "companion", Session.GlobalInfo[]> = { work: [], companion: [] }
-    for (const s of today) {
-      groups[s.profileID === "companion" ? "companion" : "work"].push(s)
-    }
-    const out: DailyEntry[] = []
-    for (const source of ["work", "companion"] as const) {
-      for (const s of groups[source].slice(0, 10)) {
-        const messages = yield* session.messages({ sessionID: s.id, limit: 20 })
-        const snippet = messageSnippet(messages)
-        if (!snippet) continue
-        out.push({ source, title: s.title?.trim() || source, snippet })
-      }
-    }
-    return out
-  }).pipe(Effect.catch(() => Effect.succeed([])))
+  return content
 }

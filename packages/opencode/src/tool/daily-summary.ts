@@ -37,9 +37,34 @@ type Metadata = {
   overwritten?: boolean
 }
 
-function render(items: DailySummary.Info[]) {
+function renderReport(report: DailySummary.Report): string {
+  const lines: string[] = [report.overview]
+  if (report.work.length > 0) {
+    lines.push("", "**工作产出**", ...report.work.map((section) => section.body))
+  }
+  if (report.sessions.length > 0) {
+    lines.push(
+      "",
+      "**会话明细**",
+      ...report.sessions.map((s) => {
+        const todo =
+          s.todos.length > 0 ? `（待办：${s.todos.map((t) => `${t.content}[${t.status}]`).join("、")}）` : ""
+        return `- ${s.title}${s.filesChanged > 0 ? ` · +${s.additions} −${s.deletions}` : ""}${todo}`
+      }),
+    )
+  }
+  if (report.usage.sessions > 0) {
+    lines.push(
+      "",
+      `**用量**：${report.usage.sessions} 场会话 · ${report.usage.tokens.input + report.usage.tokens.output} tokens · $${report.usage.cost.toFixed(4)}`,
+    )
+  }
+  return lines.join("\n")
+}
+
+function render(items: DailySummary.Report[]) {
   if (items.length === 0) return "暂无每日总结记录。"
-  return items.map((item) => `${item.date}: ${item.content}`).join("\n\n")
+  return items.map((item) => `${item.date}：\n${renderReport(item)}`).join("\n\n")
 }
 
 export const DailySummaryTool = Tool.define<
@@ -73,16 +98,16 @@ export const DailySummaryTool = Tool.define<
                   title: "Daily summary generation",
                   metadata: { count: 0, profile: session.profileID, alreadyExists: true },
                   output:
-                    `当天（${existing.date}）已有一份每日总结，但没有读取到可重新总结的会话活动：\n${existing.content}`,
+                    `当天（${existing.date}）已有一份每日报告，但没有读取到可重新总结的会话活动：\n${renderReport(existing)}`,
                 }
               }
               return {
                 title: "Daily summary generation",
                 metadata: { count: 1, profile: session.profileID, alreadyExists: true },
                 output:
-                  `当天（${existing.date}）已有一份每日总结：\n${existing.content}\n\n` +
-                  `重新生成的总结（尚未保存）：\n${generated}\n\n` +
-                  `如果要用新总结覆盖已有总结，请再次调用本工具并传入 "overwrite": true。`,
+                  `当天（${existing.date}）已有一份每日报告：\n${renderReport(existing)}\n\n` +
+                  `重新生成的报告（尚未保存）：\n${renderReport(generated)}\n\n` +
+                  `如果要用新报告覆盖已有报告，请再次调用本工具并传入 "overwrite": true。`,
               }
             }
 
@@ -101,7 +126,7 @@ export const DailySummaryTool = Tool.define<
                 profile: session.profileID,
                 ...(existing !== undefined ? { overwritten: true } : {}),
               },
-              output: generated,
+              output: renderReport(generated),
             }
           }
 

@@ -94,6 +94,7 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - FTS5/BM25 retrieval plus entity extraction & boost — no embedding model required
 - Persistent reminders, follow-ups, continuity grants, and Companion Plan
 - Daily activity summaries across newhorse, Claude Code, and Codex sessions, including archived (non-deleted) sessions; visible in the session right-side panel and sidebar, with a generate-now button and an agent query tool
+- A dedicated daily report page (`/daily`) renders each day as a structured, deliverable report — an AI overview plus deterministic work output (files/additions/deletions), per-session detail with todo status, and usage/cost rollup
 - Companion tone is example-driven (short instruction + five Chinese few-shot dialogues covering small talk/help/emotion-first/uncertainty/humor) with a behavioral default persona, not rule-stacking
 - Observable memory extraction: every auto-extraction gate logs its skip reason, so a session that never proposes memories is diagnosable
 - "Clear chat history" on a Companion session clears the displayed chat and background-compacts the conversation into hidden context — continuity is kept without showing the compacted content
@@ -138,6 +139,7 @@ Major foundations already implemented include:
 - Assistant/Companion profiles and personal workspaces
 - Structured memory, reminders, follow-ups, continuity grants, and Companion Plan management
 - Daily activity summaries (session readers, 23:00 scheduler, HTTP list/generate, sidebar timeline), including archived (non-deleted) sessions
+- Structured daily report page (`/daily`): AI overview + deterministic work output, per-session detail with todos, and usage/cost rollup, stored as a versioned JSON report with backward-compatible rendering of older plain-text summaries
 - Server-backed dynamic model/provider catalogs
 - Legacy and v2 settings layouts
 - Memory retrieval upgrades: FTS5/BM25 search, entity extraction + boost, and post-turn auto-extraction that applies immediately (no approval gate)
@@ -163,7 +165,7 @@ Major foundations already implemented include:
 - Companion "clear chat history" = optimistic clear + hidden background compaction (continuity kept)
 - Companion session rename
 
-Daily summaries are live in the sidebar timeline. A broader unified Today/daily-entry experience remains intentionally deferred. macOS desktop validation and production signing/notarization are still release-gating items.
+Daily summaries are live in the sidebar timeline, and a full structured daily report is available at the `/daily` page. macOS desktop validation and production signing/notarization are still release-gating items.
 
 ## Environment requirements
 

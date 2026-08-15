@@ -23,6 +23,7 @@ import { WorkspacePolicy } from "@/control-plane/workspace-policy"
 import { normalizeRule, nextOccurrence, occurrencesAfter } from "./recurrence"
 import { MemoryTable } from "@newhorse/core/memory/sql"
 import { DailySummaryTable } from "@newhorse/core/daily-summary/sql"
+import { overviewFromContent } from "@/daily-summary/readers"
 import { SessionTable } from "@newhorse/core/session/sql"
 import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm"
 import { Cause, Context, Duration, Effect, Layer, Ref, Schedule, Schema } from "effect"
@@ -1322,7 +1323,7 @@ const layer = Layer.effect(
         .get()
         .pipe(Effect.orDie)
       const parts: string[] = []
-      if (summary) parts.push(`今天的每日小结：${summary.content}`)
+      if (summary) parts.push(`今天的每日小结：${overviewFromContent(summary.content)}`)
       if (memories.length > 0) parts.push(`最近记得你：${memories.map((m) => m.content).join("；")}`)
       parts.push("想聊聊今天过得怎么样吗？")
       return parts.join("\n")

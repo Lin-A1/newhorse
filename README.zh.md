@@ -90,6 +90,7 @@ Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续�
 - FTS5/BM25 检索 + 实体提取与加权 —— **无需嵌入模型**
 - 持久 Reminder、Follow-up、Continuity Grant 与 Companion Plan
 - 每日活动总结（覆盖 newhorse、Claude Code、Codex 会话，含归档未删除会话）
+- 独立每日报告页（`/daily`）：AI 概览 + 确定性工作产出（文件/增删行数）、带待办状态的会话明细、用量/成本汇总，以版本化 JSON 存储并向后兼容旧纯文本总结
 - 记忆提取观测性：每个自动提取 gate 都会记录跳过原因，便于诊断「为什么没有提取记忆」
 - Companion 会话「清空聊天记录」= 乐观清空显示 + 后台非阻塞压缩为隐藏上下文（保留连续性，不显示压缩内容）
 - Todo 续跑执行器（idle 且有未完成任务时自动恢复）
@@ -130,6 +131,7 @@ Newhorse 仍在持续开发中。当前支持源码构建、本地 Web/Desktop �
 - Assistant/Companion Profile 与 Personal Workspace
 - 结构化 Memory、Reminder、Follow-up、Continuity Grant 与 Companion Plan 管理
 - 每日活动总结（Session Reader、23:00 调度器、HTTP list/generate、Sidebar 时间线，含归档未删除会话）
+- 结构化每日报告页（`/daily`）：AI 概览 + 工作产出 + 会话明细（含待办）+ 用量成本，JSON 存储且向后兼容旧纯文本总结
 - 服务端动态 Model/Provider Catalog
 - Legacy 与 v2 两套 Settings 布局
 - 记忆检索升级：FTS5/BM25 检索、实体提取与加权、回合后自动提取（审核门控）
@@ -145,7 +147,7 @@ Newhorse 仍在持续开发中。当前支持源码构建、本地 Web/Desktop �
 - Companion「清空聊天记录」= 乐观清空 + 后台隐藏压缩（保留连续性）
 - Companion 会话可改名
 
-每日总结已上线并显示在 Sidebar 时间线中。更完整的统一 Today/每日入口仍明确处于延期状态。macOS Desktop 运行验证以及生产签名/notarization 仍属于发布门槛。
+每日总结已上线并显示在 Sidebar 时间线中，完整的结构化每日报告可在 `/daily` 页面查看。macOS Desktop 运行验证以及生产签名/notarization 仍属于发布门槛。
 
 ## 环境要求
 

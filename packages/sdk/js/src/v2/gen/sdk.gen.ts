@@ -4573,7 +4573,7 @@ export class Reminder extends HeyApiClient {
 
 export class DailySummary extends HeyApiClient {
   /**
-   * List daily summaries
+   * List daily reports
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -4601,7 +4601,7 @@ export class DailySummary extends HeyApiClient {
   }
 
   /**
-   * Generate daily summary
+   * Generate daily report
    */
   public generate<ThrowOnError extends boolean = false>(
     parameters?: {
