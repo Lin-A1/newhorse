@@ -556,7 +556,7 @@ export function PromptInputV2Select(props: {
           as={ButtonV2}
           variant="ghost-muted"
           size="normal"
-          class={`min-w-[180px] max-w-[360px] justify-start ![font-weight:440] ${props.class ?? ""}`}
+          class={`min-w-[220px] max-w-[360px] justify-start ![font-weight:440] ${props.class ?? ""}`}
           aria-label={props.title}
         >
           {props.currentIcon}
