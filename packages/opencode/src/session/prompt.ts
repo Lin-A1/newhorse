@@ -1511,12 +1511,15 @@ const layer = Layer.effect(
                     crisisRegion: profile.crisisRegion,
                   })
                 : workMemoryContext(recallMemories.map((item) => item.content))
+            // Dynamic content (relationship memories / continuity / work
+            // memory) is passed separately from the stable system prefix so it
+            // lands after the prompt-caching breakpoint and never invalidates
+            // the cached prefix. Content is unchanged.
             const system = [
               ...env,
               ...instructions,
               ...(mcpInstructions ? [mcpInstructions] : []),
               ...(skills ? [skills] : []),
-              ...memorySystem,
             ]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
@@ -1527,6 +1530,7 @@ const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
+              dynamicSystem: memorySystem,
               protectedSystem: profile.kind === "companion" ? [COMPANION_SAFETY_SYSTEM_PROMPT] : undefined,
               messages: [
                 ...modelMsgs,

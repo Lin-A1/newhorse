@@ -355,7 +355,14 @@ function normalizeMessages(
 }
 
 function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
-  const system = msgs.filter((msg) => msg.role === "system").slice(0, 2)
+  // The trailing system message carries dynamic content (session memory,
+  // continuity, user-attached system prompt) and must NOT be cached: a changing
+  // dynamic tail would otherwise invalidate the whole cached prefix. Mark only
+  // the stable prefix — every system message except the last one, capped at 2
+  // to stay inside the provider's breakpoint limit. A lone system message is
+  // always the stable prefix.
+  const sysMsgs = msgs.filter((msg) => msg.role === "system")
+  const system = sysMsgs.slice(0, Math.max(1, Math.min(sysMsgs.length - 1, 2)))
   const final = msgs.filter((msg) => msg.role !== "system").slice(-2)
 
   const providerOptions = {

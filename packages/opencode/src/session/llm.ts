@@ -41,6 +41,9 @@ export type StreamInput = {
   permission?: PermissionV1.Ruleset
   system: string[]
   protectedSystem?: string[]
+  /** Dynamic system content (memory/continuity/user-attached) kept out of the
+   * cached system prefix. */
+  dynamicSystem?: string[]
   messages: ModelMessage[]
   small?: boolean
   tools: Record<string, Tool>

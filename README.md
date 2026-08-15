@@ -89,9 +89,12 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - Auto-extraction applies immediately (no manual accept/reject): extracted and tool-saved memories become active directly, and stay editable/deletable in the Memory Center
 - Extraction classifies memory into project context vs user-global preference, so project instructions stay project-scoped and are never promoted into cross-project preferences
 - Both Companion and work sessions get memory injected into context (Companion: relationship memories; work: project/user-global memories), not just on-demand tool lookup
+- Memory writes honor the agent's effective permission (a denied `memory.save` also blocks auto-extraction), and tool/extraction saves pass the effective ruleset to the trust policy
+- Prompt caching is prefix-friendly: the stable system prompt (identity/env/instructions/skills/persona) is cached as a segment; dynamic memory/continuity lives in a separate post-breakpoint segment, so memory changes don't invalidate the cached prefix
 - FTS5/BM25 retrieval plus entity extraction & boost — no embedding model required
 - Persistent reminders, follow-ups, continuity grants, and Companion Plan
-- Daily activity summaries across newhorse, Claude Code, and Codex sessions, including archived (non-deleted) sessions
+- Daily activity summaries across newhorse, Claude Code, and Codex sessions, including archived (non-deleted) sessions; visible in the session right-side panel and sidebar, with a generate-now button and an agent query tool
+- Companion tone is example-driven (short instruction + five Chinese few-shot dialogues covering small talk/help/emotion-first/uncertainty/humor) with a behavioral default persona, not rule-stacking
 - Observable memory extraction: every auto-extraction gate logs its skip reason, so a session that never proposes memories is diagnosable
 - "Clear chat history" on a Companion session clears the displayed chat and background-compacts the conversation into hidden context — continuity is kept without showing the compacted content
 - Todo-continuation enforcer (auto-resume on idle with open todos)
@@ -111,10 +114,11 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 
 **Desktop & product**
 - Tray-resident background mode: a Chinese close-action dialog (minimize to tray vs quit, rememberable choice); minimize always goes to the taskbar — only closing parks the window in the tray
-- Agent selector in the composer widened and polished (comfortable min width, two-line name + description, no truncation)
+- Agent selector in the composer widened (min 180 / panel 360) with two-line name + description, no truncation
 - Add-server dialog keeps inputs editable during health checks (no more input freeze)
 - Tool descriptions localized to Chinese
 - Native code review surfaced in the app's review tab
+- LSP tools reachable out of the box; follow (change watching) and browser automation (first-use auto-download) fully wired
 - Usage stats are accurate and live: deleted sessions keep their contribution via a `session_usage` archive table; the tab pages through the full session list (no 1000-row cutoff), includes archived sessions, and auto-refreshes on an interval and on window focus
 - Companion session rename: the pinned Companion session can be renamed and the header keeps the custom title
 
@@ -140,6 +144,12 @@ Major foundations already implemented include:
 - Memory layering: four content scopes (project / personal / relationship / user-global) with automatic migration of existing memories
 - Memory no-approval: extracted and tool-saved memories become active directly; Memory Center is edit/delete/pause, with per-scope labels and no accept/reject step
 - Work-session memory injection: assistant sessions get project/user-global memories in context, not just on-demand tool lookup
+- Memory permission honored end-to-end (denied `memory.save` blocks auto-extraction too); Memory Center visibility fixed via a personal-scope migration
+- LSP / follow / browser automation wired end-to-end (were unreachable dead chains), with first-use auto-download for the browser binary
+- Continuity auto-proposes after companion/assistant turns (approval still required before injection)
+- Proactive care auto-triggers when enabled: idle check-in with a dynamic body composed from the daily summary and recent memories, respecting quiet hours and frequency caps
+- Prompt caching is prefix-friendly (stable system cached; dynamic memory/continuity in a separate post-breakpoint segment)
+- Companion tone is example-driven with a behavioral default persona
 - Execution-phase plugin hooks (permission decisions, end-of-turn continuation)
 - Tray-resident desktop mode with a Chinese close-action dialog (minimize to tray vs quit, rememberable); minimize always goes to the taskbar
 - Agent selector UI polish (composer dropdown widened, two-line entries) and add-server dialog input-freeze fix

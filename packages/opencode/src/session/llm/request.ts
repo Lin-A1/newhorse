@@ -25,6 +25,10 @@ type PrepareInput = {
   readonly agent: Agent.Info
   readonly permission?: PermissionV1.Ruleset
   readonly system: string[]
+  /** Dynamic system content (session memory, continuity, user-attached system
+   * prompt). Emitted as a trailing system message AFTER the cache breakpoint so
+   * changes never invalidate the cached stable prefix. */
+  readonly dynamicSystem?: string[]
   readonly protectedSystem?: string[]
   readonly messages: ModelMessage[]
   readonly small?: boolean
@@ -56,15 +60,24 @@ const mergeOptions = (target: Record<string, any>, source: Record<string, any> |
 
 export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: PrepareInput) {
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
-  let system = [
-    [
-      ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
-      ...input.system,
-      ...(input.user.system ? [input.user.system] : []),
-    ]
-      .filter((x) => x)
-      .join("\n"),
+  // The system prompt is split into a stable prefix (provider/agent prompt +
+  // env + instructions + MCP + skills) and a dynamic tail (session memory /
+  // continuity + user-attached system prompt). The stable prefix is the only
+  // part that receives the cache_control breakpoint (see ProviderTransform
+  // applyCaching); the dynamic tail is emitted as a trailing system message
+  // AFTER that breakpoint, so memory changes never invalidate the cached prefix.
+  const stableSystem = [
+    ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
+    ...input.system,
   ]
+    .filter((x) => x)
+    .join("\n")
+
+  const dynamicSystem = [...(input.dynamicSystem ?? []), ...(input.user.system ? [input.user.system] : [])]
+    .filter((x) => x)
+    .join("\n")
+
+  let system = [stableSystem]
 
   const header = system[0]
   yield* input.plugin.trigger(
@@ -77,6 +90,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     system.length = 0
     system.push(header, rest.join("\n"))
   }
+  if (dynamicSystem) system.push(dynamicSystem)
   system = [...system]
   const protectedSystem = input.protectedSystem?.filter((value) => value.trim()).join("\n")
   if (protectedSystem) {
