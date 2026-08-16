@@ -1387,8 +1387,12 @@ describe("session.compaction.process", () => {
         })
 
         const captured = JSON.stringify(messages)
-        expect(messages).toHaveLength(1)
+        // Compaction instruction lands as the FINAL user message (deepseek
+        // summarizer pattern): replayed conversation prefix first, directive last.
+        expect(messages).toHaveLength(2)
         expect(messages[0]?.role).toBe("user")
+        expect(messages[1]?.role).toBe("user")
+        expect(captured).toContain("The following is the conversation history:")
         expect(captured).toContain("[User]: older context")
         expect(captured).not.toContain("keep this turn")
         expect(captured).not.toContain("and this one too")
@@ -1498,8 +1502,9 @@ describe("session.compaction.process", () => {
         expect(parent).toBeTruthy()
         yield* SessionCompaction.use.process({ parentID: parent!, messages: msgs, sessionID: session.id, auto: false })
 
-        expect(captured).toHaveLength(1)
+        expect(captured).toHaveLength(2)
         expect(captured[0]?.role).toBe("user")
+        expect(captured[1]?.role).toBe("user")
         expect(JSON.stringify(captured)).toContain('[Assistant tool call]: read({\\"filePath\\":\\"src/index.ts\\"})')
         expect(JSON.stringify(captured)).toContain("[Tool result]: file contents")
         expect(JSON.stringify(captured)).not.toContain('\\"role\\":\\"assistant\\"')

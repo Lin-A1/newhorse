@@ -246,5 +246,9 @@ export function useMemoryCenterState(sessionID?: string) {
         "Memory history failed",
       )
     },
+    async aggregate() {
+      const scoped = current()
+      return required(await scoped.client.memory.all({ ...scoped.routing }), "Memory aggregate failed")
+    },
   }
 }

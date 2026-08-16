@@ -1737,6 +1737,18 @@ export type PermissionConfig =
       [key: string]: PermissionRuleConfig | PermissionActionConfig | undefined
     }
 
+export type AgentSubagentMeta = {
+  category?: "exploration" | "specialist" | "advisor" | "utility"
+  cost?: "FREE" | "CHEAP" | "EXPENSIVE"
+  key_trigger?: string
+  triggers?: Array<{
+    domain: string
+    trigger: string
+  }>
+  use_when?: Array<string>
+  avoid_when?: Array<string>
+}
+
 export type AgentConfig = {
   model?: string
   fallbackChain?: Array<AgentFallbackChainEntry>
@@ -1761,6 +1773,7 @@ export type AgentConfig = {
   steps?: number
   maxSteps?: number
   permission?: PermissionConfig
+  subagent_meta?: AgentSubagentMeta
   [key: string]:
     | unknown
     | string
@@ -1786,6 +1799,7 @@ export type AgentConfig = {
     | "info"
     | number
     | PermissionConfig
+    | AgentSubagentMeta
     | undefined
 }
 
@@ -2085,6 +2099,7 @@ export type Config = {
     primary_tools?: Array<string>
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
+    session_title_refresh_interval?: number
     policies?: Array<ConfigV2ExperimentalPolicy>
   }
 }
@@ -2525,6 +2540,7 @@ export type Agent = {
     [key: string]: unknown
   }
   steps?: number
+  subagent_meta?: AgentSubagentMeta
 }
 
 export type LspStatus = {
@@ -2601,6 +2617,13 @@ export type MemoryInfo = {
 export type MemoryPage = {
   items: Array<MemoryInfo>
   nextCursor?: string
+}
+
+export type MemoryAggregateGroup = {
+  workspaceID?: string
+  directory?: string
+  scope: "workspace" | "user_global"
+  items: Array<MemoryInfo>
 }
 
 export type MemoryHistoryInfo = {
@@ -10393,6 +10416,35 @@ export type MemoryExportResponses = {
 
 export type MemoryExportResponse = MemoryExportResponses[keyof MemoryExportResponses]
 
+export type MemoryAllData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/memory/all"
+}
+
+export type MemoryAllErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryAllError = MemoryAllErrors[keyof MemoryAllErrors]
+
+export type MemoryAllResponses = {
+  /**
+   * Cross-workspace Memory aggregate
+   */
+  200: Array<MemoryAggregateGroup>
+}
+
+export type MemoryAllResponse = MemoryAllResponses[keyof MemoryAllResponses]
+
 export type MemoryHistoryData = {
   body?: never
   path: {
@@ -11551,6 +11603,203 @@ export type DailySummaryGenerateResponses = {
 }
 
 export type DailySummaryGenerateResponse = DailySummaryGenerateResponses[keyof DailySummaryGenerateResponses]
+
+export type WorkbenchListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/workbench/todo"
+}
+
+export type WorkbenchListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorkbenchListError = WorkbenchListErrors[keyof WorkbenchListErrors]
+
+export type WorkbenchListResponses = {
+  /**
+   * Workbench todos
+   */
+  200: Array<{
+    id: string
+    directory: string
+    workspace_id?: string
+    profile_id?: string
+    content: string
+    status: "open" | "in_progress" | "done" | "cancelled"
+    priority: "low" | "medium" | "high"
+    deadline?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    source: "user" | "newhorse" | "reminder"
+    time_created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    time_updated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type WorkbenchListResponse = WorkbenchListResponses[keyof WorkbenchListResponses]
+
+export type WorkbenchCreateData = {
+  body?: {
+    content: string
+    priority?: "low" | "medium" | "high"
+    deadline?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    source?: "user" | "newhorse" | "reminder"
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/workbench/todo"
+}
+
+export type WorkbenchCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type WorkbenchCreateError = WorkbenchCreateErrors[keyof WorkbenchCreateErrors]
+
+export type WorkbenchCreateResponses = {
+  /**
+   * Created workbench todo
+   */
+  200: {
+    id: string
+    directory: string
+    workspace_id?: string
+    profile_id?: string
+    content: string
+    status: "open" | "in_progress" | "done" | "cancelled"
+    priority: "low" | "medium" | "high"
+    deadline?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    source: "user" | "newhorse" | "reminder"
+    time_created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    time_updated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type WorkbenchCreateResponse = WorkbenchCreateResponses[keyof WorkbenchCreateResponses]
+
+export type WorkbenchRemoveData = {
+  body?: never
+  path: {
+    todoID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/workbench/todo/{todoID}"
+}
+
+export type WorkbenchRemoveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type WorkbenchRemoveError = WorkbenchRemoveErrors[keyof WorkbenchRemoveErrors]
+
+export type WorkbenchRemoveResponses = {
+  /**
+   * Workbench todo removed
+   */
+  200: boolean
+}
+
+export type WorkbenchRemoveResponse = WorkbenchRemoveResponses[keyof WorkbenchRemoveResponses]
+
+export type WorkbenchUpdateData = {
+  body?: {
+    content?: string
+    status?: "open" | "in_progress" | "done" | "cancelled"
+    priority?: "low" | "medium" | "high"
+    deadline?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path: {
+    todoID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/workbench/todo/{todoID}"
+}
+
+export type WorkbenchUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type WorkbenchUpdateError = WorkbenchUpdateErrors[keyof WorkbenchUpdateErrors]
+
+export type WorkbenchUpdateResponses = {
+  /**
+   * Updated workbench todo
+   */
+  200: {
+    id: string
+    directory: string
+    workspace_id?: string
+    profile_id?: string
+    content: string
+    status: "open" | "in_progress" | "done" | "cancelled"
+    priority: "low" | "medium" | "high"
+    deadline?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    source: "user" | "newhorse" | "reminder"
+    time_created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    time_updated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type WorkbenchUpdateResponse = WorkbenchUpdateResponses[keyof WorkbenchUpdateResponses]
+
+export type PresenceCurrentData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/presence"
+}
+
+export type PresenceCurrentErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PresenceCurrentError = PresenceCurrentErrors[keyof PresenceCurrentErrors]
+
+export type PresenceCurrentResponses = {
+  /**
+   * Current bounded presence
+   */
+  200: {
+    idleMs: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    locked: boolean
+    focusApp?: string
+    inMeeting: boolean
+    observedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type PresenceCurrentResponse = PresenceCurrentResponses[keyof PresenceCurrentResponses]
 
 export type SessionListData = {
   body?: never

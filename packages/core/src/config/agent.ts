@@ -10,6 +10,17 @@ export const Color = Schema.Union([
   Schema.Literals(["primary", "secondary", "accent", "success", "warning", "error", "info"]),
 ])
 
+export const SubagentMeta = Schema.Struct({
+  category: Schema.optional(Schema.Literals(["exploration", "specialist", "advisor", "utility"])),
+  cost: Schema.optional(Schema.Literals(["FREE", "CHEAP", "EXPENSIVE"])),
+  key_trigger: Schema.optional(Schema.String),
+  triggers: Schema.optional(
+    Schema.mutable(Schema.Array(Schema.Struct({ domain: Schema.String, trigger: Schema.String }))),
+  ),
+  use_when: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+  avoid_when: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+})
+
 export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   model: Schema.String.pipe(Schema.optional),
   variant: Schema.String.pipe(Schema.optional),
@@ -22,4 +33,5 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   steps: PositiveInt.pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
   permissions: Permission.Ruleset.pipe(Schema.optional),
+  subagent_meta: SubagentMeta.pipe(Schema.optional),
 }) {}

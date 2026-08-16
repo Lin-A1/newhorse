@@ -89,6 +89,10 @@ export const MemoryApi = HttpApi.make("memory").add(
         query: ExportQuery,
         success: described(Schema.Array(Memory.Info), "Exported visible Memory records"),
       }).annotateMerge(OpenApi.annotations({ identifier: "memory.export", summary: "Export Memory records" })),
+      HttpApiEndpoint.get("all", `${root}/all`, {
+        query: RoutingQuery,
+        success: described(Schema.Array(Memory.AggregateGroup), "Cross-workspace Memory aggregate"),
+      }).annotateMerge(OpenApi.annotations({ identifier: "memory.all", summary: "All-workspaces Memory aggregate" })),
       HttpApiEndpoint.get("history", `${root}/:memoryID/history`, {
         params: { memoryID: Schema.String },
         query: RoutingQuery,

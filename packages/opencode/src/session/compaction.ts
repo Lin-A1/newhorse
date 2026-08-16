@@ -426,17 +426,13 @@ const layer = Layer.effect(
         tools: {},
         system: [],
         messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: [nextPrompt, "The following is the conversation history:", conversation]
-                  .filter(Boolean)
-                  .join("\n\n"),
-              },
-            ],
-          },
+          // Compaction instruction as the FINAL user message (deepseek-harness
+          // summarizer pattern): the replayed conversation prefix comes first,
+          // so the directive is the only novel tail of the auxiliary request.
+          ...(conversation
+            ? [{ role: "user" as const, content: `The following is the conversation history:\n\n${conversation}` }]
+            : []),
+          { role: "user", content: nextPrompt },
         ],
         model,
       })

@@ -30,6 +30,7 @@ import {
 import { DiffChanges } from "@newhorse/ui/diff-changes"
 import { FileIcon } from "@newhorse/ui/file-icon"
 import { Icon } from "@newhorse/ui/icon"
+import { CompactionMarker } from "./compaction-marker"
 import { IconButton } from "@newhorse/ui/icon-button"
 import { Tooltip } from "@newhorse/ui/tooltip"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
@@ -1257,6 +1258,20 @@ export function MessageTimeline(props: {
                   )}
                 />
               </div>
+            </div>
+          </TimelineRowFrame>
+        )
+      }
+      case "CompactionSummary": {
+        const compactionRow = row as Accessor<TimelineRowByTag<"CompactionSummary">>
+        return (
+          <TimelineRowFrame row={compactionRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <CompactionMarker
+                summary={compactionRow().summary}
+                messageCount={compactionRow().messageCount}
+                tokenCount={compactionRow().tokenCount}
+              />
             </div>
           </TimelineRowFrame>
         )

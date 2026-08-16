@@ -109,6 +109,7 @@ const api: ElectronAPI = {
   getWindowFocused: () => ipcRenderer.invoke("get-window-focused"),
   setWindowFocus: () => ipcRenderer.invoke("set-window-focus"),
   showWindow: () => ipcRenderer.invoke("show-window"),
+  getPresence: () => ipcRenderer.invoke("get-presence"),
   relaunch: () => ipcRenderer.send("relaunch"),
   getZoomFactor: () => ipcRenderer.invoke("get-zoom-factor"),
   setZoomFactor: (factor) => ipcRenderer.invoke("set-zoom-factor", factor),

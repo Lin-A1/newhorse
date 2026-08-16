@@ -15,6 +15,17 @@ const FallbackChainEntry = Schema.Struct({
   variant: Schema.optional(Schema.String),
 }).annotate({ identifier: "AgentFallbackChainEntry" })
 
+export const SubagentMetaSchema = Schema.Struct({
+  category: Schema.optional(Schema.Literals(["exploration", "specialist", "advisor", "utility"])),
+  cost: Schema.optional(Schema.Literals(["FREE", "CHEAP", "EXPENSIVE"])),
+  key_trigger: Schema.optional(Schema.String),
+  triggers: Schema.optional(
+    Schema.mutable(Schema.Array(Schema.Struct({ domain: Schema.String, trigger: Schema.String }))),
+  ),
+  use_when: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+  avoid_when: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+}).annotate({ identifier: "AgentSubagentMeta" })
+
 const AgentSchema = Schema.StructWithRest(
   Schema.Struct({
     model: Schema.optional(Schema.String),
@@ -46,6 +57,9 @@ const AgentSchema = Schema.StructWithRest(
     }),
     maxSteps: Schema.optional(PositiveInt).annotate({ description: "@deprecated Use 'steps' field instead." }),
     permission: Schema.optional(ConfigPermissionV1.Info),
+    subagent_meta: Schema.optional(SubagentMetaSchema).annotate({
+      description: "Delegation metadata rendered into the subagent guidance for self-dispatch decisions",
+    }),
   }),
   [Schema.Record(Schema.String, Schema.Any)],
 )
@@ -68,6 +82,7 @@ const KNOWN_KEYS = new Set([
   "permission",
   "disable",
   "tools",
+  "subagent_meta",
 ])
 
 const normalize = (agent: Schema.Schema.Type<typeof AgentSchema>): Schema.Schema.Type<typeof AgentSchema> => {

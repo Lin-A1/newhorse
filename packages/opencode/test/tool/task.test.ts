@@ -30,6 +30,8 @@ import { Permission } from "@/permission"
 import { ProviderV2 } from "@newhorse/core/provider"
 import { ModelV2 } from "@newhorse/core/model"
 import { Provider } from "@/provider/provider"
+import { InstanceBootstrap } from "@/project/bootstrap"
+import { InstanceStore } from "@/project/instance-store"
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -59,7 +61,13 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
       Ripgrep.node,
       Provider.node,
     ]),
-    [[RuntimeFlags.node, RuntimeFlags.layer(flags)]],
+    [
+      [RuntimeFlags.node, RuntimeFlags.layer(flags)],
+      [
+        InstanceStore.bootstrapNode,
+        Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
+      ],
+    ],
   )
 
 const it = testEffect(layer())
@@ -271,6 +279,81 @@ describe("tool.task", () => {
       expect(result.output).toContain(`<task id="${child.id}" state="completed">`)
       expect(seen?.sessionID).toBe(child.id)
       expect(seen?.variant).toBe("xhigh")
+    }),
+  )
+
+  it.instance(
+    "resume cannot bypass the depth limit via a persisted delegation header",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        // A child carrying a persisted depth-2 header: its runtime parent
+        // chain is only 1 long, but the header must keep counting.
+        const deepChild = yield* sessions.create({
+          parentID: chat.id,
+          title: "deep child",
+          agent: "general",
+          metadata: { delegationDepth: 2 },
+        })
+        const nestedAssistant = yield* sessions.updateMessage({
+          ...assistant,
+          id: MessageID.ascending(),
+          parentID: MessageID.ascending(),
+          sessionID: deepChild.id,
+        })
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+
+        const exit = yield* def
+          .execute(
+            { description: "deeper", prompt: "deeper work", subagent_type: "general" },
+            {
+              sessionID: deepChild.id,
+              messageID: nestedAssistant.id,
+              agent: "general",
+              abort: new AbortController().signal,
+              extra: { promptOps: stubOps() },
+              messages: [],
+              metadata: () => Effect.void,
+              ask: () => Effect.void,
+            },
+          )
+          .pipe(Effect.exit)
+
+        expect(Exit.isFailure(exit)).toBe(true)
+      }),
+    { config: { subagent_depth: 2 } },
+  )
+
+  it.instance("resuming a legacy child adopts the computed delegation depth", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const child = yield* sessions.create({ parentID: chat.id, title: "Legacy child", agent: "general" })
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          task_id: child.id,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps() },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      expect((yield* sessions.get(child.id)).metadata?.delegationDepth).toBe(1)
     }),
   )
 
@@ -704,7 +787,14 @@ describe("tool.task", () => {
         const child = yield* sessions.get(result.metadata.sessionId)
         expect(child.parentID).toBe(chat.id)
         expect(child.agent).toBe("reviewer")
+        // Delegation permission sinks one level: spawned subagents get a hard
+        // task deny even when their own agent config allows delegating.
         expect(child.permission).toEqual([
+          {
+            permission: "task",
+            pattern: "*",
+            action: "deny",
+          },
           {
             permission: "todowrite",
             pattern: "*",

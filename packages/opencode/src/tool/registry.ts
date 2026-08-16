@@ -2,6 +2,7 @@ import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { httpClient } from "@newhorse/core/effect/app-node-platform"
 import { Ripgrep } from "@newhorse/core/ripgrep"
 import { PlanExitTool } from "./plan"
+import { PlanEnterTool } from "./plan-enter"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
@@ -19,11 +20,13 @@ import { InvalidTool } from "./invalid"
 import { SkillTool } from "./skill"
 import { MemoryTool } from "./memory"
 import { ReminderTool } from "./reminder"
+import { WorkbenchTool } from "./workbench"
 import { FollowTool } from "./follow"
 import { node as followNode } from "@/follow"
 import { CapabilityTool } from "./capability"
 import { DailySummaryTool } from "./daily-summary"
 import { DailySummary } from "@/daily-summary"
+import { Workbench } from "@/workbench"
 import { Memory } from "@/memory"
 import { Scheduler } from "@/scheduler"
 import { Profile } from "@/profile"
@@ -133,6 +136,7 @@ const layer = Layer.effect(
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
+    const planEnter = yield* PlanEnterTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
@@ -146,6 +150,7 @@ const layer = Layer.effect(
     const memorytool = yield* MemoryTool
     const remindertool = yield* ReminderTool
     const followtool = yield* FollowTool
+    const workbench = yield* WorkbenchTool
     const dailySummaryTool = yield* DailySummaryTool
     const agent = yield* Agent.Service
     const lspGotoDefinition = yield* LspGotoDefinitionTool
@@ -299,6 +304,7 @@ const layer = Layer.effect(
           memory: Tool.init(memorytool),
           reminder: Tool.init(remindertool),
           follow: Tool.init(followtool),
+          workbench: Tool.init(workbench),
           "daily-summary": Tool.init(dailySummaryTool),
           capability: Tool.init(capabilityInfo),
           patch: Tool.init(patchtool),
@@ -320,6 +326,7 @@ const layer = Layer.effect(
           browserScreenshot: Tool.init(browserScreenshot),
           browserSession: Tool.init(browserSession),
           plan: Tool.init(plan),
+          planEnter: Tool.init(planEnter),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
 
@@ -341,6 +348,7 @@ const layer = Layer.effect(
           tool.memory,
           tool.reminder,
           tool.follow,
+          tool.workbench,
           tool["daily-summary"],
           tool.capability,
           tool.patch,
@@ -365,7 +373,7 @@ const layer = Layer.effect(
           tool.browserEval,
           tool.browserScreenshot,
           tool.browserSession,
-          ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+          ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan, tool.planEnter] : []),
         ]
         toolIDs = [...builtin, ...custom].map((item) => item.id)
 
@@ -398,7 +406,8 @@ const layer = Layer.effect(
       const description = list
         .map(
           (item) =>
-            `- ${item.name}: ${item.description ?? "This subagent should only be called manually by the user."}`,
+            `- ${item.name}: ${item.description ?? "This subagent should only be called manually by the user."}` +
+            (item.subagent_meta?.key_trigger ? ` (${item.subagent_meta.key_trigger})` : ""),
         )
         .join("\n")
       return ["Available agent types and the tools they have access to:", description].join("\n")
@@ -583,6 +592,7 @@ export const node = LayerNode.make({
     followNode,
     Capability.node,
     DailySummary.node,
+    Workbench.node,
   ],
 })
 

@@ -46,6 +46,8 @@ import { DialogSelectServer, useServerManagementController } from "@/components/
 import { DialogServerV2 } from "@/components/settings-v2/dialog-server-v2"
 import { ServerConnection, serverName, useServer } from "@/context/server"
 import { ServerSDKProvider } from "@/context/server-sdk"
+import { SidebarTimeline } from "@/components/sidebar-timeline"
+import { ContributionHeatmap } from "@/components/contribution-heatmap"
 import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -66,7 +68,6 @@ import { useGlobal } from "@/context/global"
 import { useCommand } from "@/context/command"
 import { Binary } from "@newhorse/core/util/binary"
 import { ServerRowMenu } from "@/components/server/server-row-menu"
-import { SidebarTimeline } from "@/components/sidebar-timeline"
 import { ServerHealthIndicator } from "@/components/server/server-row"
 import { type ServerHealth } from "@/utils/server-health"
 import { Persist, persisted } from "@/utils/persist"
@@ -311,6 +312,7 @@ export function NewHome() {
   const notification = useNotification()
   const marked = useMarked()
   const openSettings = useSettingsCommand(() => selection().directory)
+  const openWorkbench = () => navigate("/workbench")
   let focusSessionSearch: (() => void) | undefined
   let sessionViewport: HTMLDivElement | undefined
   const [sessionThumbTrack, setSessionThumbTrack] = createSignal<HTMLDivElement>()
@@ -684,6 +686,7 @@ export function NewHome() {
             clearNotifications={clearNotifications}
             unseenCount={unseenCount}
             openSettings={openSettings}
+            openWorkbench={() => navigate("/workbench")}
             openHelp={() => platform.openLink("https://github.com/Lin-A1/newhorse/issues")}
             language={language}
             onWheel={(event) => {
@@ -797,6 +800,7 @@ export function NewHome() {
           </section>
           <HomeUtilityNav
             class="flex lg:hidden"
+            openWorkbench={openWorkbench}
             openSettings={openSettings}
             openHelp={() => platform.openLink("https://github.com/Lin-A1/newhorse/issues")}
             language={language}
@@ -825,6 +829,7 @@ function HomeProjectColumn(props: {
   unseenCount: (server: ServerConnection.Any, project: LocalProject) => number
   openSettings: () => void
   openHelp: () => void
+  openWorkbench: () => void
   language: ReturnType<typeof useLanguage>
   onWheel: (event: WheelEvent) => void
 }) {
@@ -926,9 +931,10 @@ function HomeProjectColumn(props: {
           </div>
         </Show>
       </ScrollView>
-      <HomeDailySummary focusedServer={props.focusedServer} />
+      <HomeWorkbenchPanel focusedServer={props.focusedServer} />
       <HomeUtilityNav
         class="mb-8 mt-4 hidden shrink-0 lg:flex"
+        openWorkbench={props.openWorkbench}
         openSettings={props.openSettings}
         openHelp={props.openHelp}
         language={props.language}
@@ -937,15 +943,16 @@ function HomeProjectColumn(props: {
   )
 }
 
-// Resident daily-summary block pinned to the bottom of the home sidebar (above
-// the settings/help nav). Defaults to visible; the header toggles collapse.
-function HomeDailySummary(props: { focusedServer: () => ServerConnection.Any | undefined }) {
+// Resident workbench panel pinned to the bottom of the home sidebar (above the
+// settings/help nav): contribution heatmap + todos + daily-summary timeline.
+// Defaults to collapsed so the project list stays the focus; header toggles.
+function HomeWorkbenchPanel(props: { focusedServer: () => ServerConnection.Any | undefined }) {
   const language = useLanguage()
   const navigate = useNavigate()
-  const [expanded, setExpanded] = createSignal(true)
+  const [expanded, setExpanded] = createSignal(false)
 
   return (
-    <section class="flex min-h-0 min-w-0 shrink-0 flex-col" aria-label={language.t("sidebar.dailySummary")}>
+    <section class="flex min-h-0 min-w-0 shrink-0 flex-col" aria-label={language.t("workbench.title")}>
       <div class="flex items-center">
         <button
           type="button"
@@ -960,20 +967,23 @@ function HomeDailySummary(props: { focusedServer: () => ServerConnection.Any | u
             style={{ transform: `rotate(${expanded() ? 0 : -90}deg)` }}
           />
           <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-            {language.t("sidebar.dailySummary")}
+            {language.t("workbench.title")}
           </span>
         </button>
         <button
           type="button"
           class="shrink-0 pr-3 text-[11px] text-v2-text-text-faint hover:text-v2-text-text-muted"
-          onClick={() => navigate("/daily")}
+          onClick={() => navigate("/workbench")}
         >
           {language.t("dailyReport.title")}
         </button>
       </div>
       <Show when={expanded()}>
         <ServerSDKProvider server={props.focusedServer}>
-          <SidebarTimeline showHeader={false} class="max-h-52" bodyClass="px-3 pb-3 pt-1" />
+          <div class="flex min-h-0 flex-col gap-3 px-3 pb-3 pt-1">
+            <ContributionHeatmap />
+            <SidebarTimeline showHeader={false} class="max-h-44" bodyClass="px-1 pb-0 pt-0" />
+          </div>
         </ServerSDKProvider>
       </Show>
     </section>
@@ -982,12 +992,21 @@ function HomeDailySummary(props: { focusedServer: () => ServerConnection.Any | u
 
 function HomeUtilityNav(props: {
   class?: string
+  openWorkbench: () => void
   openSettings: () => void
   openHelp: () => void
   language: ReturnType<typeof useLanguage>
 }) {
   return (
     <div class={`${props.class ?? ""} min-w-0 flex-col gap-1 pr-3`}>
+      <button
+        type="button"
+        class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}
+        onClick={props.openWorkbench}
+      >
+        <IconV2 name="checklist" size="small" />
+        <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("workbench.title")}</span>
+      </button>
       <button
         type="button"
         class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}

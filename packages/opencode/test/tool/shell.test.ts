@@ -1110,9 +1110,13 @@ describe("tool.shell abort", () => {
       projectRoot,
       Effect.gen(function* () {
         const updates: string[] = []
+        // Windows PowerShell 5.1 does not support `&&`; `;` works across
+        // PowerShell, pwsh, and bash. `sleep` is Start-Sleep in PowerShell and
+        // coreutils sleep in bash.
+        const separator = PS.has(sh()) ? ";" : "&&"
         const result = yield* run(
           {
-            command: `echo first && sleep 0.1 && echo second`,
+            command: `echo first ${separator} sleep 0.1 ${separator} echo second`,
           },
           {
             ...ctx,

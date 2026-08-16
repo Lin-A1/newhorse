@@ -64,6 +64,8 @@ import { LocationServiceMap, locationServiceMapLayer } from "@newhorse/core/loca
 import { Profile } from "@/profile"
 import { Memory } from "@/memory"
 import { ContinuityGrant } from "@/continuity-grant"
+import { InstanceStore } from "@/project/instance-store"
+import { InstanceBootstrap } from "@/project/bootstrap"
 
 const summary = Layer.succeed(
   SessionSummary.Service,
@@ -222,12 +224,15 @@ const promptRoot = LayerNode.group([
   ContinuityGrant.node,
 ])
 
+const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
+
 function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; processor?: "blocking" }) {
   const replacements = [
     [SessionSummary.node, summary],
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, noopBootstrap],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(promptRoot, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -242,6 +247,7 @@ function makeHttp(input?: { mcpInstructions?: MCP.ServerInstructions[]; processo
     [LSP.node, lsp],
     [MCP.node, makeMcp(input?.mcpInstructions)],
     [RuntimeFlags.node, runtimeFlags],
+    [InstanceStore.bootstrapNode, noopBootstrap],
   ] as const
   if (input?.processor === "blocking") {
     return LayerNode.compile(root, [...replacements, [SessionProcessor.node, blockingProcessor]])
@@ -1397,6 +1403,7 @@ noLLMServer.instance("prompt tools replace previous prompt tool rules", () =>
     expect(reloaded.permission).toEqual([{ permission: "read", pattern: "*", action: "allow" }])
     expect(Permission.evaluate("bash", "anything", reloaded.permission ?? []).action).toBe("ask")
   }),
+  { config: cfg },
 )
 
 it.instance(

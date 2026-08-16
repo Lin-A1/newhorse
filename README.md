@@ -50,7 +50,7 @@ Profiles are not storage boundaries. Persistent content stays isolated by scope 
 - Immutable session bindings for workspace and profile
 - One Companion session pinned to a personal workspace, decoupled from whichever project is currently open
 - Configurable Companion persona, quiet hours, proactive frequency, and safety context
-- Structured memory proposals with explicit accept/reject/forget lifecycle
+- Structured memory with no-approval lifecycle: extracted and tool-saved memories apply immediately, and stay editable/deletable in the Memory Center
 - Persistent reminders with create, pause, resume, cancel, lease, and idempotent delivery
 - Follow-up scheduling and a Companion Plan surface for memory, reminders, and continuity grants
 - Daily activity summaries: one LLM-generated recap per day across your newhorse work, newhorse, Claude Code, and Codex sessions, auto-generated once after 23:00 local
@@ -105,18 +105,30 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - Persistent reminders, follow-ups, continuity grants, and Companion Plan
 - Daily activity summaries across newhorse, Claude Code, and Codex sessions, including archived (non-deleted) sessions; visible in the session right-side panel and sidebar, with a generate-now button and an agent query tool
 - A dedicated daily report page (`/daily`) renders each day as a structured, deliverable report — an AI overview plus deterministic work output (files/additions/deletions), per-session detail with todo status, and usage/cost rollup
+- Every day's summary is recorded and retained: the daily-summary store is date-keyed, auto-generated each day past 23:00 (with one-day backfill), and the timeline lists the full history
 - Companion tone is example-driven (short instruction + five Chinese few-shot dialogues covering small talk/help/emotion-first/uncertainty/humor) with a behavioral default persona, not rule-stacking
 - Observable memory extraction: every auto-extraction gate logs its skip reason, so a session that never proposes memories is diagnosable
 - "Clear chat history" on a Companion session clears the displayed chat and background-compacts the conversation into hidden context — continuity is kept without showing the compacted content
 - Todo-continuation enforcer (auto-resume on idle with open todos)
+- Memory Center has an "all workspaces" aggregate view: read-only, grouped by workspace, listing every workspace's project/personal memories plus user-global preferences (relationship memories stay gated to the current profile — cross-workspace read never leaks isolation)
+
+**newhorse workbench (Companion-only)**
+- A dedicated workbench page (`/workbench`) is the newhorse "butler" hub: a presence strip, personal todos, the full daily-summary history, and usage stats in one place
+- Personal workbench todos: user-created or newhorse-proposed (`workbench` tool), with a status state machine (open → in_progress → done/cancelled), priorities, deadlines, and per-directory isolation
+- Companion context injects the current open todos (top 5 by priority) so newhorse can act on them conversationally
+- Workbench entries are Companion-only: the fixed titlebar tab and the home sidebar entry are hidden inside work (assistant) sessions
+- Session titles refresh automatically: default-named sessions get retitled from the recent conversation every N turns (configurable `experimental.session_title_refresh_interval`); user-renamed titles are never overwritten
 
 **Deterministic tooling & agents**
 - Native code-review engine (exact diff, deterministic file filtering, line-level AI comments, falsify-filter)
 - ast-grep structural search/replace; split LSP tools (definition/references/rename/symbols/diagnostics)
 - MultiEdit batch editing; browser automation (agent-browser, on-demand)
-- Multi-model fallback chains with availability-aware resolution
+- Multi-model fallback chains with availability-aware resolution, plus a per-provider circuit breaker (three-state, consecutive-failure/error-rate criteria, half-open probe) that skips broken providers in the chain and fails fast instead of waiting out timeouts
+- Four-mode self-dispatch: `researcher`/`writer` are delegatable (`task`), with a subagent_meta delegation table injected into the stable system prompt and a `plan_enter` tool for the build agent to hand off into plan mode; spawned subagents cannot delegate further (task is force-denied), and delegation depth is monotonic (a persisted header blocks resume bypasses)
 - Execution-phase plugin hooks (permission decisions, end-of-turn continuation)
 - Cross-session plan resume (boulder-state)
+- Tool stability hardening: unavailable tool calls produce one explicit model-visible failure instead of an `invalid` retry loop; the legacy per-message `tools` map can no longer deny the whole toolset; PowerShell subprocess output is forced to UTF-8 on Windows
+- Context compaction is presentation-friendly: a compaction renders as a single collapsed marker ("compacted · N messages / M tokens") that expands to the model summary — the checkpoint payload never shows as plain assistant output, and the compacted conversation stays scrollable above; the summarization directive is sent as the FINAL user message (prefix-cache friendly)
 
 **Trust & safety**
 - Central trust policy with content-free audit; content-scope isolation across project/personal/relationship
@@ -132,6 +144,7 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - LSP tools reachable out of the box; follow (change watching) and browser automation (first-use auto-download) fully wired
 - Usage stats are accurate and live: deleted sessions keep their contribution via a `session_usage` archive table; the tab pages through the full session list (no 1000-row cutoff), includes archived sessions, and auto-refreshes on an interval and on window focus
 - Companion session rename: the pinned Companion session can be renamed and the header keeps the custom title
+- Mobile/multi-device access reuses the web app: bind `0.0.0.0` (`--hostname 0.0.0.0` or mDNS), authenticate via `OPENCODE_SERVER_PASSWORD` (mandatory on the LAN — the server refuses to bind all interfaces without one) or the `auth_token` URL, and install the page as a PWA (manifest + network-only service worker so auth-protected responses are never cached)
 
 **Self-awareness & docs**
 - Agent identity: the system prompt presents the agent as newhorse, and a built-in `newhorse-capabilities` skill answers "what can newhorse do" from a bundled checklist instead of fetching external docs
@@ -174,6 +187,14 @@ Major foundations already implemented include:
 - Observable memory extraction (per-gate skip-reason logging)
 - Companion "clear chat history" = optimistic clear + hidden background compaction (continuity kept)
 - Companion session rename
+- Memory Center "all workspaces" aggregate view (read-only, grouped by workspace; relationship rows gated to the current profile)
+- newhorse workbench (`/workbench`, Companion-only): presence strip, personal todos (user + newhorse-proposed), full daily-summary history, and usage stats; fixed titlebar tab + home sidebar entry hidden in work sessions
+- Automatic session-title refresh for default-named sessions (configurable interval; user titles never overwritten)
+- Context compaction marker: single collapsed row that expands to the summary — checkpoint payload never rendered inline
+- Mobile/multi-device access: LAN binding with mandatory password, auth_token URL, and PWA install (network-only service worker)
+- Four-mode self-dispatch (researcher/writer delegation, subagent_meta delegation table, plan_enter, delegation permission sink, monotonic depth)
+- Per-provider circuit breaker in the fallback chain + fail-fast on explicitly routed open circuits
+- Tool stability hardening (no `invalid` retry loop; legacy tools map cannot deny-all; PowerShell UTF-8 output)
 
 Daily summaries are live in the sidebar timeline, and a full structured daily report is available at the `/daily` page. macOS desktop validation and production signing/notarization are still release-gating items.
 

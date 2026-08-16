@@ -4,7 +4,7 @@ import { PermissionV1 } from "@newhorse/core/v1/permission"
 import { Provider } from "@/provider/provider"
 import { SessionV1 } from "@newhorse/core/v1/session"
 import { serviceUse } from "@newhorse/core/effect/service-use"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Ref } from "effect"
 import * as Stream from "effect/Stream"
 import { streamText, wrapLanguageModel, type ModelMessage, type Tool } from "ai"
 import type { LLMEvent } from "@newhorse/llm"
@@ -29,6 +29,7 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { CircuitBreaker } from "@/provider/circuit-breaker"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
@@ -74,6 +75,7 @@ const live: Layer.Layer<
   | EventV2Bridge.Service
   | LLMClientService
   | RuntimeFlags.Service
+  | CircuitBreaker.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -85,6 +87,7 @@ const live: Layer.Layer<
     const events = yield* EventV2Bridge.Service
     const llmClient = yield* LLMClient.Service
     const flags = yield* RuntimeFlags.Service
+    const breaker = yield* CircuitBreaker.Service
 
     const run = Effect.fn("LLM.run")(function* (input: StreamRequest) {
       yield* Effect.logInfo("stream", {
@@ -305,11 +308,22 @@ const live: Layer.Layer<
                 toolName: lower,
               }
             }
+            // Typed failure (deepseek-harness philosophy): an unavailable tool
+            // produces one explicit model-visible failure naming the tool and the
+            // tools that ARE available, so the model can recover instead of
+            // retrying the same call. The `invalid` tool is guaranteed to stay
+            // registered (see resolveTools), so this can never loop.
+            const available = Object.keys(prepared.tools)
+              .filter((name) => name !== "invalid")
+              .sort()
+              .join(", ")
             return {
               ...failed.toolCall,
               input: JSON.stringify({
                 tool: failed.toolCall.toolName,
-                error: failed.error.message,
+                error: `Tool "${failed.toolCall.toolName}" is unavailable in this session${
+                  available ? `. Available tools: ${available}.` : " and no tools are available."
+                } Do not retry this tool; use an available tool or tell the user what is needed.`,
               }),
               toolName: "invalid",
             }
@@ -367,18 +381,50 @@ const live: Layer.Layer<
               (ctrl) => Effect.sync(() => ctrl.abort()),
             )
 
+            // Circuit breaker: refuse to start when the provider's circuit is
+            // open so an explicitly routed request fails fast instead of
+            // waiting out the provider timeout every time. The breaker service
+            // is captured from the layer; provide it locally so the public
+            // stream signature stays requirement-free.
+            const withBreaker = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+              Effect.provideService(effect, CircuitBreaker.Service, breaker)
+            if (!(yield* withBreaker(breaker.allowRequest(input.model.providerID)))) {
+              yield* Effect.logWarning("provider circuit open; refusing request", {
+                providerID: input.model.providerID,
+              })
+              return yield* Effect.fail(
+                new Error(`Provider "${input.model.providerID}" is temporarily unavailable (circuit open)`),
+              )
+            }
+            const failed = yield* Ref.make(false)
+
             const result = yield* run({ ...input, abort: ctrl.signal })
 
-            if (result.type === "native") return result.stream
-
-            // Adapter seam: both runtimes expose the same LLMEvent stream. Native
-            // already returns one; AI SDK streams are converted here.
-            const state = LLMAISDK.adapterState()
-            return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
-              e instanceof Error ? e : new Error(String(e)),
-            ).pipe(
-              Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
-              Stream.flatMap((events) => Stream.fromIterable(events)),
+            const events =
+              result.type === "native"
+                ? result.stream
+                : // Adapter seam: both runtimes expose the same LLMEvent stream. Native
+                  // already returns one; AI SDK streams are converted here.
+                  (() => {
+                    const state = LLMAISDK.adapterState()
+                    return Stream.fromAsyncIterable(result.result.fullStream, (e) =>
+                      e instanceof Error ? e : new Error(String(e)),
+                    ).pipe(
+                      Stream.mapEffect((event) => LLMAISDK.toLLMEvents(state, event)),
+                      Stream.flatMap((events) => Stream.fromIterable(events)),
+                    )
+                  })()
+            return events.pipe(
+              Stream.tapError(() => Ref.set(failed, true)),
+              Stream.ensuring(
+                withBreaker(
+                  Ref.get(failed).pipe(
+                    Effect.flatMap((faulted) =>
+                      faulted ? breaker.recordFailure(input.model.providerID) : breaker.recordSuccess(input.model.providerID),
+                    ),
+                  ),
+                ),
+              ),
             )
           }),
         ),
@@ -402,6 +448,7 @@ export const node = LayerNode.make({
     EventV2Bridge.node,
     llmClient,
     RuntimeFlags.node,
+    CircuitBreaker.node,
   ],
 })
 

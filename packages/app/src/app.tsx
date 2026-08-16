@@ -70,6 +70,7 @@ import { NewHome } from "@/pages/home"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 const DailyReportPage = lazy(() => import("@/pages/daily-report"))
+const WorkbenchPage = lazy(() => import("@/pages/workbench"))
 
 function TargetServerRoute(props: ParentProps) {
   const params = useParams<{ serverKey: string; id: string }>()
@@ -505,6 +506,7 @@ function Routes(props: { serverScoped?: JSX.Element }) {
     <>
       <Route path="/" component={NewHome} />
       <Route path="/daily" component={DailyReportPage} />
+      <Route path="/workbench" component={WorkbenchPage} />
       <Route path="/:dir/session/:id" component={NewLayoutLegacySessionRedirect} />
       <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
       <Route path="/new-session" component={DraftRoute} />

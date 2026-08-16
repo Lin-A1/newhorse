@@ -126,6 +126,13 @@ type PlatformBase = {
 
   /** Record a fatal renderer error in platform logs (desktop only) */
   recordFatalRendererError?(error: FatalRendererErrorLog): Promise<void>
+
+  /** Desktop presence snapshot: idle seconds, lock state, focused app (desktop only) */
+  getPresence?(): Promise<{
+    idleSeconds: number
+    locked: boolean
+    focusedApp: string | undefined
+  }>
 }
 
 export type Platform = PlatformBase &

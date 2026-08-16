@@ -818,6 +818,46 @@ describe("Memory", () => {
       })
     }),
   )
+
+  it.instance("all aggregates workspace and user-global memories into buckets", () =>
+    Effect.gen(function* () {
+      const memory = yield* Memory.Service
+      yield* memory.save({ kind: "fact", content: "workspace memory one", provenance: "user_explicit" })
+      yield* memory.save({ kind: "preference", content: "global preference", provenance: "user_explicit", scope: "user_global" })
+
+      const groups = yield* memory.all()
+      expect(groups.length).toBe(2)
+      const global = groups.find((group) => group.scope === "user_global")
+      expect(global?.items.some((item) => item.content === "global preference")).toBe(true)
+      const workspace = groups.find((group) => group.scope === "workspace")
+      expect(workspace?.items.some((item) => item.content === "workspace memory one")).toBe(true)
+    }),
+  )
+
+  it.instance("all excludes other profiles' relationship memories", () =>
+    personal(
+      Effect.gen(function* () {
+        const memory = yield* Memory.Service
+        yield* memory.save({
+          kind: "relationship",
+          content: "assistant relationship",
+          provenance: "user_explicit",
+          profileID: "assistant",
+        })
+        yield* memory.save({
+          kind: "relationship",
+          content: "companion relationship",
+          provenance: "user_explicit",
+          profileID: "companion",
+        })
+
+        const groups = yield* memory.all({ profileID: "companion" })
+        const items = groups.flatMap((group) => group.items)
+        expect(items.some((item) => item.content === "companion relationship")).toBe(true)
+        expect(items.some((item) => item.content === "assistant relationship")).toBe(false)
+      }),
+    ),
+  )
 })
 
 describe("detectSensitive", () => {

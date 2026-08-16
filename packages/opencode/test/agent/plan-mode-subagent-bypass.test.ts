@@ -105,7 +105,7 @@ it.instance(
   },
 )
 
-it.effect("subagent self permissions are preserved", () =>
+it.effect("spawned subagents cannot delegate even when their own config allows task", () =>
   Effect.sync(() => {
     const executor = testAgent({
       name: "executor",
@@ -132,7 +132,9 @@ it.effect("subagent self permissions are preserved", () =>
 
     expect(Permission.evaluate("read", "README.md", effective).action).toBe("allow")
     expect(Permission.evaluate("bash", "git status", effective).action).toBe("allow")
-    expect(Permission.evaluate("task", "worker", effective).action).toBe("allow")
+    // Delegation permission sinks one level: a spawned subagent's task tool is
+    // force-denied so it can never delegate further (delegate_task:false).
+    expect(Permission.evaluate("task", "worker", effective).action).toBe("deny")
     expect(Permission.evaluate("task", "other", effective).action).toBe("deny")
     expect(Permission.disabled(["edit", "write", "apply_patch"], effective)).toEqual(new Set())
   }),

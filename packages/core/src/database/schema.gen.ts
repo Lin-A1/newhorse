@@ -432,6 +432,21 @@ export default {
           \`actor\` text NOT NULL
         );
       `)
+      yield* tx.run(`
+        CREATE TABLE \`workbench_todo\` (
+          \`id\` text PRIMARY KEY,
+          \`directory\` text NOT NULL,
+          \`workspace_id\` text,
+          \`profile_id\` text,
+          \`content\` text NOT NULL,
+          \`status\` text DEFAULT 'open' NOT NULL,
+          \`priority\` text DEFAULT 'medium' NOT NULL,
+          \`deadline\` integer,
+          \`source\` text DEFAULT 'user' NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
       yield* tx.run(
         `CREATE INDEX \`continuity_grant_audit_idx\` ON \`continuity_grant_audit\` (\`grant_id\`,\`time_created\`,\`id\`);`,
       )
@@ -518,6 +533,10 @@ export default {
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
       yield* tx.run(`CREATE INDEX \`policy_audit_time_idx\` ON \`policy_audit\` (\`time\`);`)
       yield* tx.run(`CREATE INDEX \`policy_audit_action_idx\` ON \`policy_audit\` (\`action\`,\`time\`);`)
+      yield* tx.run(
+        `CREATE INDEX \`workbench_todo_directory_status_idx\` ON \`workbench_todo\` (\`directory\`,\`status\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`workbench_todo_workspace_idx\` ON \`workbench_todo\` (\`workspace_id\`);`)
     })
   },
 } satisfies Omit<DatabaseMigration.Migration, "id">

@@ -106,12 +106,19 @@ export const TaskTool = Tool.define(
       }
 
       const parent = yield* sessions.get(ctx.sessionID)
+      // Delegation depth is monotonic: the persisted header on each child
+      // session (deepseek-harness delegationDepth) is max'd with the runtime
+      // parent-chain length so a resumed child cannot restart counting from 0
+      // and bypass the depth limit.
       let current = parent
-      let depth = 0
+      let chainDepth = 0
+      let persistedDepth = parentDelegationDepth(parent)
       while (current.parentID) {
-        depth++
+        chainDepth++
         current = yield* sessions.get(current.parentID)
+        persistedDepth = Math.max(persistedDepth, parentDelegationDepth(current))
       }
+      const depth = Math.max(persistedDepth, chainDepth)
       if (depth >= (cfg.subagent_depth ?? 1)) {
         return yield* Effect.fail(
           new Error(
@@ -119,6 +126,7 @@ export const TaskTool = Tool.define(
           ),
         )
       }
+      const childDelegationDepth = depth + 1
 
       const caller = yield* agent.get(ctx.agent)
       if (!caller) return yield* Effect.fail(new Error(`Unknown caller agent: ${ctx.agent}`))
@@ -198,7 +206,16 @@ export const TaskTool = Tool.define(
           title: params.description + ` (@${next.name} subagent)`,
           agent: next.name,
           permission: nextPermission,
+          metadata: { delegationDepth: childDelegationDepth },
         }))
+      // Resumed legacy children without a persisted header adopt the computed
+      // depth so future resumes keep counting monotonically.
+      if (session && parentDelegationDepth(session) !== childDelegationDepth) {
+        yield* sessions.setMetadata({
+          sessionID: session.id,
+          metadata: { ...(session.metadata ?? {}), delegationDepth: childDelegationDepth },
+        })
+      }
 
       const msg = yield* MessageV2.get({ sessionID: ctx.sessionID, messageID: ctx.messageID }).pipe(
         Effect.provideService(Database.Service, database),
@@ -391,3 +408,8 @@ export const TaskTool = Tool.define(
     }
   }),
 )
+
+function parentDelegationDepth(session: Session.Info): number {
+  const value = session.metadata?.delegationDepth
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+}

@@ -19,6 +19,12 @@ export namespace TimelineRow {
     userMessageID: string
     label: "compaction" | "interrupted"
   }> {}
+  export class CompactionSummary extends Data.TaggedClass("CompactionSummary")<{
+    userMessageID: string
+    summary?: string
+    messageCount: number
+    tokenCount?: number
+  }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string
     group: PartGroup
@@ -45,6 +51,7 @@ export namespace TimelineRow {
     | CommentStrip
     | UserMessage
     | TurnDivider
+    | CompactionSummary
     | AssistantPart
     | Thinking
     | DiffSummary
@@ -61,6 +68,8 @@ export namespace TimelineRow {
         return `user-message:${row.userMessageID}`
       case "TurnDivider":
         return `turn-divider:${row.userMessageID}:${row.label}`
+      case "CompactionSummary":
+        return `compaction-summary:${row.userMessageID}`
       case "AssistantPart":
         return `assistant-part:${row.userMessageID}:${row.group.key}`
       case "Thinking":

@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "7f04f7ff-c622-445f-8956-b7e79c32d438",
+  "id": "b0d94feb-dc4d-4346-988b-e235039e645b",
   "prevIds": [
-    "2b09fdd2-9515-486a-925d-8a34d1e0c631"
+    "7f04f7ff-c622-445f-8956-b7e79c32d438"
   ],
   "ddl": [
     {
@@ -128,6 +128,10 @@
     },
     {
       "name": "policy_audit",
+      "entityType": "tables"
+    },
+    {
+      "name": "workbench_todo",
       "entityType": "tables"
     },
     {
@@ -2971,6 +2975,116 @@
       "table": "policy_audit"
     },
     {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "directory",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "workspace_id",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "profile_id",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "content",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'open'",
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'medium'",
+      "generated": null,
+      "name": "priority",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "deadline",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'user'",
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "workbench_todo"
+    },
+    {
       "columns": [
         "project_id"
       ],
@@ -3505,6 +3619,15 @@
       "nameExplicit": false,
       "name": "policy_audit_pk",
       "table": "policy_audit",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "workbench_todo_pk",
+      "table": "workbench_todo",
       "entityType": "pks"
     },
     {
@@ -4322,6 +4445,38 @@
       "name": "policy_audit_action_idx",
       "entityType": "indexes",
       "table": "policy_audit"
+    },
+    {
+      "columns": [
+        {
+          "value": "directory",
+          "isExpression": false
+        },
+        {
+          "value": "status",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "workbench_todo_directory_status_idx",
+      "entityType": "indexes",
+      "table": "workbench_todo"
+    },
+    {
+      "columns": [
+        {
+          "value": "workspace_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "workbench_todo_workspace_idx",
+      "entityType": "indexes",
+      "table": "workbench_todo"
     }
   ],
   "renames": []

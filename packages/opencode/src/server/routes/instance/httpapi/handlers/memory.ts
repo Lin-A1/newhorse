@@ -23,6 +23,12 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
           })
         }),
       )
+      .handle("all", () =>
+        Effect.gen(function* () {
+          const route = yield* WorkspaceRouteContext
+          return yield* memory.all({ profileID: route.profileID })
+        }),
+      )
       .handle("update", (ctx) =>
         Effect.gen(function* () {
           const route = yield* WorkspaceRouteContext

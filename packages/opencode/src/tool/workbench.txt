@@ -1,0 +1,14 @@
+管理「工作台」个人待办（用户自建 + newhorse 代建）。待办是独立于会话的个人事项，例如"周三开会""下周交周报"。
+
+action 用法：
+- `create`：新建待办，必须提供 content；可带 priority（low/medium/high）与 deadline（毫秒时间戳）。
+- `list`：列出当前实例全部待办。
+- `update`：更新待办，需要 id；可更新 content、status（open/in_progress/done/cancelled）、priority、deadline。
+- `remove`：删除待办，需要 id。
+
+状态机：open → in_progress → done/cancelled（done/cancelled 为终态，非法转移会被拒绝）。
+
+适用场景：
+- 用户说"帮我记一下…"、"记得周三…"时创建待办。
+- 用户询问"我有什么待办"时列出。
+- 用户完成某件事时把对应待办标记 done。

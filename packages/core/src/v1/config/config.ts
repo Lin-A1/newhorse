@@ -186,6 +186,21 @@ export const Info = Schema.Struct({
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
       }),
+      session_title_refresh_interval: Schema.optional(PositiveInt).annotate({
+        description:
+          "Regenerate the session title every N turns while it is still the default title. 0 disables refresh",
+      }),
+      circuit_breaker: Schema.optional(
+        Schema.Struct({
+          failureThreshold: Schema.optional(PositiveInt),
+          successThreshold: Schema.optional(PositiveInt),
+          timeoutSeconds: Schema.optional(PositiveInt),
+          errorRateThreshold: Schema.optional(Schema.Number),
+          minRequests: Schema.optional(PositiveInt),
+        }),
+      ).annotate({
+        description: "Per-provider circuit breaker thresholds (fallback chain). Defaults mirror cc-switch.",
+      }),
       policies: Schema.optional(Schema.mutable(Schema.Array(ConfigExperimental.Policy))).annotate({
         description: "Policy statements applied to supported resources, such as provider access",
       }),

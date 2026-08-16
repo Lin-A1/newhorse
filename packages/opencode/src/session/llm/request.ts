@@ -234,7 +234,14 @@ function resolveTools(input: Pick<PrepareInput, "tools" | "agent" | "permission"
     Object.keys(input.tools),
     Agent.effectivePermission(input.agent, input.permission ?? []),
   )
-  return Record.filter(input.tools, (_, k) => input.user.tools?.[k] !== false && !disabled.has(k))
+  return Record.filter(
+    input.tools,
+    // `invalid` is the failure-communication channel: experimental_repairToolCall
+    // routes unavailable tool calls here so the model receives one explicit,
+    // readable failure instead of a retry loop. It must never be trimmed by
+    // permission rules (mirrors "never trim code tools").
+    (_, k) => k === "invalid" || (input.user.tools?.[k] !== false && !disabled.has(k)),
+  )
 }
 
 export function hasToolCalls(messages: ModelMessage[]): boolean {

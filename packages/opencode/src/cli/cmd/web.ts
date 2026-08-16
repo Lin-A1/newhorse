@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { UI } from "../ui"
-import { effectCmd } from "../effect-cmd"
+import { effectCmd, CliError } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@newhorse/core/flag/flag"
 import open from "open"
@@ -37,10 +37,22 @@ export const WebCommand = effectCmd({
   instance: false,
   handler: Effect.fn("Cli.web")(function* (args) {
     const { Server } = yield* Effect.promise(() => import("../../server/server"))
+    const opts = yield* resolveNetworkOptions(args)
+    // LAN safety constraint (mobile/multi-device access): binding all
+    // interfaces exposes the server on the local network, so a password is
+    // mandatory. Loopback-only servers may run unsecured with a warning.
+    const lanExposed = opts.hostname === "0.0.0.0" || opts.hostname === "::" || opts.mdns
+    if (lanExposed && !Flag.OPENCODE_SERVER_PASSWORD) {
+      UI.println(
+        UI.Style.TEXT_WARNING_BOLD +
+          "!  Cannot start on the local network without a password.",
+      )
+      UI.println("   Set OPENCODE_SERVER_PASSWORD=<password> (and optionally OPENCODE_SERVER_USERNAME) to enable LAN/mobile access.")
+      return yield* new CliError({ message: "OPENCODE_SERVER_PASSWORD is required when binding to the local network" })
+    }
     if (!Flag.OPENCODE_SERVER_PASSWORD) {
       UI.println(UI.Style.TEXT_WARNING_BOLD + "!  OPENCODE_SERVER_PASSWORD is not set; server is unsecured.")
     }
-    const opts = yield* resolveNetworkOptions(args)
     const server = yield* Effect.promise(() => Server.listen(opts))
     UI.empty()
     UI.println(UI.logo("  "))

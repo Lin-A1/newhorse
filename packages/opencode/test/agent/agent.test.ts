@@ -434,6 +434,52 @@ it.instance(
   },
 )
 
+it.instance("researcher and writer are self-dispatchable with delegation metadata", () =>
+  Effect.gen(function* () {
+    const researcher = yield* load((svc) => svc.get("researcher"))
+    const writer = yield* load((svc) => svc.get("writer"))
+    const plan = yield* load((svc) => svc.get("plan"))
+    expect(researcher?.mode).toBe("all")
+    expect(writer?.mode).toBe("all")
+    expect(plan?.mode).toBe("primary")
+    expect(researcher?.subagent_meta?.category).toBe("exploration")
+    expect(writer?.subagent_meta?.category).toBe("specialist")
+    expect(researcher?.subagent_meta?.triggers?.length).toBeGreaterThan(0)
+    expect(writer?.subagent_meta?.key_trigger).toBeTruthy()
+    expect(plan?.subagent_meta?.category).toBe("advisor")
+  }),
+)
+
+it.instance(
+  "custom agent subagent_meta parses from config and reaches the registry",
+  () =>
+    Effect.gen(function* () {
+      const custom = yield* load((svc) => svc.get("domain_agent"))
+      expect(custom?.subagent_meta?.category).toBe("specialist")
+      expect(custom?.subagent_meta?.cost).toBe("EXPENSIVE")
+      expect(custom?.subagent_meta?.key_trigger).toBe("数据库相关任务委派 domain_agent")
+      expect(custom?.subagent_meta?.triggers).toEqual([{ domain: "database", trigger: "数据库 schema 设计" }])
+      expect(custom?.subagent_meta?.use_when).toEqual(["迁移", "调优"])
+    }),
+  {
+    config: {
+      agent: {
+        domain_agent: {
+          description: "数据库专家",
+          mode: "all",
+          subagent_meta: {
+            category: "specialist",
+            cost: "EXPENSIVE",
+            key_trigger: "数据库相关任务委派 domain_agent",
+            triggers: [{ domain: "database", trigger: "数据库 schema 设计" }],
+            use_when: ["迁移", "调优"],
+          },
+        },
+      },
+    },
+  },
+)
+
 it.instance(
   "Agent.list keeps the default agent first and sorts the rest by name",
   () =>

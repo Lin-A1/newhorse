@@ -71,6 +71,15 @@ export const HistoryInfo = Schema.Struct({
 }).annotate({ identifier: "MemoryHistoryInfo" })
 export type HistoryInfo = Schema.Schema.Type<typeof HistoryInfo>
 
+/** One workspace's memory bucket in the cross-workspace aggregate view. */
+export const AggregateGroup = Schema.Struct({
+  workspaceID: Schema.optional(Schema.String),
+  directory: Schema.optional(Schema.String),
+  scope: Schema.Literals(["workspace", "user_global"]),
+  items: Schema.Array(Info),
+}).annotate({ identifier: "MemoryAggregateGroup" })
+export type AggregateGroup = Schema.Schema.Type<typeof AggregateGroup>
+
 export interface SaveInput {
   scope?: MemoryScope
   kind: MemoryKind
@@ -247,6 +256,7 @@ export interface Interface {
   }) => Effect.Effect<number, MemoryPolicyRejected>
   readonly export: (input?: { includeGlobal?: boolean; profileID?: string }) => Effect.Effect<ReadonlyArray<Info>>
   readonly history: (id: string) => Effect.Effect<ReadonlyArray<HistoryInfo>>
+  readonly all: (input?: { profileID?: string }) => Effect.Effect<ReadonlyArray<AggregateGroup>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@newhorse/Memory") {}
@@ -744,6 +754,54 @@ const layer = Layer.effect(
       return rows.map(decode)
     })
 
+    // Cross-workspace aggregate for the Memory Center "all workspaces" view.
+    // Read-only: never mutates, and the caller's trusted profileID (from the
+    // workspace route — never a client-declared value) gates relationship rows
+    // so no other profile's relationship memory leaks. Project/personal rows
+    // are the local user's own memories across their own workspaces. Rows
+    // without a workspace_id (directory-scoped legacy rows) bucket under the
+    // directory; user_global rows get their own bucket.
+    const all: Interface["all"] = Effect.fn("Memory.all")(function* (input) {
+      yield* maintainIfDue()
+      const conditions = [
+        inArray(MemoryTable.status, DEFAULT_STATUSES),
+        or(
+          ne(MemoryTable.scope, "relationship"),
+          and(eq(MemoryTable.scope, "relationship"), eq(MemoryTable.profile_id, input?.profileID ?? "")),
+        )!,
+      ]
+      const rows = yield* db
+        .select()
+        .from(MemoryTable)
+        .where(and(...conditions))
+        .orderBy(desc(MemoryTable.id))
+        .all()
+        .pipe(Effect.orDie)
+      type Bucket = { scope: "workspace" | "user_global"; workspaceID?: string; directory?: string; items: Info[] }
+      const buckets = new Map<string, Bucket>()
+      for (const row of rows) {
+        const decoded = decode(row)
+        if (row.scope === "user_global") {
+          const key = "global"
+          const bucket = buckets.get(key)
+          if (bucket) bucket.items.push(decoded)
+          else buckets.set(key, { scope: "user_global", items: [decoded] })
+          continue
+        }
+        const key = row.workspace_id ?? `dir:${row.directory ?? ""}`
+        const bucket = buckets.get(key)
+        if (bucket) bucket.items.push(decoded)
+        else
+          buckets.set(key, {
+            scope: "workspace",
+            ...(row.workspace_id ? { workspaceID: row.workspace_id } : {}),
+            ...(row.directory ? { directory: row.directory } : {}),
+            items: [decoded],
+          })
+      }
+      return Array.from(buckets.values())
+    })
+
     const count: Interface["count"] = Effect.fn("Memory.count")(function* (input) {
       yield* maintainIfDue()
       const row = yield* db
@@ -1172,6 +1230,7 @@ const layer = Layer.effect(
       clear,
       export: exportRecords,
       history,
+      all,
     })
   }),
 )

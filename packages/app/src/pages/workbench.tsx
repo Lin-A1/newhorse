@@ -1,0 +1,245 @@
+import { createResource, createSignal, For, Show } from "solid-js"
+import { useNavigate } from "@solidjs/router"
+import { useServerSDK } from "@/context/server-sdk"
+import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
+import { ScrollView } from "@newhorse/ui/scroll-view"
+import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
+import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
+import { SidebarTimeline } from "@/components/sidebar-timeline"
+import { SettingsUsage } from "@/components/settings-usage"
+
+type WorkbenchTodo = {
+  id: string
+  content: string
+  status: "open" | "in_progress" | "done" | "cancelled"
+  source: "user" | "newhorse" | "reminder"
+}
+
+function presenceLabel(language: ReturnType<typeof useLanguage>, idleMs: number) {
+  const minutes = Math.floor(idleMs / 60_000)
+  if (minutes < 1) return language.t("workbench.presence.active")
+  return language.t("workbench.presence.idle", { minutes: String(minutes) })
+}
+
+function WorkbenchTodos() {
+  const serverSDK = useServerSDK()
+  const language = useLanguage()
+  const [input, setInput] = createSignal("")
+  const [todos, { refetch }] = createResource(async () => {
+    const res = await serverSDK().client.workbench.list()
+    return res.data ?? []
+  })
+
+  const add = async () => {
+    const content = input().trim()
+    if (!content) return
+    setInput("")
+    try {
+      await serverSDK().client.workbench.create({ content })
+      await refetch()
+    } catch {
+      // Keep the typed text on failure so the user can retry.
+      setInput(content)
+    }
+  }
+
+  const setStatus = async (todo: WorkbenchTodo, status: "open" | "in_progress" | "done" | "cancelled") => {
+    try {
+      await serverSDK().client.workbench.update({ todoID: todo.id, status })
+      await refetch()
+    } catch {
+      // Invalid transitions are rejected server-side; surface nothing.
+    }
+  }
+
+  const remove = async (todo: WorkbenchTodo) => {
+    try {
+      await serverSDK().client.workbench.remove({ todoID: todo.id })
+      await refetch()
+    } catch {
+      // no-op
+    }
+  }
+
+  return (
+    <section class="flex flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+      <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">{language.t("workbench.todo")}</h2>
+      <div class="flex items-center gap-2">
+        <input
+          type="text"
+          value={input()}
+          placeholder={language.t("workbench.addTodoPlaceholder")}
+          onInput={(e) => setInput(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void add()
+          }}
+          class="min-w-0 flex-1 rounded-[6px] border border-v2-border-border-muted bg-v2-background-bg-base px-2.5 py-1.5 text-[13px] text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint focus:border-v2-border-border-active"
+        />
+        <ButtonV2 size="small" variant="outline" onClick={() => void add()} disabled={!input().trim()}>
+          {language.t("workbench.add")}
+        </ButtonV2>
+      </div>
+      <div class="flex flex-col">
+        <Show
+          when={(todos()?.length ?? 0) > 0}
+          fallback={<div class="text-[13px] leading-5 text-v2-text-text-faint">{language.t("workbench.todoEmpty")}</div>}
+        >
+          <For each={todos()}>
+            {(todo) => (
+              <div class="group flex items-center gap-2 border-b border-v2-border-border-muted py-1.5 last:border-b-0">
+                <button
+                  type="button"
+                  aria-label={language.t("workbench.toggle")}
+                  onClick={() => setStatus(todo, todo.status === "done" ? "open" : "done")}
+                  class="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-v2-border-border-muted text-v2-text-text-faint transition-colors hover:border-v2-border-border-active data-[done='true']:border-v2-border-border-active"
+                  data-done={todo.status === "done"}
+                >
+                  <Show when={todo.status === "done"}>
+                    <IconV2 name="check" size="small" />
+                  </Show>
+                </button>
+                <span
+                  class={`min-w-0 flex-1 truncate text-[13px] leading-5 text-v2-text-text-base ${
+                    todo.status === "done" ? "line-through text-v2-text-text-faint" : ""
+                  }`}
+                >
+                  {todo.content}
+                </span>
+                <Show when={todo.source === "newhorse"}>
+                  <span class="shrink-0 rounded-[4px] bg-v2-background-bg-layer-04 px-1.5 py-0.5 text-[10px] text-v2-text-text-faint">
+                    {language.t("workbench.sourceNewhorse")}
+                  </span>
+                </Show>
+                <button
+                  type="button"
+                  aria-label={language.t("workbench.remove")}
+                  onClick={() => void remove(todo)}
+                  class="flex size-5 shrink-0 items-center justify-center rounded-[4px] text-v2-icon-icon-muted opacity-0 transition-opacity hover:bg-v2-overlay-simple-overlay-hover group-hover:opacity-100"
+                >
+                  <IconV2 name="close" size="small" />
+                </button>
+              </div>
+            )}
+          </For>
+        </Show>
+      </div>
+    </section>
+  )
+}
+
+function PresenceStrip() {
+  const serverSDK = useServerSDK()
+  const language = useLanguage()
+  const platform = usePlatform()
+  const [presence] = createResource(async () => {
+    // Desktop-first: real idle/lock/focus from the host. Fall back to the
+    // server-derived idle (last session activity) on web.
+    const desktop = await platform.getPresence?.().catch(() => undefined)
+    if (desktop) {
+      return {
+        idleMs: desktop.idleSeconds * 1000,
+        locked: desktop.locked,
+        focusApp: desktop.focusedApp,
+        inMeeting: false,
+        observedAt: Date.now(),
+      }
+    }
+    const res = await serverSDK().client.presence.current()
+    return res.data
+  })
+
+  const activityLevel = (idleMs: number): 0 | 1 | 2 | 3 => {
+    if (idleMs < 60_000) return 3
+    if (idleMs < 5 * 60_000) return 2
+    if (idleMs < 30 * 60_000) return 1
+    return 0
+  }
+
+  const idleMs = () => Number(presence()?.idleMs ?? Infinity)
+
+  return (
+    <section class="flex items-center gap-2 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+      <span class="relative flex size-2 shrink-0">
+        <span
+          class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
+          classList={{
+            "bg-v2-accent-accent": idleMs() < 60_000,
+            "bg-v2-warning-warning": idleMs() >= 60_000,
+          }}
+        />
+        <span
+          class="relative inline-flex size-2 rounded-full"
+          classList={{
+            "bg-v2-accent-accent": idleMs() < 60_000,
+            "bg-v2-warning-warning": idleMs() >= 60_000,
+          }}
+        />
+      </span>
+      <div class="min-w-0">
+        <div class="text-[13px] font-medium text-v2-text-text-base">
+          {language.t("workbench.presence.title")}
+        </div>
+        <Show when={presence()}>
+          <div class="text-[12px] leading-4 text-v2-text-text-faint">
+            {/* 活跃强度点 */}
+            <span class="mr-1 tracking-tight" aria-hidden="true">
+              {"●".repeat(activityLevel(idleMs())) + "○".repeat(3 - activityLevel(idleMs()))}
+            </span>
+            {presenceLabel(language, idleMs())}
+            <Show when={presence()!.focusApp}>
+              {" · "}
+              {language.t("workbench.presence.focusing")}: {presence()!.focusApp}
+            </Show>
+          </div>
+        </Show>
+      </div>
+    </section>
+  )
+}
+
+export default function WorkbenchPage() {
+  const language = useLanguage()
+  const navigate = useNavigate()
+
+  return (
+    <div class="m-2 min-h-0 self-stretch flex-1 overflow-hidden rounded-[10px] bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]">
+      <ScrollView class="h-full [container-type:size]">
+        <div class="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-4 px-4 py-6">
+          <header class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="flex size-7 items-center justify-center rounded-[6px] text-v2-icon-icon-muted transition-colors hover:bg-v2-overlay-simple-overlay-hover"
+                onClick={() => navigate("/")}
+                aria-label={language.t("common.back")}
+              >
+                <IconV2 name="chevron-left" size="small" />
+              </button>
+              <h1 class="text-[18px] font-medium tracking-[-0.13px] text-v2-text-text-strong">
+                {language.t("workbench.title")}
+              </h1>
+            </div>
+          </header>
+
+          <PresenceStrip />
+          <WorkbenchTodos />
+
+          <section class="flex flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+            <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
+              {language.t("workbench.dailySummary")}
+            </h2>
+            <SidebarTimeline showHeader={false} bodyClass="px-0 pb-0" />
+          </section>
+
+          <section class="flex flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+            <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
+              {language.t("workbench.usage")}
+            </h2>
+            <SettingsUsage />
+          </section>
+        </div>
+      </ScrollView>
+    </div>
+  )
+}

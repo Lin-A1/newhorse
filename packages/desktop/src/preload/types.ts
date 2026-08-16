@@ -95,6 +95,12 @@ export type ElectronAPI = {
   getWindowFocused: () => Promise<boolean>
   setWindowFocus: () => Promise<void>
   showWindow: () => Promise<void>
+  /** Desktop presence snapshot: idle seconds, lock state, focused app title (approximation). */
+  getPresence: () => Promise<{
+    idleSeconds: number
+    locked: boolean
+    focusedApp: string | undefined
+  }>
   relaunch: () => void
   getZoomFactor: () => Promise<number>
   setZoomFactor: (factor: number) => Promise<void>

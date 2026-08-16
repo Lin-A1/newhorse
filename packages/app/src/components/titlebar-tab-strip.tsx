@@ -8,7 +8,7 @@ import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { arrayMove } from "@dnd-kit/helpers"
 import { tabHref, tabKey, type SessionTab, type Tab } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
-import { CompanionTabItem, DraftTabItem, TabNavItem } from "@/components/titlebar-tab-nav"
+import { CompanionTabItem, DraftTabItem, TabNavItem, WorkbenchTabItem } from "@/components/titlebar-tab-nav"
 import { useGlobal, type ServerCtx } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useCommand } from "@/context/command"
@@ -171,6 +171,8 @@ export function TitlebarTabStrip(props: {
   onOverflowChange: (overflowing: boolean) => void
   onOpenCompanion?: () => void
   companionActive?: boolean
+  onOpenWorkbench?: () => void
+  workbenchActive?: boolean
 }) {
   const global = useGlobal()
   const language = useLanguage()
@@ -222,6 +224,13 @@ export function TitlebarTabStrip(props: {
             title={language.t("newSession.mode.companion")}
             active={props.companionActive}
             onNavigate={() => props.onOpenCompanion?.()}
+          />
+        </Show>
+        <Show when={props.onOpenWorkbench && props.workbenchActive}>
+          <WorkbenchTabItem
+            title={language.t("workbench.title")}
+            active={props.workbenchActive}
+            onNavigate={() => props.onOpenWorkbench?.()}
           />
         </Show>
         <DragDropProvider

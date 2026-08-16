@@ -41,6 +41,7 @@ export namespace Timeline {
     isActive: boolean,
     // v2 renders comments inside the user message attachments row instead of a strip row
     inlineComments: boolean,
+    messageCount: number,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -48,6 +49,32 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
+
+    // A landed compaction renders as a single collapsed marker: the checkpoint
+    // payload (the model-generated summary) never shows as normal assistant
+    // output — it is the marker's expandable disclosure. The compacted
+    // conversation stays above, scrollable as usual.
+    if (compaction) {
+      const summaryAssistant = assistantMessages.find((m) => m.summary === true)
+      const summary = summaryAssistant
+        ? (getMessageParts(summaryAssistant.id)
+            .filter((part): part is Extract<Part, { type: "text" }> => part.type === "text" && !!part.text)
+            .map((part) => part.text)
+            .join("\n")
+            .trim() || undefined)
+        : undefined
+      const tokenCount = summaryAssistant?.tokens?.input
+      rows.push(
+        new TimelineRow.CompactionSummary({
+          userMessageID: userMessage.id,
+          summary,
+          messageCount,
+          ...(tokenCount ? { tokenCount } : {}),
+        }),
+      )
+      return rows
+    }
+
     const interruptedMessageIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
     const interrupted = interruptedMessageIndex !== -1
     const error = assistantMessages.find((m) => m.error && m.error.name !== "MessageAbortedError")?.error

@@ -20,6 +20,7 @@ const prefixes = {
   continuityGrant: "cgr",
   continuityGrantAudit: "cga",
   policyAudit: "plc",
+  workbenchTodo: "wbt",
 } as const
 
 export function ascending(prefix: keyof typeof prefixes, given?: string) {

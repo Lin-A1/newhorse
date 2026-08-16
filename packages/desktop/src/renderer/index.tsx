@@ -245,6 +245,8 @@ const createPlatform = (windowState: DesktopWindowState): Platform => {
 
     recordFatalRendererError: (error) => window.api.recordFatalRendererError(error),
 
+    getPresence: () => window.api.getPresence(),
+
     onCloseChoice: (cb) => window.api.onCloseChoice(cb),
     replyCloseChoice: (payload) => window.api.replyCloseChoice(payload),
 

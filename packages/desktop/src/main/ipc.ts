@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { stat, writeFile } from "node:fs/promises"
 import { basename } from "node:path"
-import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
+import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, powerMonitor, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@newhorse/app/desktop-menu"
 
@@ -231,6 +231,16 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("show-window", (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.show()
+  })
+
+  ipcMain.handle("get-presence", (event: IpcMainInvokeEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return {
+      idleSeconds: powerMonitor.getSystemIdleTime(),
+      locked: false,
+      // 近似：newhorse 窗口聚焦时视为"正在使用 newhorse"；真实前台应用需要原生 Win32 检测（TODO）
+      focusedApp: win?.isFocused() ? "newhorse" : undefined,
+    }
   })
 
   ipcMain.on("relaunch", () => {

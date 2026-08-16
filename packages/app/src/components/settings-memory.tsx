@@ -3,7 +3,7 @@ import { Button } from "@newhorse/ui/button"
 import { Spinner } from "@newhorse/ui/spinner"
 import { Select } from "@newhorse/ui/select"
 import { TextField } from "@newhorse/ui/text-field"
-import { For, Show, createSignal } from "solid-js"
+import { createResource, For, Show, createSignal } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { formatServerError } from "@/utils/server-errors"
 import { useLanguage } from "@/context/language"
@@ -56,6 +56,12 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const [expires, setExpires] = createSignal("")
   const [exporting, setExporting] = createSignal(false)
   const [auditID, setAuditID] = createSignal<string>()
+  const [view, setView] = createSignal<"current" | "all">("current")
+
+  const [aggregate] = createResource(
+    () => (view() === "all" ? view() : undefined),
+    () => memory.aggregate(),
+  )
 
   const fail = (error: unknown) =>
     showToast({
@@ -128,7 +134,75 @@ export function SettingsMemory(props: { sessionID?: string }) {
         </div>
       </div>
 
+      <div class="flex items-center gap-1 rounded-lg bg-surface-base p-1 max-w-[720px]">
+        <button
+          type="button"
+          class={`flex-1 rounded-md px-3 py-1 text-13-regular transition-colors ${
+            view() === "current" ? "bg-surface-stronger text-text-base" : "text-text-weak hover:text-text-base"
+          }`}
+          onClick={() => setView("current")}
+        >
+          {language.t("settings.memory.view.current")}
+        </button>
+        <button
+          type="button"
+          class={`flex-1 rounded-md px-3 py-1 text-13-regular transition-colors ${
+            view() === "all" ? "bg-surface-stronger text-text-base" : "text-text-weak hover:text-text-base"
+          }`}
+          onClick={() => setView("all")}
+        >
+          {language.t("settings.memory.view.all")}
+        </button>
+      </div>
+
       <div class="flex flex-col gap-4 max-w-[720px]">
+        <Show when={view() === "all"}>
+          <Show
+            when={!aggregate.loading}
+            fallback={
+              <div role="status" aria-live="polite" data-state="loading">
+                {language.t("settings.memory.loading")}
+              </div>
+            }
+          >
+            <Show
+              when={(aggregate()?.length ?? 0) > 0}
+              fallback={
+                <div role="status" aria-live="polite" data-state="empty" class="text-14-regular text-text-weak">
+                  {language.t("settings.memory.all.empty")}
+                </div>
+              }
+            >
+              <For each={aggregate()}>
+                {(group) => (
+                  <section class="flex flex-col gap-3" data-memory-group={group.workspaceID ?? group.directory ?? "global"}>
+                    <h3 class="text-13-medium text-text-muted">
+                      {group.scope === "user_global"
+                        ? language.t("settings.memory.all.global")
+                        : (group.workspaceID ?? group.directory ?? language.t("settings.memory.all.workspace"))}
+                      <span class="ml-2 text-11-regular text-text-weaker">
+                        {group.items.length} {language.t("settings.memory.all.count")}
+                      </span>
+                    </h3>
+                    <For each={group.items}>
+                      {(item) => (
+                        <article class="flex flex-col gap-2 rounded-lg bg-surface-base p-4" data-memory-id={item.id}>
+                          <div class="flex flex-wrap gap-2 text-11-regular text-text-weak">
+                            <span>{memoryKindLabel(language.t, item.kind)}</span>
+                            <span>{memoryStatusLabel(language.t, item.status)}</span>
+                            <span>{memoryScopeLabel(language.t, item.scope)}</span>
+                          </div>
+                          <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.content}</p>
+                        </article>
+                      )}
+                    </For>
+                  </section>
+                )}
+              </For>
+            </Show>
+          </Show>
+        </Show>
+        <Show when={view() === "current"}>
         <Show
           when={!memory.loading()}
           fallback={
@@ -279,6 +353,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
               </Button>
             </div>
           </Show>
+        </Show>
         </Show>
       </div>
     </div>

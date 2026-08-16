@@ -139,6 +139,8 @@ import type {
   McpRemoteConfig,
   McpStatusErrors,
   McpStatusResponses,
+  MemoryAllErrors,
+  MemoryAllResponses,
   MemoryClearErrors,
   MemoryClearResponses,
   MemoryDecideErrors,
@@ -176,6 +178,8 @@ import type {
   PermissionV2Source,
   PolicyAuditListErrors,
   PolicyAuditListResponses,
+  PresenceCurrentErrors,
+  PresenceCurrentResponses,
   ProjectCommands,
   ProjectCurrentErrors,
   ProjectCurrentResponses,
@@ -457,6 +461,14 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
+  WorkbenchCreateErrors,
+  WorkbenchCreateResponses,
+  WorkbenchListErrors,
+  WorkbenchListResponses,
+  WorkbenchRemoveErrors,
+  WorkbenchRemoveResponses,
+  WorkbenchUpdateErrors,
+  WorkbenchUpdateResponses,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -3388,6 +3400,36 @@ export class Memory extends HeyApiClient {
   }
 
   /**
+   * All-workspaces Memory aggregate
+   */
+  public all<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      session?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<MemoryAllResponses, MemoryAllErrors, ThrowOnError>({
+      url: "/memory/all",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get Memory audit history
    */
   public history<ThrowOnError extends boolean = false>(
@@ -4623,6 +4665,170 @@ export class DailySummary extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+}
+
+export class Workbench extends HeyApiClient {
+  /**
+   * List workbench todos
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      session?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<WorkbenchListResponses, WorkbenchListErrors, ThrowOnError>({
+      url: "/workbench/todo",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create workbench todo
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      session?: string
+      content?: string
+      priority?: "low" | "medium" | "high"
+      deadline?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      source?: "user" | "newhorse" | "reminder"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+            { in: "body", key: "content" },
+            { in: "body", key: "priority" },
+            { in: "body", key: "deadline" },
+            { in: "body", key: "source" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<WorkbenchCreateResponses, WorkbenchCreateErrors, ThrowOnError>({
+      url: "/workbench/todo",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Remove workbench todo
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      todoID: string
+      directory?: string
+      workspace?: string
+      session?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "todoID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<WorkbenchRemoveResponses, WorkbenchRemoveErrors, ThrowOnError>({
+      url: "/workbench/todo/{todoID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update workbench todo
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      todoID: string
+      directory?: string
+      workspace?: string
+      session?: string
+      content?: string
+      status?: "open" | "in_progress" | "done" | "cancelled"
+      priority?: "low" | "medium" | "high"
+      deadline?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "todoID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+            { in: "body", key: "content" },
+            { in: "body", key: "status" },
+            { in: "body", key: "priority" },
+            { in: "body", key: "deadline" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<WorkbenchUpdateResponses, WorkbenchUpdateErrors, ThrowOnError>({
+      url: "/workbench/todo/{todoID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Presence extends HeyApiClient {
+  /**
+   * Get current presence
+   */
+  public current<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<PresenceCurrentResponses, PresenceCurrentErrors, ThrowOnError>({
+      url: "/presence",
+      ...options,
     })
   }
 }
@@ -8631,6 +8837,16 @@ export class OpencodeClient extends HeyApiClient {
   private _dailySummary?: DailySummary
   get dailySummary(): DailySummary {
     return (this._dailySummary ??= new DailySummary({ client: this.client }))
+  }
+
+  private _workbench?: Workbench
+  get workbench(): Workbench {
+    return (this._workbench ??= new Workbench({ client: this.client }))
+  }
+
+  private _presence?: Presence
+  get presence(): Presence {
+    return (this._presence ??= new Presence({ client: this.client }))
   }
 
   private _session?: Session2

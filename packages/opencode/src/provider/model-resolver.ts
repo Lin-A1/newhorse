@@ -1,8 +1,9 @@
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { ProviderV2 } from "@newhorse/core/provider"
 import { ModelV2 } from "@newhorse/core/model"
 import { ConfigV1 } from "@newhorse/core/v1/config/config"
 import { Provider } from "./provider"
+import { CircuitBreaker } from "./circuit-breaker"
 
 /**
  * One availability-aware fallback entry. Entries are tried in order; for each
@@ -66,14 +67,26 @@ export function resolveWithFallback(
     }
 
     if (input.fallbackChain && input.fallbackChain.length > 0) {
+      const breaker = yield* Effect.serviceOption(CircuitBreaker.Service)
       const providers = yield* provider.list().pipe(Effect.orDie)
       for (const entry of input.fallbackChain) {
         for (const providerID of entry.providers) {
-          const info = providers[ProviderV2.ID.make(providerID)]
+          const id = ProviderV2.ID.make(providerID)
+          const info = providers[id]
           if (!info) continue
           if (!info.models[entry.model]) continue
+          // Circuit breaker: skip providers whose circuit is open so a broken
+          // provider is not re-selected (and does not make every request wait
+          // for its timeout) once it has failed enough.
+          if (Option.isSome(breaker) && !(yield* breaker.value.isAvailable(id))) {
+            yield* Effect.logWarning("fallback provider circuit open; skipping", {
+              providerID: id,
+              model: entry.model,
+            })
+            continue
+          }
           return {
-            providerID: info.id,
+            providerID: id,
             modelID: ModelV2.ID.make(entry.model),
             variant: entry.variant,
             source: "fallback" as const,

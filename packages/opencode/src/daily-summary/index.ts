@@ -239,11 +239,11 @@ const layer = Layer.effect(
       if (!model) return fallbackOverview(digest)
 
       const user = {
-        id: MessageID.make("daily-summary"),
+        id: MessageID.make("msg-daily-summary"),
         type: "user",
         role: "user",
         time: { created: Date.now() },
-        sessionID: SessionID.make("daily-summary"),
+        sessionID: SessionID.make("ses-daily-summary"),
         text: "",
       } as unknown as SessionV1.User
 

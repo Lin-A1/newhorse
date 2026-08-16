@@ -33,6 +33,18 @@ import { Reference } from "@newhorse/core/reference"
 import { Location } from "@newhorse/core/location"
 import { PluginV2 } from "@newhorse/core/plugin"
 
+export const SubagentMeta = Schema.Struct({
+  category: Schema.optional(Schema.Literals(["exploration", "specialist", "advisor", "utility"])),
+  cost: Schema.optional(Schema.Literals(["FREE", "CHEAP", "EXPENSIVE"])),
+  key_trigger: Schema.optional(Schema.String),
+  triggers: Schema.optional(
+    Schema.mutable(Schema.Array(Schema.Struct({ domain: Schema.String, trigger: Schema.String }))),
+  ),
+  use_when: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+  avoid_when: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+}).annotate({ identifier: "AgentSubagentMeta" })
+export type SubagentMeta = DeepMutable<Schema.Schema.Type<typeof SubagentMeta>>
+
 export const Info = Schema.Struct({
   name: Schema.String,
   description: Schema.optional(Schema.String),
@@ -53,6 +65,7 @@ export const Info = Schema.Struct({
   prompt: Schema.optional(Schema.String),
   options: Schema.Record(Schema.String, Schema.Unknown),
   steps: Schema.optional(Schema.Finite),
+  subagent_meta: Schema.optional(SubagentMeta),
 }).annotate({ identifier: "Agent" })
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
 
@@ -214,6 +227,12 @@ const layer = Layer.effect(
             ),
             mode: "primary",
             native: true,
+            subagent_meta: {
+              category: "advisor",
+              cost: "CHEAP",
+              key_trigger: "任务复杂/跨多模块/需先规划时先进入 plan",
+              triggers: [{ domain: "planning", trigger: "复杂任务需要先规划" }],
+            },
           },
           general: {
             name: "general",
@@ -334,8 +353,16 @@ const layer = Layer.effect(
               }),
               user,
             ),
-            mode: "primary",
+            mode: "all",
             native: true,
+            subagent_meta: {
+              category: "exploration",
+              cost: "CHEAP",
+              key_trigger: "需要调研/查资料/摸清现状时委派 researcher",
+              triggers: [{ domain: "research", trigger: "用户要求调研/搜索/阅读整理" }],
+              use_when: ["信息收集", "资料检索"],
+              avoid_when: ["只需一次 grep 定位"],
+            },
           },
           writer: {
             name: "writer",
@@ -359,8 +386,16 @@ const layer = Layer.effect(
               }),
               user,
             ),
-            mode: "primary",
+            mode: "all",
             native: true,
+            subagent_meta: {
+              category: "specialist",
+              cost: "CHEAP",
+              key_trigger: "需要写文档/文案/报告时委派 writer",
+              triggers: [{ domain: "writing", trigger: "撰写文档/笔记/邮件/报告" }],
+              use_when: ["长文产出"],
+              avoid_when: ["代码实现"],
+            },
           },
           self: {
             name: "self",
@@ -412,6 +447,7 @@ const layer = Layer.effect(
           item.steps = value.steps ?? item.steps
           item.options = mergeDeep(item.options, value.options ?? {})
           item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
+          item.subagent_meta = value.subagent_meta ?? item.subagent_meta
         }
 
         for (const name of Object.keys(ENFORCED_PERMISSION)) {

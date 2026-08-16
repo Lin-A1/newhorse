@@ -290,9 +290,15 @@ const ask = Effect.fn("ShellTool.ask")(function* (ctx: Tool.Context, scan: Scan,
   })
 })
 
+// Windows PowerShell 5.1 decodes native-program output with the console's OEM
+// code page (GBK etc.) instead of UTF-8, which garbles `git log` and friends.
+// Force the console output encoding to UTF-8 for the spawned shell so captured
+// output is decoded correctly without asking users to set it themselves.
+const POWERSHELL_UTF8_PREAMBLE = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
+
 function cmd(shell: string, command: string, cwd: string, env: NodeJS.ProcessEnv) {
   if (process.platform === "win32" && Shell.ps(shell)) {
-    return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+    return ChildProcess.make(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", `${POWERSHELL_UTF8_PREAMBLE} ${command}`], {
       cwd,
       env,
       stdin: "ignore",

@@ -47,6 +47,9 @@ import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { TodoContinuation } from "@/session/todo-continuation"
 import { DailySummary } from "@/daily-summary"
+import { Workbench } from "@/workbench"
+import { Presence } from "@/presence"
+import { CircuitBreaker } from "@/provider/circuit-breaker"
 import { Todo } from "@/session/todo"
 import { SessionShare } from "@/share/session"
 import { ShareNext } from "@/share/share-next"
@@ -110,6 +113,8 @@ import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { reminderHandlers } from "./handlers/reminder"
 import { dailySummaryHandlers } from "./handlers/daily-summary"
+import { workbenchHandlers } from "./handlers/workbench"
+import { presenceHandlers } from "./handlers/presence"
 import { sessionHandlers } from "./handlers/session"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
@@ -183,6 +188,8 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     providerHandlers,
     reminderHandlers,
     dailySummaryHandlers,
+    workbenchHandlers,
+    presenceHandlers,
     sessionHandlers,
     syncHandlers,
     tuiHandlers,
@@ -271,6 +278,9 @@ const app = LayerNode.group([
   SessionSummary.node,
   TodoContinuation.node,
   DailySummary.node,
+  Workbench.node,
+  Presence.node,
+  CircuitBreaker.node,
   SessionPrompt.node,
   Instruction.node,
   LLM.node,

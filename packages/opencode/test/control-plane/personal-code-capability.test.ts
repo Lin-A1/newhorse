@@ -2,7 +2,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { expect } from "bun:test"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { personalDirectory } from "../../src/control-plane/adapters/personal"
 import { Permission } from "../../src/permission"
@@ -11,8 +11,17 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import type { Tool } from "../../src/tool/tool"
 import { provideInstance, testInstanceStoreLayer } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { InstanceBootstrap } from "@/project/bootstrap"
+import { InstanceStore } from "@/project/instance-store"
 
-const it = testEffect(LayerNode.compile(LayerNode.group([ToolRegistry.node, Agent.node])))
+const it = testEffect(
+  LayerNode.compile(LayerNode.group([ToolRegistry.node, Agent.node]), [
+    [
+      InstanceStore.bootstrapNode,
+      Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void })),
+    ],
+  ]),
+)
 
 // Code capability is the foundation every other personal-space capability is
 // built on (notes, analysis, output generation), so a personal workspace must
