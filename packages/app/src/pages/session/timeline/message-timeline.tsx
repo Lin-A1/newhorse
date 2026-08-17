@@ -1305,6 +1305,19 @@ export function MessageTimeline(props: {
           </TimelineRowFrame>
         )
       }
+      case "ThinkingOnly": {
+        const thinkingOnlyRow = row as Accessor<TimelineRowByTag<"ThinkingOnly">>
+        return (
+          <TimelineRowFrame row={thinkingOnlyRow}>
+            <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
+              <div class="flex items-center gap-1.5 text-[12px] text-v2-text-text-faint">
+                <IconV2 name="brain" size="small" class="shrink-0" />
+                {language.t("session.turn.thinkingOnly")}
+              </div>
+            </div>
+          </TimelineRowFrame>
+        )
+      }
       case "Retry": {
         const retryRow = row as Accessor<TimelineRowByTag<"Retry">>
         return (

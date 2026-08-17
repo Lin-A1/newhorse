@@ -1562,4 +1562,5 @@ export const dict = {
   "newSession.mode.companion": "newhorse",
   "newSession.mode.companion.description": "newhorse — remembers you, sets reminders, and picks up where you left off.",
   "workbench.section.overview": "Overview",
+  "session.turn.thinkingOnly": "Thought but did not reply",
 }

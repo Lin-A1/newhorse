@@ -157,6 +157,17 @@ export namespace Timeline {
       assistantGroupIndex += 1
     })
 
+    // A turn whose assistant message has reasoning but NO renderable text/tool
+    // content, after the session is no longer busy, means the model thought but
+    // produced no visible reply (a stop with empty text). Render an explicit
+    // placeholder instead of a silent blank so the turn is not confusing.
+    const onlyReasoning = assistantItems.length === 0 && assistantMessages.some((message) =>
+      getMessageParts(message.id).some((part) => part.type === "reasoning" && !!part.text),
+    )
+    if (onlyReasoning && !isActive) {
+      rows.push(new TimelineRow.ThinkingOnly({ userMessageID: userMessage.id }))
+    }
+
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const heading = assistantMessages
         .flatMap((message) => getMessageParts(message.id))

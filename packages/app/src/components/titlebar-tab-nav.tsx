@@ -451,14 +451,8 @@ export function CompanionTabItem(props: {
       <button
         type="button"
         title={language.t("newSession.mode.companion.description")}
-        onMouseDown={(event) => {
-          if (event.button !== 0) return
-          props.onNavigate()
-        }}
         onClick={(event) => {
           event.preventDefault()
-          // Mouse navigation already happened on mousedown; detail 0 means keyboard activation.
-          if (event.detail > 0) return
           props.onNavigate()
         }}
         class="flex h-full min-w-0 items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"
@@ -494,14 +488,8 @@ export function WorkbenchTabItem(props: {
       <button
         type="button"
         title={language.t("workbench.title")}
-        onMouseDown={(event) => {
-          if (event.button !== 0) return
-          props.onNavigate()
-        }}
         onClick={(event) => {
           event.preventDefault()
-          // Mouse navigation already happened on mousedown; detail 0 means keyboard activation.
-          if (event.detail > 0) return
           props.onNavigate()
         }}
         class="flex h-full min-w-0 items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base"

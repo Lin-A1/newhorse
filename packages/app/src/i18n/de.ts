@@ -1500,4 +1500,5 @@ export const dict = {
   "workbench.presence.locked": "Locked",
   "workbench.presence.meeting": "In a meeting",
   "workbench.section.overview": "Übersicht",
+  "session.turn.thinkingOnly": "Nachgedacht, aber nicht geantwortet",
 } satisfies Partial<Record<Keys, string>>

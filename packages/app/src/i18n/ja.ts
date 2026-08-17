@@ -1479,4 +1479,5 @@ export const dict = {
   "workbench.presence.locked": "Locked",
   "workbench.presence.meeting": "In a meeting",
   "workbench.section.overview": "概要",
+  "session.turn.thinkingOnly": "考えたが返答なし",
 }

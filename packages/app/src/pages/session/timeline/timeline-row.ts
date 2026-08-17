@@ -35,6 +35,9 @@ export namespace TimelineRow {
     userMessageID: string
     reasoningHeading?: string
   }> {}
+  export class ThinkingOnly extends Data.TaggedClass("ThinkingOnly")<{
+    userMessageID: string
+  }> {}
   export class DiffSummary extends Data.TaggedClass("DiffSummary")<{
     userMessageID: string
     diffs: SummaryDiff[]
@@ -55,6 +58,7 @@ export namespace TimelineRow {
     | CompactionSummary
     | AssistantPart
     | Thinking
+    | ThinkingOnly
     | DiffSummary
     | Error
     | Retry
@@ -75,6 +79,8 @@ export namespace TimelineRow {
         return `assistant-part:${row.userMessageID}:${row.group.key}`
       case "Thinking":
         return `thinking:${row.userMessageID}`
+      case "ThinkingOnly":
+        return `thinking-only:${row.userMessageID}`
       case "DiffSummary":
         return `diff-summary:${row.userMessageID}`
       case "Error":
