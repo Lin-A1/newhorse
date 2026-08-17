@@ -10,6 +10,8 @@ import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { TestConfig } from "../fixture/config"
 import { Config } from "@/config/config"
+import { InstanceBootstrap } from "@/project/bootstrap"
+import { InstanceStore } from "@/project/instance-store"
 import { Plugin } from "@/plugin"
 import { Agent } from "@/agent/agent"
 import { InstanceState } from "@/effect/instance-state"
@@ -51,9 +53,11 @@ const brokenPluginLayer = Layer.succeed(
 )
 
 const root = LayerNode.group([ToolRegistry.node, Agent.node])
+const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const replacements = [
   [Config.node, configLayer],
   [RuntimeFlags.node, RuntimeFlags.layer()],
+  [InstanceStore.bootstrapNode, noopBootstrap],
 ] as const
 
 const it = testEffect(LayerNode.compile(root, replacements))
@@ -61,6 +65,7 @@ const withCodeMode = testEffect(
   LayerNode.compile(root, [
     [Config.node, configLayer],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: true })],
+    [InstanceStore.bootstrapNode, noopBootstrap],
     [
       MCP.node,
       Layer.mock(MCP.Service, {
@@ -84,6 +89,7 @@ const withEmptyCodeMode = testEffect(
   LayerNode.compile(root, [
     [Config.node, configLayer],
     [RuntimeFlags.node, RuntimeFlags.layer({ experimentalCodeMode: true })],
+    [InstanceStore.bootstrapNode, noopBootstrap],
     [
       MCP.node,
       Layer.mock(MCP.Service, {
@@ -120,6 +126,13 @@ describe("tool.registry", () => {
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       expect(yield* registry.ids()).toContain("follow")
+    }),
+  )
+
+  it.instance("exposes the goal tool by default", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("goal")
     }),
   )
 

@@ -43,6 +43,7 @@ import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { Session } from "@/session/session"
+import { Projected } from "@/session/projected"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { TodoContinuation } from "@/session/todo-continuation"
@@ -266,6 +267,7 @@ const app = LayerNode.group([
   PermissionSaved.node,
   Todo.node,
   Session.node,
+  Projected.node,
   SessionProjector.node,
   SessionStatus.node,
   BackgroundJob.node,

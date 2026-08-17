@@ -140,7 +140,7 @@ export async function spawnLocalServer(
   })
 
   const wait = (async () => {
-    const url = `http://${hostname}:${port}`
+    const url = `http://127.0.0.1:${port}`
     let healthy = false
     const gone = exit.promise.then((code) => {
       if (healthy) return

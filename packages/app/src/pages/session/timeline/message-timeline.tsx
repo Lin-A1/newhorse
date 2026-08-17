@@ -1271,6 +1271,7 @@ export function MessageTimeline(props: {
                 summary={compactionRow().summary}
                 messageCount={compactionRow().messageCount}
                 tokenCount={compactionRow().tokenCount}
+                compacting={compactionRow().compacting}
               />
             </div>
           </TimelineRowFrame>

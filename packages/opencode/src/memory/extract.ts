@@ -35,6 +35,11 @@ const MAX_MEMORIES = 5
 const MAX_CONTEXT_MESSAGES = 6
 const MAX_CONTEXT_CHARS = 6000
 const DEDUP_OVERLAP_THRESHOLD = 0.6
+// Minimum gap between extraction LLM calls per session. Extraction is a
+// background cost that shares the session's cache key; throttling it keeps it
+// from firing every single turn (and, combined with cache:false below, from
+// evicting the main conversation prefix).
+const MIN_EXTRACT_INTERVAL_MS = 30_000
 
 const ExtractKind = Schema.Literals(["preference", "fact", "goal", "event"])
 
@@ -144,6 +149,9 @@ const layer = Layer.effect(
     const memory = yield* Memory.Service
     const llm = yield* LLM.Service
     const sessions = yield* Session.Service
+    // Per-session last-extraction timestamp, scoped to this layer instance so
+    // independent layers (test compilations) do not share throttle state.
+    const lastExtractAt = new Map<string, number>()
 
     const runExtraction = Effect.fn("MemoryExtract.runExtraction")(function* (
       input: ExtractInput,
@@ -183,6 +191,11 @@ const layer = Layer.effect(
           user: input.lastUser,
           system,
           small: true,
+          // The extraction prompt shares the session cache key but has its own
+          // prefix, so it can never hit the main conversation's cache. Writing
+          // a breakpoint here would only evict the main prefix (dropping the
+          // next turn's cache_read); opt out of cache writes entirely.
+          cache: false,
           tools: {},
           model: input.model,
           sessionID: input.sessionID,
@@ -214,6 +227,17 @@ const layer = Layer.effect(
         yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "memory_off" })
         return
       }
+      // Throttle extraction so it does not run on every single turn: recent
+      // turns rarely add durable memory, and each call spends small-model
+      // tokens and touches the shared cache key. 30s between calls is plenty
+      // for fast back-to-back turns while still catching gradual drift.
+      const now = Date.now()
+      const lastRun = lastExtractAt.get(input.sessionID)
+      if (lastRun !== undefined && now - lastRun < MIN_EXTRACT_INTERVAL_MS) {
+        yield* Effect.logDebug("memory extract throttled", { "session.id": input.sessionID, reason: "interval" })
+        return
+      }
+      lastExtractAt.set(input.sessionID, now)
       // Respect the session/agent memory permission. The memory tool's own
       // ctx.ask gate is intentionally bypassed here (internal background call,
       // not a model tool invocation), so enforce the same deny up front: if the

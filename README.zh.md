@@ -111,9 +111,13 @@ Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续�
 - Companion 会话「清空聊天记录」= 乐观清空显示 + 后台非阻塞压缩为隐藏上下文（保留连续性，不显示压缩内容）
 - Todo 续跑执行器（idle 且有未完成任务时自动恢复）
 - 记忆中心提供「全部工作区」聚合视图：只读、按工作区分组，列出各工作区的 project/personal 记忆与 user-global 偏好（relationship 记忆仍仅限当前 profile 可见——跨工作区只读不破坏隔离）
+- 记忆工具完全自助：agent 可 `save`/`forget`/`archive`/`clear`/`consolidate`，并新增 `update`（就地修正内容/类别，保留 id 与来源）——模型可自主维护长期记忆的准确性，无需用户去记忆中心操作
+- 记忆提取节流（每会话 30s）并关闭 prompt 缓存写入：后台提取提示与主对话共用同一 session 缓存键但前缀不匹配，写入缓存断点只会驱逐主前缀（此前曾把缓存命中率打到 40% 左右）；日期也移出缓存稳定前缀，跨天不再使整段缓存失效
 
 **newhorse 工作台（仅 Companion 模式）**
 - 独立工作台页面（`/workbench`）：感知条、个人待办、完整每日总结历史、用量统计一页聚合
+- 工作台 v2 布局：顶部 90 天贡献热力图全宽展示，下方两栏（感知+待办 | 用量+每日总结时间线），窄屏自动折叠为单栏；数据刷新时保持滚动位置，页面不会跳回顶部
+- 真实感知：桌面端上报系统前台应用、锁屏与会议状态（Win32 前台窗口探测，请求驱动 + 15s 缓存，无常驻进程）；服务端提供 `POST /presence` 端点 + 内存 Ref，局域网/手机端读取同一实时信号；Web 端回退为会话活动推导的空闲时间
 - 个人工作台待办：用户自建或 newhorse 代建（`workbench` 工具），带状态机（open → in_progress → done/cancelled）、优先级、截止时间、按目录隔离
 - Companion 上下文注入当前待办（按优先级取前 5 条），newhorse 可在对话中直接处理
 - 工作台入口仅 Companion 显示：固定标签页与 home 侧边栏入口在 work（assistant）会话中隐藏
@@ -128,7 +132,13 @@ Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续�
 - 执行期插件 Hooks（权限决策、轮末续跑）
 - 跨会话 Plan 恢复（boulder-state）
 - 工具稳定性加固：失效工具调用产出一次明确的模型可见失败（不再 `invalid` 死循环）；legacy 每条消息的 `tools` 表无法再清空整个工具集；Windows PowerShell 子进程输出强制 UTF-8
-- 上下文压缩展示友好化：压缩点渲染为单行折叠 marker（「已压缩 · N 条消息 / M tokens」），展开才显示模型摘要——checkpoint 载荷绝不作为普通 assistant 输出，被压缩的原始对话保留在 marker 上方可滚动回看；摘要指令作为 FINAL user message 追加（前缀缓存友好）
+- 上下文压缩展示友好化：压缩点渲染为单行折叠 marker（「已压缩 · N 条消息 / M tokens」），展开才显示模型摘要——checkpoint 载荷绝不作为普通 assistant 输出，被压缩的原始对话保留在 marker 上方可滚动回看；摘要指令作为 FINAL user message 追加（前缀缓存友好）。摘要生成中先显示「压缩中」spinner；消息/ token 数由压缩区间真实统计；marker 仅右侧 chevron 可展开（整行点击不再误触）
+- 工作链路轨迹可视化 + 缓存指标：每个会话带轨迹时间线（轮次边界、工具调用输入/输出/错误高亮、subagent 行），点击跳回对应消息；上下文仪表显示 system/tools/messages 构成与预计下一轮 token，stats 行显示实时缓存命中率（`cacheRead / (input + read + write)`）——全部来自会话用量归档
+- Goal 一级概念：`goal` 表 + 服务状态机（open → in_progress/blocked → done/cancelled）+ `goal` 工具 + plan 文件关联 + 标 done 前必填 `done_reason` 审计
+- Todo 续跑上限：后台自动恢复在 `experimental.todo_continuation_max_iterations`（默认 100）次后停止；用户活动通过 2s 倒计时取消待注入；消息级中止检查作为现有事件中止检测的兜底
+- 崩溃恢复与会话不变量：repair 通道在任何消息加载/恢复前闭合悬挂的中断轮次（合成 tool/result 失败并提示「只重试幂等工具」）；核心 append 路径以两阶段暂存校验事件 seq/step/工具配对不变量，非法事件不落库
+- Prompt 缓存加固：长历史每 ~40 条消息加中间断点（受 provider 上限约束），缓存被驱逐时只需重发一个窗口而非整段日志；MCP 指令块确定性排序，重连不会打乱缓存前缀；超大工具输出截断到 50k 字符再进模型上下文（完整输出保留在会话日志）；多步轮次的 token 用量跨工具轮累加（此前只保留最后一步）
+- 记忆提取等后台 LLM 调用关闭缓存写入，避免驱逐主对话前缀
 
 **信任与安全**
 - 中央信任策略 + 无内容审计；project/personal/relationship 内容域隔离
@@ -142,6 +152,10 @@ Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续�
 - 删除会话后其 token/费用仍保留在用量统计中（session_usage 归档表 + /session/usage 端点；usage tab 合并活跃与归档用量）
 - Companion 会话可改名：固定 Companion 会话支持重命名，改名后标题栏保留自定义名称
 - 移动端多端访问复用 Web：绑定 `0.0.0.0`（`--hostname 0.0.0.0` 或 mDNS），用 `OPENCODE_SERVER_PASSWORD` 认证（局域网绑定强制要求密码，未配密码拒绝启动）或 `auth_token` URL，页面可安装为 PWA（manifest + 纯网络 service worker，绝不上缓存含认证的响应）
+- 桌面设置页新增「局域网/手机访问」面板：开关（关=loopback+随机密码，开=`0.0.0.0`+用户密码，未设密码拒绝开启）、局域网地址与可复制的 `auth_token` URL、端口/密码配置持久化到应用 store
+- 对话消息流内 Mermaid 直接渲染：```mermaid 代码块变 SVG 图（v11），主题跟随当前 UI 配色（明/暗各一套，浅紫兜底），TUI 内联 ASCII 渲染，失败回退为可复制代码块，始终提供「复制源码」入口
+- 会话侧边面板跟踪后台 subagent 任务状态（running/completed/error），完成时批量 toast 通知
+- TUI 输入框 Markdown 自动续写：`1. 文本`、`- 项`、`> 引用`、Tab 缩进后回车自动续行（`2. `、同符号、`> `、Tab）；空列表项回车退出列表而非留下裸前缀
 
 **自我认知与文档**
 - Agent 身份自感知：系统提示词身份为 newhorse；内置 `newhorse-capabilities` skill 在 agent 回答「newhorse 能做什么」时读取内置清单，不再 WebFetch 外部文档

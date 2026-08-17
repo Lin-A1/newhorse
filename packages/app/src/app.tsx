@@ -164,6 +164,18 @@ declare global {
     api?: {
       setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void>
       exportDebugLogs?: () => Promise<string>
+      getLanConfig?: () => Promise<{
+        enabled: boolean
+        password: string | null
+        port: number | null
+        token: string | null
+      }>
+      setLanConfig?: (config: {
+        enabled?: boolean
+        password?: string | null
+        port?: number | null
+      }) => Promise<void>
+      getNetworkIps?: () => Promise<string[]>
     }
   }
 }

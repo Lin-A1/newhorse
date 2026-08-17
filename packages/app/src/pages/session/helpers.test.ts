@@ -211,4 +211,44 @@ describe("createSessionTabs", () => {
       dispose()
     })
   })
+
+  test("prefers the tasks tab when background tasks exist", () => {
+    createRoot((dispose) => {
+      const [state] = createStore({
+        active: undefined as string | undefined,
+        all: [],
+      })
+      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+      const result = createSessionTabs({
+        tabs,
+        pathFromTab: () => undefined,
+        normalizeTab: (tab) => tab,
+        tasks: () => true,
+      })
+
+      expect(result.tasksOpen()).toBe(true)
+      expect(result.activeTab()).toBe("tasks")
+      dispose()
+    })
+  })
+
+  test("keeps file tabs ahead of the tasks tab", () => {
+    createRoot((dispose) => {
+      const [state] = createStore({
+        active: "file://src/a.ts" as string | undefined,
+        all: ["file://src/a.ts"],
+      })
+      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+      const result = createSessionTabs({
+        tabs,
+        pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice("file://".length) : undefined),
+        normalizeTab: (tab) => tab,
+        tasks: () => true,
+      })
+
+      expect(result.tasksOpen()).toBe(true)
+      expect(result.activeTab()).toBe("file://src/a.ts")
+      dispose()
+    })
+  })
 })

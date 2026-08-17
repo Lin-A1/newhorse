@@ -15,6 +15,16 @@ export const PresenceApi = HttpApi.make("presence").add(
         success: described(Presence.Info, "Current bounded presence"),
       }).annotateMerge(OpenApi.annotations({ identifier: "presence.current", summary: "Get current presence" })),
     )
+    .add(
+      HttpApiEndpoint.post(
+        "update",
+        root,
+        {
+          payload: Presence.Extras,
+          success: described(Schema.Void, "Presence updated"),
+        },
+      ).annotateMerge(OpenApi.annotations({ identifier: "presence.update", summary: "Report desktop presence signal" })),
+    )
     .annotateMerge(OpenApi.annotations({ title: "presence", description: "Bounded host presence." }))
     .middleware(InstanceContextMiddleware)
     .middleware(WorkspaceRoutingMiddleware)

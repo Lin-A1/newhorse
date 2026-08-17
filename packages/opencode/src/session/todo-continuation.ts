@@ -3,13 +3,15 @@ import { EventV2 } from "@newhorse/core/event"
 import { ModelV2 } from "@newhorse/core/model"
 import { PermissionV1 } from "@newhorse/core/v1/permission"
 import { ProviderV2 } from "@newhorse/core/provider"
+import { SessionEvent } from "@newhorse/core/session/event"
 import { SessionV1 } from "@newhorse/core/v1/session"
 import { SessionStatusEvent } from "@newhorse/schema/session-status-event"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
+import { Config } from "@/config/config"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Permission } from "@/permission"
-import { Effect, Layer, Context, Scope, Option } from "effect"
+import { Context, Deferred, Duration, Effect, Layer, Option, Scope } from "effect"
 import { Session } from "./session"
 import { SessionID } from "./schema"
 import { SessionPrompt } from "./prompt"
@@ -31,6 +33,23 @@ import { Todo } from "./todo"
 const ABORT_COOLDOWN_MS = 3_000
 /** Aborted assistant messages carry this error name (see SessionV1.AbortedError). */
 const ABORTED_ERROR_NAME = "MessageAbortedError"
+/** Provider-level abort name sometimes persisted on assistant messages. */
+const ABORT_ERROR_NAME = "AbortError"
+/** Default cap on continuation injections per session before the loop stops. */
+export const DEFAULT_MAX_ITERATIONS = 100
+/** Countdown before an idle-scheduled injection; user activity cancels it. */
+const INJECT_COUNTDOWN_MS = 2_000
+/** Event types that signal a human is actively driving the session. */
+const INTERFERENCE_TYPES: ReadonlySet<string> = new Set([
+  SessionV1.Event.MessageUpdated.type,
+  SessionV1.Event.PartUpdated.type,
+  SessionEvent.Tool.Input.Started.type,
+  SessionEvent.Tool.Input.Ended.type,
+  SessionEvent.Tool.Called.type,
+  SessionEvent.Tool.Progress.type,
+  SessionEvent.Tool.Success.type,
+  SessionEvent.Tool.Failed.type,
+])
 
 /** Statuses that count as an open (unfinished) todo. */
 export function isOpenTodoStatus(status: string): boolean {
@@ -92,6 +111,8 @@ export type DecideInput = {
   readonly jobs: readonly BackgroundJob.Info[]
   readonly lastAbort: number
   readonly now: number
+  readonly injections: number
+  readonly maxIterations: number
 }
 
 /**
@@ -104,6 +125,7 @@ export type DecideInput = {
  *   5. not read-only (edit/write denied)
  *   6. no running background job owned by the session
  *   7. no abort in the last ABORT_COOLDOWN_MS
+ *   8. session injection count below maxIterations
  */
 export function decisionFor(input: DecideInput): Decision | undefined {
   if (input.parentID) return
@@ -113,6 +135,7 @@ export function decisionFor(input: DecideInput): Decision | undefined {
   if (isReadOnlyAgent(input.agent, input.permission)) return
   if (hasRunningBackgroundJobs(input.jobs, input.sessionID)) return
   if (input.now - input.lastAbort < ABORT_COOLDOWN_MS) return
+  if (input.injections >= input.maxIterations) return
   return {
     agent: input.lastUser.agent,
     model: {
@@ -151,7 +174,7 @@ export function continuationPrompt(input: {
 
 export interface Interface {
   /** Evaluates every trigger condition for a session; `undefined` means no injection. */
-  readonly evaluate: (sessionID: SessionID) => Effect.Effect<Decision | undefined>
+  readonly evaluate: (sessionID: SessionID, maxIterations: number) => Effect.Effect<Decision | undefined>
   /** Injects a synthetic continue prompt (runs the session loop). */
   readonly inject: (sessionID: SessionID, decision: Decision) => Effect.Effect<void>
 }
@@ -166,12 +189,15 @@ const layer = Layer.effect(
     const todo = yield* Todo.Service
     const agents = yield* Agent.Service
     const background = yield* BackgroundJob.Service
+    const config = yield* Config.Service
     const prompt = yield* SessionPrompt.Service
     const runState = yield* SessionRunState.Service
     const scope = yield* Scope.Scope
 
     const recovering = new Set<SessionID>()
     const lastAbortTimes = new Map<SessionID, number>()
+    const injectionCount = new Map<SessionID, number>()
+    const pendingInjections = new Map<SessionID, Deferred.Deferred<void>>()
 
     const isIdle = (event: EventV2.Payload): event is EventV2.Payload<typeof SessionStatusEvent.Idle> =>
       event.type === SessionStatusEvent.Idle.type
@@ -179,7 +205,20 @@ const layer = Layer.effect(
     const isSessionError = (event: EventV2.Payload): event is EventV2.Payload<typeof SessionV1.Event.Error> =>
       event.type === SessionV1.Event.Error.type
 
-    const evaluate = Effect.fn("TodoContinuation.evaluate")(function* (sessionID: SessionID) {
+    const isInterferenceEvent = (
+      event: EventV2.Payload,
+    ): event is EventV2.Payload<
+      | typeof SessionV1.Event.MessageUpdated
+      | typeof SessionV1.Event.PartUpdated
+      | typeof SessionEvent.Tool.Input.Started
+      | typeof SessionEvent.Tool.Input.Ended
+      | typeof SessionEvent.Tool.Called
+      | typeof SessionEvent.Tool.Progress
+      | typeof SessionEvent.Tool.Success
+      | typeof SessionEvent.Tool.Failed
+    > => INTERFERENCE_TYPES.has(event.type)
+
+    const evaluate = Effect.fn("TodoContinuation.evaluate")(function* (sessionID: SessionID, maxIterations: number) {
       const now = Date.now()
       // Prune abort marks that no longer gate anything so the map stays bounded.
       for (const [id, ts] of lastAbortTimes) {
@@ -199,6 +238,18 @@ const layer = Layer.effect(
       const lastUser = lastUserOption.value.info
       if (lastUser.role !== "user") return
 
+      // API fallback for aborts: a persisted aborted assistant message means the
+      // event channel missed the error, so re-arm the cooldown before deciding.
+      const lastAssistant = yield* sessions
+        .findMessage(sessionID, (message) => message.info.role === "assistant")
+        .pipe(Effect.orDie)
+      if (Option.isSome(lastAssistant) && lastAssistant.value.info.role === "assistant") {
+        const errorName: string | undefined = lastAssistant.value.info.error?.name
+        if (errorName === ABORTED_ERROR_NAME || errorName === ABORT_ERROR_NAME) {
+          lastAbortTimes.set(sessionID, now)
+        }
+      }
+
       const agent = yield* agents.get(lastUser.agent)
 
       const jobs = yield* background.list()
@@ -216,6 +267,8 @@ const layer = Layer.effect(
         agent,
         jobs,
         lastAbort: lastAbortTimes.get(sessionID) ?? 0,
+        injections: injectionCount.get(sessionID) ?? 0,
+        maxIterations,
         now,
       })
     })
@@ -244,16 +297,48 @@ const layer = Layer.effect(
         .pipe(Effect.catch((error) => Effect.logError("todo-continuation injection failed", { error })))
     })
 
+    const injectWithCountdown = Effect.fn("TodoContinuation.injectWithCountdown")(function* (
+      sessionID: SessionID,
+      decision: Decision,
+    ) {
+      // Brief countdown before injecting so a human who takes over in the
+      // meantime (new message or tool activity) cancels the injection.
+      const interference = yield* Deferred.make<void>()
+      pendingInjections.set(sessionID, interference)
+      const outcome = yield* Effect.race(
+        Effect.sleep(Duration.millis(INJECT_COUNTDOWN_MS)).pipe(Effect.as("inject" as const)),
+        Deferred.await(interference).pipe(Effect.as("cancel" as const)),
+      )
+      pendingInjections.delete(sessionID)
+      if (outcome === "cancel") {
+        yield* Effect.logInfo("todo-continuation injection cancelled by user activity", { "session.id": sessionID })
+        return
+      }
+      injectionCount.set(sessionID, (injectionCount.get(sessionID) ?? 0) + 1)
+      yield* inject(sessionID, decision).pipe(Effect.forkIn(scope))
+    })
+
     const handleIdle = Effect.fn("TodoContinuation.handleIdle")(function* (sessionID: SessionID) {
       // The idle that ends a previous injected run lifts the suppression marker;
       // only then may we re-inject (bouldering continues while todos stay open).
       if (recovering.has(sessionID)) recovering.delete(sessionID)
 
-      const decision = yield* evaluate(sessionID)
+      const maxIterations = (yield* config.get()).experimental?.todoContinuationMaxIterations ?? DEFAULT_MAX_ITERATIONS
+      const injections = injectionCount.get(sessionID) ?? 0
+      if (injections >= maxIterations) {
+        yield* Effect.logWarning("todo-continuation max iterations reached, stopping", {
+          "session.id": sessionID,
+          maxIterations,
+          injections,
+        })
+        return
+      }
+
+      const decision = yield* evaluate(sessionID, maxIterations)
       if (!decision) return
 
       recovering.add(sessionID)
-      yield* inject(sessionID, decision).pipe(Effect.forkIn(scope))
+      yield* injectWithCountdown(sessionID, decision).pipe(Effect.forkIn(scope))
     })
 
     const unsubscribeError = yield* events.listen((event) =>
@@ -268,6 +353,18 @@ const layer = Layer.effect(
       ),
     )
     yield* Effect.addFinalizer(() => unsubscribeError)
+
+    const unsubscribeInterference = yield* events.listen((event) =>
+      Effect.gen(function* () {
+        if (!isInterferenceEvent(event)) return
+        const pending = pendingInjections.get(event.data.sessionID)
+        if (!pending) return
+        yield* Deferred.succeed(pending, undefined)
+      }).pipe(
+        Effect.catchCause((cause) => Effect.logError("todo-continuation interference handler failed", { cause })),
+      ),
+    )
+    yield* Effect.addFinalizer(() => unsubscribeInterference)
 
     const unsubscribeIdle = yield* events.listen((event) =>
       Effect.gen(function* () {
@@ -292,6 +389,7 @@ export const node = LayerNode.make({
     Todo.node,
     Agent.node,
     BackgroundJob.node,
+    Config.node,
     SessionPrompt.node,
     SessionRunState.node,
   ],

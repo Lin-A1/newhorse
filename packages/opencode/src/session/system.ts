@@ -71,7 +71,6 @@ const layer = Layer.effect(
             `  Workspace root folder: ${ctx.worktree}`,
             `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
             `  Platform: ${process.platform}`,
-            `  Today's date: ${new Date().toDateString()}`,
             `</env>`,
           ].join("\n"),
           references.length === 0
@@ -114,9 +113,12 @@ const layer = Layer.effect(
 
       mcp: Effect.fn("SystemPrompt.mcp")(function* (agent: Agent.Info, permission?: PermissionV1.Ruleset) {
         const ruleset = Agent.effectivePermission(agent, permission ?? [])
-        const instructions = (yield* mcp.instructions()).filter(
-          (item) => item.tools.length === 0 || Permission.disabled(item.tools, ruleset).size < item.tools.length,
-        )
+        // Deterministic ordering by server name so reconnects (which may reorder
+        // the underlying connection list) never reshuffle the emitted block and
+        // invalidate the prompt-cache prefix.
+        const instructions = (yield* mcp.instructions())
+          .toSorted((a, b) => a.name.localeCompare(b.name))
+          .filter((item) => item.tools.length === 0 || Permission.disabled(item.tools, ruleset).size < item.tools.length)
         if (instructions.length === 0) return
 
         return [

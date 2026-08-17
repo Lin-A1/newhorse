@@ -31,6 +31,7 @@ import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
+import { renderMermaid } from "./markdown-mermaid"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -44,6 +45,7 @@ type RenderedBlock =
       generation: number
       stable: MarkdownToken[]
       unstable: MarkdownToken[]
+      mermaid?: { svg: string }
     }
 
 type RenderResult = {
@@ -64,6 +66,15 @@ function escape(text: string) {
 
 function fallback(markdown: string) {
   return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
+}
+
+async function mermaid(text: string): Promise<{ svg: string } | undefined> {
+  try {
+    return await renderMermaid(text)
+  } catch (error) {
+    console.error("Mermaid render failed", error)
+    return undefined
+  }
 }
 
 async function code(text: string, language: string | undefined, key: string, complete = false) {
@@ -401,6 +412,28 @@ export function Markdown(
           const key = base ? `${base}:${index}:${block.mode}` : undefined
           const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
 
+          if (block.mode === "code" && block.language?.toLowerCase() === "mermaid" && block.complete) {
+            const cached = completedCode.get(blockKey)
+            if (cached?.raw === block.raw && cached.mermaid) return cached
+            const diagram = await mermaid(block.src)
+            if (diagram) {
+              const rendered = {
+                key: blockKey,
+                mode: block.mode,
+                raw: block.raw,
+                hash: String(block.raw.length),
+                complete: true,
+                language: "mermaid",
+                generation: 0,
+                stable: [],
+                unstable: [],
+                mermaid: diagram,
+              } satisfies Extract<RenderedBlock, { mode: "code" }>
+              completedCode.set(blockKey, rendered)
+              return rendered
+            }
+          }
+
           if (block.mode === "code") {
             const cached = completedCode.get(blockKey)
             if (block.complete && cached?.raw === block.raw) return cached
@@ -599,6 +632,10 @@ function updateCodeBlock(
   block: Extract<RenderedBlock, { mode: "code" }>,
   labels: CopyLabels,
 ) {
+  if (block.mermaid) {
+    updateMermaidBlock(container, current, block, labels)
+    return
+  }
   const existing = current instanceof HTMLDivElement && current.dataset.markdownKey === block.key ? current : undefined
   const next = existing ?? document.createElement("div")
   next.dataset.markdownBlock = ""
@@ -661,6 +698,49 @@ function updateCodeBlock(
   if (current) {
     disposeCopyButtons(current)
     current.replaceWith(next)
+    return
+  }
+  container.appendChild(next)
+}
+
+function updateMermaidBlock(
+  container: HTMLDivElement,
+  current: Element | undefined,
+  block: Extract<RenderedBlock, { mode: "code" }>,
+  labels: CopyLabels,
+) {
+  const existing = current instanceof HTMLDivElement && current.dataset.markdownKey === block.key ? current : undefined
+  if (existing && existing.dataset.markdownMermaid === "true" && existing.dataset.markdownHash === block.hash) return
+
+  const next = document.createElement("div")
+  next.dataset.markdownBlock = ""
+  next.dataset.markdownKey = block.key
+  next.dataset.markdownHash = block.hash
+  next.dataset.markdownComplete = "true"
+  next.dataset.markdownMermaid = "true"
+  next.style.display = "contents"
+
+  const wrapper = document.createElement("div")
+  wrapper.setAttribute("data-component", "markdown-code")
+  wrapper.dataset.mermaid = "true"
+  applyCodeMetadata(wrapper, "mermaid")
+  const diagram = document.createElement("div")
+  diagram.className = "markdown-mermaid"
+  diagram.innerHTML = block.mermaid!.svg
+  const pre = document.createElement("pre")
+  pre.hidden = true
+  const codeElement = document.createElement("code")
+  codeElement.className = "language-mermaid"
+  codeElement.textContent = block.raw
+  pre.appendChild(codeElement)
+  wrapper.appendChild(diagram)
+  wrapper.appendChild(pre)
+  wrapper.appendChild(createCopyButton(labels))
+  next.appendChild(wrapper)
+
+  if (existing) {
+    disposeCopyButtons(existing)
+    existing.replaceWith(next)
     return
   }
   container.appendChild(next)

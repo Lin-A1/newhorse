@@ -180,6 +180,8 @@ import type {
   PolicyAuditListResponses,
   PresenceCurrentErrors,
   PresenceCurrentResponses,
+  PresenceUpdateErrors,
+  PresenceUpdateResponses,
   ProjectCommands,
   ProjectCurrentErrors,
   ProjectCurrentResponses,
@@ -263,6 +265,8 @@ import type {
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
+  SessionProjectedErrors,
+  SessionProjectedResponses,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
   SessionPromptErrors,
@@ -4831,6 +4835,41 @@ export class Presence extends HeyApiClient {
       ...options,
     })
   }
+
+  /**
+   * Report desktop presence signal
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters?: {
+      locked?: boolean
+      focusApp?: string
+      inMeeting?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "locked" },
+            { in: "body", key: "focusApp" },
+            { in: "body", key: "inMeeting" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<PresenceUpdateResponses, PresenceUpdateErrors, ThrowOnError>({
+      url: "/presence",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
 }
 
 export class Session2 extends HeyApiClient {
@@ -5377,6 +5416,40 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<SessionMessageResponses, SessionMessageErrors, ThrowOnError>({
       url: "/session/{sessionID}/message/{messageID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get session projection
+   *
+   * Projected next request (tokens and cost) plus the current context breakdown and pressure for a session.
+   */
+  public projected<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      session?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionProjectedResponses, SessionProjectedErrors, ThrowOnError>({
+      url: "/session/{sessionID}/projected",
       ...options,
       ...params,
     })

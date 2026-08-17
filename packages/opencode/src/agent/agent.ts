@@ -241,6 +241,7 @@ const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 todowrite: "deny",
+                goal: "deny",
               }),
               user,
             ),
@@ -349,6 +350,7 @@ const layer = Layer.effect(
                 glob: "allow",
                 list: "allow",
                 todowrite: "allow",
+                goal: "allow",
                 external_directory: readonlyExternalDirectory,
               }),
               user,
@@ -378,6 +380,7 @@ const layer = Layer.effect(
                 glob: "allow",
                 list: "allow",
                 todowrite: "allow",
+                goal: "allow",
                 webfetch: "allow",
                 websearch: "allow",
                 edit: "ask",

@@ -7,6 +7,7 @@ import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
 import { SessionRevert } from "./revert"
 import { Session } from "./session"
+import { SessionRepair } from "./repair"
 import { Agent } from "../agent/agent"
 import { buildAgentGuidance } from "../agent/delegation-table"
 import { Workbench } from "@/workbench"
@@ -1283,6 +1284,18 @@ const layer = Layer.effect(
     )(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       yield* revert.cleanup(session)
+      yield* SessionRepair.repair(
+        { updateMessage: sessions.updateMessage, updatePart: sessions.updatePart },
+        db,
+        input.sessionID,
+      ).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError("session repair failed", {
+            "session.id": input.sessionID,
+            error: Cause.pretty(cause),
+          }),
+        ),
+      )
       const message = yield* createUserMessage(input)
       yield* sessions.touch(input.sessionID)
 
@@ -1314,6 +1327,18 @@ const layer = Layer.effect(
     const runLoop: (sessionID: SessionID) => Effect.Effect<SessionV1.WithParts> = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
         const ctx = yield* InstanceState.context
+        yield* SessionRepair.repair(
+          { updateMessage: sessions.updateMessage, updatePart: sessions.updatePart },
+          db,
+          sessionID,
+        ).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError("session repair failed", {
+              "session.id": sessionID,
+              error: Cause.pretty(cause),
+            }),
+          ),
+        )
         let structured: unknown
         let step = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
@@ -1511,7 +1536,13 @@ const layer = Layer.effect(
               sys.environment(model),
               instruction.system().pipe(Effect.orDie),
               sys.mcp(agent, session.permission),
-              MessageV2.toModelMessagesEffect(msgs, model),
+              MessageV2.toModelMessagesEffect(msgs, model, {
+                // Cap oversized tool outputs so a single huge result (large file
+                // dumps, verbose test logs) cannot balloon the context window.
+                // 50k chars ≈ 12.5k tokens — ample for real tool results, bounded
+                // for pathological ones. The full output stays in the session log.
+                toolOutputMaxChars: 50_000,
+              }),
               Effect.gen(function* () {
                 return buildAgentGuidance(yield* agents.list(), {
                   planEnter: flags.experimentalPlanMode,
@@ -1584,6 +1615,11 @@ const layer = Layer.effect(
             ]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+            // The date is emitted as part of the dynamic tail, after the
+            // caching breakpoint, so a day rollover never invalidates the
+            // cached stable prefix (working dir, platform, instructions, tools).
+            const memoryblocks = Array.isArray(memorySystem) ? memorySystem : memorySystem ? [memorySystem] : []
+            const dynamicSystem = [`Today's date: ${new Date().toDateString()}`, ...memoryblocks]
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -1591,7 +1627,7 @@ const layer = Layer.effect(
               sessionID,
               parentSessionID: session.parentID,
               system,
-              dynamicSystem: memorySystem,
+              dynamicSystem,
               protectedSystem: profile.kind === "companion" ? [COMPANION_SAFETY_SYSTEM_PROMPT] : undefined,
               messages: [
                 ...modelMsgs,

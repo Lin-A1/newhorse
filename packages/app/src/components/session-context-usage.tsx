@@ -13,6 +13,8 @@ import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { getSessionContext } from "@/components/session/session-context-metrics"
+import { cacheHitRate } from "@/components/session/session-projection"
+import { SessionContextMeter } from "@/components/session/session-context-meter"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { useSettings } from "@/context/settings"
@@ -77,6 +79,19 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
   })
+  const hitRate = createMemo(() => cacheHitRate(info()))
+  const hitRateLabel = createMemo(() => {
+    const rate = hitRate()
+    if (rate === undefined) return language.t("context.stats.na")
+    return (rate * 100).toFixed(1) + "%"
+  })
+  const hitRateDetail = createMemo(() => {
+    const rate = hitRate()
+    const tokens = info()?.tokens
+    if (rate === undefined || !tokens) return undefined
+    const total = tokens.input + tokens.cache.read + tokens.cache.write
+    return `${tokens.cache.read.toLocaleString(language.intl())} / ${total.toLocaleString(language.intl())}`
+  })
   const contextVisible = createMemo(() => view().reviewPanel.opened() && tabState.activeTab() === "context")
   const hasOtherTabs = createMemo(() =>
     tabs()
@@ -126,13 +141,20 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   )
 
   const tooltipValue = () => (
-    <div class="flex w-[120px] flex-col gap-2">
+    <div class="flex w-[220px] flex-col gap-2">
       <ContextTooltipRow name={language.t("context.usage.cost")} value={cost()} />
       <ContextTooltipRow name={language.t("context.usage.usage")} value={`${context()?.usage ?? 0}%`} />
       <ContextTooltipRow
         name={language.t("context.usage.tokens")}
         value={context()?.total.toLocaleString(language.intl()) ?? "0"}
       />
+      <ContextTooltipRow name={language.t("session.stats.cacheHit")} value={hitRateLabel()} />
+      <Show when={hitRateDetail()}>
+        <div class="text-right text-10-regular text-text-weaker">{hitRateDetail()}</div>
+      </Show>
+      <div class="pt-1">
+        <SessionContextMeter sessionID={() => params.id} locale={language.intl()} compact />
+      </div>
     </div>
   )
 

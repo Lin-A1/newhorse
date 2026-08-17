@@ -57,5 +57,6 @@ export const migrations = (
     import("./migration/20260814120000_memory_scope_four_level"),
     import("./migration/20260815000000_memory_personal_scope_fix"),
     import("./migration/20260816111532_workbench_todo"),
+    import("./migration/20260817031215_goal_table"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

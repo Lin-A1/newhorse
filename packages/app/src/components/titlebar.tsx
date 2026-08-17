@@ -316,9 +316,6 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
               return conn ? global.ensureServerCtx(conn).projects.list()[0]?.worktree : undefined
             })
             const companionActive = createMemo(() => session()?.profileID === "companion")
-            // The workbench is newhorse-specific: it shows outside work
-            // (assistant) sessions — inside a companion session, or on home.
-            const workbenchActive = createMemo(() => companionActive() || !session())
             const openWorkbench = () => navigate("/workbench")
             const openCompanionSession = async () => {
               if (openingCompanion()) return
@@ -573,7 +570,6 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                   onOpenCompanion={openCompanionSession}
                   companionActive={companionActive()}
                   onOpenWorkbench={openWorkbench}
-                  workbenchActive={workbenchActive()}
                 />
                 <Show when={!creating()}>
                   <TooltipV2

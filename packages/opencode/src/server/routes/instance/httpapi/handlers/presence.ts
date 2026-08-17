@@ -8,11 +8,13 @@ export const presenceHandlers = HttpApiBuilder.group(InstanceHttpApi, "presence"
   Effect.gen(function* () {
     const presence = yield* Presence.Service
 
-    return handlers.handle("current", () =>
-      Effect.gen(function* () {
-        const route = yield* WorkspaceRouteContext
-        return yield* presence.get({ directory: route.directory })
-      }),
-    )
+    return handlers
+      .handle("current", () =>
+        Effect.gen(function* () {
+          const route = yield* WorkspaceRouteContext
+          return yield* presence.get({ directory: route.directory })
+        }),
+      )
+      .handle("update", (ctx) => presence.update(ctx.payload))
   }),
 )

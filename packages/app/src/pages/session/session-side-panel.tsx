@@ -30,6 +30,7 @@ import { useDialog } from "@newhorse/ui/context/dialog"
 import FileTree from "@/components/file-tree"
 import { normalizeFileTreeV2Path } from "@/components/file-tree-v2-model"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { createSessionTasksState, SessionTasksPanel } from "@/components/session-tasks-panel"
 
 const reviewTabID = "session-side-panel-review-tab"
 const reviewTabPanelID = "session-side-panel-review-tabpanel"
@@ -118,6 +119,18 @@ export function SessionSidePanel(props: {
   })
   const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
 
+  const tasksState = createSessionTasksState({
+    sessionID: createMemo(() => params.id),
+  })
+  const tasks = tasksState.tasks
+  const tasksOpen = createMemo(() => tasks().length > 0)
+  const tasksBadge = createMemo(() => {
+    const running = tasksState.running()
+    const badge = tasksState.badge()
+    if (running > 0) return running
+    return badge
+  })
+
   const diffs = createMemo(() => props.diffs().filter(renderDiff))
   const diffFiles = createMemo(() => diffs().map((d) => d.file))
   const kinds = createMemo(() => {
@@ -184,6 +197,7 @@ export function SessionSidePanel(props: {
     review: reviewTab,
     hasReview: props.canReview,
     fileBrowser: () => !!props.fileBrowserState,
+    tasks: tasksOpen,
   })
   const contextOpen = tabState.contextOpen
   const openFileOpen = tabState.openFileOpen
@@ -396,6 +410,21 @@ export function SessionSidePanel(props: {
                                   </div>
                                 </Tabs.Trigger>
                               </Show>
+                              <Show when={tasksOpen()}>
+                                <Tabs.Trigger value="tasks">
+                                  <div class="flex items-center gap-1.5">
+                                    <div>{language.t("session.tab.tasks")}</div>
+                                    <Show when={tasksBadge() > 0}>
+                                      <div
+                                        class="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-10-medium text-text-on-interactive-base bg-text-interactive-base"
+                                        data-component="session-tasks-badge"
+                                      >
+                                        {tasksBadge()}
+                                      </div>
+                                    </Show>
+                                  </div>
+                                </Tabs.Trigger>
+                              </Show>
                               <SortableProvider ids={openedTabs()}>
                                 <For each={panelTabs()}>
                                   {(tab) => (
@@ -504,6 +533,12 @@ export function SessionSidePanel(props: {
                             </Tabs.Content>
                           </Show>
 
+                          <Show when={activeTab() === "tasks"}>
+                            <Tabs.Content value="tasks" class="flex flex-col h-full overflow-hidden contain-strict">
+                              <SessionTasksPanel tasks={tasks} />
+                            </Tabs.Content>
+                          </Show>
+
                           <Show when={activeFileTab()} keyed>
                             {(tab) => <FileTabContent tab={tab} />}
                           </Show>
@@ -609,6 +644,21 @@ export function SessionSidePanel(props: {
                                 <div class="flex items-center gap-2">
                                   <SessionContextUsage variant="indicator" />
                                   <div>{language.t("session.tab.context")}</div>
+                                </div>
+                              </Tabs.Trigger>
+                            </Show>
+                            <Show when={tasksOpen()}>
+                              <Tabs.Trigger value="tasks">
+                                <div class="flex items-center gap-2">
+                                  <div>{language.t("session.tab.tasks")}</div>
+                                  <Show when={tasksBadge() > 0}>
+                                    <div
+                                      class="flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-10-medium text-text-on-interactive-base bg-text-interactive-base"
+                                      data-component="session-tasks-badge"
+                                    >
+                                      {tasksBadge()}
+                                    </div>
+                                  </Show>
                                 </div>
                               </Tabs.Trigger>
                             </Show>
@@ -732,6 +782,12 @@ export function SessionSidePanel(props: {
                             <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
                               <SessionContextTab />
                             </div>
+                          </Tabs.Content>
+                        </Show>
+
+                        <Show when={activeTab() === "tasks"}>
+                          <Tabs.Content value="tasks" class="flex flex-col h-full overflow-hidden contain-strict">
+                            <SessionTasksPanel tasks={tasks} />
                           </Tabs.Content>
                         </Show>
 

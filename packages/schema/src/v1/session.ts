@@ -201,6 +201,10 @@ export const CompactionPart = Schema.Struct({
   // A clear-triggered compaction whose artifacts (user + summary) must not be
   // rendered in the timeline — used by the Companion "clear chat history" flow.
   hidden: Schema.optional(Schema.Boolean),
+  // Stats of the turns folded into the summary, written when compaction runs.
+  // Lets the timeline marker render message/token counts for the compacted span.
+  compactedCount: Schema.optional(NonNegativeInt),
+  compactedTokens: Schema.optional(NonNegativeInt),
 }).annotate({ identifier: "CompactionPart" })
 export type CompactionPart = Types.DeepMutable<Schema.Schema.Type<typeof CompactionPart>>
 

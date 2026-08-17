@@ -29,6 +29,7 @@ import { editorSelectionKey, useEditorContext, type EditorSelection } from "../.
 import { normalizePromptContent, openEditor } from "../../editor"
 import { useExit } from "../../context/exit"
 import { promptOffsetWidth } from "../../prompt/display"
+import { continuationForLine, listItemPrefix } from "../../prompt/markdown-utils"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { usePromptHistory, type PromptInfo } from "../../prompt/history"
 import { computePromptTraits } from "../../prompt/traits"
@@ -84,6 +85,27 @@ function pastedFilepath(value: string, platform: string) {
   }
   if (platform === "win32") return raw
   return raw.replace(/\\(.)/g, "$1")
+}
+
+function wrapMarkdownNewline(r: TextareaRenderable) {
+  const original = r.newLine.bind(r)
+  r.newLine = () => {
+    const offset = r.cursorOffset
+    const text = r.plainText
+    const lineStart = text.lastIndexOf("\n", offset - 1) + 1
+    const line = text.slice(lineStart, offset)
+    const exit = listItemPrefix(line)
+    if (exit) {
+      r.setSelection(lineStart, lineStart + line.length)
+      r.deleteSelection()
+      return true
+    }
+    const continuation = continuationForLine(line)
+    if (!continuation) return original()
+    original()
+    r.insertText(continuation)
+    return true
+  }
 }
 
 export type PromptRef = {
@@ -1422,6 +1444,7 @@ export function Prompt(props: PromptProps) {
                 Object.assign(r, {
                   getClipboardText: (text: string) => expandPastedTextPlaceholders(text, store.prompt.parts),
                 })
+                wrapMarkdownNewline(r)
                 setInputTarget(r)
                 if (promptPartTypeId === 0) {
                   promptPartTypeId = input.extmarks.registerType("prompt-part")

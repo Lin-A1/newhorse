@@ -90,6 +90,16 @@ describe("parseState", () => {
       plan_name: "",
     })
   })
+
+  test("parses an optional goal_id", () => {
+    expect(BoulderState.parseState({ active_plan: "/p.md", goal_id: "goal_1" })).toEqual({
+      active_plan: "/p.md",
+      started_at: "",
+      session_ids: [],
+      plan_name: "",
+      goal_id: "goal_1",
+    })
+  })
 })
 
 describe("resumePrompt", () => {
@@ -104,6 +114,17 @@ describe("resumePrompt", () => {
     expect(text).toContain("/ws/.opencode/plans/1700000000000-fix-auth.md")
     expect(text).toContain("2026-01-01T00:00:00.000Z")
     expect(text).toContain("1/4 checkboxes complete")
+  })
+
+  test("mentions the linked goal when present", () => {
+    const text = BoulderState.resumePrompt({
+      planPath: "/ws/.opencode/plans/1700000000000-fix-auth.md",
+      planName: "fix-auth",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      progress: { total: 4, completed: 1, isComplete: false },
+      goalID: "goal_abc",
+    })
+    expect(text).toContain("goal_abc")
   })
 })
 
@@ -178,6 +199,46 @@ describe("boulder state lifecycle", () => {
 
       const progress = yield* BoulderState.getPlanProgress(plan)
       expect(progress).toEqual({ total: 3, completed: 2, isComplete: false })
+    }),
+    { git: true },
+  )
+
+  it.instance("associateGoalId links the first goal and keeps an existing link", () =>
+    Effect.gen(function* () {
+      const dir = (yield* requireInstance).directory
+      const ctx = yield* InstanceState.context
+      const fsys = yield* FSUtil.Service
+      const plan = planIn(dir)
+
+      expect(yield* BoulderState.associateGoalId(fsys, ctx, "goal_orphan")).toBeUndefined()
+
+      yield* BoulderState.createState(ctx, {
+        activePlan: plan,
+        planName: "fix-auth",
+        sessionID: "ses_plan",
+        goalID: "goal_1",
+      })
+      expect((yield* BoulderState.getState(ctx))?.goal_id).toBe("goal_1")
+
+      const linked = yield* BoulderState.associateGoalId(fsys, ctx, "goal_2")
+      expect(linked?.goal_id).toBe("goal_1")
+    }),
+    { git: true },
+  )
+
+  it.instance("associateGoalId links an unlinked active plan to a goal", () =>
+    Effect.gen(function* () {
+      const dir = (yield* requireInstance).directory
+      const ctx = yield* InstanceState.context
+      const fsys = yield* FSUtil.Service
+      yield* BoulderState.createState(ctx, {
+        activePlan: planIn(dir),
+        planName: "fix-auth",
+        sessionID: "ses_plan",
+      })
+
+      yield* BoulderState.associateGoalId(fsys, ctx, "goal_1")
+      expect((yield* BoulderState.getState(ctx))?.goal_id).toBe("goal_1")
     }),
     { git: true },
   )

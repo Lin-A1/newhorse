@@ -28,6 +28,19 @@ export type UpdaterAPI = {
   install: () => Promise<void>
 }
 
+export type LanConfig = {
+  enabled: boolean
+  password: string | null
+  port: number | null
+  token: string | null
+}
+
+export type LanConfigInput = {
+  enabled?: boolean
+  password?: string | null
+  port?: number | null
+}
+
 export type LinuxDisplayBackend = "wayland" | "auto"
 export type TitlebarTheme = {
   mode: "light" | "dark"
@@ -65,6 +78,10 @@ export type ElectronAPI = {
   storeKeys: (name: string) => Promise<string[]>
   storeLength: (name: string) => Promise<number>
 
+  getLanConfig: () => Promise<LanConfig>
+  setLanConfig: (config: LanConfigInput) => Promise<void>
+  getNetworkIps: () => Promise<string[]>
+
   getWindowCount: () => Promise<number>
   getWindowID: () => Promise<string>
   onMenuCommand: (cb: (id: string) => void) => () => void
@@ -95,11 +112,12 @@ export type ElectronAPI = {
   getWindowFocused: () => Promise<boolean>
   setWindowFocus: () => Promise<void>
   showWindow: () => Promise<void>
-  /** Desktop presence snapshot: idle seconds, lock state, focused app title (approximation). */
+  /** Desktop presence snapshot: idle seconds, lock state, foreground app, meeting state. */
   getPresence: () => Promise<{
     idleSeconds: number
     locked: boolean
     focusedApp: string | undefined
+    inMeeting: boolean
   }>
   relaunch: () => void
   getZoomFactor: () => Promise<number>

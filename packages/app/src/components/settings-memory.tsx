@@ -44,6 +44,34 @@ export function memoryProvenanceLabel(
   return t(`settings.memory.provenance.${value}`)
 }
 
+// Category-toned tag pills: each facet (kind/status/scope/provenance) gets its
+// own weak color so a memory's metadata reads as grouped at a glance.
+function memoryKindTag(memoryKind: MemoryKind): string {
+  switch (memoryKind) {
+    case "relationship":
+    case "summary":
+      return "border-border-weak-base bg-surface-base-hover text-v2-text-text-accent"
+    default:
+      return "border-border-weak-base bg-surface-base-hover text-text-muted"
+  }
+}
+
+function memoryStatusTag(status: MemoryStatus): string {
+  return status === "active"
+    ? "border-border-weak-base bg-v2-background-bg-layer-02 text-v2-text-text-accent"
+    : "border-border-weak-base bg-surface-base-hover text-text-weak"
+}
+
+function memoryScopeTag(scope: MemoryScope): string {
+  return scope === "user_global"
+    ? "border-border-weak-base bg-v2-background-bg-layer-02 text-v2-text-text-accent"
+    : "border-border-weak-base bg-surface-base-hover text-text-weak"
+}
+
+function memoryProvenanceTag(): string {
+  return "border-border-weak-base bg-surface-base-hover text-text-weaker"
+}
+
 export function SettingsMemory(props: { sessionID?: string }) {
   const language = useLanguage()
   const memory = useMemoryCenterState(props.sessionID)
@@ -122,6 +150,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
           </div>
           <Button
             size="small"
+            variant="secondary"
             disabled={memory.loading() || exporting()}
             aria-busy={exporting()}
             onClick={() => void exportRecords().catch(fail)}
@@ -138,7 +167,9 @@ export function SettingsMemory(props: { sessionID?: string }) {
         <button
           type="button"
           class={`flex-1 rounded-md px-3 py-1 text-13-regular transition-colors ${
-            view() === "current" ? "bg-surface-stronger text-text-base" : "text-text-weak hover:text-text-base"
+            view() === "current"
+              ? "bg-v2-background-bg-layer-02 font-medium text-v2-text-text-accent"
+              : "text-text-weak hover:text-text-base"
           }`}
           onClick={() => setView("current")}
         >
@@ -147,7 +178,9 @@ export function SettingsMemory(props: { sessionID?: string }) {
         <button
           type="button"
           class={`flex-1 rounded-md px-3 py-1 text-13-regular transition-colors ${
-            view() === "all" ? "bg-surface-stronger text-text-base" : "text-text-weak hover:text-text-base"
+            view() === "all"
+              ? "bg-v2-background-bg-layer-02 font-medium text-v2-text-text-accent"
+              : "text-text-weak hover:text-text-base"
           }`}
           onClick={() => setView("all")}
         >
@@ -186,11 +219,20 @@ export function SettingsMemory(props: { sessionID?: string }) {
                     </h3>
                     <For each={group.items}>
                       {(item) => (
-                        <article class="flex flex-col gap-2 rounded-lg bg-surface-base p-4" data-memory-id={item.id}>
-                          <div class="flex flex-wrap gap-2 text-11-regular text-text-weak">
-                            <span>{memoryKindLabel(language.t, item.kind)}</span>
-                            <span>{memoryStatusLabel(language.t, item.status)}</span>
-                            <span>{memoryScopeLabel(language.t, item.scope)}</span>
+                        <article
+                          class="flex flex-col gap-2 rounded-lg border border-border-base bg-surface-raised-base p-4"
+                          data-memory-id={item.id}
+                        >
+                          <div class="flex flex-wrap gap-1.5 text-11-regular">
+                            <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryKindTag(item.kind)}`}>
+                              {memoryKindLabel(language.t, item.kind)}
+                            </span>
+                            <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryStatusTag(item.status)}`}>
+                              {memoryStatusLabel(language.t, item.status)}
+                            </span>
+                            <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryScopeTag(item.scope)}`}>
+                              {memoryScopeLabel(language.t, item.scope)}
+                            </span>
                           </div>
                           <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.content}</p>
                         </article>
@@ -232,13 +274,24 @@ export function SettingsMemory(props: { sessionID?: string }) {
             >
             <For each={memory.state.items}>
               {(item) => (
-                <article class="flex flex-col gap-3 rounded-lg bg-surface-base p-4" data-memory-id={item.id}>
+                <article
+                  class="flex flex-col gap-3 rounded-lg border border-border-base bg-surface-raised-base p-4"
+                  data-memory-id={item.id}
+                >
                   <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="flex flex-wrap gap-2 text-11-regular text-text-weak">
-                      <span>{memoryKindLabel(language.t, item.kind)}</span>
-                      <span>{memoryStatusLabel(language.t, item.status)}</span>
-                      <span>{memoryScopeLabel(language.t, item.scope)}</span>
-                      <span>{memoryProvenanceLabel(language.t, item.provenance)}</span>
+                    <div class="flex flex-wrap gap-1.5 text-11-regular">
+                      <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryKindTag(item.kind)}`}>
+                        {memoryKindLabel(language.t, item.kind)}
+                      </span>
+                      <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryStatusTag(item.status)}`}>
+                        {memoryStatusLabel(language.t, item.status)}
+                      </span>
+                      <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryScopeTag(item.scope)}`}>
+                        {memoryScopeLabel(language.t, item.scope)}
+                      </span>
+                      <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryProvenanceTag()}`}>
+                        {memoryProvenanceLabel(language.t, item.provenance)}
+                      </span>
                     </div>
                     <span class="text-11-regular text-text-weaker">{source(item, language.t)}</span>
                   </div>

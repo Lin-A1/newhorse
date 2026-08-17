@@ -20,6 +20,7 @@ export interface BoulderState {
   started_at: string
   session_ids: string[]
   plan_name: string
+  goal_id?: string
 }
 
 export interface PlanProgress {
@@ -74,23 +75,29 @@ export function parseState(value: unknown): BoulderState | undefined {
       ? obj.session_ids.filter((id): id is string => typeof id === "string")
       : [],
     plan_name: typeof obj.plan_name === "string" ? obj.plan_name : "",
+    goal_id: typeof obj.goal_id === "string" ? obj.goal_id : undefined,
   }
 }
 
 /** Reads the current boulder state for an instance, or undefined when absent/corrupt. */
 export const getState = Effect.fn("BoulderState.getState")(function* (instance: InstanceContext) {
   const fsys = yield* FSUtil.Service
-  const file = statePath(instance)
-  const exists = yield* fsys.existsSafe(file)
-  if (!exists) return undefined
-  const raw = yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => undefined))
-  return raw === undefined ? undefined : parseState(raw)
+  return yield* readState(fsys, statePath(instance))
 })
+
+function readState(fsys: FSUtil.Interface, file: string): Effect.Effect<BoulderState | undefined> {
+  return Effect.gen(function* () {
+    const exists = yield* fsys.existsSafe(file)
+    if (!exists) return undefined
+    const raw = yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => undefined))
+    return raw === undefined ? undefined : parseState(raw)
+  })
+}
 
 /** Records a new active plan. Best-effort: a write failure never breaks the session. */
 export const createState = Effect.fn("BoulderState.createState")(function* (
   instance: InstanceContext,
-  input: { activePlan: string; planName: string; sessionID: string; startedAt?: string },
+  input: { activePlan: string; planName: string; sessionID: string; startedAt?: string; goalID?: string },
 ) {
   const fsys = yield* FSUtil.Service
   const file = statePath(instance)
@@ -99,8 +106,28 @@ export const createState = Effect.fn("BoulderState.createState")(function* (
     started_at: input.startedAt ?? new Date().toISOString(),
     session_ids: [input.sessionID],
     plan_name: input.planName,
+    goal_id: input.goalID,
   }
   yield* fsys.ensureDir(path.dirname(file)).pipe(Effect.orElseSucceed(() => undefined))
+  yield* fsys.writeJson(file, state).pipe(Effect.orElseSucceed(() => undefined))
+  return state
+})
+
+/**
+ * Links the active plan's state to a goal. No-op when no plan state exists or
+ * the state is already linked, so the first goal created under a plan wins.
+ * Takes the filesystem service so callers (e.g. tool executes) can capture it
+ * at init rather than requiring `FSUtil.Service` in the calling effect.
+ */
+export const associateGoalId = Effect.fn("BoulderState.associateGoalId")(function* (
+  fsys: FSUtil.Interface,
+  instance: InstanceContext,
+  goalID: string,
+) {
+  const file = statePath(instance)
+  const state = yield* readState(fsys, file)
+  if (!state || state.goal_id !== undefined) return state
+  state.goal_id = goalID
   yield* fsys.writeJson(file, state).pipe(Effect.orElseSucceed(() => undefined))
   return state
 })
@@ -142,6 +169,7 @@ export function resumePrompt(input: {
   planName: string
   startedAt: string
   progress: PlanProgress
+  goalID?: string
 }): string {
   const status = input.progress.isComplete
     ? "all checkboxes are complete"
@@ -153,6 +181,7 @@ export function resumePrompt(input: {
     `Plan file: ${input.planPath}`,
     `Started: ${input.startedAt}`,
     `Progress: ${status}`,
+    ...(input.goalID ? [`Linked goal: ${input.goalID} (query it with the goal tool)`] : []),
     ``,
     `Read the plan file and continue executing it. Tick each task's checkbox in the plan file with the edit tool as you complete it.`,
     `</system-reminder>`,

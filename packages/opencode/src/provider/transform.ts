@@ -363,7 +363,20 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
   // always the stable prefix.
   const sysMsgs = msgs.filter((msg) => msg.role === "system")
   const system = sysMsgs.slice(0, Math.max(1, Math.min(sysMsgs.length - 1, 2)))
-  const final = msgs.filter((msg) => msg.role !== "system").slice(-2)
+  const nonSystem = msgs.filter((msg) => msg.role !== "system")
+  const final = nonSystem.slice(-2)
+
+  // For long conversations, add intermediate breakpoints roughly every
+  // ~20 messages so an evicted prefix only requires re-sending one window
+  // instead of the entire history. Cap total breakpoints at 4 (the provider
+  // limit): 2 system + 2 in-history (final + one middle) is already 4, so the
+  // middle marker only applies when history is long enough to justify it.
+  const middle: ModelMessage[] = []
+  if (nonSystem.length > 40) {
+    const midIndex = Math.max(0, Math.floor(nonSystem.length / 2) - 1)
+    const mid = nonSystem[midIndex]
+    if (mid && !final.includes(mid)) middle.push(mid)
+  }
 
   const providerOptions = {
     anthropic: {
@@ -386,7 +399,7 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
     },
   }
 
-  for (const msg of unique([...system, ...final])) {
+  for (const msg of unique([...system, ...middle, ...final])) {
     const useMessageLevelOptions =
       model.providerID === "anthropic" ||
       model.providerID.includes("bedrock") ||
@@ -475,6 +488,7 @@ export function message(msgs: ModelMessage[], model: Provider.Model, options: Re
     options.cacheControl !== undefined &&
     (model.api.npm === "@ai-sdk/anthropic" || model.api.npm === "@ai-sdk/google-vertex/anthropic")
   if (
+    options.cache !== false &&
     (model.providerID === "anthropic" ||
       model.providerID === "google-vertex-anthropic" ||
       model.api.id.includes("anthropic") ||

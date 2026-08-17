@@ -224,12 +224,12 @@ export function SettingsUsage() {
   })
 
   const format = (value: number) => value.toLocaleString(language.intl())
-  // Cache hit rate uses total input tokens (cached + fresh) as the denominator
-  // so it can never exceed 100%: read / (read + input).
+  // Cache hit rate uses the full billed input footprint as the denominator so
+  // it can never exceed 100%: read / (read + write + input).
   const cacheHitRate = () => {
     const total = usage()
     if (!total || total.sessions === 0) return undefined
-    const totalInput = total.cacheRead + total.input
+    const totalInput = total.cacheRead + total.cacheWrite + total.input
     if (totalInput <= 0) return undefined
     return total.cacheRead / totalInput
   }
@@ -366,7 +366,7 @@ export function SettingsUsage() {
     const total = usage()
     const rate = cacheHitRate()
     if (!total || rate === undefined) return language.t("settings.usage.na")
-    return `${format(total.cacheRead)} / ${format(total.cacheRead + total.input)} · ${(rate * 100).toFixed(1)}%`
+    return `${format(total.cacheRead)} / ${format(total.cacheRead + total.cacheWrite + total.input)} · ${(rate * 100).toFixed(1)}%`
   }
 }
 

@@ -8,6 +8,7 @@ import { SessionV1 } from "@newhorse/core/v1/session"
 import { SessionStatusEvent } from "@newhorse/schema/session-status-event"
 import { Agent } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
+import { Config } from "@/config/config"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Session } from "../../src/session/session"
 import { SessionID, MessageID } from "../../src/session/schema"
@@ -15,6 +16,7 @@ import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRunState } from "../../src/session/run-state"
 import { Todo } from "../../src/session/todo"
 import { TodoContinuation } from "../../src/session/todo-continuation"
+import { TestConfig } from "../fixture/config"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 import { Effect, Layer, Option, Stream } from "effect"
 
@@ -137,6 +139,8 @@ describe("todo-continuation trigger conditions", () => {
       jobs: [],
       lastAbort: 0,
       now: 10_000,
+      injections: 0,
+      maxIterations: 100,
     })
     expect(decision).toEqual({
       agent: "build",
@@ -156,6 +160,8 @@ describe("todo-continuation trigger conditions", () => {
     jobs: [] as BackgroundJob.Info[],
     lastAbort: 0,
     now: 10_000,
+    injections: 0,
+    maxIterations: 100,
   }
 
   test("decisionFor skips child sessions", () => {
@@ -190,6 +196,13 @@ describe("todo-continuation trigger conditions", () => {
     expect(TodoContinuation.decisionFor({ ...base, lastAbort: base.now - 2_000 })).toBeUndefined()
     // 4s before now -> outside the cooldown -> inject.
     expect(TodoContinuation.decisionFor({ ...base, lastAbort: base.now - 4_000 })).not.toBeUndefined()
+  })
+
+  test("decisionFor stops once the injection budget is exhausted", () => {
+    expect(TodoContinuation.decisionFor({ ...base, injections: 99, maxIterations: 100 })).not.toBeUndefined()
+    expect(TodoContinuation.decisionFor({ ...base, injections: 100, maxIterations: 100 })).toBeUndefined()
+    // The budget is enforced even when every other guard passes.
+    expect(TodoContinuation.decisionFor({ ...base, injections: 5, maxIterations: 5 })).toBeUndefined()
   })
 })
 
@@ -274,13 +287,42 @@ const makeSessionPromptMock = () => {
   return { calls, layer }
 }
 
-const makeMocks = (input: { todos: Todo.Info[]; agent: Agent.Info; parentID?: SessionID }) => {
+const abortedAssistant = (sessionID: SessionID): SessionV1.WithParts => ({
+  info: {
+    id: MessageID.ascending(),
+    sessionID,
+    role: "assistant",
+    time: { created: 0, completed: 0 },
+    error: { name: "MessageAbortedError", data: { message: "aborted" } } as SessionV1.Assistant["error"],
+    parentID: MessageID.ascending(),
+    modelID,
+    providerID,
+    mode: "build",
+    agent: "build",
+    path: { cwd: "/tmp", root: "/tmp" },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  } as SessionV1.Assistant,
+  parts: [],
+})
+
+const makeMocks = (input: {
+  todos: Todo.Info[]
+  agent: Agent.Info
+  parentID?: SessionID
+  assistantMessage?: SessionV1.WithParts
+}) => {
+  const userMessage = { info: user(sessionID), parts: [] as SessionV1.Part[] } as SessionV1.WithParts
+  const candidateMessages = [...(input.assistantMessage ? [input.assistantMessage] : []), userMessage]
   const sessions = Layer.succeed(
     Session.Service,
     Session.Service.of({
       get: () => Effect.succeed(sessionInfo({ parentID: input.parentID })),
-      findMessage: () =>
-        Effect.succeed(Option.some({ info: user(sessionID), parts: [] as SessionV1.Part[] } as SessionV1.WithParts)),
+      findMessage: (_id, predicate) =>
+        Effect.sync(() => {
+          const found = candidateMessages.find((candidate) => predicate(candidate))
+          return found ? Option.some(found) : Option.none()
+        }),
       // Unused by the enforcer:
       list: () => Effect.succeed([]),
       listGlobal: () => Effect.succeed([]),
@@ -359,7 +401,13 @@ const makeMocks = (input: { todos: Todo.Info[]; agent: Agent.Info; parentID?: Se
   return { sessions, todos, agents, background, runState }
 }
 
-const buildLayer = (input: { todos: Todo.Info[]; agent: Agent.Info; parentID?: SessionID }) => {
+const buildLayer = (input: {
+  todos: Todo.Info[]
+  agent: Agent.Info
+  parentID?: SessionID
+  assistantMessage?: SessionV1.WithParts
+  maxIterations?: number
+}) => {
   const { calls, layer: promptMock } = makeSessionPromptMock()
   const mocks = makeMocks(input)
   const root = LayerNode.compile(LayerNode.group([TodoContinuation.node, EventV2Bridge.node]), [
@@ -370,6 +418,15 @@ const buildLayer = (input: { todos: Todo.Info[]; agent: Agent.Info; parentID?: S
     [BackgroundJob.node, mocks.background],
     [SessionPrompt.node, promptMock],
     [SessionRunState.node, mocks.runState],
+    [
+      Config.node,
+      TestConfig.layer({
+        get: () =>
+          Effect.succeed(
+            input.maxIterations === undefined ? {} : { experimental: { todoContinuationMaxIterations: input.maxIterations } },
+          ),
+      }),
+    ],
   ])
   return { calls, root }
 }
@@ -425,6 +482,60 @@ describe("todo-continuation enforcer", () => {
       yield* events.publish(SessionStatusEvent.Idle, { sessionID })
       yield* Effect.sleep("50 millis")
       expect(integration.calls.length).toBe(0)
+    }),
+  )
+
+  it.live("cancels a pending injection when the user sends a message", () =>
+    Effect.gen(function* () {
+      integration.calls.length = 0
+      const events = yield* EventV2Bridge.Service
+      yield* events.publish(SessionStatusEvent.Idle, { sessionID })
+      // Let the forked countdown arm before signalling user activity.
+      yield* Effect.sleep("100 millis")
+      yield* events.publish(SessionV1.Event.MessageUpdated, { sessionID, info: user(sessionID) })
+      yield* Effect.sleep("2500 millis")
+      expect(integration.calls.length).toBe(0)
+    }),
+  )
+})
+
+const limited = buildLayer({ todos: [doneTodo("a"), openTodo("b")], agent: editableAgent, maxIterations: 1 })
+const itLimited = testEffect(limited.root)
+
+describe("todo-continuation max iterations", () => {
+  itLimited.live("stops injecting once the per-session budget is exhausted", () =>
+    Effect.gen(function* () {
+      limited.calls.length = 0
+      const events = yield* EventV2Bridge.Service
+      yield* events.publish(SessionStatusEvent.Idle, { sessionID })
+      yield* pollWithTimeout(
+        Effect.sync(() => (limited.calls.length >= 1 ? (true as const) : undefined)),
+        "first continuation never injected",
+      )
+      yield* events.publish(SessionStatusEvent.Idle, { sessionID })
+      // The budget gate stops the loop before any countdown is armed.
+      yield* Effect.sleep("2500 millis")
+      expect(limited.calls.length).toBe(1)
+    }),
+  )
+})
+
+const aborted = buildLayer({
+  todos: [openTodo("a")],
+  agent: editableAgent,
+  assistantMessage: abortedAssistant(sessionID),
+})
+const itAborted = testEffect(aborted.root)
+
+describe("todo-continuation abort fallback", () => {
+  itAborted.live("skips injection when the last assistant message carries an abort error", () =>
+    Effect.gen(function* () {
+      aborted.calls.length = 0
+      const events = yield* EventV2Bridge.Service
+      yield* events.publish(SessionStatusEvent.Idle, { sessionID })
+      // No event-channel abort here; the persisted message error must gate.
+      yield* Effect.sleep("2500 millis")
+      expect(aborted.calls.length).toBe(0)
     }),
   )
 })

@@ -18,6 +18,8 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { getSessionContext } from "./session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "./session-context-breakdown"
 import { createSessionContextFormatter } from "./session-context-format"
+import { cacheHitRate, useSessionProjection } from "./session-projection"
+import { SessionContextMeter } from "./session-context-meter"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -136,6 +138,12 @@ export function SessionContextTab() {
 
   const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
+  const { data: projected } = useSessionProjection(() => params.id)
+  const hitRate = createMemo(() => {
+    const rate = cacheHitRate(info())
+    if (rate === undefined) return undefined
+    return (rate * 100).toFixed(1) + "%"
+  })
 
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
@@ -213,12 +221,21 @@ export function SessionContextTab() {
       value: () =>
         `${formatter().number(ctx()?.message.tokens.cache.read)} / ${formatter().number(ctx()?.message.tokens.cache.write)}`,
     },
+    { label: "context.stats.cacheHitRate", value: () => hitRate() ?? "—" },
+    { label: "context.stats.projectedInput", value: () => formatter().number(projected()?.projectedTokens.nextInput) },
+    { label: "context.stats.projectedOutput", value: () => formatter().number(projected()?.projectedTokens.nextOutput) },
+    { label: "context.stats.projectedCost", value: () => formatProjectedCost(projected()?.projectedTokens.nextCost) },
     { label: "context.stats.userMessages", value: () => counts().user.toLocaleString(language.intl()) },
     { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()) },
     { label: "context.stats.totalCost", value: cost },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
     { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
   ] satisfies { label: string; value: () => JSX.Element }[]
+
+  function formatProjectedCost(value: number | undefined) {
+    if (value === undefined || value <= 0) return "—"
+    return usd().format(value)
+  }
 
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
@@ -313,6 +330,15 @@ export function SessionContextTab() {
               </For>
             </div>
             <div class="hidden text-11-regular text-text-weaker">{language.t("context.breakdown.note")}</div>
+          </div>
+        </Show>
+
+        <Show when={projected()}>
+          <div class="flex flex-col gap-2">
+            <div class="text-12-regular text-text-weak">{language.t("context.meter.title")}</div>
+            <div class="rounded-lg bg-surface-base px-3 py-2.5">
+              <SessionContextMeter sessionID={() => params.id} locale={language.intl()} />
+            </div>
           </div>
         </Show>
 

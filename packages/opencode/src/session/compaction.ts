@@ -138,6 +138,18 @@ function turns(messages: SessionV1.WithParts[]) {
   return result
 }
 
+// Stats for the turns folded into a compaction summary: the number of user
+// turns and the summed input+output tokens of the compacted messages. These
+// are written back onto the compaction part so the timeline can render them.
+function compactionStats(messages: SessionV1.WithParts[]) {
+  const turns = messages.reduce((count, msg) => (msg.info.role === "user" ? count + 1 : count), 0)
+  const tokens = messages.reduce((sum, msg) => {
+    if (msg.info.role !== "assistant") return sum
+    return sum + msg.info.tokens.input + msg.info.tokens.output
+  }, 0)
+  return { turns, tokens }
+}
+
 function splitTurn(input: {
   messages: SessionV1.WithParts[]
   turn: Turn
@@ -448,11 +460,20 @@ const layer = Layer.effect(
         return "stop"
       }
 
-      if (compactionPart && selected.tail_start_id && compactionPart.tail_start_id !== selected.tail_start_id) {
-        yield* session.updatePart({
-          ...compactionPart,
-          tail_start_id: selected.tail_start_id,
-        })
+      if (compactionPart) {
+        const stats = compactionStats(selected.head)
+        if (
+          compactionPart.tail_start_id !== selected.tail_start_id ||
+          compactionPart.compactedCount !== stats.turns ||
+          compactionPart.compactedTokens !== stats.tokens
+        ) {
+          yield* session.updatePart({
+            ...compactionPart,
+            compactedCount: stats.turns,
+            compactedTokens: stats.tokens,
+            ...(selected.tail_start_id ? { tail_start_id: selected.tail_start_id } : {}),
+          })
+        }
       }
 
       if (result === "continue" && input.auto) {

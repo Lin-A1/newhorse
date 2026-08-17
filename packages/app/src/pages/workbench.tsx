@@ -1,4 +1,4 @@
-import { createResource, createSignal, For, Show } from "solid-js"
+import { createResource, createSignal, For, Show, onCleanup } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
@@ -8,6 +8,7 @@ import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
 import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
 import { SidebarTimeline } from "@/components/sidebar-timeline"
 import { SettingsUsage } from "@/components/settings-usage"
+import { ContributionHeatmap } from "@/components/contribution-heatmap"
 
 type WorkbenchTodo = {
   id: string
@@ -63,7 +64,7 @@ function WorkbenchTodos() {
   }
 
   return (
-    <section class="flex flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+    <section class="flex min-w-0 flex-col gap-3">
       <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">{language.t("workbench.todo")}</h2>
       <div class="flex items-center gap-2">
         <input
@@ -80,7 +81,7 @@ function WorkbenchTodos() {
           {language.t("workbench.add")}
         </ButtonV2>
       </div>
-      <div class="flex flex-col">
+      <div class="flex min-h-0 flex-1 flex-col">
         <Show
           when={(todos()?.length ?? 0) > 0}
           fallback={<div class="text-[13px] leading-5 text-v2-text-text-faint">{language.t("workbench.todoEmpty")}</div>}
@@ -141,7 +142,7 @@ function PresenceStrip() {
         idleMs: desktop.idleSeconds * 1000,
         locked: desktop.locked,
         focusApp: desktop.focusedApp,
-        inMeeting: false,
+        inMeeting: desktop.inMeeting ?? false,
         observedAt: Date.now(),
       }
     }
@@ -159,7 +160,7 @@ function PresenceStrip() {
   const idleMs = () => Number(presence()?.idleMs ?? Infinity)
 
   return (
-    <section class="flex items-center gap-2 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+    <section class="flex items-center gap-2.5">
       <span class="relative flex size-2 shrink-0">
         <span
           class="absolute inline-flex h-full w-full animate-ping rounded-full opacity-60"
@@ -182,14 +183,21 @@ function PresenceStrip() {
         </div>
         <Show when={presence()}>
           <div class="text-[12px] leading-4 text-v2-text-text-faint">
-            {/* 活跃强度点 */}
             <span class="mr-1 tracking-tight" aria-hidden="true">
               {"●".repeat(activityLevel(idleMs())) + "○".repeat(3 - activityLevel(idleMs()))}
             </span>
             {presenceLabel(language, idleMs())}
+            <Show when={presence()!.locked}>
+              {" · "}
+              {language.t("workbench.presence.locked")}
+            </Show>
             <Show when={presence()!.focusApp}>
               {" · "}
               {language.t("workbench.presence.focusing")}: {presence()!.focusApp}
+            </Show>
+            <Show when={presence()!.inMeeting}>
+              {" · "}
+              {language.t("workbench.presence.meeting")}
             </Show>
           </div>
         </Show>
@@ -201,11 +209,59 @@ function PresenceStrip() {
 export default function WorkbenchPage() {
   const language = useLanguage()
   const navigate = useNavigate()
+  // Keep the scroll position across data refreshes: the usage panel polls every
+  // 5s and the heatmap/timeline resources reload, which can shrink the content
+  // height transiently and reset the viewport scrollTop. Save on scroll and
+  // restore after content settles so the page never jumps back to the top.
+  let scrollTop = 0
+  let viewport: HTMLDivElement | undefined
+  let restoreFrame: number | undefined
+
+  const rememberScroll = (el: HTMLDivElement) => {
+    scrollTop = el.scrollTop
+  }
+
+  const restoreScroll = () => {
+    if (!viewport) return
+    if (viewport.scrollTop !== scrollTop) viewport.scrollTop = scrollTop
+  }
+
+  const scheduleRestore = () => {
+    if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
+    restoreFrame = requestAnimationFrame(() => {
+      restoreFrame = undefined
+      restoreScroll()
+    })
+  }
+  let contentEl: HTMLDivElement | undefined
+  let contentObserver: MutationObserver | undefined
+  const watchContent = (el: HTMLDivElement) => {
+    if (contentEl === el) return
+    contentEl = el
+    contentObserver?.disconnect()
+    // Data refreshes swap inner content (usage poll, heatmap/timeline reload);
+    // after each mutation the scroll may have been reset by a transient shrink,
+    // so nudge it back once the layout has settled.
+    contentObserver = new MutationObserver(scheduleRestore)
+    contentObserver.observe(el, { childList: true, subtree: true })
+    scheduleRestore()
+  }
+  onCleanup(() => {
+    contentObserver?.disconnect()
+    if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
+  })
 
   return (
     <div class="m-2 min-h-0 self-stretch flex-1 overflow-hidden rounded-[10px] bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]">
-      <ScrollView class="h-full [container-type:size]">
-        <div class="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-4 px-4 py-6">
+      <ScrollView
+        class="h-full [container-type:size]"
+        viewportRef={(el) => {
+          viewport = el
+          restoreScroll()
+        }}
+        onScroll={(e) => rememberScroll(e.currentTarget as HTMLDivElement)}
+      >
+        <div ref={watchContent} class="mx-auto flex min-h-full w-full max-w-[1024px] flex-col gap-4 px-4 py-6">
           <header class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-2">
               <button
@@ -222,22 +278,41 @@ export default function WorkbenchPage() {
             </div>
           </header>
 
-          <PresenceStrip />
-          <WorkbenchTodos />
-
-          <section class="flex flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
-            <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
-              {language.t("workbench.dailySummary")}
-            </h2>
-            <SidebarTimeline showHeader={false} bodyClass="px-0 pb-0" />
+          {/* Heatmap, full width */}
+          <section class="rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+            <ContributionHeatmap />
           </section>
 
-          <section class="flex flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
-            <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
-              {language.t("workbench.usage")}
-            </h2>
-            <SettingsUsage />
-          </section>
+          {/* Two-column on wide screens, stacked on narrow */}
+          <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
+            <div class="flex min-h-0 flex-col gap-4">
+              <section class="rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+                <PresenceStrip />
+              </section>
+              <section class="flex min-h-0 flex-1 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+                <WorkbenchTodos />
+              </section>
+            </div>
+
+            <div class="flex min-h-0 flex-col gap-4">
+              <section class="rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+                <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
+                  {language.t("workbench.usage")}
+                </h2>
+                <div class="mt-3">
+                  <SettingsUsage />
+                </div>
+              </section>
+              <section class="flex min-h-0 flex-1 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+                <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
+                  {language.t("workbench.dailySummary")}
+                </h2>
+                <div class="min-h-0 flex-1">
+                  <SidebarTimeline showHeader={false} bodyClass="px-0 pb-0" />
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
       </ScrollView>
     </div>

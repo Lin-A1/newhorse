@@ -748,3 +748,57 @@ body[data-platform="desktop"] .settings-v2-dialog
   color: var(--v2-state-fg-danger);
 }
 
+.settings-v2-lan-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.settings-v2-lan-message {
+  font-size: 12px;
+  font-weight: 440;
+  line-height: 1;
+  color: var(--v2-state-fg-danger);
+}
+
+.settings-v2-lan-urls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-v2-lan-urls li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-v2-lan-url {
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 440;
+  line-height: 1.4;
+  color: var(--v2-text-text-base);
+  word-break: break-all;
+}
+
+.settings-v2-lan-empty {
+  font-size: 12px;
+  font-weight: 440;
+  line-height: 1;
+  color: var(--v2-text-text-muted);
+}
+
+.settings-v2-lan-status {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 440;
+  line-height: 1.5;
+  color: var(--v2-text-text-muted);
+}
+
+

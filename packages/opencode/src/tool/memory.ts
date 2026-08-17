@@ -7,7 +7,7 @@ import { Profile } from "@/profile"
 import { Agent } from "@/agent/agent"
 
 export const Parameters = Schema.Struct({
-  action: Schema.Literals(["list", "search", "save", "forget", "consolidate", "archive", "clear"]).annotate({
+  action: Schema.Literals(["list", "search", "save", "update", "forget", "consolidate", "archive", "clear"]).annotate({
     description: "The memory operation to perform",
   }),
   content: Schema.optional(Schema.String).annotate({ description: "Content to remember (required for save)" }),
@@ -27,7 +27,7 @@ export const Parameters = Schema.Struct({
   ids: Schema.optional(Schema.Array(Schema.String)).annotate({
     description: "Memory ids to archive after consolidation (required for archive)",
   }),
-  id: Schema.optional(Schema.String).annotate({ description: "Memory id (required for forget)" }),
+  id: Schema.optional(Schema.String).annotate({ description: "Memory id (required for update/forget)" }),
 })
 
 function render(items: ReadonlyArray<Memory.Info>) {
@@ -192,6 +192,40 @@ export const MemoryTool = Tool.define<
               title: `${cleared} memories cleared`,
               metadata: {},
               output: `Cleared ${cleared} memories from ${params.target ?? "workspace"}.`,
+            }
+          }
+
+          if (params.action === "update") {
+            if (!params.id) return yield* Effect.fail(new Error("update requires id"))
+            if (!params.content && !params.kind) {
+              return yield* Effect.fail(new Error("update requires content or kind to change"))
+            }
+            yield* ctx.ask({
+              permission: "memory",
+              patterns: ["*"],
+              always: ["*"],
+              metadata: { id: params.id, action: "update", scope: params.scope ?? "workspace" },
+            })
+            const updated = yield* memory
+              .update({
+                id: params.id,
+                scope: params.scope,
+                kind: params.kind,
+                content: params.content,
+                profileID: profile.id,
+                userRuleset: ruleset,
+              })
+              .pipe(
+                Effect.catchTags({
+                  SensitiveMemoryRejected: (error: SensitiveMemoryRejected) => Effect.fail(new Error(error.message)),
+                  MemoryPolicyRejected: (error: MemoryPolicyRejected) => Effect.fail(new Error(error.message)),
+                }),
+              )
+            if (!updated) return yield* Effect.fail(new Error(`Memory not found: ${params.id}`))
+            return {
+              title: "Memory updated",
+              metadata: { id: params.id },
+              output: `Updated [${params.id}]: ${updated.content}`,
             }
           }
 

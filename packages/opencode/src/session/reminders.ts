@@ -70,6 +70,7 @@ export const apply = Effect.fn("SessionReminders.apply")(function* (input: {
             planName: state.plan_name,
             startedAt: state.started_at,
             progress,
+            goalID: state.goal_id,
           })
         }
       }

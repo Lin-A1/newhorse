@@ -625,6 +625,8 @@ export type CompactionPart = {
   overflow?: boolean
   tail_start_id?: string
   hidden?: boolean
+  compactedCount?: number
+  compactedTokens?: number
 }
 
 export type Part =
@@ -2100,6 +2102,14 @@ export type Config = {
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
     session_title_refresh_interval?: number
+    todoContinuationMaxIterations?: number
+    circuit_breaker?: {
+      failureThreshold?: number
+      successThreshold?: number
+      timeoutSeconds?: number
+      errorRateThreshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      minRequests?: number
+    }
     policies?: Array<ConfigV2ExperimentalPolicy>
   }
 }
@@ -2959,6 +2969,31 @@ export type Session2 = {
     snapshot?: string
     diff?: string
   }
+}
+
+export type SessionProjectedTokens = {
+  nextInput: number
+  nextOutput: number
+  nextCost: number
+  contextWindow: number
+}
+
+export type SessionContextBreakdown = {
+  system: number
+  tools: number
+  messages: number
+}
+
+export type SessionContextPressure = {
+  pressure: number
+  projected: number
+  window: number
+}
+
+export type SessionProjected = {
+  projectedTokens: SessionProjectedTokens
+  contextBreakdown: SessionContextBreakdown
+  contextPressure: SessionContextPressure
 }
 
 export type Session3 = {
@@ -11801,6 +11836,33 @@ export type PresenceCurrentResponses = {
 
 export type PresenceCurrentResponse = PresenceCurrentResponses[keyof PresenceCurrentResponses]
 
+export type PresenceUpdateData = {
+  body?: {
+    locked: boolean
+    focusApp?: string
+    inMeeting: boolean
+  }
+  path?: never
+  query?: never
+  url: "/presence"
+}
+
+export type PresenceUpdateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PresenceUpdateError = PresenceUpdateErrors[keyof PresenceUpdateErrors]
+
+export type PresenceUpdateResponses = {
+  /**
+   * Presence updated
+   */
+  200: unknown
+}
+
 export type SessionListData = {
   body?: never
   path?: never
@@ -12324,6 +12386,41 @@ export type SessionMessageResponses = {
 }
 
 export type SessionMessageResponse = SessionMessageResponses[keyof SessionMessageResponses]
+
+export type SessionProjectedData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/session/{sessionID}/projected"
+}
+
+export type SessionProjectedErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionProjectedError = SessionProjectedErrors[keyof SessionProjectedErrors]
+
+export type SessionProjectedResponses = {
+  /**
+   * Projected next request
+   */
+  200: SessionProjected
+}
+
+export type SessionProjectedResponse = SessionProjectedResponses[keyof SessionProjectedResponses]
 
 export type SessionForkData = {
   body?: {

@@ -73,6 +73,8 @@ import {
 import { createOpenReviewFile, createSessionTabs, createSizing, shouldShowFileTree } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
+import { SessionStatsRow } from "@/pages/session/session-stats-row"
+import { SessionTrajectory } from "@/pages/session/trajectory/session-trajectory"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { restorePromptModel, syncPromptModel, syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -113,6 +115,7 @@ type VcsMode = "git" | "branch"
 const sessionViewState = () => ({
   messageId: undefined as string | undefined,
   mobileTab: "session" as "session" | "changes",
+  trajectory: false,
 })
 
 function isCurrentSessionNotFoundError(error: unknown, sessionID: string | undefined) {
@@ -2065,6 +2068,20 @@ export default function Page() {
     consumePendingMessage: layout.pendingMessage.consume,
   })
 
+  // Trajectory records jump back to the message timeline at the owning turn.
+  const jumpToMessage = (messageID: string) => {
+    setStore("trajectory", false)
+    const user = visibleUserMessages()
+      .filter((message) => message.id <= messageID)
+      .at(-1)
+    if (!user) {
+      setStore("messageId", messageID)
+      return
+    }
+    setStore("messageId", user.id)
+    requestAnimationFrame(() => scrollToMessage(user, "auto"))
+  }
+
   createEffect(
     on(
       () => params.id,
@@ -2155,46 +2172,59 @@ export default function Page() {
             </div>
           </Match>
           <Match when={params.id}>
-            <Show when={messagesReady() ? params.id : undefined} keyed>
-              {(_id) => (
-                <MessageTimeline
-                  actions={actions}
-                  scroll={ui.scroll}
-                  onResumeScroll={resumeScroll}
-                  setScrollRef={setScrollRef}
-                  onScheduleScrollState={scheduleScrollState}
-                  onAutoScrollHandleScroll={autoScroll.handleScroll}
-                  onMarkScrollGesture={markScrollGesture}
-                  hasScrollGesture={hasScrollGesture}
-                  onUserScroll={markUserScroll}
-                  onHistoryScroll={onHistoryScroll}
-                  onAutoScrollInteraction={autoScroll.handleInteraction}
-                  shouldAnchorBottom={() =>
-                    !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
-                  }
-                  centered={centered()}
-                  setContentRef={(el) => {
-                    content = el
-                    autoScroll.contentRef(el)
+            <div class="flex h-full flex-col">
+              <SessionStatsRow
+                trajectory={store.trajectory}
+                onToggleTrajectory={(enabled) => setStore("trajectory", enabled)}
+              />
+              <div class="flex-1 min-h-0 overflow-hidden">
+                <Show when={store.trajectory}>
+                  <SessionTrajectory onJumpToMessage={jumpToMessage} />
+                </Show>
+                <Show when={!store.trajectory}>
+                  <Show when={messagesReady() ? params.id : undefined} keyed>
+                    {(_id) => (
+                      <MessageTimeline
+                        actions={actions}
+                        scroll={ui.scroll}
+                        onResumeScroll={resumeScroll}
+                        setScrollRef={setScrollRef}
+                        onScheduleScrollState={scheduleScrollState}
+                        onAutoScrollHandleScroll={autoScroll.handleScroll}
+                        onMarkScrollGesture={markScrollGesture}
+                        hasScrollGesture={hasScrollGesture}
+                        onUserScroll={markUserScroll}
+                        onHistoryScroll={onHistoryScroll}
+                        onAutoScrollInteraction={autoScroll.handleInteraction}
+                        shouldAnchorBottom={() =>
+                          !location.hash && !store.messageId && !ui.pendingMessage && !autoScroll.userScrolled()
+                        }
+                        centered={centered()}
+                        setContentRef={(el) => {
+                          content = el
+                          autoScroll.contentRef(el)
 
-                    const root = scroller
-                    if (root) scheduleScrollState(root)
-                  }}
-                  userMessages={visibleUserMessages()}
-                  setHistoryAnchor={(handlers) => {
-                    captureHistoryAnchor = handlers.capture
-                    restoreHistoryAnchor = handlers.restore
-                  }}
-                  anchor={anchor}
-                  setRevealMessage={(fn) => {
-                    revealMessage = fn
-                  }}
-                  setScrollToEnd={(fn) => {
-                    scrollToEnd = fn
-                  }}
-                />
-              )}
-            </Show>
+                          const root = scroller
+                          if (root) scheduleScrollState(root)
+                        }}
+                        userMessages={visibleUserMessages()}
+                        setHistoryAnchor={(handlers) => {
+                          captureHistoryAnchor = handlers.capture
+                          restoreHistoryAnchor = handlers.restore
+                        }}
+                        anchor={anchor}
+                        setRevealMessage={(fn) => {
+                          revealMessage = fn
+                        }}
+                        setScrollToEnd={(fn) => {
+                          scrollToEnd = fn
+                        }}
+                      />
+                    )}
+                  </Show>
+                </Show>
+              </div>
+            </div>
           </Match>
           <Match when={true}>
             <NewSessionView worktree={newSessionWorktree()} />

@@ -190,6 +190,9 @@ export const Info = Schema.Struct({
         description:
           "Regenerate the session title every N turns while it is still the default title. 0 disables refresh",
       }),
+      todoContinuationMaxIterations: Schema.optional(PositiveInt).annotate({
+        description: "Maximum todo-continuation injections per session before the bouldering loop stops (default: 100)",
+      }),
       circuit_breaker: Schema.optional(
         Schema.Struct({
           failureThreshold: Schema.optional(PositiveInt),

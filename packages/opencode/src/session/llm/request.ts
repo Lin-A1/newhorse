@@ -32,6 +32,11 @@ type PrepareInput = {
   readonly protectedSystem?: string[]
   readonly messages: ModelMessage[]
   readonly small?: boolean
+  /** Disable prompt-cache breakpoints for this request. Set by background
+   * tasks whose prompt shares the session's cache key but differs from the
+   * main conversation prefix (e.g. memory extraction); writing a breakpoint
+   * there would evict the main request's cached prefix. */
+  readonly cache?: boolean
   readonly tools: Record<string, Tool>
   readonly provider: Provider.Info
   readonly auth: Auth.Info | undefined
@@ -207,7 +212,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     messages,
     tools: Object.fromEntries(Object.entries(tools).toSorted(([a], [b]) => a.localeCompare(b))),
     params,
-    messageTransformOptions: options,
+    messageTransformOptions: input.cache === false ? { ...options, cache: false } : options,
     headers: {
       ...(input.model.providerID.startsWith("opencode")
         ? {

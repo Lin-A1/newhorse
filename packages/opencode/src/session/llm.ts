@@ -47,6 +47,10 @@ export type StreamInput = {
   dynamicSystem?: string[]
   messages: ModelMessage[]
   small?: boolean
+  /** Disable prompt-cache breakpoints (see LLMRequestPrep.cache). Background
+   * extraction/auxiliary calls that reuse the session cache key but carry a
+   * different prompt must opt out so they cannot evict the main prefix. */
+  cache?: boolean
   tools: Record<string, Tool>
   retries?: number
   toolChoice?: "auto" | "required" | "none"

@@ -1,4 +1,4 @@
-import { Component, createSignal, startTransition } from "solid-js"
+import { Component, createSignal, startTransition, Show } from "solid-js"
 import { Dialog } from "@newhorse/ui/v2/dialog-v2"
 import { TabsV2 } from "@newhorse/ui/v2/tabs-v2"
 import { Icon } from "@newhorse/ui/icon"
@@ -10,6 +10,7 @@ import { SettingsProvidersV2 } from "./providers"
 import { SettingsModelsV2 } from "./models"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
+import { SettingsLanV2 } from "./lan"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { SettingsProfileV2 } from "./profile"
 import { SettingsMemory } from "../settings-memory"
@@ -69,6 +70,12 @@ export const DialogSettings: Component<{
                       <Icon name="server" />
                       {language.t("status.popover.tab.servers")}
                     </TabsV2.Trigger>
+                    <Show when={platform.platform === "desktop"}>
+                      <TabsV2.Trigger value="lan">
+                        <Icon name="share" />
+                        局域网访问
+                      </TabsV2.Trigger>
+                    </Show>
                     <TabsV2.Trigger value="providers">
                       <Icon name="providers" />
                       {language.t("settings.providers.title")}
@@ -124,6 +131,11 @@ export const DialogSettings: Component<{
         <TabsV2.Content value="servers" class="settings-v2-panel">
           <SettingsServersV2 />
         </TabsV2.Content>
+        <Show when={platform.platform === "desktop"}>
+          <TabsV2.Content value="lan" class="settings-v2-panel">
+            <SettingsLanV2 />
+          </TabsV2.Content>
+        </Show>
         <TabsV2.Content value="providers" class="settings-v2-panel">
           <SettingsProvidersV2 onBack={showProviders} />
         </TabsV2.Content>

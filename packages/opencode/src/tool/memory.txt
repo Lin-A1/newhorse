@@ -18,6 +18,8 @@ Actions:
   （preference、fact、goal、event、relationship 或 summary）。当该 profile
   的记忆功能被禁用时会失败
 - forget: 需要 id。永久删除当前 Profile 可见的一条条目
+- update: 需要 id。就地修正已有记忆的内容（content）或类别（kind），
+  保留原 id 与来源信息。用于纠正过时或错误的记忆，避免删除重建丢失关联
 - consolidate: 无参数。收集所有活动的 fact、event 和 preference，
   然后指示你把它们蒸馏成一条简洁的 "summary" 记忆
   （用 kind=summary 保存），并归档每条来源记忆（用 ids 归档）。

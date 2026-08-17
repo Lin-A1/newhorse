@@ -443,7 +443,22 @@ const layer = Layer.effect(
             })
             ctx.assistantMessage.finish = value.reason
             ctx.assistantMessage.cost += usage.cost
-            ctx.assistantMessage.tokens = usage.tokens
+            // Each step-finish carries this step's incremental usage; the
+            // assistant message may span several steps (one per tool round),
+            // so accumulate tokens the same way cost is accumulated. Assigning
+            // (not adding) previously dropped everything but the final step.
+            const tokens = usage.tokens
+            const prior = ctx.assistantMessage.tokens
+            ctx.assistantMessage.tokens = {
+              total: tokens.total !== undefined ? (prior.total ?? 0) + tokens.total : prior.total,
+              input: prior.input + tokens.input,
+              output: prior.output + tokens.output,
+              reasoning: prior.reasoning + tokens.reasoning,
+              cache: {
+                read: prior.cache.read + tokens.cache.read,
+                write: prior.cache.write + tokens.cache.write,
+              },
+            }
             yield* session.updatePart({
               id: PartID.ascending(),
               reason: value.reason,

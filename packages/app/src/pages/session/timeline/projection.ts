@@ -67,8 +67,6 @@ export function createTimelineProjection(input: {
               input.status().type,
               activeMessageID() === userMessage.id,
               input.inlineComments(),
-              // Messages compacted above this turn = its index in the full message list.
-              input.messages().findIndex((message) => message.id === userMessage.id),
             ),
           ),
         ),

@@ -25,6 +25,7 @@ import {
   isFirstLaunchOnboardingPending,
   isOldLayoutEligible,
 } from "./onboarding"
+import { getLanConfig, getLanReady, saveLanConfig } from "./lan"
 import {
   getDefaultServerUrl,
   preferAppEnv,
@@ -344,7 +345,12 @@ const main = Effect.gen(function* () {
     ),
   )
 
+  const lan = getLanConfig()
+  const lanReady = getLanReady()
+
   const port = yield* Effect.gen(function* () {
+    if (lanReady && lan.port) return lan.port
+
     const fromEnv = process.env.OPENCODE_PORT
     if (fromEnv) {
       const parsed = Number.parseInt(fromEnv, 10)
@@ -367,9 +373,14 @@ const main = Effect.gen(function* () {
 
     return yield* Deferred.await(res)
   })
-  const hostname = "127.0.0.1"
-  const url = `http://${hostname}:${port}`
-  const password = randomUUID()
+  // Keep the effective LAN port durable so the settings panel can render the
+  // exact network URL after a relaunch when the user left the port field empty.
+  if (lanReady && !lan.port) saveLanConfig({ port })
+  // LAN access binds all interfaces and uses the user-set password; otherwise the
+  // server stays loopback-only with a fresh random password on every start.
+  const hostname = lanReady ? "0.0.0.0" : "127.0.0.1"
+  const url = `http://127.0.0.1:${port}`
+  const password = lanReady && lan.password ? lan.password : randomUUID()
 
   const loadingTask = yield* Effect.gen(function* () {
     logger.log("sidecar connection started", { url })

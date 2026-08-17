@@ -4,6 +4,7 @@ import { Profile } from "@/profile"
 import { SessionV1 } from "@newhorse/core/v1/session"
 
 import { Session } from "@/session/session"
+import { Projected } from "@/session/projected"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
@@ -87,6 +88,7 @@ export const SessionPaths = {
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
   message: `${root}/:sessionID/message/:messageID`,
+  projected: `${root}/:sessionID/projected`,
   create: root,
   remove: `${root}/:sessionID`,
   update: `${root}/:sessionID`,
@@ -212,6 +214,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.message",
             summary: "Get message",
             description: "Retrieve a specific message from a session by its message ID.",
+          }),
+        ),
+        HttpApiEndpoint.get("projected", SessionPaths.projected, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Projected.Info, "Projected next request"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.projected",
+            summary: "Get session projection",
+            description:
+              "Projected next request (tokens and cost) plus the current context breakdown and pressure for a session.",
           }),
         ),
         HttpApiEndpoint.post("create", SessionPaths.create, {

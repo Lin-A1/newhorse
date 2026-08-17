@@ -1,14 +1,16 @@
 import { execFile } from "node:child_process"
 import { stat, writeFile } from "node:fs/promises"
 import { basename } from "node:path"
+import { promisify } from "node:util"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, powerMonitor, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@newhorse/app/desktop-menu"
 
-import type { FatalRendererError, ServerReadyData, TitlebarTheme } from "../preload/types"
+import type { FatalRendererError, LanConfigInput, ServerReadyData, TitlebarTheme } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { setForceFocus } from "./debug"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
+import { getLanConfig, getNetworkIPs, saveLanConfig } from "./lan"
 import { saveTextFile } from "./save-text-file"
 import { getStore, removeStoreFileIfEmpty } from "./store"
 import { getPinchZoomEnabled, getWindowID, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
@@ -21,6 +23,68 @@ const pickerFilters = (ext?: string[]) => {
 }
 
 const pickedFiles = createPickedFileAuthorizations()
+
+const execFileAsync = promisify(execFile)
+
+// Real foreground-window sensing (HANDOFF: no resident daemon). Each call
+// probes the OS once with a short P/Invoke PowerShell snippet and memoizes the
+// result for FOREGROUND_PROBE_TTL_MS so the renderer's polling never spawns a
+// shell per tick. Nothing runs on a timer; the cache only refreshes on demand.
+const FOREGROUND_PROBE_TTL_MS = 15_000
+
+const FOREGROUND_PROBE_SCRIPT = `
+$sig = @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public class Win32Foreground {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern bool QueryFullProcessImageName(IntPtr hp, uint flags, StringBuilder name, ref uint size);
+}
+'@
+Add-Type -TypeDefinition $sig
+$hwnd = [Win32Foreground]::GetForegroundWindow()
+$pidValue = 0
+[Win32Foreground]::GetWindowThreadProcessId($hwnd, [ref]$pidValue) | Out-Null
+$locked = ($hwnd -eq [IntPtr]::Zero)
+$appName = ""
+if (-not $locked) {
+  $proc = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+  if ($proc) { $appName = $proc.ProcessName } else { $appName = "unknown" }
+  if ($appName -eq "LockApp" -or $appName -eq "lockapp") { $locked = $true; $appName = "" }
+}
+$meeting = @("ms-teams", "Teams", "Zoom", "webex", "腾讯会议", "wemeetapp", "Slack", "discord", "LINE") | Where-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+$meetingName = if ($meeting) { [string]$meeting } else { "" }
+Write-Output ("{0}|{1}|{2}" -f $appName, $locked, $meetingName)
+`
+
+type ForegroundProbe = { focusApp: string; locked: boolean; inMeeting: boolean; observedAt: number }
+
+let foregroundProbe: ForegroundProbe | undefined
+
+async function probeForeground(): Promise<ForegroundProbe> {
+  const now = Date.now()
+  if (foregroundProbe && now - foregroundProbe.observedAt < FOREGROUND_PROBE_TTL_MS) return foregroundProbe
+  let focusApp = ""
+  let locked = false
+  let inMeeting = false
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", FOREGROUND_PROBE_SCRIPT],
+      { timeout: 5_000, windowsHide: true },
+    )
+    const [appName, lockedText, meetingName] = stdout.trim().split("|")
+    focusApp = appName || ""
+    locked = lockedText === "True"
+    inMeeting = meetingName.length > 0
+  } catch {
+    // Probe is best-effort: fall back to the previous (or empty) reading.
+  }
+  foregroundProbe = { focusApp, locked, inMeeting, observedAt: now }
+  return foregroundProbe
+}
 
 type Deps = {
   killSidecar: () => Promise<void> | void
@@ -118,6 +182,12 @@ export function registerIpcHandlers(deps: Deps) {
     const store = getStore(name)
     return Object.keys(store.store).length
   })
+
+  ipcMain.handle("get-lan-config", () => getLanConfig())
+  ipcMain.handle("set-lan-config", (_event: IpcMainInvokeEvent, partial: LanConfigInput) => {
+    saveLanConfig(partial)
+  })
+  ipcMain.handle("get-network-ips", () => getNetworkIPs())
 
   ipcMain.handle(
     "open-directory-picker",
@@ -233,13 +303,36 @@ export function registerIpcHandlers(deps: Deps) {
     win?.show()
   })
 
-  ipcMain.handle("get-presence", (event: IpcMainInvokeEvent) => {
+  ipcMain.handle("get-presence", async (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
+    const probe = await probeForeground()
+    // Prefer the OS foreground window over the "newhorse is focused" proxy.
+    const focusedApp = probe.focusApp || (win?.isFocused() ? "newhorse" : undefined)
+    // When LAN is enabled the password is durable, so the host can push its
+    // real presence onto the server for other devices to read via the API.
+    const lan = getLanConfig()
+    if (lan.enabled && lan.password) {
+      const url = await deps.getDefaultServerUrl()
+      if (url) {
+        void fetch(`${url}/presence`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Basic ${lan.token}`,
+          },
+          body: JSON.stringify({
+            locked: probe.locked,
+            focusApp: focusedApp,
+            inMeeting: probe.inMeeting,
+          }),
+        }).catch(() => undefined)
+      }
+    }
     return {
       idleSeconds: powerMonitor.getSystemIdleTime(),
-      locked: false,
-      // 近似：newhorse 窗口聚焦时视为"正在使用 newhorse"；真实前台应用需要原生 Win32 检测（TODO）
-      focusedApp: win?.isFocused() ? "newhorse" : undefined,
+      locked: probe.locked,
+      focusedApp,
+      inMeeting: probe.inMeeting,
     }
   })
 

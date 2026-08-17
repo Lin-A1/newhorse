@@ -12,6 +12,7 @@ import { Database } from "@newhorse/core/database/database"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionV2 } from "@newhorse/core/session"
 import * as SessionExecutionLocal from "@newhorse/core/session/execution/local"
+import { SessionRepair } from "./repair"
 import { locationServiceMapLayer } from "@newhorse/core/location-services"
 
 import { NotFoundError } from "@/storage/storage"
@@ -922,28 +923,33 @@ const layer: Layer.Layer<
     })
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
-      if (input.limit) {
-        return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit }).pipe(
-          Effect.provideService(Database.Service, database),
-        )).items
-      }
-
-      const size = 50
-      const result = [] as SessionV1.WithParts[]
-      let before: string | undefined
-      while (true) {
-        const page = yield* MessageV2.page({ sessionID: input.sessionID, limit: size, before }).pipe(
-          Effect.provideService(Database.Service, database),
-        )
-        if (page.items.length === 0) break
-        for (let i = page.items.length - 1; i >= 0; i--) {
-          const item = page.items[i]
-          if (item) result.push(item)
-        }
-        if (!page.more || !page.cursor) break
-        before = page.cursor
-      }
-      return result.reverse()
+      const items = input.limit
+        ? (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit }).pipe(
+            Effect.provideService(Database.Service, database),
+          )).items
+        : yield* Effect.gen(function* () {
+            const size = 50
+            const result = [] as SessionV1.WithParts[]
+            let before: string | undefined
+            while (true) {
+              const page = yield* MessageV2.page({ sessionID: input.sessionID, limit: size, before }).pipe(
+                Effect.provideService(Database.Service, database),
+              )
+              if (page.items.length === 0) break
+              for (let i = page.items.length - 1; i >= 0; i--) {
+                const item = page.items[i]
+                if (item) result.push(item)
+              }
+              if (!page.more || !page.cursor) break
+              before = page.cursor
+            }
+            return result.reverse()
+          })
+      // The recovery path: a crash can leave the tail assistant turn unclosed
+      // with dangling tool calls. Close it before anything consumes the log so
+      // resumed prompts never present dangling tool_use blocks to a provider.
+      yield* SessionRepair.apply({ updateMessage, updatePart }, items)
+      return items
     })
 
     const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {

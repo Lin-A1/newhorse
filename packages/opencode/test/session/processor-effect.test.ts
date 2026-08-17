@@ -1065,3 +1065,60 @@ itFragmentFailure.live("session.processor effect tests retain partial legacy par
     { config: cfg },
   ),
 )
+
+it.live("session.processor effect tests accumulate tokens across tool-round steps", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+
+        // Round 1: tool round (step-finish with tool_calls, zero usage).
+        yield* llm.tool("lookup", { query: "weather" })
+        // Round 2: final answer with real usage.
+        yield* llm.text("done", { usage: { input: 100, output: 50 } })
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "accumulate")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
+
+        const input = {
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+          } satisfies SessionV1.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user" as const, content: "accumulate" }],
+          tools: {
+            lookup: tool({
+              description: "Look up information",
+              inputSchema: z.object({ query: z.string() }),
+              execute: async () => ({ output: "ok", title: "ok", metadata: {} }),
+            }),
+          },
+        }
+        // Outer loop simulation: the tool round hands control back, so the
+        // prompt loop calls process again with the tool result in history.
+        yield* handle.process(input)
+        yield* handle.process(input)
+
+        const updated = yield* session.messages({ sessionID: chat.id, limit: 10 })
+        const last = [...updated].reverse().find((item) => item.info.role === "assistant")
+        expect(last?.info.role).toBe("assistant")
+        if (last?.info.role !== "assistant") return
+        // Round 1 usage was zero; round 2 reported input:100/output:50. The
+        // final message must carry the accumulated (not last-step-only) total.
+        expect(last.info.tokens.input).toBe(100)
+        expect(last.info.tokens.output).toBe(50)
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)

@@ -22,8 +22,9 @@ export namespace TimelineRow {
   export class CompactionSummary extends Data.TaggedClass("CompactionSummary")<{
     userMessageID: string
     summary?: string
-    messageCount: number
+    messageCount?: number
     tokenCount?: number
+    compacting: boolean
   }> {}
   export class AssistantPart extends Data.TaggedClass("AssistantPart")<{
     userMessageID: string

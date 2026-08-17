@@ -1,5 +1,5 @@
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
-import { AssistantMessage, Part, SessionStatus, UserMessage } from "@newhorse/sdk/v2"
+import type { AssistantMessage, Part, SessionStatus, UserMessage } from "@newhorse/sdk/v2"
 import { groupParts, renderable, type PartGroup } from "@newhorse/session-ui/message-part"
 import { TimelineRow, type SummaryDiff } from "./timeline-row"
 import { uniqueSummaryDiffs } from "./summary-diffs"
@@ -41,7 +41,6 @@ export namespace Timeline {
     isActive: boolean,
     // v2 renders comments inside the user message attachments row instead of a strip row
     inlineComments: boolean,
-    messageCount: number,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -55,21 +54,30 @@ export namespace Timeline {
     // output — it is the marker's expandable disclosure. The compacted
     // conversation stays above, scrollable as usual.
     if (compaction) {
+      const compactionPart = userParts.find((part): part is Extract<Part, { type: "compaction" }> => part.type === "compaction")
       const summaryAssistant = assistantMessages.find((m) => m.summary === true)
-      const summary = summaryAssistant
-        ? (getMessageParts(summaryAssistant.id)
+      // Compaction lands the user part before the summary turn completes: while
+      // the summary assistant is missing or still in flight, render the "compacting"
+      // placeholder instead of a final marker.
+      const compacting = !summaryAssistant || typeof summaryAssistant.time.completed !== "number"
+      const summary = compacting
+        ? undefined
+        : (getMessageParts(summaryAssistant!.id)
             .filter((part): part is Extract<Part, { type: "text" }> => part.type === "text" && !!part.text)
             .map((part) => part.text)
             .join("\n")
             .trim() || undefined)
-        : undefined
-      const tokenCount = summaryAssistant?.tokens?.input
       rows.push(
         new TimelineRow.CompactionSummary({
           userMessageID: userMessage.id,
           summary,
-          messageCount,
-          ...(tokenCount ? { tokenCount } : {}),
+          compacting,
+          ...(compactionPart?.compactedCount !== undefined
+            ? { messageCount: compactionPart.compactedCount }
+            : {}),
+          ...(compactionPart?.compactedTokens !== undefined
+            ? { tokenCount: compactionPart.compactedTokens }
+            : {}),
         }),
       )
       return rows

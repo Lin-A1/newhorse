@@ -139,6 +139,27 @@ export const TodoTable = sqliteTable(
   ],
 )
 
+export type GoalStatus = "open" | "in_progress" | "blocked" | "done" | "cancelled"
+export type GoalPriority = "low" | "medium" | "high"
+
+export const GoalTable = sqliteTable(
+  "goal",
+  {
+    id: text().primaryKey(),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    content: text().notNull(),
+    status: text().$type<GoalStatus>().notNull().default("open"),
+    priority: text().$type<GoalPriority>().notNull().default("medium"),
+    deadline: integer(),
+    done_reason: text(),
+    ...Timestamps,
+  },
+  (table) => [index("goal_session_status_idx").on(table.session_id, table.status)],
+)
+
 export const SessionMessageTable = sqliteTable(
   "session_message",
   {

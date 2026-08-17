@@ -68,6 +68,18 @@ describe("openSessionTab", () => {
       state(["file://a.ts", "file://b.ts"], "file://b.ts"),
     )
   })
+
+  test("pins the tasks tab at the front like context", () => {
+    expect(openSessionTab(state(["file://a.ts"], "file://a.ts", "file://a.ts"), "tasks")).toEqual(
+      state(["tasks", "file://a.ts"], "tasks", "file://a.ts"),
+    )
+  })
+
+  test("moves an existing tasks tab to the front", () => {
+    expect(openSessionTab(state(["file://a.ts", "tasks"], "file://a.ts"), "tasks")).toEqual(
+      state(["tasks", "file://a.ts"], "tasks"),
+    )
+  })
 })
 
 describe("closeSessionTab", () => {

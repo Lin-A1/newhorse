@@ -1,0 +1,9 @@
+管理当前会话的目标（goal）列表。目标是用户或助手为当前工作设定的高层次成果，比 todo 更宏观，可跨多轮对话长期跟踪。目标与当前激活的 plan 文件自动关联（首个目标优先）。
+
+action 用法：
+- `create`：新建目标，必须提供 content；可带 priority（low/medium/high）与 deadline（毫秒时间戳）。
+- `update`：更新目标，需要 id；可更新 content、status（open/in_progress/blocked/done/cancelled）、priority、deadline。标记 done 时必须提供 done_reason 说明完成依据（审计要求）。
+- `status`：查看目标状态；带 id 看单个目标，不带 id 看当前会话全部目标。
+- `list`：列出当前会话全部目标。
+
+状态机：open → in_progress / blocked / done / cancelled；in_progress → done / blocked / open；blocked → in_progress / open / cancelled；done 与 cancelled 为终态。非法转移会被拒绝。
