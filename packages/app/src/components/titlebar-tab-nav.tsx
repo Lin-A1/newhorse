@@ -445,7 +445,7 @@ export function CompanionTabItem(props: {
       data-slot="titlebar-tab-item"
       data-pinned-tab
       data-active={props.active}
-      class="sticky right-0 z-20 flex h-7 shrink-0 select-none items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] px-1.5 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
+      class="flex h-7 shrink-0 select-none items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] px-1.5 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
       classList={{ invisible: props.hidden }}
     >
       <button
@@ -488,7 +488,7 @@ export function WorkbenchTabItem(props: {
       data-slot="titlebar-tab-item"
       data-pinned-tab
       data-active={props.active}
-      class="sticky right-0 z-20 flex h-7 shrink-0 select-none items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] px-1.5 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
+      class="flex h-7 shrink-0 select-none items-center overflow-hidden whitespace-nowrap rounded-[6px] bg-[var(--tab-bg)] px-1.5 [--tab-bg:var(--v2-background-bg-deep)] hover:[--tab-bg:var(--v2-background-bg-layer-02)] data-[active='true']:[--tab-bg:var(--v2-background-bg-layer-02)]"
       classList={{ invisible: props.hidden }}
     >
       <button

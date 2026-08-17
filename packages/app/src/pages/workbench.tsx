@@ -17,6 +17,8 @@ type WorkbenchTodo = {
   source: "user" | "newhorse" | "reminder"
 }
 
+type WorkbenchSection = "overview" | "todos" | "usage" | "summary"
+
 function presenceLabel(language: ReturnType<typeof useLanguage>, idleMs: number) {
   const minutes = Math.floor(idleMs / 60_000)
   if (minutes < 1) return language.t("workbench.presence.active")
@@ -209,10 +211,9 @@ function PresenceStrip() {
 export default function WorkbenchPage() {
   const language = useLanguage()
   const navigate = useNavigate()
-  // Keep the scroll position across data refreshes: the usage panel polls every
-  // 5s and the heatmap/timeline resources reload, which can shrink the content
-  // height transiently and reset the viewport scrollTop. Save on scroll and
-  // restore after content settles so the page never jumps back to the top.
+  const [section, setSection] = createSignal<WorkbenchSection>("overview")
+  // Keep the scroll position across section switches and data refreshes so the
+  // page never jumps back to the top.
   let scrollTop = 0
   let viewport: HTMLDivElement | undefined
   let restoreFrame: number | undefined
@@ -239,9 +240,6 @@ export default function WorkbenchPage() {
     if (contentEl === el) return
     contentEl = el
     contentObserver?.disconnect()
-    // Data refreshes swap inner content (usage poll, heatmap/timeline reload);
-    // after each mutation the scroll may have been reset by a transient shrink,
-    // so nudge it back once the layout has settled.
     contentObserver = new MutationObserver(scheduleRestore)
     contentObserver.observe(el, { childList: true, subtree: true })
     scheduleRestore()
@@ -251,59 +249,112 @@ export default function WorkbenchPage() {
     if (restoreFrame !== undefined) cancelAnimationFrame(restoreFrame)
   })
 
+  const switchSection = (next: WorkbenchSection) => {
+    // Reset scroll when switching pages (fresh page start), keep it across data
+    // refreshes within a page.
+    if (next !== section()) scrollTop = 0
+    setSection(next)
+  }
+
+  const SECTIONS: { key: WorkbenchSection; label: string }[] = [
+    { key: "overview", label: language.t("workbench.section.overview") },
+    { key: "todos", label: language.t("workbench.todo") },
+    { key: "usage", label: language.t("workbench.usage") },
+    { key: "summary", label: language.t("workbench.dailySummary") },
+  ]
+
   return (
     <div class="m-2 min-h-0 self-stretch flex-1 overflow-hidden rounded-[10px] bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]">
-      <ScrollView
-        class="h-full [container-type:size]"
-        viewportRef={(el) => {
-          viewport = el
-          restoreScroll()
-        }}
-        onScroll={(e) => rememberScroll(e.currentTarget as HTMLDivElement)}
-      >
-        <div ref={watchContent} class="mx-auto flex min-h-full w-full max-w-[1024px] flex-col gap-4 px-4 py-6">
-          <header class="flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2">
+      <div class="flex h-full flex-col">
+        {/* Header with back + title */}
+        <header class="flex shrink-0 items-center justify-between gap-3 px-4 pt-3">
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="flex size-7 items-center justify-center rounded-[6px] text-v2-icon-icon-muted transition-colors hover:bg-v2-overlay-simple-overlay-hover"
+              onClick={() => navigate("/")}
+              aria-label={language.t("common.back")}
+            >
+              <IconV2 name="chevron-left" size="small" />
+            </button>
+            <h1 class="text-[18px] font-medium tracking-[-0.13px] text-v2-text-text-strong">
+              {language.t("workbench.title")}
+            </h1>
+          </div>
+        </header>
+
+        {/* Section tabs */}
+        <nav class="flex shrink-0 items-center gap-1.5 px-4 pt-3" aria-label={language.t("workbench.title")}>
+          <For each={SECTIONS}>
+            {(item) => (
               <button
                 type="button"
-                class="flex size-7 items-center justify-center rounded-[6px] text-v2-icon-icon-muted transition-colors hover:bg-v2-overlay-simple-overlay-hover"
-                onClick={() => navigate("/")}
-                aria-label={language.t("common.back")}
+                class="relative rounded-[6px] px-3 py-1.5 text-[13px] font-medium transition-colors"
+                classList={{
+                  "text-v2-text-text-strong": section() === item.key,
+                  "text-v2-text-text-faint hover:text-v2-text-text-base": section() !== item.key,
+                }}
+                onClick={() => switchSection(item.key)}
+                aria-current={section() === item.key ? "page" : undefined}
               >
-                <IconV2 name="chevron-left" size="small" />
+                {item.label}
+                {/* Active underline indicator */}
+                <span
+                  class="absolute inset-x-2 -bottom-px h-0.5 rounded-full"
+                  classList={{
+                    "bg-v2-accent-accent": section() === item.key,
+                    "bg-transparent": section() !== item.key,
+                  }}
+                />
               </button>
-              <h1 class="text-[18px] font-medium tracking-[-0.13px] text-v2-text-text-strong">
-                {language.t("workbench.title")}
-              </h1>
-            </div>
-          </header>
+            )}
+          </For>
+        </nav>
 
-          {/* Heatmap, full width */}
-          <section class="rounded-[10px] bg-v2-background-bg-layer-01 p-4">
-            <ContributionHeatmap />
-          </section>
-
-          {/* Two-column on wide screens, stacked on narrow */}
-          <div class="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
-            <div class="flex min-h-0 flex-col gap-4">
+        {/* Section content */}
+        <ScrollView
+          class="min-h-0 flex-1 [container-type:size]"
+          viewportRef={(el) => {
+            viewport = el
+            restoreScroll()
+          }}
+          onScroll={(e) => rememberScroll(e.currentTarget as HTMLDivElement)}
+        >
+          <div ref={watchContent} class="mx-auto flex min-h-full w-full max-w-[1024px] flex-col gap-4 px-4 py-4">
+            <Show when={section() === "overview"}>
+              {/* Overview: heatmap full width, then presence + recent summaries */}
               <section class="rounded-[10px] bg-v2-background-bg-layer-01 p-4">
-                <PresenceStrip />
+                <ContributionHeatmap />
               </section>
-              <section class="flex min-h-0 flex-1 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+              <div class="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
+                <section class="flex min-h-0 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+                  <PresenceStrip />
+                </section>
+                <section class="flex min-h-0 flex-1 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+                  <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
+                    {language.t("workbench.dailySummary")}
+                  </h2>
+                  <div class="min-h-0 flex-1">
+                    <SidebarTimeline showHeader={false} bodyClass="px-0 pb-0" />
+                  </div>
+                </section>
+              </div>
+            </Show>
+
+            <Show when={section() === "todos"}>
+              <section class="flex min-h-0 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
                 <WorkbenchTodos />
               </section>
-            </div>
+            </Show>
 
-            <div class="flex min-h-0 flex-col gap-4">
+            <Show when={section() === "usage"}>
               <section class="rounded-[10px] bg-v2-background-bg-layer-01 p-4">
-                <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
-                  {language.t("workbench.usage")}
-                </h2>
-                <div class="mt-3">
-                  <SettingsUsage />
-                </div>
+                <SettingsUsage />
               </section>
-              <section class="flex min-h-0 flex-1 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+            </Show>
+
+            <Show when={section() === "summary"}>
+              <section class="flex min-h-0 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
                 <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
                   {language.t("workbench.dailySummary")}
                 </h2>
@@ -311,10 +362,10 @@ export default function WorkbenchPage() {
                   <SidebarTimeline showHeader={false} bodyClass="px-0 pb-0" />
                 </div>
               </section>
-            </div>
+            </Show>
           </div>
-        </div>
-      </ScrollView>
+        </ScrollView>
+      </div>
     </div>
   )
 }

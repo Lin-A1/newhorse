@@ -45,9 +45,6 @@ import { useSettingsCommand } from "@/components/settings-dialog"
 import { DialogSelectServer, useServerManagementController } from "@/components/dialog-select-server"
 import { DialogServerV2 } from "@/components/settings-v2/dialog-server-v2"
 import { ServerConnection, serverName, useServer } from "@/context/server"
-import { ServerSDKProvider } from "@/context/server-sdk"
-import { SidebarTimeline } from "@/components/sidebar-timeline"
-import { ContributionHeatmap } from "@/components/contribution-heatmap"
 import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -112,8 +109,6 @@ const HOME_ROW = `${HOME_ROW_BASE} [font-weight:530] text-v2-text-text-muted hov
 const HOME_PROJECT_NAV_LABEL = "min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap"
 const HOME_PROJECT_NAV_ROW = `${HOME_ROW_LAYOUT} h-7 gap-2 px-1.5 [font-weight:440] text-v2-text-text-muted hover:bg-v2-background-bg-layer-01 hover:text-v2-text-text-base hover:[box-shadow:inset_0_0_0_0.5px_var(--v2-border-border-muted)] data-[selected]:bg-v2-background-bg-layer-03 data-[selected]:text-v2-text-text-base data-[selected]:[box-shadow:inset_0_0_0_0.5px_var(--v2-border-border-muted)] data-[selected]:hover:bg-v2-background-bg-layer-03 focus-visible:bg-v2-background-bg-layer-01 focus-visible:text-v2-text-text-base focus-visible:[box-shadow:inset_0_0_0_0.5px_var(--v2-border-border-muted)]`
 const HOME_SECTION_LABEL = "text-v2-text-text-muted [font-weight:440]"
-const HOME_DAILY_SUMMARY_HEADER =
-  "flex h-7 min-w-0 shrink-0 cursor-default items-center gap-1 rounded-[6px] px-1.5 text-left text-v2-text-text-muted [font-weight:530] transition-[background-color,color] duration-[120ms] ease-in-out hover:bg-v2-background-bg-layer-01 hover:text-v2-text-text-base focus-visible:bg-v2-background-bg-layer-01 focus-visible:outline-none"
 
 type HomeSessionRecord = {
   session: Session
@@ -312,7 +307,6 @@ export function NewHome() {
   const notification = useNotification()
   const marked = useMarked()
   const openSettings = useSettingsCommand(() => selection().directory)
-  const openWorkbench = () => navigate("/workbench")
   let focusSessionSearch: (() => void) | undefined
   let sessionViewport: HTMLDivElement | undefined
   const [sessionThumbTrack, setSessionThumbTrack] = createSignal<HTMLDivElement>()
@@ -686,7 +680,6 @@ export function NewHome() {
             clearNotifications={clearNotifications}
             unseenCount={unseenCount}
             openSettings={openSettings}
-            openWorkbench={() => navigate("/workbench")}
             openHelp={() => platform.openLink("https://github.com/Lin-A1/newhorse/issues")}
             language={language}
             onWheel={(event) => {
@@ -800,7 +793,6 @@ export function NewHome() {
           </section>
           <HomeUtilityNav
             class="flex lg:hidden"
-            openWorkbench={openWorkbench}
             openSettings={openSettings}
             openHelp={() => platform.openLink("https://github.com/Lin-A1/newhorse/issues")}
             language={language}
@@ -829,7 +821,6 @@ function HomeProjectColumn(props: {
   unseenCount: (server: ServerConnection.Any, project: LocalProject) => number
   openSettings: () => void
   openHelp: () => void
-  openWorkbench: () => void
   language: ReturnType<typeof useLanguage>
   onWheel: (event: WheelEvent) => void
 }) {
@@ -931,10 +922,8 @@ function HomeProjectColumn(props: {
           </div>
         </Show>
       </ScrollView>
-      <HomeWorkbenchPanel focusedServer={props.focusedServer} />
       <HomeUtilityNav
         class="mb-8 mt-4 hidden shrink-0 lg:flex"
-        openWorkbench={props.openWorkbench}
         openSettings={props.openSettings}
         openHelp={props.openHelp}
         language={props.language}
@@ -943,56 +932,8 @@ function HomeProjectColumn(props: {
   )
 }
 
-// Resident workbench panel pinned to the bottom of the home sidebar (above the
-// settings/help nav): contribution heatmap + todos + daily-summary timeline.
-// Defaults to collapsed so the project list stays the focus; header toggles.
-function HomeWorkbenchPanel(props: { focusedServer: () => ServerConnection.Any | undefined }) {
-  const language = useLanguage()
-  const navigate = useNavigate()
-  const [expanded, setExpanded] = createSignal(false)
-
-  return (
-    <section class="flex min-h-0 min-w-0 shrink-0 flex-col" aria-label={language.t("workbench.title")}>
-      <div class="flex items-center">
-        <button
-          type="button"
-          class={HOME_DAILY_SUMMARY_HEADER}
-          onClick={() => setExpanded((value) => !value)}
-          aria-expanded={expanded()}
-        >
-          <IconV2
-            name="chevron-down"
-            size="small"
-            class="shrink-0 text-v2-icon-icon-muted transition-transform duration-150 ease-in-out"
-            style={{ transform: `rotate(${expanded() ? 0 : -90}deg)` }}
-          />
-          <span class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-            {language.t("workbench.title")}
-          </span>
-        </button>
-        <button
-          type="button"
-          class="shrink-0 pr-3 text-[11px] text-v2-text-text-faint hover:text-v2-text-text-muted"
-          onClick={() => navigate("/workbench")}
-        >
-          {language.t("dailyReport.title")}
-        </button>
-      </div>
-      <Show when={expanded()}>
-        <ServerSDKProvider server={props.focusedServer}>
-          <div class="flex min-h-0 flex-col gap-3 px-3 pb-3 pt-1">
-            <ContributionHeatmap />
-            <SidebarTimeline showHeader={false} class="max-h-44" bodyClass="px-1 pb-0 pt-0" />
-          </div>
-        </ServerSDKProvider>
-      </Show>
-    </section>
-  )
-}
-
 function HomeUtilityNav(props: {
   class?: string
-  openWorkbench: () => void
   openSettings: () => void
   openHelp: () => void
   language: ReturnType<typeof useLanguage>

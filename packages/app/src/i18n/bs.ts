@@ -1562,4 +1562,5 @@ export const dict = {
   "timeline.compaction.noSummary": "No summary",
   "workbench.presence.locked": "Locked",
   "workbench.presence.meeting": "In a meeting",
+  "workbench.section.overview": "Overview",
 }

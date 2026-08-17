@@ -492,12 +492,25 @@ function runBrowser(
   sessionName: string,
   opts: { timeoutMs: number },
 ): Effect.Effect<{ stdout: string; stderr: string; timedOut: boolean }, Error> {
-  return Effect.promise(() =>
-    runAgentBrowser(binary, buildBrowserArgs(command, sessionName), { timeoutMs: opts.timeoutMs }),
-  ).pipe(
-    Effect.map((result) => ({ stdout: result.stdout, stderr: result.stderr, timedOut: result.timedOut })),
-    Effect.mapError((cause) => toError(cause)),
-  )
+  // The agent-browser per-session daemon is idle-reclaimed after a period of
+  // inactivity; the next call cold-starts Chrome, which can race the client's
+  // spawn (observed as a transient ChildProcess.kill or empty response). Retry
+  // once before surfacing the failure — the second attempt reuses the daemon.
+  return Effect.gen(function* () {
+    const attempt = () =>
+      Effect.promise(() =>
+        runAgentBrowser(binary, buildBrowserArgs(command, sessionName), { timeoutMs: opts.timeoutMs }),
+      ).pipe(Effect.mapError((cause) => toError(cause)))
+
+    const first = yield* attempt()
+    // A cold-start failure typically surfaces as an empty stdout with a
+    // non-success exit; treat any non-empty error output as retryable once.
+    if (first.stdout.trim().length > 0 && !first.timedOut) {
+      return { stdout: first.stdout, stderr: first.stderr, timedOut: first.timedOut }
+    }
+    const retried = yield* attempt()
+    return { stdout: retried.stdout, stderr: retried.stderr, timedOut: retried.timedOut }
+  })
 }
 
 function timeoutSeconds(value: number | undefined, fallbackMs: number): number {
@@ -894,7 +907,7 @@ export const BrowserSessionTool = Tool.define(
             binary,
             { kind: "session", action: params.action },
             sessionName,
-            { timeoutMs: timeoutSeconds(params.timeout, 15_000) },
+            { timeoutMs: timeoutSeconds(params.timeout, 60_000) },
           )
           if (result.timedOut) throw new Error(`agent-browser session timed out after ${result.stderr}`)
           const response = parseBrowserResponse(result.stdout, result.stderr)
