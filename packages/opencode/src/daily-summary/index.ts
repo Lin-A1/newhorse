@@ -14,9 +14,15 @@ import { InstanceStore } from "@/project/instance-store"
 import { MessageID, SessionID } from "@/session/schema"
 import { SessionV1 } from "@newhorse/core/v1/session"
 import { LLMEvent } from "@newhorse/llm"
-import { dayEndMs, dayStartMs, localDateKey, readClaudeCode, readCodex, type DailySource } from "./readers"
-
-const OVERVIEW_MAX_CHARS = 300
+import {
+  dayEndMs,
+  dayStartMs,
+  localDateKey,
+  previousDateKey,
+  readClaudeCode,
+  readCodex,
+  type DailySource,
+} from "./readers"
 
 export const TodoInfo = Schema.Struct({
   content: Schema.String,
@@ -224,7 +230,11 @@ const layer = Layer.effect(
     // ---------------------------------------------------------------------
     const fallbackOverview = (digest: string) => `今天在本机 AI 工具中有以下活动：\n${digest}`
 
-    const synthesize = Effect.fn("DailySummary.synthesize")(function* (digest: string, dateKey: string) {
+    const synthesize = Effect.fn("DailySummary.synthesize")(function* (
+      digest: string,
+      dateKey: string,
+      yesterdayOverview: string | undefined,
+    ) {
       const ag = yield* agent.get("summary")
       const def = yield* provider.defaultModel().pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (!ag || !def) return fallbackOverview(digest)
@@ -247,6 +257,27 @@ const layer = Layer.effect(
         text: "",
       } as unknown as SessionV1.User
 
+      // Structured daily report prompt (research-backed): a progress log, not
+      // an activity list. Each section has an explicit job; sections with no
+      // evidence say "无" instead of being fabricated. The previous day's
+      // overview is injected for cross-day continuity.
+      const yesterdayBlock = yesterdayOverview
+        ? `\n昨天（${previousDateKey(dateKey)}）的日报概览如下，请先核对「下一步/未收尾事项」哪些已经完成：\n${yesterdayOverview}\n`
+        : ""
+      const prompt =
+        `这是 ${dateKey} 你在本机各 AI 工具（newhorse work、newhorse、Claude Code、Codex）中的当日活动记录。` +
+        `请写一份结构化中文日报，用 Markdown 分节，必须包含以下小节（无内容的小节写「无」）：\n` +
+        `## 今日概览\n一句话主线 + 今天最重要的 1-2 个产出（≤ 80 字）。\n` +
+        `## 进展\n按项目/主题分组，每条 = 动作 + 结果/结论（可引用会话标题，不罗列文件名）。\n` +
+        `## 卡点\n现象 + 已尝试 + 下一步尝试（没有写「无」）。\n` +
+        `## 下一步\n明天要接续的事，按优先级排 1-3 条。\n` +
+        `## 行动项\n- [ ] (必须)… / (应该)… / (可以)…，最多 3 条。\n` +
+        `## 关键决策\n决定 + 理由 + 放弃的替代方案（隐式决策也写，没有则省略本节）。\n` +
+        `## 风险与信号\n基于数据信号（反复尝试、异常高 token、深夜时间戳、未完成待办），没有写「无」。\n` +
+        `规则：只写有证据的内容，禁止编造；语言与活动文本一致（中文活动用中文输出）。` +
+        yesterdayBlock +
+        `\n今日活动记录：\n${digest}`
+
       const text = yield* llm
         .stream({
           agent: ag,
@@ -257,15 +288,7 @@ const layer = Layer.effect(
           model,
           sessionID: "daily-summary",
           retries: 2,
-          messages: [
-            {
-              role: "user",
-              content:
-                `这是 ${dateKey} 你在本机各 AI 工具（newhorse work、newhorse、Claude Code、Codex）中的当日活动记录。` +
-                `请写一段简洁、分点式的中文「今日概览」，概括今天做了什么、有哪些进展和结论，` +
-                `可引用会话标题，不要重复罗列文件。控制在 ${OVERVIEW_MAX_CHARS} 字以内：\n\n${digest}`,
-            },
-          ],
+          messages: [{ role: "user", content: prompt }],
         })
         .pipe(
           Stream.filter(LLMEvent.is.textDelta),
@@ -278,6 +301,21 @@ const layer = Layer.effect(
     })
 
     const generateOverview = Effect.fn("DailySummary.generateOverview")(function* (digest: string, dateKey: string) {
+      // Cross-day continuity: the previous day's report overview is injected
+      // into the synthesis so the model can first check which "next steps"
+      // actually got done today. Best-effort — a missing prior day is fine.
+      let yesterdayOverview: string | undefined
+      try {
+        const prev = yield* db
+          .select()
+          .from(DailySummaryTable)
+          .where(eq(DailySummaryTable.date, previousDateKey(dateKey)))
+          .get()
+          .pipe(Effect.orDie)
+        if (prev) yesterdayOverview = decodeReport(prev.date, prev.content, prev.time_created).overview
+      } catch {
+        // no prior report; proceed without continuity
+      }
       // Anchor the LLM call to a real instance context (the 23:00 scheduler runs
       // in a global fiber with no InstanceRef). Any directory yields the same
       // provider/agent catalog; the load is cached by InstanceStore.
@@ -291,7 +329,7 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
       if (!anchor) return fallbackOverview(digest)
       return yield* instanceStore
-        .provide({ directory: anchor.directory }, synthesize(digest, dateKey))
+        .provide({ directory: anchor.directory }, synthesize(digest, dateKey, yesterdayOverview))
         .pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("daily summary synthesis failed", { cause }).pipe(

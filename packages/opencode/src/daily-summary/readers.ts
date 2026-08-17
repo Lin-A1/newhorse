@@ -28,6 +28,13 @@ export function localDateKey(ts: number) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
+/** Local date key of the day before a YYYY-MM-DD key. */
+export function previousDateKey(key: string) {
+  const [y, m, d] = key.split("-").map(Number)
+  const date = new Date(y!, m! - 1, d!)
+  return localDateKey(date.getTime() - 86_400_000)
+}
+
 function within(ts: number, start: number, end: number) {
   return Number.isFinite(ts) && ts >= start && ts < end
 }
