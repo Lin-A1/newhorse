@@ -137,6 +137,7 @@ export function useMemoryCenterState(sessionID?: string) {
     ready,
     loading: () => !activeSource() || !sameSource(source(), activeSource()) || ready.loading,
     contentScope: () => state.contentScope,
+    currentWorkspaceID: () => activeSource()?.routing.workspace,
     refresh,
     async loadMore() {
       const scoped = current()

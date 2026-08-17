@@ -5,6 +5,8 @@ import { TextInputV2 } from "@newhorse/ui/v2/text-input-v2"
 import { Switch } from "@newhorse/ui/v2/switch-v2"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { showToast } from "@/utils/toast"
+import { useLanguage } from "@/context/language"
 import "./settings-v2.css"
 
 type LanForm = {
@@ -13,23 +15,43 @@ type LanForm = {
   port: string
 }
 
-function copyText(value: string): Promise<boolean> {
-  if (typeof document === "undefined") return Promise.resolve(false)
-  const body = document.body
-  const textarea = document.createElement("textarea")
-  textarea.value = value
-  textarea.setAttribute("readonly", "")
-  textarea.style.position = "fixed"
-  textarea.style.opacity = "0"
-  body.appendChild(textarea)
-  textarea.select()
-  const copied = document.execCommand("copy")
-  body.removeChild(textarea)
-  if (copied) return Promise.resolve(true)
-  return navigator.clipboard?.writeText(value).then(
-    () => true,
-    () => false,
-  )
+async function copyText(value: string): Promise<boolean> {
+  // Prefer the main-process clipboard: navigator.clipboard.writeText and the
+  // deprecated document.execCommand("copy") both fail intermittently inside the
+  // Electron renderer (no document focus, or secure-context restriction).
+  try {
+    if (typeof window !== "undefined" && window.api?.writeClipboardText) {
+      const ok = await window.api.writeClipboardText(value)
+      if (ok) return true
+    }
+  } catch {
+    // fall through to renderer-side attempts
+  }
+  if (typeof document === "undefined") return false
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value)
+      return true
+    }
+  } catch {
+    // fall through
+  }
+  try {
+    const body = document.body
+    const textarea = document.createElement("textarea")
+    textarea.value = value
+    textarea.setAttribute("readonly", "")
+    textarea.style.position = "fixed"
+    textarea.style.opacity = "0"
+    body.appendChild(textarea)
+    textarea.select()
+    const copied = document.execCommand("copy")
+    body.removeChild(textarea)
+    if (copied) return true
+  } catch {
+    // ignore
+  }
+  return false
 }
 
 function withToken(host: string, port: number, password: string | null) {
@@ -130,7 +152,7 @@ export const SettingsLanV2: Component = () => {
                 title="访问密码"
                 description="必须设置密码才能开启局域网访问；关闭后回退为仅本机随机密码。"
               >
-                <div class="flex gap-2 items-center w-full sm:w-auto">
+                <div class="flex w-full gap-2 items-center sm:w-auto">
                   <TextInputV2
                     type="text"
                     appearance="base"
@@ -142,8 +164,9 @@ export const SettingsLanV2: Component = () => {
                     placeholder="设置访问密码"
                     spellcheck={false}
                     autocomplete="off"
+                    class="min-w-0 flex-1"
                   />
-                  <ButtonV2 variant="neutral" size="small" onClick={generatePassword}>
+                  <ButtonV2 variant="neutral" size="small" onClick={generatePassword} class="shrink-0">
                     生成
                   </ButtonV2>
                 </div>
@@ -198,7 +221,19 @@ export const SettingsLanV2: Component = () => {
                         return (
                           <li>
                             <span class="settings-v2-lan-url">{url}</span>
-                            <ButtonV2 variant="neutral" size="small" onClick={() => void copyText(url)}>
+                            <ButtonV2
+                              variant="neutral"
+                              size="small"
+                              class="shrink-0"
+                              onClick={() => {
+                                void copyText(url).then((ok) => {
+                                  showToast({
+                                    title: ok ? "已复制" : "复制失败",
+                                    description: ok ? url : "请手动选择文本并复制",
+                                  })
+                                })
+                              }}
+                            >
                               复制
                             </ButtonV2>
                           </li>

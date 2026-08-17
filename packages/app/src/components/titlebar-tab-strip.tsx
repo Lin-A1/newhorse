@@ -172,6 +172,7 @@ export function TitlebarTabStrip(props: {
   onOpenCompanion?: () => void
   companionActive?: boolean
   onOpenWorkbench?: () => void
+  workbenchActive?: boolean
 }) {
   const global = useGlobal()
   const language = useLanguage()
@@ -228,7 +229,7 @@ export function TitlebarTabStrip(props: {
         <Show when={props.onOpenWorkbench}>
           <WorkbenchTabItem
             title={language.t("workbench.title")}
-            active={true}
+            active={props.workbenchActive}
             onNavigate={() => props.onOpenWorkbench?.()}
           />
         </Show>

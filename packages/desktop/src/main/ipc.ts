@@ -274,6 +274,12 @@ export function registerIpcHandlers(deps: Deps) {
     return { buffer, width: size.width, height: size.height }
   })
 
+  ipcMain.handle("write-clipboard-text", (_event: IpcMainInvokeEvent, value: unknown) => {
+    if (typeof value !== "string") return false
+    clipboard.writeText(value)
+    return true
+  })
+
   ipcMain.on("show-notification", (_event: IpcMainEvent, title: string, body?: string) => {
     new Notification({ title, body }).show()
   })

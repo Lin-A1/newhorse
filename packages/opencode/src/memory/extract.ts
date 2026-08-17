@@ -31,15 +31,27 @@ import { LLMEvent } from "@newhorse/llm"
  * and can be edited or removed later in the Memory Center.
  */
 
-const MAX_MEMORIES = 5
+const MAX_MEMORIES = 3
 const MAX_CONTEXT_MESSAGES = 6
 const MAX_CONTEXT_CHARS = 6000
 const DEDUP_OVERLAP_THRESHOLD = 0.6
+// How many existing memories to fetch as the dedup reference. Too few and a
+// memory set that has already grown large lets the LLM re-propose the same
+// durable facts over and over (each new row only checked against the top 10),
+// which is exactly how a workspace ends up with hundreds of near-identical
+// entries.
+const DEDUP_REFERENCE_LIMIT = 30
 // Minimum gap between extraction LLM calls per session. Extraction is a
 // background cost that shares the session's cache key; throttling it keeps it
 // from firing every single turn (and, combined with cache:false below, from
-// evicting the main conversation prefix).
-const MIN_EXTRACT_INTERVAL_MS = 30_000
+// evicting the main conversation prefix). 5 minutes still catches gradual
+// drift while keeping a chatty Companion session from flooding the memory
+// table every half minute.
+const MIN_EXTRACT_INTERVAL_MS = 5 * 60_000
+// Hard daily cap per workspace so a single heavy day cannot balloon the
+// memory table: beyond this, extraction idles until tomorrow. Keyed by
+// directory (one workspace = one instance, one extract layer).
+const DAILY_EXTRACT_CAP = 40
 
 const ExtractKind = Schema.Literals(["preference", "fact", "goal", "event"])
 
@@ -152,6 +164,10 @@ const layer = Layer.effect(
     // Per-session last-extraction timestamp, scoped to this layer instance so
     // independent layers (test compilations) do not share throttle state.
     const lastExtractAt = new Map<string, number>()
+    // Per-directory count of memories saved today, so a single heavy day cannot
+    // balloon the memory table beyond DAILY_EXTRACT_CAP rows. Keyed by
+    // directory; resets when the local date rolls over.
+    const savedToday = new Map<string, { day: string; count: number }>()
 
     const runExtraction = Effect.fn("MemoryExtract.runExtraction")(function* (
       input: ExtractInput,
@@ -238,6 +254,20 @@ const layer = Layer.effect(
         return
       }
       lastExtractAt.set(input.sessionID, now)
+      // Daily cap: extraction idles for the rest of the local day once the
+      // workspace has already persisted DAILY_EXTRACT_CAP rows today. This
+      // bounds runaway memory growth from a chatty session without requiring
+      // user intervention.
+      const dayKey = new Date(now).toISOString().slice(0, 10)
+      const today = savedToday.get(input.session.directory)
+      if (today && today.day === dayKey && today.count >= DAILY_EXTRACT_CAP) {
+        yield* Effect.logDebug("memory extract daily cap reached", {
+          "session.id": input.sessionID,
+          reason: "daily_cap",
+          count: today.count,
+        })
+        return
+      }
       // Respect the session/agent memory permission. The memory tool's own
       // ctx.ask gate is intentionally bypassed here (internal background call,
       // not a model tool invocation), so enforce the same deny up front: if the
@@ -288,7 +318,7 @@ const layer = Layer.effect(
         profileID: input.profile.id,
         relationshipOnly: companion,
         status: ["active", "proposed"],
-        limit: 10,
+        limit: DEDUP_REFERENCE_LIMIT,
         userRuleset: effective,
       })
       const relatedContents = related.map((item) => item.content)
@@ -368,6 +398,15 @@ const layer = Layer.effect(
         }),
         { concurrency: 1 },
       )
+      // Track today's saved count for the daily cap (best-effort: includes
+      // policy-rejected rows in the budget, which is fine — the point is to
+      // bound total extraction work).
+      const existing = savedToday.get(input.session.directory)
+      const next = {
+        day: dayKey,
+        count: (existing && existing.day === dayKey ? existing.count : 0) + candidates.length,
+      }
+      savedToday.set(input.session.directory, next)
     })
 
     const extract = Effect.fn("MemoryExtract.extract")(function* (input: ExtractInput) {

@@ -170,7 +170,7 @@ describe("aggregate", () => {
     expect(totals.output).toBe(60)
     expect(totals.cacheRead).toBe(40)
     expect(totals.byModel).toHaveLength(1)
-    expect(totals.byModel[0]).toMatchObject({ name: "test-model", sessions: 2, cost: 2, tokens: 180 })
+    expect(totals.byModel[0]).toMatchObject({ name: "test-model", sessions: 2, cost: 2, tokens: 190 })
     expect(totals.byProvider[0]).toMatchObject({ name: "test", sessions: 2 })
     expect(totals.trend).toHaveLength(7)
   })

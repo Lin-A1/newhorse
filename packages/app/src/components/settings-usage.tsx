@@ -149,7 +149,10 @@ export function aggregate(sessions: SessionUsageWithMessages[], range: RangeKey,
       }
 
       for (const message of sessionByModel.values()) {
-        const tokenCount = message.tokens.input + message.tokens.output
+        // Match the overview's token figure (input + output + reasoning) so the
+        // per-model table doesn't look like it's missing a big chunk of usage.
+        const tokenCount =
+          message.tokens.input + message.tokens.output + message.tokens.reasoning
         const row = byModel.get(message.modelID) ?? {
           name: message.modelID,
           sessions: 0,
@@ -193,7 +196,7 @@ export function aggregate(sessions: SessionUsageWithMessages[], range: RangeKey,
 
     const model = session.model?.id ?? "unknown"
     const provider = session.model?.providerID ?? "unknown"
-    const tokenCount = (tokens?.input ?? 0) + (tokens?.output ?? 0)
+    const tokenCount = (tokens?.input ?? 0) + (tokens?.output ?? 0) + (tokens?.reasoning ?? 0)
 
     const row = byModel.get(model) ?? { name: model, sessions: 0, tokens: 0, cost: 0, avgCost: 0 }
     row.sessions += 1
@@ -329,6 +332,11 @@ async function fetchSessionMessages(
 }
 
 const MESSAGE_FETCH_CONCURRENCY = 8
+// Only fetch per-message breakdowns for sessions created in the last 90 days.
+// Older sessions' message history is large and rarely viewed; their row-level
+// accumulated totals are still folded in by aggregate() via the fallback path,
+// and skipping them keeps the usage tab's poll cheap enough to actually refresh.
+const MESSAGE_BREAKDOWN_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000
 
 // Loads per-message breakdown for the listed sessions with bounded concurrency.
 // Failures (older servers, deleted sessions, network blips) degrade to empty
@@ -338,21 +346,30 @@ async function loadMessageBreakdown(
   sessions: SessionUsage[],
 ): Promise<Map<string, MessageUsage[]>> {
   const result = new Map<string, MessageUsage[]>()
+  const cutoff = Date.now() - MESSAGE_BREAKDOWN_MAX_AGE_MS
+  const targets = sessions.filter((s) => {
+    const created = s.time?.created
+    if (!created) return false
+    if (created < cutoff) return false
+    return Boolean(s.id && s.location?.directory)
+  })
+  // Sessions we won't fetch messages for still need an (empty) entry so the
+  // caller's mapping doesn't crash — aggregate falls back to row totals.
+  for (const session of sessions) {
+    if (!result.has(session.id ?? "")) result.set(session.id ?? "", [])
+  }
   let cursor = 0
   const workers = Array.from({ length: MESSAGE_FETCH_CONCURRENCY }, async () => {
     while (true) {
       const index = cursor++
-      if (index >= sessions.length) return
-      const session = sessions[index]
-      if (!session || !session.id || !session.location?.directory) {
-        result.set(session?.id ?? String(index), [])
-        continue
-      }
+      if (index >= targets.length) return
+      const session = targets[index]
+      if (!session) continue
       try {
-        const messages = await fetchSessionMessages(serverSDK, session.id, session.location.directory)
-        result.set(session.id, messages)
+        const messages = await fetchSessionMessages(serverSDK, session.id!, session.location!.directory)
+        result.set(session.id!, messages)
       } catch {
-        result.set(session.id, [])
+        result.set(session.id!, [])
       }
     }
   })
@@ -396,18 +413,20 @@ export function SettingsUsage() {
   })
 
   // The stats are only as fresh as the last fetch, so keep them current while
-  // the tab is mounted: a 5s poll plus a refetch when the tab regains focus.
-  // refetch keeps the previous values rendered until the new data arrives, so
-  // the panel does not flicker; the loading/refreshing guard avoids stacking
-  // fetches when a refresh is already in flight.
+  // the tab is mounted: a 10s poll plus a refetch when the tab regains focus.
+  // A dedicated inFlight flag (not raw.loading — which stays true during the
+  // whole initial load AND every refetch) prevents stacking fetches without
+  // accidentally skipping polls that Solid marks as still "loading".
+  let inFlight = false
+  const refresh = () => {
+    if (inFlight) return
+    inFlight = true
+    void Promise.resolve(refetch()).finally(() => {
+      inFlight = false
+    })
+  }
   onMount(() => {
-    const refresh = () => {
-      // loading is true for both the initial load and any in-flight refetch
-      // (Solid's "refreshing" state), so this also prevents stacking fetches.
-      if (raw.loading) return
-      void refetch()
-    }
-    const timer = setInterval(refresh, 5_000)
+    const timer = setInterval(refresh, 10_000)
     const onVisibility = () => {
       if (document.visibilityState === "visible") refresh()
     }

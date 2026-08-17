@@ -172,15 +172,31 @@ export function SettingsMemory(props: { sessionID?: string }) {
   // "current" view: split items by workspace so each workspace has a
   // collapsible header. Items without a workspaceID fall under the current
   // workspace group; user_global items are split into a global bucket.
+  // "current" view: only the current workspace's own memories, plus the
+  // user_global bucket (shown last so it never reads as part of the workspace).
+  // Memories from other workspaces are hidden here — use "all" to see them.
   const currentGroups = createMemo<Group[]>(() => {
     const items = memory.state.items.filter(matchesSearch)
     if (items.length === 0) return []
     const buckets = new Map<string, MemoryInfo[]>()
     for (const item of items) {
-      const key = item.workspaceID ?? (item.scope === "user_global" ? "__global__" : "__current__")
-      const list = buckets.get(key) ?? []
+      if (item.scope === "user_global") {
+        const list = buckets.get("__global__") ?? []
+        list.push(item)
+        buckets.set("__global__", list)
+        continue
+      }
+      // Workspace scoped: only the current workspace's workspaceID (or the
+      // current directory for legacy rows). Anything else is a different
+      // workspace's memory and belongs in the "all" view.
+      // Legacy rows without a workspaceID bucket under the current workspace.
+      if (item.workspaceID) {
+        const currentID = memory.currentWorkspaceID()
+        if (currentID && item.workspaceID !== currentID) continue
+      }
+      const list = buckets.get("__current__") ?? []
       list.push(item)
-      buckets.set(key, list)
+      buckets.set("__current__", list)
     }
     const out: Group[] = []
     for (const [key, list] of buckets) {
@@ -189,19 +205,15 @@ export function SettingsMemory(props: { sessionID?: string }) {
         label:
           key === "__global__"
             ? language.t("settings.memory.group.global")
-            : key === "__current__"
-              ? language.t("settings.memory.group.current")
-              : language.t("settings.memory.group.workspace", { id: shortWorkspace(key) }),
+            : language.t("settings.memory.group.current"),
         items: list,
         defaultOpen: true,
       })
     }
-    // Stable order: current first, then by workspace id, then global.
+    // Stable order: current workspace first, then global.
     out.sort((a, b) => {
       if (a.key === "__current__") return -1
-      if (b.key === "__current__") return 1
-      if (a.key === "__global__") return 1
-      if (b.key === "__global__") return -1
+      if (b.key === "__global__") return 1
       return a.key.localeCompare(b.key)
     })
     return out
@@ -275,7 +287,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
             onChange={setSearch}
             placeholder={language.t("settings.memory.search.placeholder")}
             aria-label={language.t("settings.memory.search.placeholder")}
-            class="flex-1"
+            class="w-56 shrink-0"
           />
         </Show>
       </div>
@@ -354,24 +366,34 @@ export function SettingsMemory(props: { sessionID?: string }) {
                         class="flex flex-col gap-3 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
                         data-memory-group={group.key}
                       >
-                        <button
-                          type="button"
-                          class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
-                          aria-expanded={isOpen()}
-                          aria-label={language.t("settings.memory.group.toggle")}
-                          onClick={() => toggleGroup(group.key)}
-                        >
-                          <div class="flex items-center gap-2">
+                        <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
+                          <button
+                            type="button"
+                            class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
+                            aria-expanded={isOpen()}
+                            aria-label={language.t("settings.memory.group.toggle")}
+                            onClick={() => toggleGroup(group.key)}
+                          >
                             <Icon
                               name={isOpen() ? "chevron-down" : "chevron-right"}
-                              class="size-3.5 text-v2-text-text-faint"
+                              class="size-3.5 shrink-0 text-v2-text-text-faint"
                             />
-                            <span class="text-[13px] font-medium text-v2-text-text-base">{group.label}</span>
-                          </div>
-                          <span class="text-[11px] text-v2-text-text-weaker">
-                            {group.items.length} {language.t("settings.memory.all.count")}
-                          </span>
-                        </button>
+                            <span class="truncate text-[13px] font-medium text-v2-text-text-base">{group.label}</span>
+                            <span class="ml-1 shrink-0 text-[11px] text-v2-text-text-weaker">
+                              {group.items.length} {language.t("settings.memory.all.count")}
+                            </span>
+                          </button>
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            class="shrink-0"
+                            onClick={() =>
+                              confirmClear(group.key === "__global__" ? "user_global" : "workspace")
+                            }
+                          >
+                            {language.t("settings.memory.clear.short")}
+                          </Button>
+                        </div>
                         <Show when={isOpen()}>
                           <div class="flex flex-col gap-3">
                             <For each={group.items}>

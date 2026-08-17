@@ -334,6 +334,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
               return undefined
             })
             const companionActive = createMemo(() => session()?.profileID === "companion")
+            const workbenchActive = createMemo(() => location.pathname === "/workbench")
             const openWorkbench = () => navigate("/workbench")
             const openCompanionSession = async () => {
               if (openingCompanion()) return
@@ -606,6 +607,7 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                   onReorder={(keys) => tabsStoreActions.reorder(keys)}
                   onOpenCompanion={openCompanionSession}
                   companionActive={companionActive()}
+                  workbenchActive={workbenchActive()}
                   onOpenWorkbench={openWorkbench}
                 />
                 <Show when={!creating()}>

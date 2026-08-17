@@ -347,17 +347,15 @@ describe("MemoryExtract", () => {
         ],
       }),
     })
-    testEffect(cap.layer).effect("caps saved memories at 5", () =>
+    testEffect(cap.layer).effect("caps saved memories at 3", () =>
       Effect.gen(function* () {
         const extract = yield* MemoryExtract.Service
         yield* extract.extract(makeInput())
-        expect(cap.saveCalls).toHaveLength(5)
+        expect(cap.saveCalls).toHaveLength(3)
         expect(cap.saveCalls.map((item) => item.content)).toEqual([
           "The user was born in Lisbon",
           "The user collects vintage cameras",
           "The user prefers herbal tea",
-          "The user is learning Spanish",
-          "The user runs five kilometers daily",
         ])
       }),
     )
@@ -492,13 +490,11 @@ describe("MemoryExtract", () => {
       Effect.gen(function* () {
         const extract = yield* MemoryExtract.Service
         yield* extract.extract(makeInput())
-        expect(sameBatchDupThenCap.saveCalls).toHaveLength(5)
+        expect(sameBatchDupThenCap.saveCalls).toHaveLength(3)
         expect(sameBatchDupThenCap.saveCalls.map((item) => item.content)).toEqual([
           "The user collects vintage cameras",
           "The user prefers herbal tea",
           "The user is learning Spanish",
-          "The user runs five kilometers daily",
-          "The user works as a marine biologist",
         ])
       }),
     )
@@ -535,7 +531,7 @@ describe("MemoryExtract", () => {
           profileID: "companion",
           relationshipOnly: true,
           status: ["active", "proposed"],
-          limit: 10,
+          limit: 30,
           userRuleset: expect.arrayContaining(allowAll),
         })
       }),

@@ -1,4 +1,5 @@
 import { Button } from "@newhorse/ui/button"
+import { Spinner } from "@newhorse/ui/spinner"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { Dialog } from "@newhorse/ui/dialog"
 import { IconButton } from "@newhorse/ui/icon-button"
@@ -7,13 +8,48 @@ import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@newhorse/ui/text-field"
 import { Tooltip } from "@newhorse/ui/tooltip"
 import { showToast } from "@/utils/toast"
-import { batch, For } from "solid-js"
+import { batch, createSignal, For, Show } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Link } from "@/components/link"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { type FormState, headerRow, modelRow, validateCustomProvider } from "./dialog-custom-provider-form"
+
+// OpenAI-compatible /models discovery. Tries the Base URL as-is first, then a
+// `/v1` suffix (many providers host the OpenAI surface under /v1), and finally
+// strips an `/anthropic` compat sub-path for Anthropic-style endpoints that
+// still expose /v1/models. Mirrors the approach cc-switch uses.
+async function fetchModelsFromProvider(baseURL: string, apiKey: string): Promise<{ id: string }[]> {
+  const normalized = baseURL.trim().replace(/\/+$/, "")
+  if (!normalized) throw new Error("no base url")
+  const candidates = [normalized, `${normalized}/v1`, normalized.replace(/\/anthropic$/, ""), normalized.replace(/\/anthropic$/, "/v1")]
+  let lastError: unknown
+  for (const candidate of [...new Set(candidates)]) {
+    const url = `${candidate}/models`
+    try {
+      const res = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+        },
+        signal: AbortSignal.timeout(10_000),
+      })
+      if (res.status === 401 || res.status === 403) throw new Error(`auth:${res.status}`)
+      if (!res.ok) {
+        lastError = new Error(`http:${res.status}`)
+        continue
+      }
+      const data = (await res.json()) as { data?: { id: string }[] }
+      const models = (data.data ?? []).filter((m) => typeof m.id === "string" && m.id.length > 0)
+      if (models.length > 0) return models
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("auth:")) throw error
+      lastError = error
+    }
+  }
+  throw lastError ?? new Error("no models endpoint")
+}
 
 type Props = {
   onBack: () => void
@@ -113,6 +149,43 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
       setForm("headers", index, key, value)
       setForm("headers", index, "err", key, undefined)
     })
+  }
+
+  const [fetchingModels, setFetchingModels] = createSignal(false)
+
+  // Auto-discover models from the provider's OpenAI-compatible endpoint and
+  // prefill the model rows (replacing the single empty row with discovered ids).
+  // cc-switch-style: tries the base URL, /v1, and anthropic-stripped candidates.
+  const fetchModels = async () => {
+    const base = form.baseURL.trim()
+    const key = form.apiKey.trim()
+    if (!base) {
+      showToast({ title: language.t("provider.custom.models.fetch.needBaseUrl") })
+      return
+    }
+    if (!key) {
+      showToast({ title: language.t("provider.custom.models.fetch.needApiKey") })
+      return
+    }
+    setFetchingModels(true)
+    try {
+      const models = await fetchModelsFromProvider(base, key)
+      if (models.length === 0) {
+        showToast({ title: language.t("provider.custom.models.fetch.none") })
+        return
+      }
+      setForm(
+        "models",
+        produce((rows) => {
+          rows.splice(0, rows.length, ...models.map((m) => ({ ...modelRow(), id: m.id, name: m.id })))
+        }),
+      )
+      showToast({ variant: "success", title: language.t("provider.custom.models.fetch.filled", { count: String(models.length) }) })
+    } catch {
+      showToast({ variant: "error", title: language.t("provider.custom.models.fetch.failed") })
+    } finally {
+      setFetchingModels(false)
+    }
   }
 
   const validate = () => {
@@ -226,7 +299,23 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
         </div>
 
         <div class="flex flex-col gap-3">
-          <label class="text-12-medium text-text-weak">{language.t("provider.custom.models.label")}</label>
+          <div class="flex items-center justify-between gap-2">
+            <label class="text-12-medium text-text-weak">{language.t("provider.custom.models.label")}</label>
+            <Button
+              type="button"
+              size="small"
+              variant="secondary"
+              disabled={fetchingModels()}
+              onClick={() => void fetchModels()}
+            >
+              <Show when={fetchingModels()}>
+                <Spinner class="size-3.5 shrink-0" />
+              </Show>
+              {fetchingModels()
+                ? language.t("provider.custom.models.fetching")
+                : language.t("provider.custom.models.fetch")}
+            </Button>
+          </div>
           <For each={form.models}>
             {(m, i) => (
               <div class="flex gap-2 items-start" data-row={m.row}>

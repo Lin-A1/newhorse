@@ -218,6 +218,17 @@
     margin: 0 auto;
   }
 
+  [data-slot="markdown-mermaid-error"] {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 0.5px solid var(--v2-border-border-muted);
+    background: var(--v2-background-bg-layer-01);
+    color: var(--v2-text-text-muted);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
   [data-slot="markdown-copy-button"] {
     position: absolute;
     top: 4px;

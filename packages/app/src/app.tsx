@@ -176,6 +176,7 @@ declare global {
         port?: number | null
       }) => Promise<void>
       getNetworkIps?: () => Promise<string[]>
+      writeClipboardText?: (value: string) => Promise<boolean>
     }
   }
 }

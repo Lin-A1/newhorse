@@ -184,22 +184,33 @@ function PresenceStrip() {
           {language.t("workbench.presence.title")}
         </div>
         <Show when={presence()}>
-          <div class="text-[12px] leading-4 text-v2-text-text-faint">
-            <span class="mr-1 tracking-tight" aria-hidden="true">
-              {"●".repeat(activityLevel(idleMs())) + "○".repeat(3 - activityLevel(idleMs()))}
-            </span>
-            {presenceLabel(language, idleMs())}
-            <Show when={presence()!.locked}>
-              {" · "}
-              {language.t("workbench.presence.locked")}
-            </Show>
+          <div class="flex flex-col gap-1 text-[12px] leading-4 text-v2-text-text-faint">
+            <div class="flex items-center gap-1.5">
+              <span class="mr-0.5 tracking-tight" aria-hidden="true">
+                {"●".repeat(activityLevel(idleMs())) + "○".repeat(3 - activityLevel(idleMs()))}
+              </span>
+              <span>{presenceLabel(language, idleMs())}</span>
+              <Show when={presence()!.locked}>
+                <span class="ml-1 rounded-[4px] border border-v2-border-border-muted bg-v2-background-bg-layer-02 px-1 py-px text-[10px] text-v2-text-text-muted">
+                  {language.t("workbench.presence.locked")}
+                </span>
+              </Show>
+              <Show when={presence()!.inMeeting}>
+                <span class="ml-1 rounded-[4px] border border-v2-border-border-muted bg-v2-background-bg-layer-02 px-1 py-px text-[10px] text-v2-text-text-muted">
+                  {language.t("workbench.presence.meeting")}
+                </span>
+              </Show>
+            </div>
             <Show when={presence()!.focusApp}>
-              {" · "}
-              {language.t("workbench.presence.focusing")}: {presence()!.focusApp}
-            </Show>
-            <Show when={presence()!.inMeeting}>
-              {" · "}
-              {language.t("workbench.presence.meeting")}
+              <div class="flex items-center gap-1.5">
+                <span class="inline-block size-1.5 shrink-0 rounded-full bg-v2-accent-accent" aria-hidden="true" />
+                <span class="truncate text-v2-text-text-base">
+                  {language.t("workbench.presence.focusing")}
+                  <span class="ml-1 rounded-[4px] bg-v2-background-bg-layer-02 px-1.5 py-px text-[11px] font-medium text-v2-text-text-base">
+                    {presence()!.focusApp}
+                  </span>
+                </span>
+              </div>
             </Show>
           </div>
         </Show>

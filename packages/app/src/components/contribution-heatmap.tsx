@@ -1,4 +1,4 @@
-import { createResource, For, Show } from "solid-js"
+import { createResource, For, onCleanup, onMount, Show } from "solid-js"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
 import { listAllSessions } from "@/components/settings-usage"
@@ -31,7 +31,7 @@ export function ContributionHeatmap() {
   const serverSDK = useServerSDK()
   const language = useLanguage()
 
-  const [cells] = createResource(async (): Promise<DayCell[]> => {
+  const [cells, { refetch }] = createResource(async (): Promise<DayCell[]> => {
     const sessions = await listAllSessions(serverSDK)
     // Bucket tokens by local calendar day (yyyy-MM-dd).
     const byDay = new Map<string, number>()
@@ -59,6 +59,21 @@ export function ContributionHeatmap() {
     }
     for (const cell of out) cell.level = levelFor(cell.tokens, max)
     return out
+  })
+
+  // Keep the heatmap current while the tab is mounted: a modest 60s poll plus
+  // a refetch when the window regains focus (mirrors the usage tab's pattern).
+  onMount(() => {
+    const refresh = () => {
+      if (cells.loading) return
+      void Promise.resolve(refetch()).catch(() => {})
+    }
+    const timer = setInterval(refresh, 60_000)
+    window.addEventListener("focus", refresh)
+    onCleanup(() => {
+      clearInterval(timer)
+      window.removeEventListener("focus", refresh)
+    })
   })
 
   // Layout: grid with one row per weekday (Sun..Sat), one column per week.
@@ -114,7 +129,11 @@ export function ContributionHeatmap() {
         when={!cells.loading && weeks.length > 0}
         fallback={
           <div class="flex h-16 items-center justify-center text-[11px] text-v2-text-text-faint">
-            {language.t("sidebar.dailySummary.empty")}
+            {cells.loading
+              ? language.t("common.loading")
+              : cells.error
+                ? language.t("workbench.activity.error")
+                : language.t("workbench.activity.empty")}
           </div>
         }
       >

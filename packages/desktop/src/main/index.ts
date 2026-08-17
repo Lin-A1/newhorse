@@ -25,7 +25,7 @@ import {
   isFirstLaunchOnboardingPending,
   isOldLayoutEligible,
 } from "./onboarding"
-import { getLanConfig, getLanReady, saveLanConfig } from "./lan"
+import { ensureFirewallRule, getLanConfig, getLanReady, saveLanConfig } from "./lan"
 import {
   getDefaultServerUrl,
   preferAppEnv,
@@ -389,6 +389,12 @@ const main = Effect.gen(function* () {
     useEnvProxy()
 
     logger.log("spawning sidecar", { url })
+    // LAN mode exposes the port to the network: add a Windows Firewall
+    // inbound rule so another device can reach it without an interactive
+    // "Allow" prompt. Best-effort — a failure only logs.
+    if (lanReady) {
+      void ensureFirewallRule(port).catch((error) => logger.warn("failed to add firewall rule", error))
+    }
     const { listener, health } = yield* Effect.promise(() =>
       spawnLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),

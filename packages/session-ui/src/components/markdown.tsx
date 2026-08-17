@@ -46,6 +46,7 @@ type RenderedBlock =
       stable: MarkdownToken[]
       unstable: MarkdownToken[]
       mermaid?: { svg: string }
+      mermaidError?: string
     }
 
 type RenderResult = {
@@ -414,7 +415,7 @@ export function Markdown(
 
           if (block.mode === "code" && block.language?.toLowerCase() === "mermaid" && block.complete) {
             const cached = completedCode.get(blockKey)
-            if (cached?.raw === block.raw && cached.mermaid) return cached
+            if (cached?.raw === block.raw && (cached.mermaid || cached.mermaidError)) return cached
             const diagram = await mermaid(block.src)
             if (diagram) {
               const rendered = {
@@ -432,6 +433,23 @@ export function Markdown(
               completedCode.set(blockKey, rendered)
               return rendered
             }
+            // Rendering failed (invalid diagram, worker/bundle issue). Surface a
+            // hint instead of silently showing the raw source as a plain code
+            // block, so the user can tell it was *tried* and see the source.
+            const failed = {
+              key: blockKey,
+              mode: block.mode,
+              raw: block.raw,
+              hash: String(block.raw.length),
+              complete: true,
+              language: "mermaid",
+              generation: 0,
+              stable: [],
+              unstable: [],
+              mermaidError: "render failed",
+            } satisfies Extract<RenderedBlock, { mode: "code" }>
+            completedCode.set(blockKey, failed)
+            return failed
           }
 
           if (block.mode === "code") {
@@ -642,7 +660,14 @@ function updateCodeBlock(
   next.dataset.markdownKey = block.key
   next.dataset.markdownHash = block.hash
   next.dataset.markdownComplete = block.complete ? "true" : "false"
+  next.dataset.markdownMermaidError = block.mermaidError ? "true" : undefined
   next.style.display = "contents"
+  if (block.mermaidError) {
+    const banner = document.createElement("div")
+    banner.setAttribute("data-slot", "markdown-mermaid-error")
+    banner.textContent = "Mermaid diagram failed to render — showing source."
+    next.appendChild(banner)
+  }
 
   const code = existing?.querySelector("code")
   if (code instanceof HTMLElement) {
