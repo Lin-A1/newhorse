@@ -11,6 +11,7 @@ import { ProviderTransform } from "@/provider/transform"
 
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
+import PROMPT_DAILY_SUMMARY from "./prompt/daily-summary.txt"
 import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_RECALL from "./prompt/recall.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
@@ -333,6 +334,21 @@ const layer = Layer.effect(
               user,
             ),
             prompt: PROMPT_SUMMARY,
+          },
+          "daily-summary": {
+            name: "daily-summary",
+            mode: "primary",
+            options: {},
+            native: true,
+            hidden: true,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+              }),
+              user,
+            ),
+            prompt: PROMPT_DAILY_SUMMARY,
           },
           researcher: {
             name: "researcher",

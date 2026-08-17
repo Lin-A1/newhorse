@@ -1,9 +1,10 @@
-import type { MemoryInfo } from "@newhorse/sdk/v2"
+import type { MemoryHistoryInfo, MemoryInfo } from "@newhorse/sdk/v2"
 import { Button } from "@newhorse/ui/button"
+import { Icon } from "@newhorse/ui/icon"
 import { Spinner } from "@newhorse/ui/spinner"
 import { Select } from "@newhorse/ui/select"
 import { TextField } from "@newhorse/ui/text-field"
-import { createResource, For, Show, createSignal } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { formatServerError } from "@/utils/server-errors"
 import { useLanguage } from "@/context/language"
@@ -50,26 +51,38 @@ function memoryKindTag(memoryKind: MemoryKind): string {
   switch (memoryKind) {
     case "relationship":
     case "summary":
-      return "border-border-weak-base bg-surface-base-hover text-v2-text-text-accent"
+      return "border-v2-border-border-muted bg-v2-background-bg-layer-03 text-v2-text-text-accent"
     default:
-      return "border-border-weak-base bg-surface-base-hover text-text-muted"
+      return "border-v2-border-border-muted bg-v2-background-bg-layer-02 text-v2-text-text-muted"
   }
 }
 
 function memoryStatusTag(status: MemoryStatus): string {
-  return status === "active"
-    ? "border-border-weak-base bg-v2-background-bg-layer-02 text-v2-text-text-accent"
-    : "border-border-weak-base bg-surface-base-hover text-text-weak"
+  switch (status) {
+    case "active":
+      return "border-v2-border-border-muted bg-v2-background-bg-layer-02 text-v2-text-text-accent"
+    case "paused":
+      return "border-v2-border-border-muted bg-v2-background-bg-layer-02 text-v2-text-text-muted"
+    default:
+      return "border-v2-border-border-muted bg-v2-background-bg-layer-01 text-v2-text-text-faint"
+  }
 }
 
 function memoryScopeTag(scope: MemoryScope): string {
   return scope === "user_global"
-    ? "border-border-weak-base bg-v2-background-bg-layer-02 text-v2-text-text-accent"
-    : "border-border-weak-base bg-surface-base-hover text-text-weak"
+    ? "border-v2-border-border-muted bg-v2-background-bg-layer-02 text-v2-text-text-accent"
+    : "border-v2-border-border-muted bg-v2-background-bg-layer-01 text-v2-text-text-faint"
 }
 
 function memoryProvenanceTag(): string {
-  return "border-border-weak-base bg-surface-base-hover text-text-weaker"
+  return "border-v2-border-border-muted bg-transparent text-v2-text-text-weaker"
+}
+
+type Group = {
+  key: string
+  label: JSX.Element
+  items: MemoryInfo[]
+  defaultOpen: boolean
 }
 
 export function SettingsMemory(props: { sessionID?: string }) {
@@ -85,6 +98,8 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const [exporting, setExporting] = createSignal(false)
   const [auditID, setAuditID] = createSignal<string>()
   const [view, setView] = createSignal<"current" | "all">("current")
+  const [search, setSearch] = createSignal("")
+  const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({})
 
   const [aggregate] = createResource(
     () => (view() === "all" ? view() : undefined),
@@ -105,10 +120,13 @@ export function SettingsMemory(props: { sessionID?: string }) {
     setExpires(item.timeExpires ? localDateTime(item.timeExpires) : "")
   }
 
-  const save = async (item: MemoryInfo) => {
+  const save = async (item: MemoryInfo): Promise<void> => {
     const value = expires()
     const time = value ? new Date(value).getTime() : null
-    if (value && !Number.isFinite(time)) return fail(new Error(language.t("settings.memory.error.invalidExpiry")))
+    if (value && !Number.isFinite(time)) {
+      fail(new Error(language.t("settings.memory.error.invalidExpiry")))
+      return
+    }
     await memory
       .update(item, { content: content(), kind: kind(), expiresAt: time })
       .then(() => setEditing(undefined))
@@ -140,13 +158,68 @@ export function SettingsMemory(props: { sessionID?: string }) {
 
   const loadHistory = (item: MemoryInfo) => memory.history(item)
 
+  const matchesSearch = (item: MemoryInfo) => {
+    const query = search().trim().toLowerCase()
+    if (!query) return true
+    return (
+      item.content.toLowerCase().includes(query) ||
+      item.kind.toLowerCase().includes(query) ||
+      item.scope.toLowerCase().includes(query) ||
+      (item.workspaceID ?? "").toLowerCase().includes(query)
+    )
+  }
+
+  // "current" view: split items by workspace so each workspace has a
+  // collapsible header. Items without a workspaceID fall under the current
+  // workspace group; user_global items are split into a global bucket.
+  const currentGroups = createMemo<Group[]>(() => {
+    const items = memory.state.items.filter(matchesSearch)
+    if (items.length === 0) return []
+    const buckets = new Map<string, MemoryInfo[]>()
+    for (const item of items) {
+      const key = item.workspaceID ?? (item.scope === "user_global" ? "__global__" : "__current__")
+      const list = buckets.get(key) ?? []
+      list.push(item)
+      buckets.set(key, list)
+    }
+    const out: Group[] = []
+    for (const [key, list] of buckets) {
+      out.push({
+        key,
+        label:
+          key === "__global__"
+            ? language.t("settings.memory.group.global")
+            : key === "__current__"
+              ? language.t("settings.memory.group.current")
+              : language.t("settings.memory.group.workspace", { id: shortWorkspace(key) }),
+        items: list,
+        defaultOpen: true,
+      })
+    }
+    // Stable order: current first, then by workspace id, then global.
+    out.sort((a, b) => {
+      if (a.key === "__current__") return -1
+      if (b.key === "__current__") return 1
+      if (a.key === "__global__") return 1
+      if (b.key === "__global__") return -1
+      return a.key.localeCompare(b.key)
+    })
+    return out
+  })
+
+  const toggleGroup = (key: string) => {
+    setCollapsed({ ...collapsed(), [key]: !collapsed()[key] })
+  }
+
   return (
     <div class="flex min-h-0 min-w-0 flex-col px-4 pb-10 sm:px-10 sm:pb-10">
-      <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--surface-stronger-non-alpha)_calc(100%_-_24px),transparent)]">
+      <div class="sticky top-0 z-10 bg-[linear-gradient(to_bottom,var(--v2-background-bg-base)_calc(100%_-_24px),transparent)]">
         <div class="flex items-center justify-between gap-4 pt-6 pb-8 max-w-[720px]">
           <div>
-            <h2 class="text-16-medium text-text-strong">{language.t("settings.memory.title")}</h2>
-            <p class="text-12-regular text-text-weak">{language.t("settings.memory.description")}</p>
+            <h2 class="text-[16px] font-medium tracking-[-0.11px] text-v2-text-text-strong">
+              {language.t("settings.memory.title")}
+            </h2>
+            <p class="text-[12px] text-text-weak">{language.t("settings.memory.description")}</p>
           </div>
           <Button
             size="small"
@@ -163,37 +236,56 @@ export function SettingsMemory(props: { sessionID?: string }) {
         </div>
       </div>
 
-      <div class="flex items-center gap-1 rounded-lg bg-surface-base p-1 max-w-[720px]">
-        <button
-          type="button"
-          class={`flex-1 rounded-md px-3 py-1 text-13-regular transition-colors ${
-            view() === "current"
-              ? "bg-v2-background-bg-layer-02 font-medium text-v2-text-text-accent"
-              : "text-text-weak hover:text-text-base"
-          }`}
-          onClick={() => setView("current")}
+      <div class="flex items-center gap-3 max-w-[720px]">
+        <div
+          class="flex flex-1 items-center rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-0.5"
+          role="radiogroup"
+          aria-label={language.t("settings.memory.title")}
         >
-          {language.t("settings.memory.view.current")}
-        </button>
-        <button
-          type="button"
-          class={`flex-1 rounded-md px-3 py-1 text-13-regular transition-colors ${
-            view() === "all"
-              ? "bg-v2-background-bg-layer-02 font-medium text-v2-text-text-accent"
-              : "text-text-weak hover:text-text-base"
-          }`}
-          onClick={() => setView("all")}
-        >
-          {language.t("settings.memory.view.all")}
-        </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={view() === "current"}
+            class={`flex-1 rounded-md px-3 py-1 text-[13px] transition-colors ${
+              view() === "current"
+                ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-[var(--v2-elevation-raised)]"
+                : "text-v2-text-text-weak hover:text-v2-text-text-base"
+            }`}
+            onClick={() => setView("current")}
+          >
+            {language.t("settings.memory.view.current")}
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={view() === "all"}
+            class={`flex-1 rounded-md px-3 py-1 text-[13px] transition-colors ${
+              view() === "all"
+                ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-[var(--v2-elevation-raised)]"
+                : "text-v2-text-text-weak hover:text-v2-text-text-base"
+            }`}
+            onClick={() => setView("all")}
+          >
+            {language.t("settings.memory.view.all")}
+          </button>
+        </div>
+        <Show when={view() === "current"}>
+          <TextField
+            value={search()}
+            onChange={setSearch}
+            placeholder={language.t("settings.memory.search.placeholder")}
+            aria-label={language.t("settings.memory.search.placeholder")}
+            class="flex-1"
+          />
+        </Show>
       </div>
 
-      <div class="flex flex-col gap-4 max-w-[720px]">
+      <div class="mt-4 flex flex-col gap-4 max-w-[720px]">
         <Show when={view() === "all"}>
           <Show
             when={!aggregate.loading}
             fallback={
-              <div role="status" aria-live="polite" data-state="loading">
+              <div role="status" aria-live="polite" data-state="loading" class="text-v2-text-text-faint">
                 {language.t("settings.memory.loading")}
               </div>
             }
@@ -201,7 +293,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
             <Show
               when={(aggregate()?.length ?? 0) > 0}
               fallback={
-                <div role="status" aria-live="polite" data-state="empty" class="text-14-regular text-text-weak">
+                <div role="status" aria-live="polite" data-state="empty" class="text-v2-text-text-weak">
                   {language.t("settings.memory.all.empty")}
                 </div>
               }
@@ -209,35 +301,15 @@ export function SettingsMemory(props: { sessionID?: string }) {
               <For each={aggregate()}>
                 {(group) => (
                   <section class="flex flex-col gap-3" data-memory-group={group.workspaceID ?? group.directory ?? "global"}>
-                    <h3 class="text-13-medium text-text-muted">
+                    <h3 class="text-[13px] font-medium text-v2-text-text-muted">
                       {group.scope === "user_global"
                         ? language.t("settings.memory.all.global")
                         : (group.workspaceID ?? group.directory ?? language.t("settings.memory.all.workspace"))}
-                      <span class="ml-2 text-11-regular text-text-weaker">
+                      <span class="ml-2 text-[11px] text-v2-text-text-weaker">
                         {group.items.length} {language.t("settings.memory.all.count")}
                       </span>
                     </h3>
-                    <For each={group.items}>
-                      {(item) => (
-                        <article
-                          class="flex flex-col gap-2 rounded-lg border border-border-base bg-surface-raised-base p-4"
-                          data-memory-id={item.id}
-                        >
-                          <div class="flex flex-wrap gap-1.5 text-11-regular">
-                            <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryKindTag(item.kind)}`}>
-                              {memoryKindLabel(language.t, item.kind)}
-                            </span>
-                            <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryStatusTag(item.status)}`}>
-                              {memoryStatusLabel(language.t, item.status)}
-                            </span>
-                            <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryScopeTag(item.scope)}`}>
-                              {memoryScopeLabel(language.t, item.scope)}
-                            </span>
-                          </div>
-                          <p class="whitespace-pre-wrap text-14-regular text-text-base">{item.content}</p>
-                        </article>
-                      )}
-                    </For>
+                    <For each={group.items}>{(item) => <MemoryCard item={item} />}</For>
                   </section>
                 )}
               </For>
@@ -245,171 +317,267 @@ export function SettingsMemory(props: { sessionID?: string }) {
           </Show>
         </Show>
         <Show when={view() === "current"}>
-        <Show
-          when={!memory.loading()}
-          fallback={
-            <div role="status" aria-live="polite" data-state="loading">
-              {language.t("settings.memory.loading")}
-            </div>
-          }
-        >
           <Show
-            when={!memory.ready.error}
+            when={!memory.loading()}
             fallback={
-              <div class="flex items-center gap-3 text-14-regular text-text-weak">
-                <span>{language.t("common.requestFailed")}</span>
-                <Button size="small" onClick={() => void memory.refresh().catch(fail)}>
-                  {language.t("common.retry")}
-                </Button>
+              <div role="status" aria-live="polite" data-state="loading" class="text-v2-text-text-faint">
+                {language.t("settings.memory.loading")}
               </div>
             }
           >
             <Show
-              when={memory.state.items.length > 0}
+              when={!memory.ready.error}
               fallback={
-                <div role="status" aria-live="polite" data-state="empty" class="text-14-regular text-text-weak">
-                  {language.t("settings.memory.empty")}
+                <div class="flex items-center gap-3 text-v2-text-text-weak">
+                  <span>{language.t("common.requestFailed")}</span>
+                  <Button size="small" onClick={() => void memory.refresh().catch(fail)}>
+                    {language.t("common.retry")}
+                  </Button>
                 </div>
               }
             >
-            <For each={memory.state.items}>
-              {(item) => (
-                <article
-                  class="flex flex-col gap-3 rounded-lg border border-border-base bg-surface-raised-base p-4"
-                  data-memory-id={item.id}
-                >
-                  <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div class="flex flex-wrap gap-1.5 text-11-regular">
-                      <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryKindTag(item.kind)}`}>
-                        {memoryKindLabel(language.t, item.kind)}
-                      </span>
-                      <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryStatusTag(item.status)}`}>
-                        {memoryStatusLabel(language.t, item.status)}
-                      </span>
-                      <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryScopeTag(item.scope)}`}>
-                        {memoryScopeLabel(language.t, item.scope)}
-                      </span>
-                      <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryProvenanceTag()}`}>
-                        {memoryProvenanceLabel(language.t, item.provenance)}
-                      </span>
-                    </div>
-                    <span class="text-11-regular text-text-weaker">{source(item, language.t)}</span>
+              <Show
+                when={currentGroups().length > 0}
+                fallback={
+                  <div role="status" aria-live="polite" data-state="empty" class="text-v2-text-text-weak">
+                    {search().trim() && memory.state.items.length > 0
+                      ? language.t("settings.memory.search.empty")
+                      : language.t("settings.memory.empty")}
                   </div>
-
-                  <Show
-                    when={editing() === item.id}
-                    fallback={<p class="whitespace-pre-wrap text-14-regular text-text-base">{item.content}</p>}
-                  >
-                    <div class="flex flex-col gap-2">
-                      <TextField multiline value={content()} onChange={setContent} aria-label={language.t("settings.memory.content")} />
-                      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <Select
-                          options={kinds}
-                          current={kind()}
-                          label={(value) => memoryKindLabel(language.t, value)}
-                          onSelect={(value) => value && setKind(value)}
-                          variant="secondary"
-                          size="small"
-                          triggerProps={{ "aria-label": language.t("settings.memory.kind") }}
-                        />
-                        <TextField
-                          type="datetime-local"
-                          value={expires()}
-                          onChange={setExpires}
-                          aria-label={language.t("settings.memory.expiry")}
-                        />
-                      </div>
-                    </div>
-                  </Show>
-
-                  <div class="flex flex-wrap items-center gap-2">
-                    <Show when={memory.state.mutating === item.id}>
-                      <Spinner class="size-3.5 shrink-0 text-text-weak" />
-                    </Show>
-                    <Show
-                      when={editing() === item.id}
-                      fallback={
-                        <Button size="small" disabled={!!memory.state.mutating} onClick={() => startEdit(item)}>
-                          {language.t("common.edit")}
-                        </Button>
-                      }
-                    >
-                      <Button size="small" disabled={!!memory.state.mutating} onClick={() => void save(item)}>
-                        {language.t("common.save")}
-                      </Button>
-                      <Button size="small" onClick={() => setEditing(undefined)}>
-                        {language.t("common.cancel")}
-                      </Button>
-                    </Show>
-                    <Show when={item.status === "active" || item.status === "paused"}>
-                      <Button
-                        size="small"
-                        disabled={!!memory.state.mutating}
-                        onClick={() => void memory.pause(item, item.status === "active").catch(fail)}
+                }
+              >
+                <For each={currentGroups()}>
+                  {(group) => {
+                    const isOpen = () => !collapsed()[group.key]
+                    return (
+                      <section
+                        class="flex flex-col gap-3 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
+                        data-memory-group={group.key}
                       >
-                        {item.status === "active" ? language.t("common.pause") : language.t("common.resume")}
-                      </Button>
-                    </Show>
-                    <Button
-                      size="small"
-                      disabled={!!memory.state.mutating}
-                      onClick={() => {
-                        void (async () => {
-                          const confirmed = await confirm({
-                            title: language.t("common.delete"),
-                            message: language.t("settings.memory.delete.confirm"),
-                          })
-                          if (!confirmed) return
-                          void memory.remove(item).catch(fail)
-                        })()
-                      }}
-                    >
-                      {language.t("common.delete")}
-                    </Button>
-                    <Button
-                      size="small"
-                      aria-expanded={auditID() === item.id}
-                      onClick={() => setAuditID(auditID() === item.id ? undefined : item.id)}
-                    >
-                      {auditID() === item.id
-                        ? language.t("settings.memory.audit.hide")
-                        : language.t("settings.memory.audit.view")}
-                    </Button>
-                  </div>
-                  <Show when={auditID() === item.id}>
-                    <MemoryHistoryPanel item={item} load={loadHistory} />
-                  </Show>
-                </article>
-              )}
-            </For>
-            </Show>
-            </Show>
+                        <button
+                          type="button"
+                          class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
+                          aria-expanded={isOpen()}
+                          aria-label={language.t("settings.memory.group.toggle")}
+                          onClick={() => toggleGroup(group.key)}
+                        >
+                          <div class="flex items-center gap-2">
+                            <Icon
+                              name={isOpen() ? "chevron-down" : "chevron-right"}
+                              class="size-3.5 text-v2-text-text-faint"
+                            />
+                            <span class="text-[13px] font-medium text-v2-text-text-base">{group.label}</span>
+                          </div>
+                          <span class="text-[11px] text-v2-text-text-weaker">
+                            {group.items.length} {language.t("settings.memory.all.count")}
+                          </span>
+                        </button>
+                        <Show when={isOpen()}>
+                          <div class="flex flex-col gap-3">
+                            <For each={group.items}>
+                              {(item) => (
+                                <MemoryCard
+                                  item={item}
+                                  language={language}
+                                  memory={memory}
+                                  editing={editing}
+                                  setEditing={setEditing}
+                                  content={content}
+                                  setContent={setContent}
+                                  kind={kind}
+                                  setKind={setKind}
+                                  expires={expires}
+                                  setExpires={setExpires}
+                                  auditID={auditID}
+                                  setAuditID={setAuditID}
+                                  save={save}
+                                  startEdit={startEdit}
+                                  fail={fail}
+                                  confirm={confirm}
+                                  loadHistory={loadHistory}
+                                />
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+                      </section>
+                    )
+                  }}
+                </For>
+              </Show>
 
-          <Show when={memory.state.nextCursor}>
-            <Button disabled={memory.state.loadingMore} onClick={() => void memory.loadMore().catch(fail)}>
-              {language.t("common.loadMore")}
-            </Button>
-          </Show>
-
-          <Show when={memory.state.items.length > 0}>
-            <div class="flex flex-wrap gap-2 border-t border-border-weak-base pt-4">
-              <Button size="small" onClick={() => confirmClear("workspace")}>
-                {language.t("settings.memory.clear.workspace")}
-              </Button>
-              <Show when={memory.contentScope() === "personal"}>
-                <Button size="small" onClick={() => confirmClear("relationship")}>
-                  {language.t("settings.memory.clear.relationship")}
+              <Show when={memory.state.nextCursor}>
+                <Button disabled={memory.state.loadingMore} onClick={() => void memory.loadMore().catch(fail)}>
+                  {language.t("common.loadMore")}
                 </Button>
               </Show>
-              <Button size="small" onClick={() => confirmClear("user_global")}>
-                {language.t("settings.memory.clear.global")}
-              </Button>
-            </div>
+
+              <Show when={memory.state.items.length > 0}>
+                <div class="flex flex-wrap gap-2 border-t border-v2-border-border-muted pt-4">
+                  <Button size="small" onClick={() => confirmClear("workspace")}>
+                    {language.t("settings.memory.clear.workspace")}
+                  </Button>
+                  <Show when={memory.contentScope() === "personal"}>
+                    <Button size="small" onClick={() => confirmClear("relationship")}>
+                      {language.t("settings.memory.clear.relationship")}
+                    </Button>
+                  </Show>
+                  <Button size="small" onClick={() => confirmClear("user_global")}>
+                    {language.t("settings.memory.clear.global")}
+                  </Button>
+                </div>
+              </Show>
+            </Show>
           </Show>
-        </Show>
         </Show>
       </div>
     </div>
+  )
+}
+
+function MemoryCard(props: {
+  item: MemoryInfo
+  language?: ReturnType<typeof useLanguage>
+  memory?: ReturnType<typeof useMemoryCenterState>
+  editing?: () => string | undefined
+  setEditing?: (id: string | undefined) => void
+  content?: () => string
+  setContent?: (value: string) => void
+  kind?: () => MemoryKind
+  setKind?: (value: MemoryKind) => void
+  expires?: () => string
+  setExpires?: (value: string) => void
+  auditID?: () => string | undefined
+  setAuditID?: (id: string | undefined) => void
+  save?: (item: MemoryInfo) => Promise<void>
+  startEdit?: (item: MemoryInfo) => void
+  fail?: (error: unknown) => void
+  confirm?: ReturnType<typeof useConfirm>
+  loadHistory?: (item: MemoryInfo) => Promise<MemoryHistoryInfo[]>
+}) {
+  const language = () => props.language ?? useLanguage()
+  const t = (key: string, params?: Record<string, string | number | boolean>) =>
+    language().t(key, params)
+  const item = () => props.item
+  const editable = () => Boolean(props.editing && props.setEditing && props.startEdit)
+  const auditOpen = () => props.auditID?.() === item().id
+
+  return (
+    <article
+      class="flex flex-col gap-3 rounded-[10px] border border-v2-border-border-muted bg-v2-background-bg-base p-4 transition-colors hover:border-v2-border-border-active"
+      data-memory-id={item().id}
+    >
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap gap-1.5 text-[11px]">
+          <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryKindTag(item().kind)}`}>
+            {memoryKindLabel(t, item().kind)}
+          </span>
+          <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryStatusTag(item().status)}`}>
+            {memoryStatusLabel(t, item().status)}
+          </span>
+          <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryScopeTag(item().scope)}`}>
+            {memoryScopeLabel(t, item().scope)}
+          </span>
+          <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryProvenanceTag()}`}>
+            {memoryProvenanceLabel(t, item().provenance)}
+          </span>
+        </div>
+        <span class="text-[11px] text-v2-text-text-weaker">{source(item(), t)}</span>
+      </div>
+
+      <Show
+        when={editable() && props.editing?.() === item().id}
+        fallback={<p class="whitespace-pre-wrap text-[14px] leading-6 text-v2-text-text-base">{item().content}</p>}
+      >
+        <div class="flex flex-col gap-2">
+          <TextField
+            multiline
+            value={props.content?.() ?? ""}
+            onChange={(value) => props.setContent?.(value)}
+            aria-label={t("settings.memory.content")}
+          />
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Select
+              options={kinds}
+              current={props.kind?.() ?? "preference"}
+              label={(value) => memoryKindLabel(t, value)}
+              onSelect={(value) => value && props.setKind?.(value as MemoryKind)}
+              variant="secondary"
+              size="small"
+              triggerProps={{ "aria-label": t("settings.memory.kind") }}
+            />
+            <TextField
+              type="datetime-local"
+              value={props.expires?.() ?? ""}
+              onChange={(value) => props.setExpires?.(value)}
+              aria-label={t("settings.memory.expiry")}
+            />
+          </div>
+        </div>
+      </Show>
+
+      <Show when={editable()}>
+        <div class="flex flex-wrap items-center gap-2">
+          <Show when={props.memory?.state.mutating === item().id}>
+            <Spinner class="size-3.5 shrink-0 text-v2-text-text-weak" />
+          </Show>
+          <Show
+            when={props.editing?.() === item().id}
+            fallback={
+              <Button size="small" disabled={!!props.memory?.state.mutating} onClick={() => props.startEdit?.(item())}>
+                {t("common.edit")}
+              </Button>
+            }
+          >
+            <Button size="small" disabled={!!props.memory?.state.mutating} onClick={() => void props.save?.(item())}>
+              {t("common.save")}
+            </Button>
+            <Button size="small" onClick={() => props.setEditing?.(undefined)}>
+              {t("common.cancel")}
+            </Button>
+          </Show>
+          <Show when={item().status === "active" || item().status === "paused"}>
+            <Button
+              size="small"
+              disabled={!!props.memory?.state.mutating}
+              onClick={() =>
+                void props.memory
+                  ?.pause(item(), item().status === "active")
+                  .catch(props.fail ?? (() => {}))
+              }
+            >
+              {item().status === "active" ? t("common.pause") : t("common.resume")}
+            </Button>
+          </Show>
+          <Button
+            size="small"
+            disabled={!!props.memory?.state.mutating}
+            onClick={() => {
+              void (async () => {
+                const confirmed = await props.confirm?.({
+                  title: t("common.delete"),
+                  message: t("settings.memory.delete.confirm"),
+                })
+                if (!confirmed) return
+                void props.memory?.remove(item()).catch(props.fail ?? (() => {}))
+              })()
+            }}
+          >
+            {t("common.delete")}
+          </Button>
+          <Button
+            size="small"
+            aria-expanded={auditOpen()}
+            onClick={() => props.setAuditID?.(auditOpen() ? undefined : item().id)}
+          >
+            {auditOpen() ? t("settings.memory.audit.hide") : t("settings.memory.audit.view")}
+          </Button>
+        </div>
+        <Show when={auditOpen()}>
+          <MemoryHistoryPanel item={item()} load={props.loadHistory ?? (() => Promise.resolve([]))} />
+        </Show>
+      </Show>
+    </article>
   )
 }
 
@@ -432,4 +600,9 @@ function source(item: MemoryInfo, t: (key: string, params?: Record<string, strin
 function localDateTime(value: number) {
   const date = new Date(value - new Date(value).getTimezoneOffset() * 60_000)
   return date.toISOString().slice(0, 16)
+}
+
+function shortWorkspace(id: string) {
+  if (id.length <= 12) return id
+  return id.slice(0, 6) + "…" + id.slice(-4)
 }

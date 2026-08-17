@@ -19,6 +19,7 @@ import { turnSummaryCommit } from "./turn-summary"
 import { entryWriter, sameEntryGroup, separatorRows, spacerWriter, turnSummaryWriter } from "./scrollback.writer"
 import { type RunTheme } from "./theme"
 import type { RunDiffStyle, RunEntryBody, StreamCommit } from "./types"
+import { renderMermaidASCIIInMarkdown } from "./mermaid-ascii"
 
 type ActiveBody = Exclude<RunEntryBody, { type: "none" | "structured" }>
 
@@ -338,7 +339,14 @@ export class RunScrollbackStream {
 
     this.active.body = body
     this.active.commit = commit
-    this.active.content += body.content
+    // Replace mermaid fenced blocks with a compact ASCII rendering so terminal
+    // users get a readable diagram preview without loading the SVG renderer.
+    // Streaming tokens may open a fence mid-flush; the regex skips incomplete
+    // blocks, so the final flush after the assistant finishes will see the
+    // complete diagram and render it. Performance is fine — markdown streams
+    // are bounded and the regex short-circuits on the first fence that fails.
+    this.active.content +=
+      body.type === "text" ? renderMermaidASCIIInMarkdown(body.content) : body.content
     await this.flushActive(false, false)
     if (this.active.rendered) {
       this.markRendered(this.active.commit)

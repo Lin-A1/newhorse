@@ -235,7 +235,7 @@ const layer = Layer.effect(
       dateKey: string,
       yesterdayOverview: string | undefined,
     ) {
-      const ag = yield* agent.get("summary")
+      const ag = yield* agent.get("daily-summary")
       const def = yield* provider.defaultModel().pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (!ag || !def) return fallbackOverview(digest)
       const smallModel = yield* provider.getSmallModel(def.providerID).pipe(
@@ -258,25 +258,13 @@ const layer = Layer.effect(
       } as unknown as SessionV1.User
 
       // Structured daily report prompt (research-backed): a progress log, not
-      // an activity list. Each section has an explicit job; sections with no
-      // evidence say "无" instead of being fabricated. The previous day's
-      // overview is injected for cross-day continuity.
+      // an activity list. The agent's prompt defines the section contract; the
+      // user message only carries the data: the digest and the previous day's
+      // overview for cross-day continuity.
       const yesterdayBlock = yesterdayOverview
         ? `\n昨天（${previousDateKey(dateKey)}）的日报概览如下，请先核对「下一步/未收尾事项」哪些已经完成：\n${yesterdayOverview}\n`
         : ""
-      const prompt =
-        `这是 ${dateKey} 你在本机各 AI 工具（newhorse work、newhorse、Claude Code、Codex）中的当日活动记录。` +
-        `请写一份结构化中文日报，用 Markdown 分节，必须包含以下小节（无内容的小节写「无」）：\n` +
-        `## 今日概览\n一句话主线 + 今天最重要的 1-2 个产出（≤ 80 字）。\n` +
-        `## 进展\n按项目/主题分组，每条 = 动作 + 结果/结论（可引用会话标题，不罗列文件名）。\n` +
-        `## 卡点\n现象 + 已尝试 + 下一步尝试（没有写「无」）。\n` +
-        `## 下一步\n明天要接续的事，按优先级排 1-3 条。\n` +
-        `## 行动项\n- [ ] (必须)… / (应该)… / (可以)…，最多 3 条。\n` +
-        `## 关键决策\n决定 + 理由 + 放弃的替代方案（隐式决策也写，没有则省略本节）。\n` +
-        `## 风险与信号\n基于数据信号（反复尝试、异常高 token、深夜时间戳、未完成待办），没有写「无」。\n` +
-        `规则：只写有证据的内容，禁止编造；语言与活动文本一致（中文活动用中文输出）。` +
-        yesterdayBlock +
-        `\n今日活动记录：\n${digest}`
+      const prompt = `日期：${dateKey}${yesterdayBlock}\n今日活动记录：\n${digest}`
 
       const text = yield* llm
         .stream({
