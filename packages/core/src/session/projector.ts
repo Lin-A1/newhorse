@@ -8,6 +8,8 @@ import { makeGlobalNode } from "../effect/app-node"
 import { SessionEvent } from "./event"
 import { SessionInvariant } from "./invariant"
 import { SessionV1 } from "../v1/session"
+import { ModelV2 } from "../model"
+import { ProviderV2 } from "../provider"
 import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { SessionMessage } from "./message"
 import { SessionMessageUpdater } from "./message-updater"
@@ -81,6 +83,65 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
     time_archived: info.time.archived,
+  }
+}
+
+// Rebuild a SessionV1.SessionInfo from a stored row. Used to publish a fresh
+// session.updated event after usage accrual so sync clients refresh the
+// session's token/cost stats (the app's context panel, cache-hit rate, etc.).
+function sessionInfoFromRow(row: typeof SessionTable.$inferSelect): SessionV1.SessionInfo {
+  const summary =
+    row.summary_files !== null && row.summary_files !== undefined
+      ? {
+          additions: row.summary_additions ?? 0,
+          deletions: row.summary_deletions ?? 0,
+          files: row.summary_files,
+          diffs: row.summary_diffs ? [...row.summary_diffs] : undefined,
+        }
+      : undefined
+  return {
+    id: row.id,
+    slug: row.slug,
+    projectID: row.project_id,
+    workspaceID: row.workspace_id ?? undefined,
+    profileID: row.profile_id ?? undefined,
+    directory: row.directory,
+    path: row.path ?? undefined,
+    parentID: row.parent_id ?? undefined,
+    title: row.title,
+    agent: row.agent ?? undefined,
+    model: row.model
+      ? {
+          id: ModelV2.ID.make(row.model.id),
+          providerID: ProviderV2.ID.make(row.model.providerID),
+          variant: row.model.variant,
+        }
+      : undefined,
+    version: row.version,
+    summary,
+    cost: row.cost,
+    tokens: {
+      input: row.tokens_input,
+      output: row.tokens_output,
+      reasoning: row.tokens_reasoning,
+      cache: { read: row.tokens_cache_read, write: row.tokens_cache_write },
+    },
+    metadata: row.metadata ?? undefined,
+    permission: row.permission ? [...row.permission] : undefined,
+    revert: row.revert
+      ? {
+          messageID: SessionV1.MessageID.make(row.revert.messageID),
+          partID: row.revert.partID ? SessionV1.PartID.make(row.revert.partID) : undefined,
+          snapshot: row.revert.snapshot,
+          diff: row.revert.diff,
+        }
+      : undefined,
+    time: {
+      created: row.time_created,
+      updated: row.time_updated,
+      compacting: row.time_compacting ?? undefined,
+      archived: row.time_archived ?? undefined,
+    },
   }
 }
 
@@ -365,7 +426,25 @@ const layer = Layer.effectDiscard(
         const previous = row && usage(row.data)
         const next = usage(event.data.part)
         if (previous) yield* applyUsage(db, row.session_id, previous, -1)
-        if (next) yield* applyUsage(db, sessionID, next)
+        if (next) {
+          yield* applyUsage(db, sessionID, next)
+          // Usage changed: push a fresh session.updated so sync clients refresh
+          // the session's token/cost stats (context panel, cache-hit rate).
+          // Only do this for step-finish parts (which carry cost/tokens) to
+          // avoid a session update per every part event.
+          const sessionRow = yield* db
+            .select()
+            .from(SessionTable)
+            .where(eq(SessionTable.id, sessionID))
+            .get()
+            .pipe(Effect.orDie)
+          if (sessionRow) {
+            yield* events.publish(SessionV1.Event.Updated, {
+              sessionID,
+              info: sessionInfoFromRow(sessionRow),
+            })
+          }
+        }
       }),
     )
     yield* events.project(SessionEvent.AgentSwitched, (event) =>
