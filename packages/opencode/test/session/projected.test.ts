@@ -72,8 +72,8 @@ describe("Projected.estimate", () => {
     const context = 15_500
     expect(result.projectedTokens.contextWindow).toBe(200_000)
     expect(result.projectedTokens.nextOutput).toBe(1200)
-    // next input = context + growth(ceil(1200 * 1.35)) = 15500 + 1620
-    expect(result.projectedTokens.nextInput).toBe(17_120)
+    // next input = context + growth(ceil(1200 * 1.1)) = 15500 + 1320
+    expect(result.projectedTokens.nextInput).toBe(16_820)
     // breakdown sums to the context budget
     const breakdown = result.contextBreakdown
     expect(breakdown.system + breakdown.tools + breakdown.messages).toBe(context)

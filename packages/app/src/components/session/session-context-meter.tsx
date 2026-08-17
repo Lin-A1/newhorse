@@ -72,10 +72,12 @@ export function SessionContextMeter(props: {
           </For>
         </div>
         <Show when={window() > 0 && projectedPressure() > 0}>
+          {/* Projected next-turn footprint: a thin dashed tick so the bar reads
+              as the CURRENT usage, with the projection as a secondary hint. */}
           <div
-            class="absolute inset-y-[-1px] w-0.5 rounded-full bg-text-interactive-base"
+            class="absolute inset-y-0 w-px border-l border-dashed border-text-interactive-base/50"
             style={{ left: `${Math.min(projectedPressure(), 100)}%` }}
-            title={percent(projectedPressure())}
+            title={`${language.t("context.meter.projected")}: ${percent(projectedPressure())}`}
           />
         </Show>
       </div>

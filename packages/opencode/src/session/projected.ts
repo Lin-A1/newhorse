@@ -72,9 +72,13 @@ const percent = (part: number, window: number) => {
   return Math.round((Math.min(part, window) / window) * 1000) / 10
 }
 
-// Heuristic surface growth for the next turn: the assistant's own output is
-// echoed back as input, and tool results amplify the surface beyond it.
-const growthFor = (output: number) => Math.round(output * 1.35)
+// Heuristic surface growth for the next turn. The assistant's output is echoed
+// back into the input on the next request, but the baseline already includes
+// every past turn's output, so the marginal addition is roughly one turn of
+// output (plus a small allowance for tool results). The old 1.35x multiplier
+// double-counted history and made "projected" jump far ahead of "used" on
+// long sessions.
+const growthFor = (output: number) => Math.round(output * 1.1)
 
 export function estimate(input: {
   /** tokens occupying the window on the most recent request (input + cache read + cache write) */
@@ -95,15 +99,23 @@ export function estimate(input: {
 }): Info {
   const window = safe(input.contextWindow)
   const outputLimit = safe(input.outputLimit)
-  const baseOutput = input.turns > 0 ? input.totalOutput / input.turns : input.recentOutput
+  // Prefer the most recent turn's output as the next-turn baseline: a session's
+  // historical average can be inflated by early huge turns and makes the
+  // projection diverge from the current footprint.
+  const baseOutput = input.recentOutput > 0 ? input.recentOutput : input.turns > 0 ? input.totalOutput / input.turns : 0
   const nextOutput = baseOutput > 0 ? clamp(Math.round(baseOutput), 128, outputLimit || undefined) : 0
 
   const systemTokens = Math.ceil(input.surfaceChars.system / 4)
   // A session that has not produced a request yet still pays for the system
   // prompt on its first turn, so project from that baseline.
   const baseline = Math.max(input.context, systemTokens)
+  // The next request only *adds* the marginal delta on top of the current
+  // footprint: cache-read tokens are already part of `context` and are served
+  // from cache again, so growth is the fresh input plus output echo.
   const nextInput = Math.round(
-    window > 0 ? Math.min(baseline + growthFor(nextOutput), window) : baseline + growthFor(nextOutput),
+    window > 0
+      ? Math.min(baseline + growthFor(nextOutput), window)
+      : baseline + growthFor(nextOutput),
   )
 
   const tier = costTier(input.cost, nextInput)
