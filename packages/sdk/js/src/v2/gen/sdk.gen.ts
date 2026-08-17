@@ -197,6 +197,8 @@ import type {
   PromptInput,
   ProviderAuthErrors,
   ProviderAuthResponses,
+  ProviderBalanceErrors,
+  ProviderBalanceResponses,
   ProviderListErrors,
   ProviderListResponses,
   ProviderOauthAuthorizeErrors,
@@ -4404,6 +4406,40 @@ export class Provider extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<ProviderAuthResponses, ProviderAuthErrors, ThrowOnError>({
       url: "/provider/auth",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get provider balance/credits
+   *
+   * Fetch the provider's remaining balance from its public billing endpoint (OpenRouter /api/v1/credits, DeepSeek /user/balance). Returns supported=false for providers without a public balance API.
+   */
+  public balance<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      directory?: string
+      workspace?: string
+      session?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "session" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ProviderBalanceResponses, ProviderBalanceErrors, ThrowOnError>({
+      url: "/provider/{providerID}/balance",
       ...options,
       ...params,
     })

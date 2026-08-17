@@ -41,6 +41,8 @@ Profile 不是存储边界。持久内容会按作用域和策略隔离：项目
 - MCP Server、Skill、Plugin、自定义 Command 与权限控制
 - 服务端动态模型目录，按 Provider 可用性过滤
 - 多 Provider 认证与模型偏好，不依赖前端硬编码列表
+- 自定义 Provider 支持三种协议 —— OpenAI Completions、OpenAI Responses、Anthropic Messages —— 并提供一键「获取模型」按钮，从其 `/models` 端点自动发现模型列表
+- Provider 余额/额度查询（OpenRouter `/api/v1/credits`、DeepSeek `/user/balance`），显示在设置 → Provider 中，基于内置可信模板而非用户脚本沙箱
 - 原生代码评审引擎（diff 解析、确定性文件过滤、行级 AI 评论）
 - 基于 ast-grep 的结构化代码搜索，以及拆分后的 LSP 工具（定义、引用、重命名、符号、诊断）
 - 浏览器自动化工具（agent-browser），支持交互式 Web 任务
@@ -112,7 +114,7 @@ Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续�
 - Todo 续跑执行器（idle 且有未完成任务时自动恢复）
 - 记忆中心提供「全部工作区」聚合视图：只读、按工作区分组，列出各工作区的 project/personal 记忆与 user-global 偏好（relationship 记忆仍仅限当前 profile 可见——跨工作区只读不破坏隔离）
 - 记忆工具完全自助：agent 可 `save`/`forget`/`archive`/`clear`/`consolidate`，并新增 `update`（就地修正内容/类别，保留 id 与来源）——模型可自主维护长期记忆的准确性，无需用户去记忆中心操作
-- 记忆提取节流（每会话 30s）并关闭 prompt 缓存写入：后台提取提示与主对话共用同一 session 缓存键但前缀不匹配，写入缓存断点只会驱逐主前缀（此前曾把缓存命中率打到 40% 左右）；日期也移出缓存稳定前缀，跨天不再使整段缓存失效
+- 记忆提取节流（每会话 5 分钟）并按重要性分级：LLM 给每条提案评 high/medium/low，low 级事实在入库前就被丢弃，聊天刷屏不会挤占真正重要的记忆槽位（每日软上限只是兜底）。提取关闭 prompt 缓存写入：后台提示与主对话共用同一 session 缓存键但前缀不匹配，写入缓存断点只会驱逐主前缀（此前曾把缓存命中率打到 40% 左右）；日期也移出缓存稳定前缀，跨天不再使整段缓存失效
 
 **newhorse 工作台（仅 Companion 模式）**
 - 独立工作台页面（`/workbench`）：感知条、个人待办、完整每日总结历史、用量统计一页聚合
@@ -150,9 +152,11 @@ Newhorse 以 OpenCode 运行时为基础，在其上加装了面向个人连续�
 - 工具描述汉化
 - 原生代码评审展示在 app 的 review tab
 - 删除会话后其 token/费用仍保留在用量统计中（session_usage 归档表 + /session/usage 端点；usage tab 合并活跃与归档用量）
+- 用量统计准确且实时：token/费用直接来自各 provider 的 usage 报告（对所有协议归一化为 fresh-input 语义），而非代理端估算；会话上下文面板的 费用 / 缓存命中率 / 上下文 三项会在每次 step-finish 后通过发布的 `session.updated` 事件就地刷新
 - Companion 会话可改名：固定 Companion 会话支持重命名，改名后标题栏保留自定义名称
 - 移动端多端访问复用 Web：绑定 `0.0.0.0`（`--hostname 0.0.0.0` 或 mDNS），用 `OPENCODE_SERVER_PASSWORD` 认证（局域网绑定强制要求密码，未配密码拒绝启动）或 `auth_token` URL，页面可安装为 PWA（manifest + 纯网络 service worker，绝不上缓存含认证的响应）
 - 桌面设置页新增「局域网/手机访问」面板：开关（关=loopback+随机密码，开=`0.0.0.0`+用户密码，未设密码拒绝开启）、局域网地址与可复制的 `auth_token` URL、端口/密码配置持久化到应用 store
+- 局域网面板只列可访问的真实地址：VPN/TUN/链路本地网卡（172.16-31.x、198.18.x、169.254.x、CGNAT 100.64.x）会被过滤，复制出来的就是 WLAN 实际 IP；同时为局域网端口自动添加 Windows 防火墙入站规则
 - 对话消息流内 Mermaid 直接渲染：```mermaid 代码块变 SVG 图（v11），主题跟随当前 UI 配色（明/暗各一套，浅紫兜底），TUI 内联 ASCII 渲染，失败回退为可复制代码块，始终提供「复制源码」入口
 - 会话侧边面板跟踪后台 subagent 任务状态（running/completed/error），完成时批量 toast 通知
 - TUI 输入框 Markdown 自动续写：`1. 文本`、`- 项`、`> 引用`、Tab 缩进后回车自动续行（`2. `、同符号、`> `、Tab）；空列表项回车退出列表而非留下裸前缀

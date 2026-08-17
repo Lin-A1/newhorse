@@ -41,6 +41,8 @@ Profiles are not storage boundaries. Persistent content stays isolated by scope 
 - MCP servers, skills, plugins, custom commands, and permission controls
 - Server-backed dynamic model catalogs filtered by provider availability
 - Multi-provider authentication and model preferences without a hard-coded frontend list
+- Custom providers support three wire protocols — OpenAI Completions, OpenAI Responses, and Anthropic Messages — with a one-click "Fetch models" button that discovers the provider's model list from its `/models` endpoint
+- Provider balance/credit checking (OpenRouter `/api/v1/credits`, DeepSeek `/user/balance`) surfaced in Settings → Providers, backed by built-in trusted templates rather than a user-script sandbox
 - Native code review engine (diff parsing, deterministic file filtering, line-level AI comments)
 - Structural code search with ast-grep, and split LSP tools (definition, references, rename, symbols, diagnostics)
 - Browser automation tools (agent-browser) for interactive web tasks
@@ -112,7 +114,7 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - Todo-continuation enforcer (auto-resume on idle with open todos)
 - Memory Center has an "all workspaces" aggregate view: read-only, grouped by workspace, listing every workspace's project/personal memories plus user-global preferences (relationship memories stay gated to the current profile — cross-workspace read never leaks isolation)
 - The memory tool is fully self-service: agents can `save`, `forget`, `archive`, `clear`, `consolidate`, and now `update` (in-place content/kind correction that keeps the id and provenance) — so models can keep durable memory accurate without user trips to the Memory Center
-- Memory extraction is throttled (30s per session) and runs with prompt-cache writes disabled: the background extraction prompt shares the session cache key but never matches the main prefix, so writing a cache breakpoint there would evict the main conversation's cached prefix (previously dropped cache-hit rates toward 40%); dates were also moved out of the cached stable system prefix so a day rollover no longer invalidates the whole cache
+- Memory extraction is throttled (5 min per session) and importance-gated: the LLM rates every proposal high/medium/low and low-rated facts are dropped before they can occupy a durable slot, so a chatty session cannot crowd out genuinely important memories with trivial chatter (a soft daily cap is a backstop, not the primary guard). Extraction runs with prompt-cache writes disabled — the background prompt shares the session cache key but never matches the main prefix, so writing a cache breakpoint there would evict the main conversation's cached prefix (previously dropped cache-hit rates toward 40%); dates were also moved out of the cached stable system prefix so a day rollover no longer invalidates the whole cache
 
 **newhorse workbench (Companion-only)**
 - A dedicated workbench page (`/workbench`) is the newhorse "butler" hub: a presence strip, personal todos, the full daily-summary history, and usage stats in one place
@@ -152,9 +154,10 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - Tool descriptions localized to Chinese
 - Native code review surfaced in the app's review tab
 - LSP tools reachable out of the box; follow (change watching) and browser automation (first-use auto-download) fully wired
-- Usage stats are accurate and live: deleted sessions keep their contribution via a `session_usage` archive table; the tab pages through the full session list (no 1000-row cutoff), includes archived sessions, and auto-refreshes on an interval and on window focus
+- Usage stats are accurate and live: token/cost figures come directly from each provider's usage report (normalized to fresh-input semantics for all protocols), not from proxy-side estimation; deleted sessions keep their contribution via a `session_usage` archive table; the tab pages through the full session list (no 1000-row cutoff), includes archived sessions, and auto-refreshes on an interval and on window focus; the session context panel's cost / cache-hit-rate / context figures refresh in place after every step-finish via a published `session.updated` event
 - Companion session rename: the pinned Companion session can be renamed and the header keeps the custom title
 - Mobile/multi-device access reuses the web app: bind `0.0.0.0` (`--hostname 0.0.0.0` or mDNS), authenticate via `OPENCODE_SERVER_PASSWORD` (mandatory on the LAN — the server refuses to bind all interfaces without one) or the `auth_token` URL, and install the page as a PWA (manifest + network-only service worker so auth-protected responses are never cached)
+- The desktop LAN settings panel lists only reachable addresses: VPN/TUN/link-local interfaces (172.16-31.x, 198.18.x, 169.254.x, CGNAT 100.64.x) are filtered out so the copyable URL is the actual WLAN IP, and a Windows Firewall inbound rule is auto-added for the LAN port
 - LAN access is configurable from the desktop settings panel ("局域网/手机访问"): a toggle (loopback + random password when off, `0.0.0.0` + your password when on — off is refused without a password), the network URL with a copyable `auth_token` link, and port/password configuration persisted to the app store
 - Mermaid renders inline in the conversation: ```mermaid code blocks become SVG diagrams (v11) with a refined theme that follows the active UI palette (light/dark each get their own colors, with a light-purple fallback), the TUI renders them as ASCII, failures fall back to a copyable code block, and a copy-source entry point is always available
 - Session side panel tracks background subagent tasks (running/completed/error) with an all-complete toast batch notification

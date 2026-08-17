@@ -11,6 +11,7 @@ describe("validateCustomProvider", () => {
         name: " Custom Provider ",
         baseURL: "https://api.example.com ",
         apiKey: " {env: CUSTOM_PROVIDER_KEY} ",
+        api: "openai-completions",
         models: [{ row: "m0", id: " model-a ", name: " Model A ", err: {} }],
         headers: [
           { row: "h0", key: " X-Test ", value: " enabled ", err: {} },
@@ -51,6 +52,7 @@ describe("validateCustomProvider", () => {
         name: "Provider",
         baseURL: "https://api.example.com",
         apiKey: "secret",
+        api: "openai-completions",
         models: [
           { row: "m0", id: "model-a", name: "Model A", err: {} },
           { row: "m1", id: "model-a", name: "Model A 2", err: {} },
@@ -76,5 +78,29 @@ describe("validateCustomProvider", () => {
       key: "provider.custom.error.duplicate",
       value: undefined,
     })
+  })
+
+  test.each([
+    ["openai-completions", "@ai-sdk/openai-compatible"],
+    ["openai-responses", "@ai-sdk/openai"],
+    ["anthropic-messages", "@ai-sdk/anthropic"],
+  ] as const)("maps %s to %s npm", (api, npm) => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "custom-provider",
+        name: "Provider",
+        baseURL: "https://api.example.com",
+        apiKey: "secret",
+        api,
+        models: [{ row: "m0", id: "model-a", name: "Model A", err: {} }],
+        headers: [{ row: "h0", key: "", value: "", err: {} }],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+    expect(result.result?.config.npm).toBe(npm)
+    expect(result.result?.config.options.baseURL).toBe("https://api.example.com")
   })
 })

@@ -4,6 +4,7 @@ import { useDialog } from "@newhorse/ui/context/dialog"
 import { Dialog } from "@newhorse/ui/dialog"
 import { IconButton } from "@newhorse/ui/icon-button"
 import { ProviderIcon } from "@newhorse/ui/provider-icon"
+import { Select } from "@newhorse/ui/select"
 import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@newhorse/ui/text-field"
 import { Tooltip } from "@newhorse/ui/tooltip"
@@ -14,7 +15,14 @@ import { Link } from "@/components/link"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
-import { type FormState, headerRow, modelRow, validateCustomProvider } from "./dialog-custom-provider-form"
+import {
+  type CustomApiProtocol,
+  type FormState,
+  headerRow,
+  modelRow,
+  PROTOCOL_FETCH_MODELS,
+  validateCustomProvider,
+} from "./dialog-custom-provider-form"
 
 // OpenAI-compatible /models discovery. Tries the Base URL as-is first, then a
 // `/v1` suffix (many providers host the OpenAI surface under /v1), and finally
@@ -88,6 +96,7 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
     name: "",
     baseURL: "",
     apiKey: "",
+    api: "openai-completions",
     models: [modelRow()],
     headers: [headerRow()],
     err: {},
@@ -135,6 +144,17 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
     setForm(key, value)
     if (key === "apiKey") return
     setForm("err", key, undefined)
+  }
+
+  const setApi = (value: CustomApiProtocol) => {
+    setForm("api", value)
+    // Switching protocol invalidates whatever the fetch-models prefill found.
+    setForm(
+      "models",
+      produce((rows) => {
+        rows.splice(0, rows.length, modelRow())
+      }),
+    )
   }
 
   const setModel = (index: number, key: "id" | "name", value: string) => {
@@ -281,6 +301,14 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
             validationState={form.err.name ? "invalid" : undefined}
             error={form.err.name}
           />
+          <Select
+            placeholder={language.t("provider.custom.field.api.label")}
+            options={(["openai-completions", "openai-responses", "anthropic-messages"] as const)}
+            current={form.api}
+            label={(value) => language.t(`provider.custom.field.api.option.${value}`)}
+            onSelect={(value) => value && setApi(value)}
+            triggerProps={{ "aria-label": language.t("provider.custom.field.api.label") }}
+          />
           <TextField
             label={language.t("provider.custom.field.baseURL.label")}
             placeholder={language.t("provider.custom.field.baseURL.placeholder")}
@@ -301,20 +329,22 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
         <div class="flex flex-col gap-3">
           <div class="flex items-center justify-between gap-2">
             <label class="text-12-medium text-text-weak">{language.t("provider.custom.models.label")}</label>
-            <Button
-              type="button"
-              size="small"
-              variant="secondary"
-              disabled={fetchingModels()}
-              onClick={() => void fetchModels()}
-            >
-              <Show when={fetchingModels()}>
-                <Spinner class="size-3.5 shrink-0" />
-              </Show>
-              {fetchingModels()
-                ? language.t("provider.custom.models.fetching")
-                : language.t("provider.custom.models.fetch")}
-            </Button>
+            <Show when={PROTOCOL_FETCH_MODELS[form.api]}>
+              <Button
+                type="button"
+                size="small"
+                variant="secondary"
+                disabled={fetchingModels()}
+                onClick={() => void fetchModels()}
+              >
+                <Show when={fetchingModels()}>
+                  <Spinner class="size-3.5 shrink-0" />
+                </Show>
+                {fetchingModels()
+                  ? language.t("provider.custom.models.fetching")
+                  : language.t("provider.custom.models.fetch")}
+              </Button>
+            </Show>
           </div>
           <For each={form.models}>
             {(m, i) => (

@@ -1,5 +1,6 @@
 import { ProviderAuth } from "@/provider/auth"
 import { Provider } from "@/provider/provider"
+import { Balance } from "@/provider/balance"
 
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -79,6 +80,18 @@ export const ProviderApi = HttpApi.make("provider")
             identifier: "provider.oauth.callback",
             summary: "Handle OAuth callback",
             description: "Handle the OAuth callback from a provider after user authorization.",
+          }),
+        ),
+        HttpApiEndpoint.get("balance", `${root}/:providerID/balance`, {
+          params: { providerID: ProviderV2.ID },
+          query: WorkspaceRoutingQuery,
+          success: described(Balance.BalanceInfo, "Provider balance/credits"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "provider.balance",
+            summary: "Get provider balance/credits",
+            description:
+              "Fetch the provider's remaining balance from its public billing endpoint (OpenRouter /api/v1/credits, DeepSeek /user/balance). Returns supported=false for providers without a public balance API.",
           }),
         ),
       )

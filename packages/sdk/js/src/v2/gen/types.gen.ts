@@ -11331,6 +11331,45 @@ export type ProviderOauthCallbackResponses = {
 
 export type ProviderOauthCallbackResponse = ProviderOauthCallbackResponses[keyof ProviderOauthCallbackResponses]
 
+export type ProviderBalanceData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    session?: string
+  }
+  url: "/provider/{providerID}/balance"
+}
+
+export type ProviderBalanceErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProviderBalanceError = ProviderBalanceErrors[keyof ProviderBalanceErrors]
+
+export type ProviderBalanceResponses = {
+  /**
+   * Provider balance/credits
+   */
+  200: {
+    providerID: string
+    balance?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    total?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    used?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    currency?: string
+    supported: boolean
+    message?: string
+  }
+}
+
+export type ProviderBalanceResponse = ProviderBalanceResponses[keyof ProviderBalanceResponses]
+
 export type ReminderListData = {
   body?: never
   path?: never

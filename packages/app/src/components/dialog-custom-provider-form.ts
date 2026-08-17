@@ -1,5 +1,26 @@
 const PROVIDER_ID = /^[a-z0-9][a-z0-9-_]*$/
-const OPENAI_COMPATIBLE = "@ai-sdk/openai-compatible"
+
+// Supported wire protocols for a custom provider. Mirrors the "API protocol"
+// concept from cc-switch but only the three that map cleanly onto our bundled
+// AI SDK providers:
+//   - openai-completions → @ai-sdk/openai-compatible (/chat/completions)
+//   - openai-responses   → @ai-sdk/openai (official /responses)
+//   - anthropic-messages → @ai-sdk/anthropic (/v1/messages)
+export type CustomApiProtocol = "openai-completions" | "openai-responses" | "anthropic-messages"
+
+const API_NPM: Record<CustomApiProtocol, string> = {
+  "openai-completions": "@ai-sdk/openai-compatible",
+  "openai-responses": "@ai-sdk/openai",
+  "anthropic-messages": "@ai-sdk/anthropic",
+}
+
+// Anthropic's Messages API has no public model-list endpoint, so the
+// "fetch models" button is hidden for that protocol.
+export const PROTOCOL_FETCH_MODELS: Record<CustomApiProtocol, boolean> = {
+  "openai-completions": true,
+  "openai-responses": true,
+  "anthropic-messages": false,
+}
 
 type Translator = (key: string, vars?: Record<string, string | number | boolean>) => string
 
@@ -32,6 +53,7 @@ export type FormState = {
   name: string
   baseURL: string
   apiKey: string
+  api: CustomApiProtocol
   models: ModelRow[]
   headers: HeaderRow[]
   err: {
@@ -128,6 +150,8 @@ export function validateCustomProvider(input: ValidateArgs) {
   const ok = !idError && !existsError && !nameError && !urlError && modelsValid && headersValid
   if (!ok) return { err, models, headers }
 
+  const api = input.form.api ?? "openai-completions"
+
   return {
     err,
     models,
@@ -137,7 +161,7 @@ export function validateCustomProvider(input: ValidateArgs) {
       name,
       key,
       config: {
-        npm: OPENAI_COMPATIBLE,
+        npm: API_NPM[api],
         name,
         ...(env ? { env: [env] } : {}),
         options: {

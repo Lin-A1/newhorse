@@ -1,4 +1,5 @@
 import { ProviderAuth } from "@/provider/auth"
+import { Balance } from "@/provider/balance"
 import { Config } from "@/config/config"
 import { ModelsDev } from "@newhorse/core/models-dev"
 import { Provider } from "@/provider/provider"
@@ -36,6 +37,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const cfg = yield* Config.Service
     const provider = yield* Provider.Service
     const svc = yield* ProviderAuth.Service
+    const balance = yield* Balance.Service
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
       const config = yield* cfg.get()
@@ -104,10 +106,17 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       return true
     })
 
+    const getBalance = Effect.fn("ProviderHttpApi.balance")(function* (ctx: {
+      params: { providerID: ProviderV2.ID }
+    }) {
+      return yield* balance.balance({ providerID: ctx.params.providerID })
+    })
+
     return handlers
       .handle("list", list)
       .handle("auth", auth)
       .handleRaw("authorize", authorizeRaw)
       .handle("callback", callback)
+      .handle("balance", getBalance)
   }),
 )

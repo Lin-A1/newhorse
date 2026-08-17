@@ -1,10 +1,11 @@
 import { Button } from "@newhorse/ui/button"
+import { Spinner } from "@newhorse/ui/spinner"
 import { useDialog } from "@newhorse/ui/context/dialog"
 import { ProviderIcon } from "@newhorse/ui/provider-icon"
 import { Tag } from "@newhorse/ui/tag"
 import { showToast } from "@/utils/toast"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
-import { createMemo, type Component, For, Show } from "solid-js"
+import { createMemo, createSignal, type Component, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -63,6 +64,36 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
     return items
   })
 
+  // Provider balance (OpenRouter/DeepSeek etc.): query on demand, cache per
+  // provider id. Unknown/unsupported providers render nothing.
+  const [balances, setBalances] = createSignal<Record<string, string>>({})
+  const [loadingBalance, setLoadingBalance] = createSignal<string>()
+  const checkBalance = (item: ProviderItem) => {
+    const id = item.id
+    if (loadingBalance()) return
+    setLoadingBalance(id)
+    serverSDK()
+      .client.provider.balance({ providerID: id })
+      .then((res) => {
+        const data = res.data
+        if (!data?.supported) return
+        const balance = typeof data.balance === "number" ? data.balance : undefined
+        const total = typeof data.total === "number" ? data.total : undefined
+        const used = typeof data.used === "number" ? data.used : 0
+        if (balance !== undefined) {
+          setBalances({ ...balances(), [id]: `$${balance.toFixed(2)}` })
+          return
+        }
+        if (total !== undefined) {
+          setBalances({ ...balances(), [id]: `$${(total - used).toFixed(2)} remaining` })
+          return
+        }
+        setBalances({ ...balances(), [id]: "—" })
+      })
+      .catch(() => {})
+      .finally(() => setLoadingBalance(undefined))
+  }
+
   const source = (item: ProviderItem): ProviderSource | undefined => {
     if (!("source" in item)) return
     const value = item.source
@@ -86,10 +117,17 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
 
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
+  // A config-defined provider is "custom" when it was added through the custom
+  // provider form — any of the three wire protocols it can produce.
+  const CUSTOM_CONFIG_NPMS = new Set([
+    "@ai-sdk/openai-compatible",
+    "@ai-sdk/openai",
+    "@ai-sdk/anthropic",
+  ])
   const isConfigCustom = (providerID: string) => {
     const provider = serverSync().data.config.provider?.[providerID]
     if (!provider) return false
-    if (provider.npm !== "@ai-sdk/openai-compatible") return false
+    if (!provider.npm || !CUSTOM_CONFIG_NPMS.has(provider.npm)) return false
     if (!provider.models || Object.keys(provider.models).length === 0) return false
     return true
   }
@@ -170,18 +208,29 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
                       <span class="text-14-medium text-text-strong truncate">{item.name}</span>
                       <Tag>{type(item)}</Tag>
                     </div>
-                    <Show
-                      when={canDisconnect(item)}
-                      fallback={
-                        <span class="text-14-regular text-text-base opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-3 cursor-default">
-                          {language.t("settings.providers.connected.environmentDescription")}
-                        </span>
-                      }
-                    >
-                      <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
-                        {language.t("common.disconnect")}
-                      </Button>
-                    </Show>
+                    <div class="flex items-center gap-2">
+                      <Show when={balances()[item.id]}>
+                        <span class="text-13-regular text-text-muted">{balances()[item.id]}</span>
+                      </Show>
+                      <Show when={loadingBalance() === item.id}>
+                        <Spinner class="size-3.5 shrink-0" />
+                      </Show>
+                      <Show
+                        when={canDisconnect(item)}
+                        fallback={
+                          <span class="text-14-regular text-text-base opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-3 cursor-default">
+                            {language.t("settings.providers.connected.environmentDescription")}
+                          </span>
+                        }
+                      >
+                        <Button size="large" variant="ghost" onClick={() => void checkBalance(item)}>
+                          {language.t("settings.providers.balance")}
+                        </Button>
+                        <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
+                          {language.t("common.disconnect")}
+                        </Button>
+                      </Show>
+                    </div>
                   </div>
                 )}
               </For>

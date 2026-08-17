@@ -33,6 +33,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
+import { Balance } from "@/provider/balance"
 import { Provider } from "@/provider/provider"
 import { Question } from "@/question"
 import { SessionCompaction } from "@/session/compaction"
@@ -254,6 +255,7 @@ const app = LayerNode.group([
   ModelsDev.node,
   Provider.node,
   ProviderAuth.node,
+  Balance.node,
   Agent.node,
   Capability.node,
   ContinuityGrant.node,

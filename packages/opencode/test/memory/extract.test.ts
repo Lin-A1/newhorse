@@ -498,6 +498,43 @@ describe("MemoryExtract", () => {
         ])
       }),
     )
+
+    const importance = mockEnv({
+      llmText: JSON.stringify({
+        memories: [
+          { kind: "fact", importance: "high", content: "The user is a marine biologist" },
+          { kind: "fact", importance: "medium", content: "This project uses Effect for the runtime" },
+          { kind: "fact", importance: "low", content: "The user briefly mentioned a red chair" },
+        ],
+      }),
+    })
+    testEffect(importance.layer).effect("drops low-importance proposals and maps importance to confidence", () =>
+      Effect.gen(function* () {
+        const extract = yield* MemoryExtract.Service
+        yield* extract.extract(makeInput())
+        expect(importance.saveCalls).toHaveLength(2)
+        expect(importance.saveCalls.map((item) => item.content)).toEqual([
+          "The user is a marine biologist",
+          "This project uses Effect for the runtime",
+        ])
+        expect(importance.saveCalls[0]).toMatchObject({ confidence: 0.9 })
+        expect(importance.saveCalls[1]).toMatchObject({ confidence: 0.7 })
+      }),
+    )
+
+    const legacyImportance = mockEnv({
+      llmText: JSON.stringify({
+        memories: [{ kind: "fact", content: "The user prefers dark mode" }],
+      }),
+    })
+    testEffect(legacyImportance.layer).effect("defaults missing importance to medium", () =>
+      Effect.gen(function* () {
+        const extract = yield* MemoryExtract.Service
+        yield* extract.extract(makeInput())
+        expect(legacyImportance.saveCalls).toHaveLength(1)
+        expect(legacyImportance.saveCalls[0]).toMatchObject({ confidence: 0.7 })
+      }),
+    )
   })
 
   // ------------------------------------------------------------ save semantics

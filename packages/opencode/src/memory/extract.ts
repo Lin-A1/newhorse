@@ -48,10 +48,19 @@ const DEDUP_REFERENCE_LIMIT = 30
 // drift while keeping a chatty Companion session from flooding the memory
 // table every half minute.
 const MIN_EXTRACT_INTERVAL_MS = 5 * 60_000
-// Hard daily cap per workspace so a single heavy day cannot balloon the
-// memory table: beyond this, extraction idles until tomorrow. Keyed by
-// directory (one workspace = one instance, one extract layer).
-const DAILY_EXTRACT_CAP = 40
+// Soft daily cap per workspace: beyond this, extraction idles until tomorrow.
+// The cap is generous because the real guard is the importance gate below —
+// low-value auto-extracted memories are dropped before they ever reach the
+// table, so the cap only bounds pathological days. Keyed by directory (one
+// workspace = one instance, one extract layer).
+const DAILY_EXTRACT_CAP = 100
+
+// Only auto-extracted memories rated high/medium importance are persisted.
+// A low rating means the LLM judged the fact too task-specific or trivial to
+// be worth occupying a durable memory slot (the user's own confirmations and
+// explicit preferences always outrank these, so a flood of chit-chat cannot
+// crowd out genuinely important memories).
+const ExtractImportance = Schema.Literals(["high", "medium", "low"])
 
 const ExtractKind = Schema.Literals(["preference", "fact", "goal", "event"])
 
@@ -60,6 +69,7 @@ const ExtractResult = Schema.Struct({
     Schema.Struct({
       kind: ExtractKind,
       content: Schema.String,
+      importance: Schema.optional(ExtractImportance),
     }),
   ),
 })
@@ -188,9 +198,12 @@ const layer = Layer.effect(
         "- Never propose sensitive content (credentials, keys, tokens, payment details, addresses, health data).",
         "- Each memory is a single concise third-person sentence that preserves the user's actual meaning — do not over-generalize (\"watch the data flow in this project\" must not become \"the user likes watching data constantly\").",
         `- Propose at most ${MAX_MEMORIES} memories.`,
+        '- Rate every proposed memory importance: "high" (long-term, reusable across many future sessions), "medium" (durable but narrower — project-level facts/instructions), or "low" (task-specific, one-off, likely irrelevant soon).',
+        '- DO NOT propose low-importance memories — they are noise that would crowd out more important ones.',
         "- Respond with JSON only, no commentary, shaped exactly like:",
-        '{"memories":[{"kind":"fact","content":"In this project, ..."}]}',
+        '{"memories":[{"kind":"fact","importance":"high","content":"In this project, ..."}]}',
         '- "kind" must be one of: preference, fact, goal, event.',
+        '- "importance" must be one of: high, medium, low.',
       ]
       const body = [
         relatedContents.length > 0
@@ -337,24 +350,36 @@ const layer = Layer.effect(
         return
       }
 
-      // (c) Dedup against existing memories AND against candidates already
-      // accepted from this same batch (the LLM can propose near-identical
-      // variants in a single reply), then cap, then save each as a
+      // (c) Importance gate first: the LLM rates each proposal and low-rated
+      // entries are dropped before dedup so a chatty session cannot fill the
+      // table with trivial facts (the daily cap is a backstop, not the main
+      // guard). Then dedup against existing memories AND against candidates
+      // already accepted from this same batch, cap, and save each as a
       // model_inferred active memory. Companion memories are relationship; work
       // sessions keep the kind the LLM proposed (preference/fact/goal/event).
-      const candidates: { content: string; kind: string }[] = []
+      const candidates: { content: string; kind: string; importance: "high" | "medium" | "low" }[] = []
       const acceptedContents: string[] = []
       for (const item of result.memories) {
         if (candidates.length >= MAX_MEMORIES) break
         const content = item.content.trim()
         if (content.length === 0) continue
+        if (item.importance === "low") {
+          yield* Effect.logDebug("memory extract dropped low-importance", {
+            "session.id": input.sessionID,
+            reason: "low_importance",
+          })
+          continue
+        }
         if (isDuplicate(content, relatedContents)) continue
         if (isDuplicate(content, acceptedContents)) continue
-        candidates.push({ content, kind: item.kind ?? "fact" })
+        candidates.push({ content, kind: item.kind ?? "fact", importance: item.importance ?? "medium" })
         acceptedContents.push(content)
       }
       if (candidates.length === 0) {
-        yield* Effect.logInfo("memory extract skipped", { "session.id": input.sessionID, reason: "all_duplicates" })
+        yield* Effect.logInfo("memory extract skipped", {
+          "session.id": input.sessionID,
+          reason: "all_duplicates_or_low_importance",
+        })
         return
       }
 
@@ -373,6 +398,9 @@ const layer = Layer.effect(
               kind: companion ? "relationship" : (item.kind as MemoryKind),
               scope: companion ? "relationship" : item.kind === "preference" ? "user_global" : undefined,
               provenance: "model_inferred",
+              // Importance maps onto the confidence score so the Memory Center
+              // can sort/filter by value (high → 0.9, medium → 0.7).
+              confidence: item.importance === "high" ? 0.9 : 0.7,
               profileID: input.profile.id,
               sourceSessionID: input.sessionID,
               sourceMessageID: input.lastAssistant.id,
