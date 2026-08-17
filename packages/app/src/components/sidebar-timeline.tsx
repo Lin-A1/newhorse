@@ -30,8 +30,8 @@ export function SidebarTimeline(props: {
   const language = useLanguage()
   const navigate = useNavigate()
   const [summaries] = createResource(async () => {
-    const res = await serverSDK().client.dailySummary.list()
-    return res.data ?? []
+    const res = await serverSDK().client.dailySummary.list().catch(() => undefined)
+    return res?.data ?? []
   })
   const showHeader = props.showHeader ?? true
   // 当前聚焦的日期 key（yyyy-MM-dd）；null = 全部

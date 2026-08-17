@@ -153,11 +153,14 @@ export async function listAllSessions(serverSDK: () => ServerSDK): Promise<Sessi
   const sessions: SessionUsage[] = []
   let cursor: number | undefined
   for (let page = 0; page < MAX_SESSION_LIST_PAGES; page++) {
-    const res = await serverSDK().client.experimental.session.list({
-      limit: SESSION_LIST_PAGE_SIZE,
-      archived: true,
-      ...(cursor !== undefined ? { cursor } : {}),
-    })
+    const res = await serverSDK()
+      .client.experimental.session.list({
+        limit: SESSION_LIST_PAGE_SIZE,
+        archived: true,
+        ...(cursor !== undefined ? { cursor } : {}),
+      })
+      .catch(() => undefined)
+    if (!res) break
     const pageSessions = (res.data ?? []) as SessionUsage[]
     sessions.push(...pageSessions)
     const next = res.response?.headers.get("x-next-cursor")

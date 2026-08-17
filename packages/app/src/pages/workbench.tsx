@@ -28,8 +28,8 @@ function WorkbenchTodos() {
   const language = useLanguage()
   const [input, setInput] = createSignal("")
   const [todos, { refetch }] = createResource(async () => {
-    const res = await serverSDK().client.workbench.list()
-    return res.data ?? []
+    const res = await serverSDK().client.workbench.list().catch(() => undefined)
+    return res?.data ?? []
   })
 
   const add = async () => {
@@ -146,8 +146,8 @@ function PresenceStrip() {
         observedAt: Date.now(),
       }
     }
-    const res = await serverSDK().client.presence.current()
-    return res.data
+    const res = await serverSDK().client.presence.current().catch(() => undefined)
+    return res?.data
   })
 
   const activityLevel = (idleMs: number): 0 | 1 | 2 | 3 => {

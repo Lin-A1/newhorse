@@ -24,44 +24,38 @@ export function SessionStatsRow(props: {
 
   const hitRate = createMemo(() => cacheHitRate(info()))
   const pressure = () => data()?.contextPressure.pressure
-  const projected = () => data()?.projectedTokens
-  const number = (value: number | undefined) => (value === undefined ? "—" : value.toLocaleString(language.intl()))
 
   return (
-    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-border-weak-base">
-      <div class="flex items-center gap-2 text-11-regular text-text-weak">
+    <div class="flex items-center gap-3 px-3 py-1.5 border-b border-border-weak-base">
+      {/* Cache hit + Context metrics, left of the context meter bar */}
+      <div class="flex items-center gap-3 text-11-regular text-text-weak">
         <span>{language.t("session.stats.cacheHit")}</span>
         <span class="text-12-medium text-text-strong">
           {hitRate() === undefined ? language.t("context.stats.na") : (hitRate()! * 100).toFixed(1) + "%"}
         </span>
+        <span class="text-text-faint">·</span>
+        <span>{language.t("session.stats.context")}</span>
+        <span class="text-12-medium text-text-strong">
+          {pressure() === undefined ? language.t("context.stats.na") : pressure()! + "%"}
+        </span>
       </div>
 
-      <div class="h-3 w-px bg-border-weak-base" />
-
-      <Show when={pending()}>
-        <span class="text-11-regular text-text-weaker">{language.t("common.loading")}</span>
-      </Show>
-      <Show when={!pending()}>
-        <TooltipV2
-          value={
-            <div class="w-[220px]">
-              <SessionContextMeter sessionID={sessionID} locale={language.intl()} />
-            </div>
-          }
-          placement="bottom"
-          shift={-8}
-        >
-          <div class="flex items-center gap-2 text-11-regular text-text-weak">
-            <span>{language.t("session.stats.context")}</span>
-            <span class="text-12-medium text-text-strong">
-              {pressure() === undefined ? language.t("context.stats.na") : pressure()! + "%"}
-            </span>
-            <Show when={projected() && projected()!.nextCost > 0}>
-              <span class="text-text-weaker">≈ ${projected()!.nextCost.toFixed(4)}</span>
-            </Show>
+      {/* Context meter bar with a detail tooltip */}
+      <TooltipV2
+        value={
+          <div class="w-[220px]">
+            <SessionContextMeter sessionID={sessionID} locale={language.intl()} />
           </div>
-        </TooltipV2>
-      </Show>
+        }
+        placement="bottom"
+        shift={-8}
+      >
+        <div class="w-28 shrink-0">
+          <Show when={pending()} fallback={<SessionContextMeter sessionID={sessionID} locale={language.intl()} compact />}>
+            <span class="text-11-regular text-text-weaker">{language.t("common.loading")}</span>
+          </Show>
+        </div>
+      </TooltipV2>
 
       <div class="flex-1" />
 

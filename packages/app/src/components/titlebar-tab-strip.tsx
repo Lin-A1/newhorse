@@ -218,6 +218,20 @@ export function TitlebarTabStrip(props: {
         class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [app-region:no-drag]"
         ref={scrollRef}
       >
+        <Show when={props.onOpenCompanion}>
+          <CompanionTabItem
+            title={language.t("newSession.mode.companion")}
+            active={props.companionActive}
+            onNavigate={() => props.onOpenCompanion?.()}
+          />
+        </Show>
+        <Show when={props.onOpenWorkbench}>
+          <WorkbenchTabItem
+            title={language.t("workbench.title")}
+            active={true}
+            onNavigate={() => props.onOpenWorkbench?.()}
+          />
+        </Show>
         <DragDropProvider
           sensors={[
             PointerSensor.configure({
@@ -301,20 +315,6 @@ export function TitlebarTabStrip(props: {
             </For>
           </div>
         </DragDropProvider>
-        <Show when={props.onOpenCompanion}>
-          <CompanionTabItem
-            title={language.t("newSession.mode.companion")}
-            active={props.companionActive}
-            onNavigate={() => props.onOpenCompanion?.()}
-          />
-        </Show>
-        <Show when={props.onOpenWorkbench}>
-          <WorkbenchTabItem
-            title={language.t("workbench.title")}
-            active={true}
-            onNavigate={() => props.onOpenWorkbench?.()}
-          />
-        </Show>
       </div>
       <div
         data-slot="titlebar-tabs-fade-left"

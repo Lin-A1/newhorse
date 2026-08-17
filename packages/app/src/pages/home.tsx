@@ -1002,14 +1002,6 @@ function HomeUtilityNav(props: {
       <button
         type="button"
         class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}
-        onClick={props.openWorkbench}
-      >
-        <IconV2 name="checklist" size="small" />
-        <span class={HOME_PROJECT_NAV_LABEL}>{props.language.t("workbench.title")}</span>
-      </button>
-      <button
-        type="button"
-        class={`${HOME_PROJECT_NAV_ROW} text-v2-text-text-faint [&>[data-slot=icon-svg]]:text-v2-icon-icon-muted`}
         onClick={props.openSettings}
       >
         <IconV2 name="settings-gear" size="small" />
