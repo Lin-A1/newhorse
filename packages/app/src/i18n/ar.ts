@@ -357,6 +357,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "اختر وكيلاً ونموذجاً قبل إرسال الموجه.",
   "prompt.toast.worktreeCreateFailed.title": "فشل إنشاء شجرة العمل",
   "prompt.toast.sessionCreateFailed.title": "فشل إنشاء الجلسة",
+  "prompt.toast.sessionCreateFailed.noServer": "لا يوجد خادم متصل أو شجرة عمل مشروع لفتحه.",
   "prompt.toast.shellSendFailed.title": "فشل إرسال أمر shell",
   "prompt.toast.commandSendFailed.title": "فشل إرسال الأمر",
   "prompt.toast.promptSendFailed.title": "فشل إرسال الموجه",

@@ -379,6 +379,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Виберіть агента та модель перед надсиланням запиту.",
   "prompt.toast.worktreeCreateFailed.title": "Не вдалося створити робоче дерево",
   "prompt.toast.sessionCreateFailed.title": "Не вдалося створити сесію",
+  "prompt.toast.sessionCreateFailed.noServer": "Немає підключеного сервера чи робочого дерева проєкту для відкриття.",
   "prompt.toast.shellSendFailed.title": "Не вдалося надіслати команду термінала",
   "prompt.toast.commandSendFailed.title": "Не вдалося надіслати команду",
   "prompt.toast.promptSendFailed.title": "Не вдалося надіслати запит",

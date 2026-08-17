@@ -364,6 +364,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "发送提示前请先选择智能体和模型。",
   "prompt.toast.worktreeCreateFailed.title": "创建工作树失败",
   "prompt.toast.sessionCreateFailed.title": "创建会话失败",
+  "prompt.toast.sessionCreateFailed.noServer": "没有已连接的服务器或项目工作树可打开。",
   "prompt.toast.shellSendFailed.title": "发送 shell 命令失败",
   "prompt.toast.commandSendFailed.title": "发送命令失败",
   "prompt.toast.promptSendFailed.title": "发送提示失败",

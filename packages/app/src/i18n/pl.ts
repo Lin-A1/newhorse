@@ -358,6 +358,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Wybierz agenta i model przed wysłaniem zapytania.",
   "prompt.toast.worktreeCreateFailed.title": "Nie udało się utworzyć drzewa roboczego",
   "prompt.toast.sessionCreateFailed.title": "Nie udało się utworzyć sesji",
+  "prompt.toast.sessionCreateFailed.noServer": "Brak połączonego serwera lub drzewa roboczego projektu do otwarcia.",
   "prompt.toast.shellSendFailed.title": "Nie udało się wysłać polecenia powłoki",
   "prompt.toast.commandSendFailed.title": "Nie udało się wysłać polecenia",
   "prompt.toast.promptSendFailed.title": "Nie udało się wysłać zapytania",

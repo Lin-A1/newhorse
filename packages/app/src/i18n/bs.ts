@@ -378,6 +378,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Odaberi agenta i model prije slanja upita.",
   "prompt.toast.worktreeCreateFailed.title": "Neuspješno kreiranje worktree-a",
   "prompt.toast.sessionCreateFailed.title": "Neuspješno kreiranje sesije",
+  "prompt.toast.sessionCreateFailed.noServer": "Nema povezanog servera ni radnog stabla projekta za otvaranje.",
   "prompt.toast.shellSendFailed.title": "Neuspješno slanje shell naredbe",
   "prompt.toast.commandSendFailed.title": "Neuspješno slanje komande",
   "prompt.toast.promptSendFailed.title": "Neuspješno slanje upita",

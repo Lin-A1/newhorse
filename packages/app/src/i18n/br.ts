@@ -357,6 +357,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Escolha um agente e modelo antes de enviar um prompt.",
   "prompt.toast.worktreeCreateFailed.title": "Falha ao criar worktree",
   "prompt.toast.sessionCreateFailed.title": "Falha ao criar sessão",
+  "prompt.toast.sessionCreateFailed.noServer": "Nenhum servidor conectado ou árvore de trabalho do projeto para abrir.",
   "prompt.toast.shellSendFailed.title": "Falha ao enviar comando shell",
   "prompt.toast.commandSendFailed.title": "Falha ao enviar comando",
   "prompt.toast.promptSendFailed.title": "Falha ao enviar prompt",

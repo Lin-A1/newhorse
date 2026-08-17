@@ -344,6 +344,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "프롬프트를 보내기 전에 에이전트와 모델을 선택하세요.",
   "prompt.toast.worktreeCreateFailed.title": "작업 트리 생성 실패",
   "prompt.toast.sessionCreateFailed.title": "세션 생성 실패",
+  "prompt.toast.sessionCreateFailed.noServer": "연결된 서버 또는 프로젝트 작업 트리가 없습니다.",
   "prompt.toast.shellSendFailed.title": "셸 명령 전송 실패",
   "prompt.toast.commandSendFailed.title": "명령 전송 실패",
   "prompt.toast.promptSendFailed.title": "프롬프트 전송 실패",

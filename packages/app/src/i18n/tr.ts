@@ -382,6 +382,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Komut göndermeden önce bir ajan ve model seçin.",
   "prompt.toast.worktreeCreateFailed.title": "Çalışma ağacı oluşturulamadı",
   "prompt.toast.sessionCreateFailed.title": "Oturum oluşturulamadı",
+  "prompt.toast.sessionCreateFailed.noServer": "Açılacak bağlı sunucu veya proje çalışma ağacı yok.",
   "prompt.toast.shellSendFailed.title": "Kabuk komutu gönderilemedi",
   "prompt.toast.commandSendFailed.title": "Komut gönderilemedi",
   "prompt.toast.promptSendFailed.title": "Komut gönderilemedi",

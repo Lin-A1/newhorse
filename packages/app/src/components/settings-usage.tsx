@@ -5,6 +5,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSDK, type ServerSDK } from "@/context/server-sdk"
 
 type SessionUsage = {
+  id?: string
   cost?: number
   tokens?: {
     input: number
@@ -14,6 +15,23 @@ type SessionUsage = {
   }
   model?: { id: string; providerID: string }
   time?: { created: number }
+  location?: { directory: string }
+}
+
+// Per-message breakdown for a single session. Each row is one assistant turn
+// (already split across tool steps inside the processor), so adding rows
+// together gives the session's true cost/tokens split by model.
+export type MessageUsage = {
+  cost: number
+  tokens: { input: number; output: number; reasoning: number; cache: { read: number; write: number } }
+  providerID: string
+  modelID: string
+  time: number
+}
+
+export type SessionUsageWithMessages = SessionUsage & {
+  id: string
+  messages: MessageUsage[]
 }
 
 type RangeKey = "today" | "7d" | "30d" | "all"
@@ -62,7 +80,7 @@ function dayLabel(ts: number) {
 }
 
 /** @internal Exported for unit tests. */
-export function aggregate(sessions: SessionUsage[], range: RangeKey, now: number): UsageTotals {
+export function aggregate(sessions: SessionUsageWithMessages[], range: RangeKey, now: number): UsageTotals {
   const start = rangeStart(range, now)
   const filtered = start === undefined ? sessions : sessions.filter((s) => (s.time?.created ?? now) >= start)
 
@@ -84,6 +102,84 @@ export function aggregate(sessions: SessionUsage[], range: RangeKey, now: number
   const byDay = new Map<string, TrendPoint>()
 
   for (const session of filtered) {
+    const sessionStart = session.time?.created ?? now
+    total.sessions += 1
+
+    const messages = session.messages
+    if (messages && messages.length > 0) {
+      // Split by message-level model so a session that switched models is
+      // counted under each model it actually used, not the current one.
+      const sessionByModel = new Map<string, MessageUsage>()
+      for (const message of messages) {
+        if (start !== undefined && message.time < start) continue
+
+        const cost = typeof message.cost === "number" ? message.cost : 0
+        const tokens = message.tokens
+        total.cost += cost
+        if (tokens) {
+          total.input += tokens.input
+          total.output += tokens.output
+          total.reasoning += tokens.reasoning
+          total.cacheRead += tokens.cache.read
+          total.cacheWrite += tokens.cache.write
+        }
+
+        const key = `${message.providerID}/${message.modelID}`
+        const merged = sessionByModel.get(key) ?? {
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          providerID: message.providerID,
+          modelID: message.modelID,
+          time: message.time,
+        }
+        merged.cost += cost
+        merged.tokens.input += tokens?.input ?? 0
+        merged.tokens.output += tokens?.output ?? 0
+        merged.tokens.reasoning += tokens?.reasoning ?? 0
+        merged.tokens.cache.read += tokens?.cache?.read ?? 0
+        merged.tokens.cache.write += tokens?.cache?.write ?? 0
+        merged.time = Math.max(merged.time, message.time)
+        sessionByModel.set(key, merged)
+
+        const label = dayLabel(message.time)
+        const day = byDay.get(label) ?? { label, cost: 0, tokens: 0 }
+        day.cost += cost
+        day.tokens += (tokens?.input ?? 0) + (tokens?.output ?? 0)
+        byDay.set(label, day)
+      }
+
+      for (const message of sessionByModel.values()) {
+        const tokenCount = message.tokens.input + message.tokens.output
+        const row = byModel.get(message.modelID) ?? {
+          name: message.modelID,
+          sessions: 0,
+          tokens: 0,
+          cost: 0,
+          avgCost: 0,
+        }
+        row.sessions += 1
+        row.tokens += tokenCount
+        row.cost += message.cost
+        byModel.set(message.modelID, row)
+
+        const pRow = byProvider.get(message.providerID) ?? {
+          name: message.providerID,
+          sessions: 0,
+          tokens: 0,
+          cost: 0,
+          avgCost: 0,
+        }
+        pRow.sessions += 1
+        pRow.tokens += tokenCount
+        pRow.cost += message.cost
+        byProvider.set(message.providerID, pRow)
+      }
+      continue
+    }
+
+    // Fallback when per-message breakdown is unavailable (deleted sessions
+    // come from session.usage, which only exposes totals). Keep the old
+    // whole-session accounting so the totals stay consistent.
     const cost = typeof session.cost === "number" ? session.cost : 0
     const tokens = session.tokens
     total.cost += cost
@@ -111,14 +207,23 @@ export function aggregate(sessions: SessionUsage[], range: RangeKey, now: number
     pRow.cost += cost
     byProvider.set(provider, pRow)
 
-    const label = dayLabel(session.time?.created ?? now)
+    const label = dayLabel(sessionStart)
     const day = byDay.get(label) ?? { label, cost: 0, tokens: 0 }
     day.cost += cost
     day.tokens += tokenCount
     byDay.set(label, day)
   }
 
-  total.sessions = filtered.length
+  // Sessions count uses the filtered list (one row per real session). When
+  // messages are loaded, drop sessions that had no in-range messages so the
+  // number reflects sessions actually active in the window.
+  if (sessions.some((s) => s.messages.length > 0)) {
+    total.sessions = filtered.filter(
+      (s) =>
+        s.messages.length === 0 ||
+        s.messages.some((m) => (start === undefined ? true : m.time >= start)),
+    ).length
+  }
   for (const row of byModel.values()) row.avgCost = row.sessions > 0 ? row.cost / row.sessions : 0
   for (const row of byProvider.values()) row.avgCost = row.sessions > 0 ? row.cost / row.sessions : 0
   total.byModel = [...byModel.values()].sort((a, b) => b.cost - a.cost)
@@ -170,6 +275,91 @@ export async function listAllSessions(serverSDK: () => ServerSDK): Promise<Sessi
   return sessions
 }
 
+const MESSAGES_PAGE_SIZE = 200
+const MAX_MESSAGES_PAGES = 50
+
+// Pulls every assistant message in a session. Used to break down cost/tokens
+// by message-level model so a session that switched models mid-flight is
+// counted under each model it actually used.
+async function fetchSessionMessages(
+  serverSDK: () => ServerSDK,
+  sessionID: string,
+  directory: string,
+): Promise<MessageUsage[]> {
+  const out: MessageUsage[] = []
+  const client = serverSDK().createClient({ directory, throwOnError: true })
+  let before: string | undefined
+  for (let page = 0; page < MAX_MESSAGES_PAGES; page++) {
+    const res = await client.session
+      .messages({
+        sessionID,
+        limit: MESSAGES_PAGE_SIZE,
+        ...(before !== undefined ? { before } : {}),
+      })
+      .catch(() => undefined)
+    if (!res) break
+    const items = (res.data ?? []) as Array<{
+      info: {
+        role?: string
+        cost?: unknown
+        tokens?: MessageUsage["tokens"]
+        providerID?: unknown
+        modelID?: unknown
+        time?: { created?: unknown }
+      }
+    }>
+    for (const item of items) {
+      const info = item.info
+      if (!info || info.role !== "assistant") continue
+      const tokens = info.tokens
+      const created = info.time?.created
+      out.push({
+        cost: typeof info.cost === "number" ? info.cost : 0,
+        tokens: tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        providerID: typeof info.providerID === "string" ? info.providerID : "unknown",
+        modelID: typeof info.modelID === "string" ? info.modelID : "unknown",
+        time: typeof created === "number" ? created : Date.now(),
+      })
+    }
+    const next = res.response?.headers.get("x-next-cursor")
+    if (!next || items.length === 0) break
+    before = next
+  }
+  return out
+}
+
+const MESSAGE_FETCH_CONCURRENCY = 8
+
+// Loads per-message breakdown for the listed sessions with bounded concurrency.
+// Failures (older servers, deleted sessions, network blips) degrade to empty
+// arrays so the totals still reflect the session row's accumulated cost.
+async function loadMessageBreakdown(
+  serverSDK: () => ServerSDK,
+  sessions: SessionUsage[],
+): Promise<Map<string, MessageUsage[]>> {
+  const result = new Map<string, MessageUsage[]>()
+  let cursor = 0
+  const workers = Array.from({ length: MESSAGE_FETCH_CONCURRENCY }, async () => {
+    while (true) {
+      const index = cursor++
+      if (index >= sessions.length) return
+      const session = sessions[index]
+      if (!session || !session.id || !session.location?.directory) {
+        result.set(session?.id ?? String(index), [])
+        continue
+      }
+      try {
+        const messages = await fetchSessionMessages(serverSDK, session.id, session.location.directory)
+        result.set(session.id, messages)
+      } catch {
+        result.set(session.id, [])
+      }
+    }
+  })
+  await Promise.all(workers)
+  return result
+}
+
 export function SettingsUsage() {
   const language = useLanguage()
   const serverSDK = useServerSDK()
@@ -192,7 +382,17 @@ export function SettingsUsage() {
     ])
     // Active + archived sessions, plus usage of deleted sessions, so clearing a
     // session does not erase its token/cost contribution from the stats.
-    return [...sessions, ...archivedRes]
+    const combined: SessionUsage[] = [...sessions, ...archivedRes]
+    // Per-message breakdown for sessions that still exist on the server.
+    // archivedRes rows lack an id/directory, so skip them — the row totals
+    // are still folded in below.
+    const messagesBySession = await loadMessageBreakdown(serverSDK, sessions)
+    const enriched: SessionUsageWithMessages[] = combined.map((session) => ({
+      ...session,
+      id: session.id ?? "",
+      messages: messagesBySession.get(session.id ?? "") ?? [],
+    }))
+    return enriched
   })
 
   // The stats are only as fresh as the last fetch, so keep them current while

@@ -356,6 +356,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "プロンプトを送信する前にエージェントとモデルを選択してください。",
   "prompt.toast.worktreeCreateFailed.title": "ワークツリーの作成に失敗しました",
   "prompt.toast.sessionCreateFailed.title": "セッションの作成に失敗しました",
+  "prompt.toast.sessionCreateFailed.noServer": "接続済みサーバーまたはプロジェクトのワークツリーがありません。",
   "prompt.toast.shellSendFailed.title": "シェルコマンドの送信に失敗しました",
   "prompt.toast.commandSendFailed.title": "コマンドの送信に失敗しました",
   "prompt.toast.promptSendFailed.title": "プロンプトの送信に失敗しました",

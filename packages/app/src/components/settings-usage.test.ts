@@ -1,6 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { ServerSDK } from "@/context/server-sdk"
-import { aggregate, listAllSessions, rangeStart } from "./settings-usage"
+import {
+  aggregate,
+  listAllSessions,
+  type MessageUsage,
+  rangeStart,
+  type SessionUsageWithMessages,
+} from "./settings-usage"
 
 // ---------------------------------------------------------------------------
 // Unit tests for the usage tab's data plumbing.
@@ -14,6 +20,7 @@ import { aggregate, listAllSessions, rangeStart } from "./settings-usage"
 // ---------------------------------------------------------------------------
 
 type Session = {
+  id?: string
   cost?: number
   tokens?: {
     input: number
@@ -56,12 +63,26 @@ function makeServerSDK(pages: Page[]) {
 const DAY = 24 * 60 * 60 * 1000
 const NOW = new Date("2030-01-10T12:00:00Z").getTime()
 
-function session(overrides: Partial<Session> = {}): Session {
+function session(overrides: Partial<Session> & { messages?: MessageUsage[] } = {}): SessionUsageWithMessages {
+  const id = overrides.id ?? `s-${Math.random().toString(36).slice(2, 8)}`
   return {
+    id,
+    messages: [],
     cost: 1,
     tokens: { input: 100, output: 50, reasoning: 10, cache: { read: 40, write: 5 } },
     model: { id: "test-model", providerID: "test" },
     time: { created: NOW },
+    ...overrides,
+  }
+}
+
+function message(overrides: Partial<MessageUsage>): MessageUsage {
+  return {
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    providerID: "test",
+    modelID: "test-model",
+    time: NOW,
     ...overrides,
   }
 }
@@ -183,10 +204,44 @@ describe("aggregate", () => {
   })
 
   test("handles rows without tokens or model gracefully", () => {
-    const totals = aggregate([{ cost: 0.75, time: { created: NOW } }], "7d", NOW)
+    const totals = aggregate(
+      [
+        {
+          id: "empty",
+          messages: [],
+          cost: 0.75,
+          time: { created: NOW },
+        },
+      ],
+      "7d",
+      NOW,
+    )
     expect(totals.sessions).toBe(1)
     expect(totals.cost).toBe(0.75)
     expect(totals.input).toBe(0)
     expect(totals.byModel[0]).toMatchObject({ name: "unknown", sessions: 1 })
+  })
+
+  test("splits a session that switched models across both models", () => {
+    const totals = aggregate(
+      [
+        session({
+          id: "switcher",
+          model: { id: "haiku", providerID: "anthropic" },
+          time: { created: NOW },
+          messages: [
+            message({ modelID: "opus", providerID: "anthropic", cost: 4, time: NOW, tokens: { input: 100, output: 20, reasoning: 0, cache: { read: 0, write: 0 } } }),
+            message({ modelID: "haiku", providerID: "anthropic", cost: 1, time: NOW, tokens: { input: 50, output: 10, reasoning: 0, cache: { read: 0, write: 0 } } }),
+          ],
+        }),
+      ],
+      "7d",
+      NOW,
+    )
+    expect(totals.cost).toBe(5)
+    expect(totals.sessions).toBe(1)
+    expect(totals.byModel).toHaveLength(2)
+    expect(totals.byModel.find((row) => row.name === "opus")?.cost).toBe(4)
+    expect(totals.byModel.find((row) => row.name === "haiku")?.cost).toBe(1)
   })
 })

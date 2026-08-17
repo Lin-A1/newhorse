@@ -368,6 +368,7 @@ export const dict = {
   "prompt.toast.modelAgentRequired.description": "Velg en agent og modell før du sender en forespørsel.",
   "prompt.toast.worktreeCreateFailed.title": "Kunne ikke opprette worktree",
   "prompt.toast.sessionCreateFailed.title": "Kunne ikke opprette sesjon",
+  "prompt.toast.sessionCreateFailed.noServer": "Ingen tilkoblet server eller prosjekt-arbeidstre å åpne.",
   "prompt.toast.shellSendFailed.title": "Kunne ikke sende shell-kommando",
   "prompt.toast.commandSendFailed.title": "Kunne ikke sende kommando",
   "prompt.toast.promptSendFailed.title": "Kunne ikke sende forespørsel",

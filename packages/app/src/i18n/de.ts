@@ -363,6 +363,7 @@ export const dict = {
     "Wählen Sie einen Agenten und ein Modell, bevor Sie eine Eingabe senden.",
   "prompt.toast.worktreeCreateFailed.title": "Worktree konnte nicht erstellt werden",
   "prompt.toast.sessionCreateFailed.title": "Sitzung konnte nicht erstellt werden",
+  "prompt.toast.sessionCreateFailed.noServer": "Kein verbundener Server oder Projekt-Arbeitsbaum zum Öffnen.",
   "prompt.toast.shellSendFailed.title": "Shell-Befehl konnte nicht gesendet werden",
   "prompt.toast.commandSendFailed.title": "Befehl konnte nicht gesendet werden",
   "prompt.toast.promptSendFailed.title": "Eingabe konnte nicht gesendet werden",

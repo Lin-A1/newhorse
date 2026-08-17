@@ -305,26 +305,63 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
             const [openingCompanion, setOpeningCompanion] = createSignal(false)
             const companionDirectory = createMemo(() => {
               const route = layout.route()
-              if (route.type === "session") return session()?.directory
-              if (route.type === "draft") {
-                const t = currentTab()
-                return t?.type === "draft" ? t.directory : undefined
+              // /workbench lives outside LayoutRoute (it shows up as a
+              // "home" fallback), so it must hit the global-routes branch
+              // before the home selection one — otherwise pinned-tab clicks
+              // from the workbench page silently drop the navigation.
+              const isGlobal = location.pathname === "/workbench"
+              if (!isGlobal) {
+                if (route.type === "session") return session()?.directory
+                if (route.type === "draft") {
+                  const t = currentTab()
+                  return t?.type === "draft" ? t.directory : undefined
+                }
+                if (route.type === "dir-new-sesssion") return route.dir
+                if (route.type === "home") return layout.home.selection()?.directory
               }
-              if (route.type === "dir-new-sesssion") return route.dir
-              if (route.type === "home") return layout.home.selection()?.directory
+              // Fallback for global routes (e.g. /workbench) that carry no
+              // directory: any connected server's first project worktree, so
+              // the pinned Companion tab always has a directory to open.
               const conn = global.servers.list().find((item) => ServerConnection.key(item) === server.key)
-              return conn ? global.ensureServerCtx(conn).projects.list()[0]?.worktree : undefined
+              if (conn) {
+                const worktree = global.ensureServerCtx(conn).projects.list()[0]?.worktree
+                if (worktree) return worktree
+              }
+              for (const item of global.servers.list()) {
+                const worktree = global.ensureServerCtx(item).projects.list()[0]?.worktree
+                if (worktree) return worktree
+              }
+              return undefined
             })
             const companionActive = createMemo(() => session()?.profileID === "companion")
             const openWorkbench = () => navigate("/workbench")
             const openCompanionSession = async () => {
               if (openingCompanion()) return
               setOpeningCompanion(true)
-              const conn = global.servers.list().find((item) => ServerConnection.key(item) === server.key)
-              const directory = conn ? companionDirectory() : undefined
+              // Resolve the connection for the target directory: prefer the
+              // current server, but fall back to any connected server (global
+              // routes like /workbench have no server of their own).
+              let conn = global.servers.list().find((item) => ServerConnection.key(item) === server.key)
+              let directory = conn ? companionDirectory() : undefined
               if (!conn || !directory) {
-                setOpeningCompanion(false)
-                return
+                let fallbackDirectory: string | undefined
+                for (const item of global.servers.list()) {
+                  const worktree = global.ensureServerCtx(item).projects.list()[0]?.worktree
+                  if (worktree) {
+                    conn = item
+                    fallbackDirectory = worktree
+                    break
+                  }
+                }
+                if (!conn || !fallbackDirectory) {
+                  setOpeningCompanion(false)
+                  showToast({
+                    title: language.t("prompt.toast.sessionCreateFailed.title"),
+                    description: language.t("prompt.toast.sessionCreateFailed.noServer"),
+                  })
+                  return
+                }
+                directory = fallbackDirectory
               }
               const serverSDK = global.ensureServerCtx(conn).sdk
               const client = serverSDK.createClient({ directory, throwOnError: true })
