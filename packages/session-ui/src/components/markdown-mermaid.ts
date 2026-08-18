@@ -4,32 +4,32 @@ export type MermaidRenderResult = { svg: string }
 
 type ThemeVariables = Record<string, string>
 
-const lightPurple: ThemeVariables = {
-  primaryColor: "#eef2ff",
-  primaryTextColor: "#312e81",
-  primaryBorderColor: "#6366f1",
-  lineColor: "#818cf8",
-  secondaryColor: "#f5f3ff",
-  tertiaryColor: "#fafaff",
-  clusterBkg: "#f5f3ff",
-  clusterBorder: "#c7d2fe",
+const lightTheme: ThemeVariables = {
+  primaryColor: "#e8eefc",
+  primaryTextColor: "#15213d",
+  primaryBorderColor: "#5578d8",
+  lineColor: "#5578d8",
+  secondaryColor: "#f4f7fb",
+  tertiaryColor: "#eef2f7",
+  clusterBkg: "#f4f7fb",
+  clusterBorder: "#b7c5e2",
   edgeLabelBackground: "#ffffff",
-  nodeTextColor: "#1e1b4b",
+  nodeTextColor: "#15213d",
   background: "#ffffff",
 }
 
-const darkPurple: ThemeVariables = {
-  primaryColor: "#312e81",
-  primaryTextColor: "#e0e7ff",
-  primaryBorderColor: "#818cf8",
-  lineColor: "#818cf8",
-  secondaryColor: "#1e1b4b",
-  tertiaryColor: "#1e293b",
-  clusterBkg: "#171a2e",
-  clusterBorder: "#3730a3",
-  edgeLabelBackground: "#111827",
-  nodeTextColor: "#c7d2fe",
-  background: "#0b0b16",
+const darkTheme: ThemeVariables = {
+  primaryColor: "#223357",
+  primaryTextColor: "#eef4ff",
+  primaryBorderColor: "#89a9ff",
+  lineColor: "#89a9ff",
+  secondaryColor: "#18233b",
+  tertiaryColor: "#101827",
+  clusterBkg: "#16233b",
+  clusterBorder: "#48638f",
+  edgeLabelBackground: "#101827",
+  nodeTextColor: "#eef4ff",
+  background: "#0f141d",
 }
 
 function isDark(): boolean {
@@ -80,29 +80,29 @@ function pick(light: string[], dark: string[], fallback: string): string {
 }
 
 function buildThemeVariables(): ThemeVariables {
-  const base = isDark() ? darkPurple : lightPurple
+  const base = isDark() ? darkTheme : lightTheme
   return {
     ...base,
-    primaryColor: pick(["--v2-blue-100", "--v2-blue-700"], ["--v2-blue-900", "--v2-blue-400"], base.primaryColor),
+    primaryColor: pick(["--v2-accent-accent", "--v2-blue-100"], ["--v2-accent-accent", "--v2-blue-900"], base.primaryColor),
     primaryTextColor: pick(
-      ["--v2-blue-900", "--v2-grey-1000"],
-      ["--v2-blue-300", "--v2-grey-100"],
+      ["--v2-text-text-base", "--v2-grey-1000"],
+      ["--v2-text-text-base", "--v2-grey-100"],
       base.primaryTextColor,
     ),
-    primaryBorderColor: pick(["--v2-blue-600", "--v2-blue-700"], ["--v2-blue-500", "--v2-blue-300"], base.primaryBorderColor),
-    lineColor: pick(["--v2-blue-600", "--v2-blue-500"], ["--v2-blue-500", "--v2-blue-300"], base.lineColor),
-    secondaryColor: pick(["--v2-blue-50", "--v2-grey-100"], ["--v2-blue-900", "--v2-grey-800"], base.secondaryColor),
-    tertiaryColor: pick(["--v2-grey-100", "--v2-grey-200"], ["--v2-grey-900", "--v2-grey-700"], base.tertiaryColor),
-    clusterBkg: pick(["--v2-blue-50", "--v2-grey-100"], ["--v2-blue-1000", "--v2-grey-800"], base.clusterBkg),
-    clusterBorder: pick(["--v2-blue-300", "--v2-blue-400"], ["--v2-blue-800", "--v2-grey-500"], base.clusterBorder),
+    primaryBorderColor: pick(["--v2-accent-accent", "--v2-blue-600"], ["--v2-accent-accent", "--v2-blue-400"], base.primaryBorderColor),
+    lineColor: pick(["--v2-accent-accent", "--v2-blue-600"], ["--v2-accent-accent", "--v2-blue-400"], base.lineColor),
+    secondaryColor: pick(["--v2-background-bg-layer-02", "--v2-grey-100"], ["--v2-background-bg-layer-02", "--v2-grey-800"], base.secondaryColor),
+    tertiaryColor: pick(["--v2-background-bg-layer-01", "--v2-grey-100"], ["--v2-background-bg-layer-01", "--v2-grey-700"], base.tertiaryColor),
+    clusterBkg: pick(["--v2-background-bg-layer-01", "--v2-grey-100"], ["--v2-background-bg-layer-01", "--v2-grey-800"], base.clusterBkg),
+    clusterBorder: pick(["--v2-border-border-muted", "--v2-blue-300"], ["--v2-border-border-muted", "--v2-grey-500"], base.clusterBorder),
     edgeLabelBackground: pick(
-      ["--v2-grey-50", "--v2-background-bg-base"],
-      ["--v2-grey-1000", "--v2-background-bg-base"],
+      ["--v2-background-bg-base", "--v2-grey-50"],
+      ["--v2-background-bg-base", "--v2-grey-1000"],
       base.edgeLabelBackground,
     ),
     nodeTextColor: pick(
-      ["--v2-grey-1000", "--v2-text-text-contrast"],
-      ["--v2-grey-100", "--v2-text-text-contrast"],
+      ["--v2-text-text-base", "--v2-grey-1000"],
+      ["--v2-text-text-base", "--v2-grey-100"],
       base.nodeTextColor,
     ),
     background: pick(
@@ -143,11 +143,27 @@ function loadMermaid(): Promise<Module> {
 }
 
 let sequence = 0
+let renderQueue: Promise<void> = Promise.resolve()
 
 export async function renderMermaid(source: string): Promise<MermaidRenderResult> {
-  const { default: mermaid } = await loadMermaid()
-  mermaid.initialize(config(buildThemeVariables()))
-  const id = `newhorse-mermaid-${Date.now()}-${++sequence}`
-  const result = await mermaid.render(id.trim(), source)
-  return { svg: result.svg }
+  let result: MermaidRenderResult | undefined
+  let failure: unknown
+  const task = renderQueue.then(async () => {
+    try {
+      const { default: mermaid } = await loadMermaid()
+      // Mermaid has global renderer state; serialize initialize/render pairs so
+      // streaming markdown updates cannot race each other.
+      mermaid.initialize(config(buildThemeVariables()))
+      const id = `newhorse-mermaid-${Date.now()}-${++sequence}`
+      const rendered = await mermaid.render(id, source)
+      result = { svg: rendered.svg }
+    } catch (error) {
+      failure = error
+    }
+  })
+  renderQueue = task.then(() => undefined, () => undefined)
+  await task
+  if (failure) throw failure
+  if (!result) throw new Error("Mermaid produced no SVG")
+  return result
 }

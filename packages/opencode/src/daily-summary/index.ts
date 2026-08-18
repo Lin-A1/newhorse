@@ -14,6 +14,8 @@ import { InstanceStore } from "@/project/instance-store"
 import { MessageID, SessionID } from "@/session/schema"
 import { SessionV1 } from "@newhorse/core/v1/session"
 import { LLMEvent } from "@newhorse/llm"
+import { ProviderV2 } from "@newhorse/core/provider"
+import { ModelV2 } from "@newhorse/core/model"
 import {
   dayEndMs,
   dayStartMs,
@@ -242,16 +244,24 @@ const layer = Layer.effect(
       digest: string,
       dateKey: string,
       yesterdayOverview: string | undefined,
+      fallbackModel?: { providerID: string; modelID: string },
     ) {
       const ag = yield* agent.get("daily-summary")
       const def = yield* provider.defaultModel().pipe(Effect.catch(() => Effect.succeed(undefined)))
-      if (!ag || !def) return fallbackOverview(digest)
-      const smallModel = yield* provider.getSmallModel(def.providerID).pipe(
+      const selected = def ??
+        (fallbackModel
+          ? {
+              providerID: ProviderV2.ID.make(fallbackModel.providerID),
+              modelID: ModelV2.ID.make(fallbackModel.modelID),
+            }
+          : undefined)
+      if (!ag || !selected) return fallbackOverview(digest)
+      const smallModel = yield* provider.getSmallModel(selected.providerID).pipe(
         Effect.catch(() => Effect.succeed(undefined)),
       )
       const model =
         smallModel ??
-        (yield* provider.getModel(def.providerID, def.modelID).pipe(
+        (yield* provider.getModel(selected.providerID, selected.modelID).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         ))
       if (!model) return fallbackOverview(digest)
@@ -316,7 +326,7 @@ const layer = Layer.effect(
       // in a global fiber with no InstanceRef). Any directory yields the same
       // provider/agent catalog; the load is cached by InstanceStore.
       const anchor = yield* db
-        .select({ directory: SessionTable.directory })
+        .select({ directory: SessionTable.directory, model: SessionTable.model })
         .from(SessionTable)
         .where(isNull(SessionTable.time_archived))
         .orderBy(desc(SessionTable.time_updated))
@@ -325,7 +335,17 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
       if (!anchor) return fallbackOverview(digest)
       return yield* instanceStore
-        .provide({ directory: anchor.directory }, synthesize(digest, dateKey, yesterdayOverview))
+        .provide(
+          { directory: anchor.directory },
+          synthesize(
+            digest,
+            dateKey,
+            yesterdayOverview,
+            anchor.model
+              ? { providerID: anchor.model.providerID, modelID: anchor.model.id }
+              : undefined,
+          ),
+        )
         .pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("daily summary synthesis failed", { cause }).pipe(

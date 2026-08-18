@@ -50,6 +50,42 @@ function heal(text: string) {
 }
 
 export function stream(text: string, live: boolean): Block[] {
+  // A Mermaid-only reply is common. Marked treats it as a complete code token
+  // in most cases, but during the live-to-complete transition it can briefly
+  // collapse the whole message to a full block. Handle a standalone fence
+  // explicitly so it never falls back to plain text.
+  const standalone = text.match(/^\s*(`{3,}|~{3,})([^\n]*)\n([\s\S]*?)(?:\n\s*\1)\s*$/)
+  if (standalone) {
+    const languageName = language(standalone[2])
+    if (languageName) {
+      return [
+        {
+          raw: text,
+          src: standalone[3] ?? "",
+          mode: "code",
+          language: languageName,
+          complete: true,
+        },
+      ]
+    }
+  }
+
+  const openStandalone = text.match(/^\s*(`{3,}|~{3,})([^\n]*)\n([\s\S]*)$/)
+  const openFence = openStandalone?.[1]
+  const hasClosingFence = openFence
+    ? new RegExp(`(?:^|\\n)[\\t ]*${openFence[0]}{${openFence.length},}[\\t ]*(?:\\n|$)`, "m").test(text.slice(openFence.length))
+    : false
+  if (live && openStandalone && !hasClosingFence && language(openStandalone[2])) {
+    return [
+      {
+        raw: text,
+        src: openStandalone[3] ?? "",
+        mode: "code",
+        language: language(openStandalone[2]),
+      },
+    ]
+  }
+
   // Parse non-live (already complete) text the same way as live text so code
   // blocks — including ```mermaid — are emitted as mode:"code" blocks and get
   // rendered (mermaid SVG, syntax highlight). Previously a complete message

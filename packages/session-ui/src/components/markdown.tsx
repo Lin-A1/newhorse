@@ -72,8 +72,10 @@ function fallback(markdown: string) {
 async function mermaid(text: string): Promise<{ svg: string } | undefined> {
   try {
     return await renderMermaid(text)
-  } catch (error) {
-    console.error("Mermaid render failed", error)
+  } catch {
+    // Mermaid is retried as the stream stabilizes. Do not surface a transient
+    // parser failure as a visible alert for every delta; the source block is
+    // kept copyable until a serialized render succeeds.
     return undefined
   }
 }
@@ -662,12 +664,6 @@ function updateCodeBlock(
   next.dataset.markdownComplete = block.complete ? "true" : "false"
   next.dataset.markdownMermaidError = block.mermaidError ? "true" : undefined
   next.style.display = "contents"
-  if (block.mermaidError) {
-    const banner = document.createElement("div")
-    banner.setAttribute("data-slot", "markdown-mermaid-error")
-    banner.textContent = "Mermaid diagram failed to render — showing source."
-    next.appendChild(banner)
-  }
 
   const code = existing?.querySelector("code")
   if (code instanceof HTMLElement) {
