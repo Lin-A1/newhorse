@@ -43,8 +43,10 @@
 
 import path from "path"
 import fs from "node:fs"
+import { spawn } from "node:child_process"
 import { Effect, Schema } from "effect"
 import { Global } from "@newhorse/core/global"
+import { KeyedMutex } from "@newhorse/core/effect/keyed-mutex"
 import { which } from "@newhorse/core/util/which"
 import { Process } from "@/util/process"
 import { sniffAttachmentMime } from "@/util/media"
@@ -97,6 +99,11 @@ const MAX_SCRIPT_LENGTH = 20_000
 const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024
 
 const PERMISSION = "browser"
+
+const COLD_START_BACKOFF_MS = [200, 500, 1000] as const
+const RESET_COMMAND_TIMEOUT_MS = 5_000
+
+const sessionLocks = KeyedMutex.makeUnsafe<string>()
 
 /**
  * Thrown by `resolveAgentBrowserPath` when no agent-browser binary is found
@@ -486,31 +493,140 @@ function renderSessionInfo(data: unknown): string {
 // Shared spawn helper (Effect)
 // ---------------------------------------------------------------------------
 
+function resetBrowserSession(binary: string, sessionName: string): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    let daemonPid: number | undefined
+    yield* Effect.promise(() =>
+      runAgentBrowser(binary, buildBrowserArgs({ kind: "session", action: "info" }, sessionName), {
+        timeoutMs: RESET_COMMAND_TIMEOUT_MS,
+      }).then(async (info) => {
+        if (!info.stdout) return
+        const parsed = parseBrowserResponse(info.stdout, info.stderr)
+        if (!parsed.success || !parsed.data) return
+        const data = parsed.data as Record<string, unknown>
+        if (typeof data.pid === "number" && data.pid > 0) daemonPid = data.pid
+        if (typeof data.socketDir !== "string") return
+        try {
+          fs.rmSync(data.socketDir, { recursive: true, force: true })
+        } catch (cause) {
+          void cause
+        }
+      }),
+    ).pipe(Effect.orElseSucceed(() => undefined))
+    yield* Effect.promise(() =>
+      runAgentBrowser(binary, buildBrowserArgs({ kind: "session", action: "close" }, sessionName), {
+        timeoutMs: RESET_COMMAND_TIMEOUT_MS,
+      }),
+    ).pipe(Effect.orElseSucceed(() => undefined))
+    if (daemonPid !== undefined) {
+      yield* killProcessTree(daemonPid).pipe(Effect.orElseSucceed(() => undefined))
+    }
+  })
+}
+
+function killProcessTree(pid: number): Effect.Effect<void> {
+  return Effect.promise(
+    () =>
+      new Promise<void>((resolve) => {
+        const finish = () => resolve()
+        if (process.platform === "win32") {
+          const child = spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
+            stdio: "ignore",
+            windowsHide: true,
+          })
+          child.once("exit", finish)
+          child.once("error", finish)
+        } else {
+          try {
+            process.kill(-pid, "SIGKILL")
+          } catch {
+            // pgid kill may not be permitted; fall back to plain kill
+            try {
+              process.kill(pid, "SIGKILL")
+            } catch {
+              // already gone
+            }
+          }
+          finish()
+        }
+      }),
+  )
+}
+
+/**
+ * Spawn `agent-browser` for `command`, serializing concurrent calls per
+ * `sessionName` and retrying transient cold-start failures with exponential
+ * backoff. Concurrent cold-starts of the same per-session daemon race the
+ * daemon's initialization (the second client sees an uninitialized session
+ * and dies); the keyed mutex queues calls sharing a session name while calls
+ * on different sessions still run in parallel. An empty-stdout attempt with
+ * no timeout is treated as a cold-start race: the daemon is reset, the call
+ * sleeps for the next backoff slot, and is re-spawned up to
+ * `COLD_START_BACKOFF_MS.length` extra times before the original failure is
+ * surfaced. Timeouts short-circuit the retry loop — the client was killed,
+ * retrying would just race the daemon again.
+ */
 function runBrowser(
   binary: string,
   command: BrowserCommand,
   sessionName: string,
   opts: { timeoutMs: number },
 ): Effect.Effect<{ stdout: string; stderr: string; timedOut: boolean }, Error> {
-  // The agent-browser per-session daemon is idle-reclaimed after a period of
-  // inactivity; the next call cold-starts Chrome, which can race the client's
-  // spawn (observed as a transient ChildProcess.kill or empty response). Retry
-  // once before surfacing the failure — the second attempt reuses the daemon.
-  return Effect.gen(function* () {
-    const attempt = () =>
-      Effect.promise(() =>
-        runAgentBrowser(binary, buildBrowserArgs(command, sessionName), { timeoutMs: opts.timeoutMs }),
-      ).pipe(Effect.mapError((cause) => toError(cause)))
+  return sessionLocks.withLock(sessionName)(
+    Effect.gen(function* () {
+      let last: RunAgentBrowserResult | undefined
+      const attempts = COLD_START_BACKOFF_MS.length + 1
+      for (let i = 0; i < attempts; i++) {
+        const result = yield* Effect.promise(() =>
+          runAgentBrowser(binary, buildBrowserArgs(command, sessionName), { timeoutMs: opts.timeoutMs }),
+        ).pipe(Effect.mapError((cause) => toError(cause)))
+        last = result
+        if (result.stdout.trim().length > 0 && !result.timedOut) {
+          yield* schedulePostCallCleanup(binary, sessionName)
+          return { stdout: result.stdout, stderr: result.stderr, timedOut: false }
+        }
+        if (result.timedOut) {
+          return { stdout: result.stdout, stderr: result.stderr, timedOut: true }
+        }
+        if (i < attempts - 1) {
+          yield* resetBrowserSession(binary, sessionName)
+          yield* Effect.sleep(`${COLD_START_BACKOFF_MS[i]} millis`)
+        }
+      }
+      return { stdout: last!.stdout, stderr: last!.stderr, timedOut: last!.timedOut }
+    }),
+  )
+}
 
-    const first = yield* attempt()
-    // A cold-start failure typically surfaces as an empty stdout with a
-    // non-success exit; treat any non-empty error output as retryable once.
-    if (first.stdout.trim().length > 0 && !first.timedOut) {
-      return { stdout: first.stdout, stderr: first.stderr, timedOut: first.timedOut }
-    }
-    const retried = yield* attempt()
-    return { stdout: retried.stdout, stderr: retried.stderr, timedOut: retried.timedOut }
-  })
+/**
+ * After a successful browser call, fork a detached fiber that waits a short
+ * grace period and then tears down the per-session daemon's process tree
+ * (daemon + any Chrome it forked). The grace window lets a follow-up
+ * `browser_*` call in the same session reuse the live daemon without paying
+ * the cold-start cost; once the window elapses, the daemon and its detached
+ * Chrome children are reclaimed so a long-running session does not accumulate
+ * orphan Chrome processes. Concurrent calls are already serialized by
+ * `sessionLocks.withLock`, so the cleanup runs only after the queue has
+ * drained. Failures are swallowed — the next browser call will cold-start.
+ */
+const POST_CALL_CLEANUP_GRACE_MS = 5_000
+
+function schedulePostCallCleanup(binary: string, sessionName: string): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    yield* Effect.sleep(`${POST_CALL_CLEANUP_GRACE_MS} millis`)
+    const info = yield* Effect.promise(() =>
+      runAgentBrowser(binary, buildBrowserArgs({ kind: "session", action: "info" }, sessionName), {
+        timeoutMs: RESET_COMMAND_TIMEOUT_MS,
+      }),
+    ).pipe(Effect.orElseSucceed(() => ({ stdout: "", stderr: "", timedOut: false, code: 1 }) as RunAgentBrowserResult))
+    if (!info.stdout) return
+    const parsed = parseBrowserResponse(info.stdout, info.stderr)
+    if (!parsed.success || !parsed.data) return
+    if (typeof parsed.data !== "object" || parsed.data === null) return
+    const data = parsed.data as { pid?: unknown }
+    if (typeof data.pid !== "number" || data.pid <= 0) return
+    yield* killProcessTree(data.pid).pipe(Effect.orElseSucceed(() => undefined))
+  }).pipe(Effect.forkDetach, Effect.ignore)
 }
 
 function timeoutSeconds(value: number | undefined, fallbackMs: number): number {
