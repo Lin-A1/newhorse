@@ -111,8 +111,10 @@ export const Info = Schema.Struct({
       [Schema.Record(Schema.String, ConfigAgentV1.Info)],
     ),
   ).annotate({ description: "Agent configuration, see https://opencode.ai/docs/agents" }),
-  provider: Schema.optional(Schema.Record(Schema.String, ConfigProviderV1.Info)).annotate({
-    description: "Custom provider configurations and model overrides",
+  provider: Schema.optional(
+    Schema.Record(Schema.String, Schema.Union([ConfigProviderV1.Info, Schema.Null])),
+  ).annotate({
+    description: "Custom provider configurations and model overrides. A null value removes the provider.",
   }),
   mcp: Schema.optional(
     Schema.Record(Schema.String, Schema.Union([ConfigMCPV1.Info, Schema.Struct({ enabled: Schema.Boolean })])),

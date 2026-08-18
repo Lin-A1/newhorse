@@ -59,10 +59,10 @@ const cloneModel = (model: ModelsDev.Provider["models"][string]) => {
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- The config schema accepts the same model shape except object-valued experimental metadata.
   if (typeof experimental === "boolean") {
     // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- The fixture model already matches config input when experimental is boolean.
-    return cloned as NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]["models"]>[string]
+    return cloned as NonNullable<NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]>["models"]>[string]
   }
   // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- Dropping non-boolean experimental metadata makes the fixture model match config input.
-  return rest as NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]["models"]>[string]
+  return rest as NonNullable<NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]>["models"]>[string]
 }
 
 const envValue = (...names: string[]) => names.map((name) => process.env[name]).find(Boolean)

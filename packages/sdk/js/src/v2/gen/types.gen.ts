@@ -2026,7 +2026,7 @@ export type Config = {
     [key: string]: AgentConfig | undefined
   }
   provider?: {
-    [key: string]: ProviderConfig
+    [key: string]: ProviderConfig | null
   }
   mcp?: {
     [key: string]:
@@ -2609,6 +2609,7 @@ export type McpServerNotFoundError = {
 export type MemoryInfo = {
   id: string
   workspaceID?: string
+  directory?: string
   profileID?: string
   scope: "project" | "personal" | "relationship" | "user_global"
   kind: "preference" | "fact" | "goal" | "event" | "relationship" | "summary"

@@ -2,6 +2,7 @@ import { FSUtil } from "@newhorse/core/fs-util"
 import { Effect } from "effect"
 import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createHash } from "node:crypto"
+import { fileURLToPath } from "node:url"
 
 let embeddedUIPromise: Promise<Record<string, string> | null> | undefined
 
@@ -38,13 +39,29 @@ function embeddedUIResponse(file: string, body: Uint8Array) {
   return HttpServerResponse.raw(body, { headers })
 }
 
+// The embedded UI file map stores paths relative to the module that imports it. In the
+// bundled desktop sidecar that module lives in out/main/chunks next to the copied assets,
+// while standalone `bun run product web` keeps node.js in dist/node alongside them. Resolve
+// relative paths against the current module so fs.readFile never depends on process.cwd().
+function resolveEmbeddedPath(file: string): string {
+  if (file.startsWith("./") || file.startsWith("../")) {
+    try {
+      return fileURLToPath(new URL(file, import.meta.url))
+    } catch {
+      // keep the raw path as a fallback
+    }
+  }
+  return file
+}
+
 export function serveEmbeddedUIEffect(
   requestPath: string,
   fs: FSUtil.Interface,
   embeddedWebUI: Record<string, string>,
 ) {
-  const file = embeddedWebUI[requestPath.replace(/^\//, "")] ?? embeddedWebUI["index.html"] ?? null
-  if (!file) return Effect.succeed(notFound())
+  const embedded = embeddedWebUI[requestPath.replace(/^\//, "")] ?? embeddedWebUI["index.html"] ?? null
+  if (!embedded) return Effect.succeed(notFound())
+  const file = resolveEmbeddedPath(embedded)
 
   return fs.readFile(file).pipe(
     Effect.map((body) => embeddedUIResponse(file, body)),

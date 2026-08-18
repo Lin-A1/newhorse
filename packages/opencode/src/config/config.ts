@@ -51,11 +51,16 @@ function mergeConfigReplacingProviderModels(target: Info, source: Info): Info {
   const merged = mergeConfig(target, source)
   if (!source.provider || !merged.provider) return merged
   for (const [providerID, patch] of Object.entries(source.provider)) {
+    if (patch === null) {
+      delete merged.provider[providerID]
+      continue
+    }
     if (!patch || !("models" in patch)) continue
     const current = merged.provider[providerID]
     if (!current) continue
     merged.provider[providerID] = { ...current, models: patch.models }
   }
+  if (Object.keys(merged.provider).length === 0) delete merged.provider
   return merged
 }
 
@@ -164,6 +169,18 @@ function globalConfigFile() {
 }
 
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
+  // A null value removes the node (e.g. `provider: { [id]: null }` deletes a
+  // provider) instead of writing an explicit null into the JSONC document.
+  if (patch === null) {
+    const edits = modify(input, path, undefined, {
+      formattingOptions: {
+        insertSpaces: true,
+        tabSize: 2,
+      },
+    })
+    return applyEdits(input, edits)
+  }
+
   if (!isRecord(patch)) {
     const edits = modify(input, path, patch, {
       formattingOptions: {

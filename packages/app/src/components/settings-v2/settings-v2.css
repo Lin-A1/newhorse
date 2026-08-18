@@ -193,6 +193,17 @@ body[data-platform="desktop"] [data-component="dialog-v2"][data-variant="setting
   width: 100%;
 }
 
+.settings-v2-lan [data-slot="settings-v2-row-control"] > div {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+/* Override text-input-v2's `flex: none` (unlayered, beats the Tailwind flex-1
+   utility) so the password field fills its row beside the generate button. */
+.settings-v2-lan [data-slot="settings-v2-row-control"] [data-component="text-input-v2"] {
+  flex: 1 1 0%;
+}
+
 [data-component="dialog-v2"][data-variant="settings"] [data-component="select-v2-root"] {
   width: fit-content;
   max-width: 100%;

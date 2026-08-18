@@ -3,10 +3,13 @@ import { DateTime } from "luxon"
 import { useNavigate } from "@solidjs/router"
 import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
 import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
+import { Spinner } from "@newhorse/ui/spinner"
 import { ScrollView } from "@newhorse/ui/scroll-view"
 import { Markdown } from "@newhorse/session-ui/markdown"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
+import { showToast } from "@/utils/toast"
+import { formatServerError } from "@/utils/server-errors"
 import type { DailyReport } from "@newhorse/sdk/v2"
 
 const num = (value: number | string): number => Number(value)
@@ -56,10 +59,19 @@ export default function DailyReportPage() {
     setRegenerating(true)
     try {
       const date = DateTime.fromISO(selected()).toJSDate().getTime()
-      await serverSDK().client.dailySummary.generate({ date })
+      const res = await serverSDK().client.dailySummary.generate({ date })
+      if (res.data == null) {
+        showToast({ variant: "error", title: language.t("dailyReport.noActivity") })
+        return
+      }
       await refetch()
-    } catch {
-      // Surface nothing beyond the spinner; the user can retry.
+      showToast({ variant: "success", title: language.t("dailyReport.regenerated") })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: formatServerError(error, language.t),
+      })
     } finally {
       setRegenerating(false)
     }
@@ -98,7 +110,9 @@ export default function DailyReportPage() {
               disabled={regenerating()}
               onClick={() => void regenerate()}
             >
-              {regenerating() ? "…" : language.t("dailyReport.regenerate")}
+              <Show when={regenerating()} fallback={language.t("dailyReport.regenerate")}>
+                <Spinner class="size-3.5" />
+              </Show>
             </ButtonV2>
           </header>
 

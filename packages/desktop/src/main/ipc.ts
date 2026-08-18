@@ -1,7 +1,7 @@
-import { execFile } from "node:child_process"
+import { execFile, spawn } from "node:child_process"
+import type { ChildProcess } from "node:child_process"
 import { stat, writeFile } from "node:fs/promises"
 import { basename } from "node:path"
-import { promisify } from "node:util"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, powerMonitor, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@newhorse/app/desktop-menu"
@@ -24,13 +24,13 @@ const pickerFilters = (ext?: string[]) => {
 
 const pickedFiles = createPickedFileAuthorizations()
 
-const execFileAsync = promisify(execFile)
-
-// Real foreground-window sensing (HANDOFF: no resident daemon). Each call
-// probes the OS once with a short P/Invoke PowerShell snippet and memoizes the
-// result for FOREGROUND_PROBE_TTL_MS so the renderer's polling never spawns a
-// shell per tick. Nothing runs on a timer; the cache only refreshes on demand.
-const FOREGROUND_PROBE_TTL_MS = 15_000
+// Real foreground-window sensing (HANDOFF: no resident daemon). One persistent
+// PowerShell process compiles the P/Invoke type once at startup and answers
+// each probe over stdin/stdout — a few ms after the first — so the renderer's
+// polling never pays a per-call Add-Type compile or shell spawn, and no
+// per-probe timeout can silently fail the reading. The result is memoized for
+// FOREGROUND_PROBE_TTL_MS so concurrent callers coalesce on one probe.
+const FOREGROUND_PROBE_TTL_MS = 2_000
 
 const FOREGROUND_PROBE_SCRIPT = `
 $sig = @'
@@ -44,47 +44,148 @@ public class Win32Foreground {
 }
 '@
 Add-Type -TypeDefinition $sig
-$hwnd = [Win32Foreground]::GetForegroundWindow()
-$pidValue = 0
-[Win32Foreground]::GetWindowThreadProcessId($hwnd, [ref]$pidValue) | Out-Null
-$locked = ($hwnd -eq [IntPtr]::Zero)
-$appName = ""
-if (-not $locked) {
-  $proc = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-  if ($proc) { $appName = $proc.ProcessName } else { $appName = "unknown" }
-  if ($appName -eq "LockApp" -or $appName -eq "lockapp") { $locked = $true; $appName = "" }
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($null -eq $line) { break }
+  $hwnd = [Win32Foreground]::GetForegroundWindow()
+  $pidValue = 0
+  [Win32Foreground]::GetWindowThreadProcessId($hwnd, [ref]$pidValue) | Out-Null
+  $locked = ($hwnd -eq [IntPtr]::Zero)
+  $appName = ""
+  if (-not $locked) {
+    $proc = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+    if ($proc) { $appName = $proc.ProcessName } else { $appName = "unknown" }
+    if ($appName -eq "LockApp" -or $appName -eq "lockapp") { $locked = $true; $appName = "" }
+  }
+  $meeting = @("ms-teams", "Teams", "Zoom", "webex", "腾讯会议", "wemeetapp", "Slack", "discord", "LINE") | Where-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+  $meetingName = if ($meeting) { [string]$meeting } else { "" }
+  Write-Output ("{0}|{1}|{2}" -f $appName, $locked, $meetingName)
 }
-$meeting = @("ms-teams", "Teams", "Zoom", "webex", "腾讯会议", "wemeetapp", "Slack", "discord", "LINE") | Where-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
-$meetingName = if ($meeting) { [string]$meeting } else { "" }
-Write-Output ("{0}|{1}|{2}" -f $appName, $locked, $meetingName)
 `
 
 type ForegroundProbe = { focusApp: string; locked: boolean; inMeeting: boolean; observedAt: number }
 
 let foregroundProbe: ForegroundProbe | undefined
+let probeProcess: ChildProcess | undefined
+let probeProcessStarting: Promise<void> | undefined
+let probeBuffer = ""
+let probeWaiters: Array<{ timer: NodeJS.Timeout; resolve: (line: string) => void }> = []
+
+function drainProbeWaiters() {
+  const stale = probeWaiters.splice(0)
+  for (const waiter of stale) {
+    clearTimeout(waiter.timer)
+    waiter.resolve("")
+  }
+}
+
+function startProbeProcess(): Promise<void> {
+  if (probeProcess) return Promise.resolve()
+  if (probeProcessStarting) return probeProcessStarting
+  probeProcessStarting = new Promise<void>((resolve) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", FOREGROUND_PROBE_SCRIPT],
+      { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] },
+    )
+    probeProcess = child
+    child.stdout.setEncoding("utf8")
+    child.stdout.on("data", (chunk: string) => {
+      probeBuffer += chunk
+      let index = probeBuffer.indexOf("\n")
+      while (index !== -1) {
+        const line = probeBuffer.slice(0, index).trim()
+        probeBuffer = probeBuffer.slice(index + 1)
+        const waiter = probeWaiters.shift()
+        if (waiter) {
+          clearTimeout(waiter.timer)
+          waiter.resolve(line)
+        }
+        index = probeBuffer.indexOf("\n")
+      }
+    })
+    child.stderr.on("data", () => {})
+    child.on("error", () => {
+      probeProcess = undefined
+      drainProbeWaiters()
+    })
+    child.on("exit", () => {
+      probeProcess = undefined
+      drainProbeWaiters()
+    })
+    resolve()
+  }).finally(() => {
+    probeProcessStarting = undefined
+  })
+  return probeProcessStarting
+}
+
+// One request/response round-trip with the persistent probe. Each write to
+// stdin triggers one probe; the matching stdout line resolves the waiter. A
+// timeout (5s) guards against a wedged process and resolves with an empty line.
+function probeOnce(): Promise<string> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const index = probeWaiters.findIndex((waiter) => waiter.timer === timer)
+      if (index !== -1) probeWaiters.splice(index, 1)
+      resolve("")
+    }, 5_000)
+    probeWaiters.push({ timer, resolve })
+    void startProbeProcess()
+      .then(() => probeProcess?.stdin?.write("\n"))
+      .catch(() => {
+        clearTimeout(timer)
+        resolve("")
+      })
+  })
+}
 
 async function probeForeground(): Promise<ForegroundProbe> {
   const now = Date.now()
   if (foregroundProbe && now - foregroundProbe.observedAt < FOREGROUND_PROBE_TTL_MS) return foregroundProbe
-  let focusApp = ""
-  let locked = false
-  let inMeeting = false
-  try {
-    const { stdout } = await execFileAsync(
-      "powershell.exe",
-      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", FOREGROUND_PROBE_SCRIPT],
-      { timeout: 5_000, windowsHide: true },
-    )
-    const [appName, lockedText, meetingName] = stdout.trim().split("|")
-    focusApp = appName || ""
-    locked = lockedText === "True"
-    inMeeting = meetingName.length > 0
-  } catch {
-    // Probe is best-effort: fall back to the previous (or empty) reading.
+  const line = await probeOnce()
+  const [appName, lockedText, meetingName] = line.split("|")
+  const probe: ForegroundProbe = {
+    focusApp: appName || "",
+    locked: lockedText === "True",
+    inMeeting: meetingName.length > 0,
+    observedAt: now,
   }
-  foregroundProbe = { focusApp, locked, inMeeting, observedAt: now }
-  return foregroundProbe
+  foregroundProbe = probe
+  return probe
 }
+
+function stopProbeProcess() {
+  probeProcess?.kill()
+  probeProcess = undefined
+  drainProbeWaiters()
+}
+
+// Push the latest foreground reading to the local sidecar. The server derives
+// idle time itself; the host only reports lock/focus/meeting state.
+async function pushPresence(deps: Deps, probe: ForegroundProbe) {
+  const ready = await deps.awaitInitialization().catch(() => undefined)
+  if (!ready) return
+  const token = Buffer.from(`${ready.username ?? "opencode"}:${ready.password}`).toString("base64")
+  void fetch(`${ready.url}/presence`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Basic ${token}`,
+    },
+    body: JSON.stringify({
+      locked: probe.locked,
+      focusApp: probe.focusApp || undefined,
+      inMeeting: probe.inMeeting,
+    }),
+  }).catch(() => undefined)
+}
+
+// Presence collection runs from the main process on a timer so the Gantt gets
+// granular app segments even when the renderer is backgrounded (window hidden
+// to the tray, tab throttled, or the workbench page not open). The renderer's
+// get-presence calls still probe on demand for immediate display.
+const PRESENCE_PUSH_INTERVAL_MS = 15_000
 
 type Deps = {
   killSidecar: () => Promise<void> | void
@@ -111,6 +212,18 @@ type Deps = {
 export function registerIpcHandlers(deps: Deps) {
   const updaterSubscriptions = createUpdaterSubscriptions()
   app.once("will-quit", updaterSubscriptions.clear)
+
+  // Best-effort presence collection on a timer (main process, not renderer) so
+  // the workbench Gantt records real foreground-app segments regardless of
+  // which page is open or whether the window is hidden to the tray.
+  const presenceTimer = setInterval(() => {
+    void probeForeground().then((probe) => void pushPresence(deps, probe))
+  }, PRESENCE_PUSH_INTERVAL_MS)
+  presenceTimer.unref?.()
+  app.once("will-quit", () => {
+    clearInterval(presenceTimer)
+    stopProbeProcess()
+  })
 
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
@@ -312,28 +425,16 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("get-presence", async (event: IpcMainInvokeEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     const probe = await probeForeground()
-    // Prefer the OS foreground window over the "newhorse is focused" proxy.
+    // Display preference: the OS foreground window, or the "newhorse is
+    // focused" proxy when the probe came back empty. This is only for the
+    // renderer snapshot; the server push carries the raw probe value so an
+    // empty/unknown reading never turns into a fake "newhorse" segment.
     const focusedApp = probe.focusApp || (win?.isFocused() ? "newhorse" : undefined)
     // Push every desktop probe to the local server, even when LAN mode is off.
     // The sidecar always has credentials (random loopback password when LAN is
     // disabled); limiting this to durable LAN credentials left the Gantt empty
     // for normal desktop-only users.
-    const ready = await deps.awaitInitialization().catch(() => undefined)
-    if (ready) {
-      const token = Buffer.from(`${ready.username ?? "opencode"}:${ready.password}`).toString("base64")
-      void fetch(`${ready.url}/presence`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Basic ${token}`,
-        },
-        body: JSON.stringify({
-          locked: probe.locked,
-          focusApp: focusedApp,
-          inMeeting: probe.inMeeting,
-        }),
-      }).catch(() => undefined)
-    }
+    void pushPresence(deps, probe)
     return {
       idleSeconds: powerMonitor.getSystemIdleTime(),
       locked: probe.locked,

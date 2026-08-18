@@ -7,9 +7,14 @@ import type { MessageV2 } from "./message-v2"
 
 const COMPACTION_BUFFER = 20_000
 
+// Custom/relay models that never declare a context window get limit.context 0
+// (provider.ts defaults it to 0). Treat that as "unknown" and assume a large
+// default so auto-compaction is driven by observed usage instead of silently
+// disabling overflow detection.
+const UNKNOWN_CONTEXT_LIMIT = 200_000
+
 export function usable(input: { cfg: ConfigV1.Info; model: Provider.Model; outputTokenMax?: number }) {
-  const context = input.model.limit.context
-  if (context === 0) return 0
+  const context = input.model.limit.context || UNKNOWN_CONTEXT_LIMIT
 
   const reserved =
     input.cfg.compaction?.reserved ??
@@ -26,7 +31,6 @@ export function isOverflow(input: {
   outputTokenMax?: number
 }) {
   if (input.cfg.compaction?.auto === false) return false
-  if (input.model.limit.context === 0) return false
 
   const count =
     input.tokens.total || input.tokens.input + input.tokens.output + input.tokens.cache.read + input.tokens.cache.write

@@ -23,6 +23,7 @@ import {
   previousDateKey,
   readClaudeCode,
   readCodex,
+  truncate,
   type DailySource,
 } from "./readers"
 
@@ -233,12 +234,15 @@ const layer = Layer.effect(
     // Fallback when the LLM path is unavailable (no provider/anchor/instance).
     // Still structured so the report page renders sections instead of a plain
     // dump: the digest lines become the 进展 bullets.
-    const fallbackOverview = (digest: string) =>
-      `## 今日概览\n（未生成 — LLM 不可用，展示当日活动记录）\n\n## 进展\n${digest
+    const fallbackOverview = (digest: string) => {
+      const bullets = digest
         .split("\n")
         .filter(Boolean)
+        .slice(0, 12)
         .map((line) => `- ${line}`)
-        .join("\n")}\n\n## 下一步\n无\n\n## 行动项\n- [ ] (应该) 检查 provider 配置后重新生成今日总结\n\n## 风险与信号\nLLM 生成失败（fallback 模式），请检查模型配置。`
+        .join("\n")
+      return `## 今日概览\n（未生成 — LLM 不可用，展示当日活动记录）\n\n## 进展\n${bullets}\n\n## 下一步\n无\n\n## 行动项\n- [ ] (应该) 检查 provider 配置后重新生成今日总结\n\n## 风险与信号\nLLM 生成失败（fallback 模式），请检查模型配置。`
+    }
 
     const synthesize = Effect.fn("DailySummary.synthesize")(function* (
       digest: string,
@@ -256,14 +260,12 @@ const layer = Layer.effect(
             }
           : undefined)
       if (!ag || !selected) return fallbackOverview(digest)
-      const smallModel = yield* provider.getSmallModel(selected.providerID).pipe(
+      // Daily summaries use the user's configured/default model, not the small
+      // model: quality matters more than cost here, and `small: true` degrades
+      // the output (shorter, messier sections).
+      const model = yield* provider.getModel(selected.providerID, selected.modelID).pipe(
         Effect.catch(() => Effect.succeed(undefined)),
       )
-      const model =
-        smallModel ??
-        (yield* provider.getModel(selected.providerID, selected.modelID).pipe(
-          Effect.catch(() => Effect.succeed(undefined)),
-        ))
       if (!model) return fallbackOverview(digest)
 
       const user = {
@@ -289,7 +291,6 @@ const layer = Layer.effect(
           agent: ag,
           user,
           system: [],
-          small: true,
           tools: {},
           model,
           sessionID: "daily-summary",
@@ -372,11 +373,14 @@ const layer = Layer.effect(
       const dateKey = localDateKey(start)
       const lines: string[] = []
       for (const s of agg.sessions) {
-        const todo = s.todos.length > 0 ? `；待办：${s.todos.map((t) => `${t.content}(${t.status})`).join("、")}` : ""
-        lines.push(`[${sourceLabel(s.source)}] ${s.title}${s.filesChanged > 0 ? `（改动 ${s.filesChanged} 文件 +${s.additions} −${s.deletions}）` : ""}${todo}`)
+        const detail = s.filesChanged > 0 ? `：改动 ${s.filesChanged} 文件（+${s.additions} −${s.deletions}）` : ""
+        const todos = s.todos.length > 0 ? `；待办：${s.todos.map((t) => t.content).join("、")}` : ""
+        lines.push(`[${sourceLabel(s.source)}] ${s.title}${detail}${todos}`)
       }
-      if (claude.length > 0) lines.push(`[Claude Code] ${claude.join("；")}`)
-      if (codex.length > 0) lines.push(`[Codex] ${codex.join("；")}`)
+      if (claude.length > 0)
+        lines.push(`[Claude Code] ${claude.slice(0, 6).map((s) => truncate(s, 80)).join("；")}`)
+      if (codex.length > 0)
+        lines.push(`[Codex] ${codex.slice(0, 6).map((s) => truncate(s, 80)).join("；")}`)
 
       const overview = yield* generateOverview(lines.join("\n"), dateKey)
       return {

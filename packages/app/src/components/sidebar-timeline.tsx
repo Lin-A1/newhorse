@@ -1,6 +1,7 @@
 import { createResource, createSignal, For, Show } from "solid-js"
 import { DateTime } from "luxon"
 import { useNavigate } from "@solidjs/router"
+import { Markdown } from "@newhorse/session-ui/markdown"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
 
@@ -151,9 +152,10 @@ export function SidebarTimeline(props: {
                   <div class="text-[11px] leading-4 text-v2-text-text-faint">
                     {DateTime.fromISO(s.date).isValid ? DateTime.fromISO(s.date).toFormat("yyyy-MM-dd") : s.date}
                   </div>
-                  <p class="mt-1 line-clamp-3 whitespace-pre-line text-[13px] leading-5 text-v2-text-text-base">
-                    {s.overview}
-                  </p>
+                  <Markdown
+                    text={s.overview}
+                    class="mt-1 line-clamp-3 text-[13px] leading-5 text-v2-text-text-base"
+                  />
                 </button>
               )}
             </For>

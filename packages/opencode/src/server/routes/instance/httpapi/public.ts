@@ -271,6 +271,13 @@ function applyLegacySchemaOverrides(spec: OpenApiSpec) {
     schemas.GlobalSession.properties.project = nullable(schemas.GlobalSession.properties.project)
   const providerOptions = schemas.ProviderConfig?.properties?.options
   if (providerOptions) providerOptions.additionalProperties = {}
+  const provider = schemas.Config?.properties?.provider
+  if (provider && typeof provider.additionalProperties === "object") {
+    // stripOptionalNull above removed the `{type:"null"}` union arm from the
+    // provider record, but a null provider value is a real wire signal: it
+    // deletes that provider entry. Keep it in the SDK surface.
+    provider.additionalProperties = { anyOf: [provider.additionalProperties, { type: "null" }] }
+  }
   const model = schemas.ProviderConfig?.properties?.models?.additionalProperties
   const variants = typeof model === "object" ? model.properties?.variants?.additionalProperties : undefined
   if (variants && typeof variants === "object") variants.additionalProperties = {}

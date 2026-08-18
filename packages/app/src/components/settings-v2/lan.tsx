@@ -152,7 +152,7 @@ export const SettingsLanV2: Component = () => {
                 title="访问密码"
                 description="必须设置密码才能开启局域网访问；关闭后回退为仅本机随机密码。"
               >
-                <div class="flex w-full gap-2 items-center sm:w-auto">
+                <div class="flex w-full min-w-0 items-center gap-2 sm:w-[340px]">
                   <TextInputV2
                     type="text"
                     appearance="base"

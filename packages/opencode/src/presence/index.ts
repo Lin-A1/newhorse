@@ -1,7 +1,8 @@
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Database } from "@newhorse/core/database/database"
+import { PresenceSegmentTable } from "@newhorse/core/presence/sql"
 import { SessionTable } from "@newhorse/core/session/sql"
-import { desc, eq } from "drizzle-orm"
+import { desc, eq, lt } from "drizzle-orm"
 import { Context, Effect, Layer, Ref, Schema } from "effect"
 
 // Bounded, host-owned presence (HANDOFF: no resident daemon). The server
@@ -64,14 +65,29 @@ const layer = Layer.effect(
     // standalone CLI/background fibers, where get falls back to session-derived
     // idle only (locked: false, no focusApp).
     const extras = yield* Ref.make<RefState | undefined>(undefined)
-    // Focus-app segments for today (local day). Reset on day rollover.
-    const segments = yield* Ref.make<Segment[]>([])
 
     const dayStart = () => {
       const d = new Date(Date.now())
       d.setHours(0, 0, 0, 0)
       return d.getTime()
     }
+
+    const dayKey = (start: number) => {
+      const d = new Date(start)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+    }
+
+    // Focus-app segments for today (local day). Seeded from the DB so a fresh
+    // process still serves persisted segments before any new update arrives.
+    const persisted = yield* db
+      .select()
+      .from(PresenceSegmentTable)
+      .where(eq(PresenceSegmentTable.day, dayKey(dayStart())))
+      .all()
+      .pipe(Effect.orDie)
+    const segments = yield* Ref.make<Segment[]>(
+      persisted.map((row) => ({ app: row.app, start: row.start, end: row.end ?? undefined })),
+    )
 
     const get = Effect.fn("Presence.get")(function* (input: { directory: string }) {
       const now = Date.now()
@@ -100,21 +116,56 @@ const layer = Layer.effect(
 
       // Grow the focus-app Gantt: close the previous segment at `now` when the
       // app changed, then start/keep the current app's segment. Segments older
-      // than today are dropped (the panel only shows the current day).
+      // than today are dropped (the panel only shows the current day). An
+      // empty focusApp is an unknown reading (probe failure): leave the open
+      // segment as-is so it never fragments the timeline with zero-length gaps.
+      // Locking, though, ends the current segment: the user stepped away.
       const start = dayStart()
       yield* Ref.update(segments, (items) => {
         const kept = items.filter((segment) => segment.end === undefined || segment.end >= start)
         const open = kept.find((segment) => segment.end === undefined)
         const app = input.focusApp || ""
         if (open && open.app === app) return kept
+        if (!app) {
+          if (!input.locked || !open) return kept
+          const next = [...kept]
+          const index = next.indexOf(open)
+          if (index !== -1) next[index] = { ...open, end: now }
+          return next
+        }
         const next = [...kept]
         if (open) {
           const index = next.indexOf(open)
           if (index !== -1) next[index] = { ...open, end: now }
         }
-        if (app) next.push({ app, start: now })
+        next.push({ app, start: now })
         return next.slice(-30)
       })
+
+      // Persist today's segments (delete-then-insert in one transaction) and
+      // prune older days so the table never grows unbounded.
+      const day = dayKey(start)
+      const items = yield* Ref.get(segments)
+      yield* db
+        .transaction(
+          Effect.fnUntraced(function* (tx) {
+            yield* tx.delete(PresenceSegmentTable).where(lt(PresenceSegmentTable.day, day)).run()
+            yield* tx.delete(PresenceSegmentTable).where(eq(PresenceSegmentTable.day, day)).run()
+            if (items.length === 0) return
+            yield* tx
+              .insert(PresenceSegmentTable)
+              .values(
+                items.map((segment) => ({
+                  day,
+                  app: segment.app,
+                  start: segment.start,
+                  end: segment.end ?? null,
+                })),
+              )
+              .run()
+          }),
+        )
+        .pipe(Effect.orDie)
     })
 
     const timeline = Effect.fn("Presence.timeline")(function* () {

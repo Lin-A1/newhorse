@@ -1,4 +1,4 @@
-import type { MemoryHistoryInfo, MemoryInfo } from "@newhorse/sdk/v2"
+import type { MemoryAggregateGroup, MemoryHistoryInfo, MemoryInfo } from "@newhorse/sdk/v2"
 import { Button } from "@newhorse/ui/button"
 import { Icon } from "@newhorse/ui/icon"
 import { Spinner } from "@newhorse/ui/spinner"
@@ -100,8 +100,12 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const [view, setView] = createSignal<"current" | "all">("current")
   const [search, setSearch] = createSignal("")
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({})
+  const [kindFilter, setKindFilter] = createSignal<MemoryKind>()
+  const [statusFilter, setStatusFilter] = createSignal<MemoryStatus>()
+  const [scopeFilter, setScopeFilter] = createSignal<MemoryScope>()
+  const [provenanceFilter, setProvenanceFilter] = createSignal<MemoryInfo["provenance"]>()
 
-  const [aggregate] = createResource(
+  const [aggregate, { refetch: refetchAggregate }] = createResource(
     () => (view() === "all" ? view() : undefined),
     () => memory.aggregate(),
   )
@@ -129,7 +133,10 @@ export function SettingsMemory(props: { sessionID?: string }) {
     }
     await memory
       .update(item, { content: content(), kind: kind(), expiresAt: time })
-      .then(() => setEditing(undefined))
+      .then(() => {
+        setEditing(undefined)
+        if (view() === "all") void refetchAggregate()
+      })
       .catch(fail)
   }
 
@@ -148,6 +155,46 @@ export function SettingsMemory(props: { sessionID?: string }) {
     void memory.clear(target).catch(fail)
   }
 
+  const confirmClearGroup = async (group: MemoryAggregateGroup) => {
+    const label =
+      group.scope === "user_global"
+        ? language.t("settings.memory.scope.user_global")
+        : (group.workspaceID ?? group.directory ?? language.t("settings.memory.scope.workspace"))
+    const confirmed = await confirm({
+      title: language.t("common.clear"),
+      message: language.t("settings.memory.clear.confirm", { target: label }),
+    })
+    if (!confirmed) return
+    await memory
+      .clear(group.scope === "user_global" ? "user_global" : "workspace", group.workspaceID, group.directory)
+      .then(() => refetchAggregate())
+      .catch(fail)
+  }
+
+  const confirmClearAll = async () => {
+    const groups = aggregate()
+    if (!groups || groups.length === 0) return
+    const confirmed = await confirm({
+      title: language.t("common.clear"),
+      message: language.t("settings.memory.clear.confirm", {
+        target: language.t("settings.memory.clear.all"),
+      }),
+    })
+    if (!confirmed) return
+    for (const group of groups) {
+      try {
+        await memory.clear(
+          group.scope === "user_global" ? "user_global" : "workspace",
+          group.workspaceID,
+          group.directory,
+        )
+      } catch (error) {
+        fail(error)
+      }
+    }
+    void refetchAggregate()
+  }
+
   const exportRecords = () => {
     setExporting(true)
     return memory
@@ -159,6 +206,10 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const loadHistory = (item: MemoryInfo) => memory.history(item)
 
   const matchesSearch = (item: MemoryInfo) => {
+    if (kindFilter() && item.kind !== kindFilter()) return false
+    if (statusFilter() && item.status !== statusFilter()) return false
+    if (scopeFilter() && item.scope !== scopeFilter()) return false
+    if (provenanceFilter() && item.provenance !== provenanceFilter()) return false
     const query = search().trim().toLowerCase()
     if (!query) return true
     return (
@@ -168,6 +219,37 @@ export function SettingsMemory(props: { sessionID?: string }) {
       (item.workspaceID ?? "").toLowerCase().includes(query)
     )
   }
+
+  const hasActiveFilter = () =>
+    Boolean(kindFilter() || statusFilter() || scopeFilter() || provenanceFilter())
+
+  const clearFilters = () => {
+    setKindFilter(undefined)
+    setStatusFilter(undefined)
+    setScopeFilter(undefined)
+    setProvenanceFilter(undefined)
+  }
+
+  const filters = {
+    kind: kindFilter,
+    setKind: setKindFilter,
+    status: statusFilter,
+    setStatus: setStatusFilter,
+    scope: scopeFilter,
+    setScope: setScopeFilter,
+    provenance: provenanceFilter,
+    setProvenance: setProvenanceFilter,
+  }
+
+  // "all" view: the aggregate is filtered through the same search + facet
+  // filters as the current view. Groups with no matching records are dropped.
+  const allGroups = createMemo(() => {
+    const groups = aggregate()
+    if (!groups) return undefined
+    return groups
+      .map((group) => ({ ...group, items: group.items.filter(matchesSearch) }))
+      .filter((group) => group.items.length > 0)
+  })
 
   // "current" view: split items by workspace so each workspace has a
   // collapsible header. Items without a workspaceID fall under the current
@@ -290,6 +372,22 @@ export function SettingsMemory(props: { sessionID?: string }) {
             class="w-full shrink-0 sm:w-56"
           />
         </Show>
+        <Show when={view() === "all"}>
+          <Button
+            size="small"
+            variant="secondary"
+            class="shrink-0"
+            disabled={!aggregate() || aggregate()!.length === 0}
+            onClick={() => void confirmClearAll()}
+          >
+            {language.t("settings.memory.clear.all")}
+          </Button>
+        </Show>
+        <Show when={hasActiveFilter()}>
+          <Button size="small" variant="ghost" class="shrink-0" onClick={clearFilters}>
+            {language.t("settings.memory.filter.clear")}
+          </Button>
+        </Show>
       </div>
 
       <div class="mt-4 flex flex-col gap-4 max-w-[720px]">
@@ -310,54 +408,88 @@ export function SettingsMemory(props: { sessionID?: string }) {
                 </div>
               }
             >
-              <For each={aggregate()}>
-                {(group, gi) => {
-                  const groupKey = group.scope === "user_global" ? `all-global` : `all-${group.workspaceID ?? group.directory ?? gi()}`
-                  const isOpen = () => !collapsed()[groupKey]
-                  return (
-                    <section
-                      class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
-                      data-memory-group={group.workspaceID ?? group.directory ?? "global"}
-                    >
-                      <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
-                        <button
-                          type="button"
-                          class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
-                          aria-expanded={isOpen()}
-                          aria-label={language.t("settings.memory.group.toggle")}
-                          onClick={() => toggleGroup(groupKey)}
-                        >
-                          <Icon
-                            name={isOpen() ? "chevron-down" : "chevron-right"}
-                            class="size-3.5 shrink-0 text-v2-text-text-faint"
-                          />
-                          <span class="truncate text-[13px] font-medium text-v2-text-text-base">
-                            {group.scope === "user_global"
-                              ? language.t("settings.memory.all.global")
-                              : (group.workspaceID ?? group.directory ?? language.t("settings.memory.all.workspace"))}
-                          </span>
-                          <span class="ml-1 shrink-0 text-[11px] text-v2-text-text-weaker">
-                            {group.items.length} {language.t("settings.memory.all.count")}
-                          </span>
-                        </button>
-                        <Button
-                          size="small"
-                          variant="secondary"
-                          class="shrink-0"
-                          onClick={() => confirmClear(group.scope === "user_global" ? "user_global" : "workspace")}
-                        >
-                          {language.t("settings.memory.clear.short")}
-                        </Button>
-                      </div>
-                      <Show when={isOpen()}>
-                        <div class="flex flex-col gap-3">
-                          <For each={group.items}>{(item) => <MemoryCard item={item} />}</For>
+              <Show
+                when={(allGroups()?.length ?? 0) > 0}
+                fallback={
+                  <div role="status" aria-live="polite" data-state="empty" class="text-v2-text-text-weak">
+                    {language.t("settings.memory.search.empty")}
+                  </div>
+                }
+              >
+                <For each={allGroups()}>
+                  {(group, gi) => {
+                    const groupKey = group.scope === "user_global" ? `all-global` : `all-${group.workspaceID ?? group.directory ?? gi()}`
+                    const isOpen = () => !collapsed()[groupKey]
+                    return (
+                      <section
+                        class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
+                        data-memory-group={group.workspaceID ?? group.directory ?? "global"}
+                      >
+                        <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
+                          <button
+                            type="button"
+                            class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
+                            aria-expanded={isOpen()}
+                            aria-label={language.t("settings.memory.group.toggle")}
+                            onClick={() => toggleGroup(groupKey)}
+                          >
+                            <Icon
+                              name={isOpen() ? "chevron-down" : "chevron-right"}
+                              class="size-3.5 shrink-0 text-v2-text-text-faint"
+                            />
+                            <span class="truncate text-[13px] font-medium text-v2-text-text-base">
+                              {group.scope === "user_global"
+                                ? language.t("settings.memory.all.global")
+                                : (group.workspaceID ?? group.directory ?? language.t("settings.memory.all.workspace"))}
+                            </span>
+                            <span class="ml-1 shrink-0 text-[11px] text-v2-text-text-weaker">
+                              {group.items.length} {language.t("settings.memory.all.count")}
+                            </span>
+                          </button>
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            class="shrink-0"
+                            onClick={() => void confirmClearGroup(group)}
+                          >
+                            {language.t("settings.memory.clear.short")}
+                          </Button>
                         </div>
-                      </Show>
-                    </section>
-                  )
-                }}
-              </For>
+                        <Show when={isOpen()}>
+                          <div class="flex flex-col gap-3">
+                            <For each={group.items}>
+                              {(item) => (
+                                <MemoryCard
+                                  item={item}
+                                  language={language}
+                                  memory={memory}
+                                  filters={filters}
+                                  editing={editing}
+                                  setEditing={setEditing}
+                                  content={content}
+                                  setContent={setContent}
+                                  kind={kind}
+                                  setKind={setKind}
+                                  expires={expires}
+                                  setExpires={setExpires}
+                                  auditID={auditID}
+                                  setAuditID={setAuditID}
+                                  save={save}
+                                  startEdit={startEdit}
+                                  fail={fail}
+                                  confirm={confirm}
+                                  loadHistory={loadHistory}
+                                  onMutated={() => void refetchAggregate()}
+                                />
+                              )}
+                            </For>
+                          </div>
+                        </Show>
+                      </section>
+                    )
+                  }}
+                </For>
+              </Show>
             </Show>
           </Show>
         </Show>
@@ -435,6 +567,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
                                   item={item}
                                   language={language}
                                   memory={memory}
+                                  filters={filters}
                                   editing={editing}
                                   setEditing={setEditing}
                                   content={content}
@@ -494,6 +627,16 @@ function MemoryCard(props: {
   item: MemoryInfo
   language?: ReturnType<typeof useLanguage>
   memory?: ReturnType<typeof useMemoryCenterState>
+  filters?: {
+    kind: () => MemoryKind | undefined
+    setKind: (value: MemoryKind | undefined) => void
+    status: () => MemoryStatus | undefined
+    setStatus: (value: MemoryStatus | undefined) => void
+    scope: () => MemoryScope | undefined
+    setScope: (value: MemoryScope | undefined) => void
+    provenance: () => MemoryInfo["provenance"] | undefined
+    setProvenance: (value: MemoryInfo["provenance"] | undefined) => void
+  }
   editing?: () => string | undefined
   setEditing?: (id: string | undefined) => void
   content?: () => string
@@ -509,6 +652,7 @@ function MemoryCard(props: {
   fail?: (error: unknown) => void
   confirm?: ReturnType<typeof useConfirm>
   loadHistory?: (item: MemoryInfo) => Promise<MemoryHistoryInfo[]>
+  onMutated?: () => void
 }) {
   const language = () => props.language ?? useLanguage()
   const t = (key: string, params?: Record<string, string | number | boolean>) =>
@@ -517,6 +661,13 @@ function MemoryCard(props: {
   const editable = () => Boolean(props.editing && props.setEditing && props.startEdit)
   const auditOpen = () => props.auditID?.() === item().id
 
+  // A facet pill doubles as a filter toggle when filter wiring is provided;
+  // the active state (accent border + ring) makes the toggle visible.
+  const pill = (active: boolean, base: string) =>
+    active
+      ? `${base} border-v2-border-border-active bg-v2-background-bg-layer-03 text-v2-text-text-accent ring-1 ring-v2-border-border-active`
+      : base
+
   return (
     <article
       class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-base p-4 transition-colors hover:border-v2-border-border-active hover:bg-v2-background-bg-layer-01"
@@ -524,18 +675,84 @@ function MemoryCard(props: {
     >
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="flex flex-wrap gap-1.5 text-[11px]">
-          <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryKindTag(item().kind)}`}>
-            {memoryKindLabel(t, item().kind)}
-          </span>
-          <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryStatusTag(item().status)}`}>
-            {memoryStatusLabel(t, item().status)}
-          </span>
-          <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryScopeTag(item().scope)}`}>
-            {memoryScopeLabel(t, item().scope)}
-          </span>
-          <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryProvenanceTag()}`}>
-            {memoryProvenanceLabel(t, item().provenance)}
-          </span>
+          <Show
+            when={props.filters}
+            fallback={
+              <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryKindTag(item().kind)}`}>
+                {memoryKindLabel(t, item().kind)}
+              </span>
+            }
+          >
+            <button
+              type="button"
+              aria-pressed={props.filters!.kind() === item().kind}
+              class={`rounded-[4px] border px-1.5 py-0.5 transition-colors ${pill(props.filters!.kind() === item().kind, memoryKindTag(item().kind))}`}
+              onClick={() =>
+                props.filters!.setKind(props.filters!.kind() === item().kind ? undefined : item().kind)
+              }
+            >
+              {memoryKindLabel(t, item().kind)}
+            </button>
+          </Show>
+          <Show
+            when={props.filters}
+            fallback={
+              <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryStatusTag(item().status)}`}>
+                {memoryStatusLabel(t, item().status)}
+              </span>
+            }
+          >
+            <button
+              type="button"
+              aria-pressed={props.filters!.status() === item().status}
+              class={`rounded-[4px] border px-1.5 py-0.5 transition-colors ${pill(props.filters!.status() === item().status, memoryStatusTag(item().status))}`}
+              onClick={() =>
+                props.filters!.setStatus(props.filters!.status() === item().status ? undefined : item().status)
+              }
+            >
+              {memoryStatusLabel(t, item().status)}
+            </button>
+          </Show>
+          <Show
+            when={props.filters}
+            fallback={
+              <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryScopeTag(item().scope)}`}>
+                {memoryScopeLabel(t, item().scope)}
+              </span>
+            }
+          >
+            <button
+              type="button"
+              aria-pressed={props.filters!.scope() === item().scope}
+              class={`rounded-[4px] border px-1.5 py-0.5 transition-colors ${pill(props.filters!.scope() === item().scope, memoryScopeTag(item().scope))}`}
+              onClick={() =>
+                props.filters!.setScope(props.filters!.scope() === item().scope ? undefined : item().scope)
+              }
+            >
+              {memoryScopeLabel(t, item().scope)}
+            </button>
+          </Show>
+          <Show
+            when={props.filters}
+            fallback={
+              <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryProvenanceTag()}`}>
+                {memoryProvenanceLabel(t, item().provenance)}
+              </span>
+            }
+          >
+            <button
+              type="button"
+              aria-pressed={props.filters!.provenance() === item().provenance}
+              class={`rounded-[4px] border px-1.5 py-0.5 transition-colors ${pill(props.filters!.provenance() === item().provenance, memoryProvenanceTag())}`}
+              onClick={() =>
+                props.filters!.setProvenance(
+                  props.filters!.provenance() === item().provenance ? undefined : item().provenance,
+                )
+              }
+            >
+              {memoryProvenanceLabel(t, item().provenance)}
+            </button>
+          </Show>
         </div>
         <span class="text-[11px] text-v2-text-text-weaker">{source(item(), t)}</span>
       </div>
@@ -598,6 +815,7 @@ function MemoryCard(props: {
               onClick={() =>
                 void props.memory
                   ?.pause(item(), item().status === "active")
+                  .then(() => props.onMutated?.())
                   .catch(props.fail ?? (() => {}))
               }
             >
@@ -614,7 +832,10 @@ function MemoryCard(props: {
                   message: t("settings.memory.delete.confirm"),
                 })
                 if (!confirmed) return
-                void props.memory?.remove(item()).catch(props.fail ?? (() => {}))
+                void props.memory
+                  ?.remove(item())
+                  .then(() => props.onMutated?.())
+                  .catch(props.fail ?? (() => {}))
               })()
             }}
           >

@@ -28,7 +28,7 @@ import { AppNodeBuilder } from "@newhorse/core/effect/app-node-builder"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { LayerNodePlatform } from "@newhorse/core/effect/app-node-platform"
 
-type ConfigModel = NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]["models"]>[string]
+type ConfigModel = NonNullable<NonNullable<NonNullable<ConfigV1.Info["provider"]>[string]>["models"]>[string]
 
 const openAIConfig = (model: ModelsDev.Provider["models"][string], baseURL: string): Partial<ConfigV1.Info> => {
   const { experimental: _experimental, ...configModel } = model

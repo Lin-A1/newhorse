@@ -430,6 +430,176 @@ it.effect("updates global config and omits empty shell key in jsonc", () =>
   ),
 )
 
+it.effect("replaces provider models on global config update (json)", () =>
+  withGlobalConfig(
+    {
+      config: {
+        provider: {
+          myprov: {
+            npm: "@ai-sdk/openai-compatible",
+            options: { baseURL: "https://x" },
+            models: { a: { name: "A" }, b: { name: "B" }, c: { name: "C" } },
+          },
+        },
+      },
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({
+          provider: { myprov: { npm: "@ai-sdk/openai-compatible", models: { a: { name: "A" }, c: { name: "C" } } } },
+        })
+
+        const writtenConfig = yield* FSUtil.use.readJson(path.join(dir, "opencode.json"))
+        const provider = (writtenConfig as { provider?: Record<string, { models?: unknown }> }).provider
+        expect(provider?.myprov?.models).toEqual({ a: { name: "A" }, c: { name: "C" } })
+      }),
+  ),
+)
+
+it.effect("replaces provider models with an empty map to delete all models (json)", () =>
+  withGlobalConfig(
+    {
+      config: {
+        provider: {
+          myprov: {
+            npm: "@ai-sdk/openai-compatible",
+            models: { a: { name: "A" }, b: { name: "B" } },
+          },
+        },
+      },
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({
+          provider: { myprov: { npm: "@ai-sdk/openai-compatible", models: {} } },
+        })
+
+        const writtenConfig = yield* FSUtil.use.readJson(path.join(dir, "opencode.json"))
+        const provider = (writtenConfig as { provider?: Record<string, { models?: unknown }> }).provider
+        expect(provider?.myprov?.models).toEqual({})
+      }),
+  ),
+)
+
+it.effect("replaces provider models on global config update (jsonc)", () =>
+  withGlobalConfig(
+    {
+      config: {
+        provider: {
+          myprov: {
+            npm: "@ai-sdk/openai-compatible",
+            models: { a: { name: "A" }, b: { name: "B" } },
+          },
+        },
+      },
+      name: "opencode.jsonc",
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({
+          provider: { myprov: { models: { a: { name: "A" } } } },
+        })
+
+        const file = path.join(dir, "opencode.jsonc")
+        const writtenConfig = yield* FSUtil.use.readFileString(file)
+        const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(writtenConfig, file), file)
+        expect(parsed.provider?.myprov?.models).toEqual({ a: { name: "A" } })
+      }),
+  ),
+)
+
+it.effect("replaces provider models with an empty map on global config update (jsonc)", () =>
+  withGlobalConfig(
+    {
+      config: {
+        provider: {
+          myprov: {
+            npm: "@ai-sdk/openai-compatible",
+            models: { a: { name: "A" }, b: { name: "B" } },
+          },
+        },
+      },
+      name: "opencode.jsonc",
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({
+          provider: { myprov: { models: {} } },
+        })
+
+        const file = path.join(dir, "opencode.jsonc")
+        const writtenConfig = yield* FSUtil.use.readFileString(file)
+        const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(writtenConfig, file), file)
+        expect(parsed.provider?.myprov?.models).toEqual({})
+      }),
+  ),
+)
+
+it.effect("removes a provider from global config when set to null (json)", () =>
+  withGlobalConfig(
+    {
+      config: {
+        provider: {
+          myprov: { npm: "@ai-sdk/openai-compatible", models: { a: { name: "A" } } },
+          other: { npm: "x", models: { m: { name: "M" } } },
+        },
+      },
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ provider: { myprov: null } })
+
+        const writtenConfig = yield* FSUtil.use.readJson(path.join(dir, "opencode.json"))
+        const provider = (writtenConfig as { provider?: Record<string, unknown> }).provider
+        expect(provider?.myprov).toBeUndefined()
+        expect(provider?.other).toEqual({ npm: "x", models: { m: { name: "M" } } })
+      }),
+  ),
+)
+
+it.effect("removes a provider from global config when set to null (jsonc)", () =>
+  withGlobalConfig(
+    {
+      config: {
+        provider: {
+          myprov: { npm: "@ai-sdk/openai-compatible", models: { a: { name: "A" } } },
+        },
+      },
+      name: "opencode.jsonc",
+    },
+    ({ dir }) =>
+      Effect.gen(function* () {
+        yield* Config.use.updateGlobal({ provider: { myprov: null } })
+
+        const file = path.join(dir, "opencode.jsonc")
+        const writtenConfig = yield* FSUtil.use.readFileString(file)
+        expect(writtenConfig).not.toContain("myprov")
+        const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(writtenConfig, file), file)
+        expect(parsed.provider?.myprov).toBeUndefined()
+      }),
+  ),
+)
+
+it.instance("removes a provider from config when set to null", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    yield* writeConfigEffect(test.directory, {
+      $schema: "https://opencode.ai/config.json",
+      provider: {
+        myprov: { npm: "@ai-sdk/openai-compatible", models: { a: { name: "A" } } },
+      },
+    })
+
+    yield* Config.Service.use((svc) =>
+      svc.update(ConfigParse.schema(ConfigV1.Info, { provider: { myprov: null } }, "test:config")),
+    )
+
+    const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
+    const provider = (writtenConfig as { provider?: Record<string, unknown> }).provider
+    expect(provider?.myprov).toBeUndefined()
+  }),
+)
+
 it.instance(
   "loads formatter boolean config",
   Effect.gen(function* () {

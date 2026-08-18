@@ -198,6 +198,14 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`presence_segment\` (
+          \`day\` text NOT NULL,
+          \`app\` text NOT NULL,
+          \`start\` integer NOT NULL,
+          \`end\` integer
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`project_directory\` (
           \`project_id\` text NOT NULL,
           \`directory\` text NOT NULL,

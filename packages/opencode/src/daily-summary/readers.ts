@@ -3,8 +3,8 @@ import { Global } from "@newhorse/core/global"
 import path from "path"
 import { Effect } from "effect"
 
-const SNIPPET_LIMIT = 400
-const MAX_ENTRIES_PER_SOURCE = 20
+const SNIPPET_LIMIT = 120
+const MAX_ENTRIES_PER_SOURCE = 10
 const MAX_FILES_PER_SOURCE = 200
 
 export type DailySource = "work" | "companion" | "claude" | "codex"

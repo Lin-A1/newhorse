@@ -9,6 +9,7 @@ import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
 import { SidebarTimeline } from "@/components/sidebar-timeline"
 import { SettingsUsage } from "@/components/settings-usage"
 import { ContributionHeatmap } from "@/components/contribution-heatmap"
+import { DAY_MS, dayStartMs, formatDuration, groupSegments } from "@/lib/presence-gantt"
 
 type WorkbenchTodo = {
   id: string
@@ -224,10 +225,10 @@ function PresenceStrip() {
   )
 }
 
-// Today's focus-app Gantt: rows per app with segments across the day, built
-// from Presence.timeline (desktop host reports the OS foreground window). Rows
-// render as stacked horizontal bars; the whole strip is capped in height and
-// scrolls when many apps were used.
+// Today's focus-app Gantt: one row per app, each with colored bars placed at
+// their actual time of day, built from Presence.timeline (desktop host reports
+// the OS foreground window). Hour ticks make the bars interpretable; the list
+// is capped to the most-used apps and scrolls when the day is busy.
 function PresenceGantt() {
   const serverSDK = useServerSDK()
   const language = useLanguage()
@@ -248,6 +249,11 @@ function PresenceGantt() {
     return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
   }
 
+  const now = () => Date.now()
+  const dayStart = () => dayStartMs(now())
+  const rows = () => groupSegments(timeline()?.segments ?? [], now())
+  const live = () => timeline()?.live === true
+
   const PALETTE = [
     "bg-v2-accent-accent/80",
     "bg-v2-warning-warning/70",
@@ -256,34 +262,64 @@ function PresenceGantt() {
     "bg-v2-danger-danger/60",
     "bg-v2-accent-accent/40",
     "bg-v2-warning-warning/40",
+    "bg-v2-info-info/40",
   ]
 
+  const HOUR_TICKS = [0, 6, 12, 18, 24]
+
   return (
-    <Show when={(timeline()?.segments.length ?? 0) > 0}>
+    <Show when={rows().length > 0}>
       <div class="mt-3 flex flex-col gap-1.5">
-        <div class="text-[11px] font-medium text-v2-text-text-muted">{language.t("workbench.presence.gantt")}</div>
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5 text-[11px] font-medium text-v2-text-text-muted">
+            {language.t("workbench.presence.gantt")}
+            <Show when={live()}>
+              <span class="inline-block size-1.5 rounded-full bg-v2-accent-accent" aria-hidden="true" />
+            </Show>
+          </div>
+        </div>
+        {/* Hour ticks along the same scale as the bars below. */}
+        <div class="relative h-3">
+          <For each={HOUR_TICKS}>
+            {(hour) => (
+              <span
+                class="absolute top-0 -translate-x-1/2 text-[9px] leading-3 text-v2-text-text-faint"
+                style={{ left: `${(hour / 24) * 100}%` }}
+              >
+                {hour === 24 ? "24" : hour}
+              </span>
+            )}
+          </For>
+        </div>
         <div class="flex flex-col gap-1 overflow-y-auto no-scrollbar max-h-40 pr-1">
-          <For each={timeline()!.segments}>
-            {(segment, i) => {
-              const start = num(segment.start, Date.now())
-              const end = num(segment.end, Date.now())
-              const dayMs = 24 * 60 * 60 * 1000
-              return (
-                <div class="flex items-center gap-2">
-                  <span class="w-16 shrink-0 truncate text-[10px] text-v2-text-text-faint">{segment.app}</span>
-                  <div class="relative h-3 min-w-0 flex-1 rounded-[3px] bg-v2-background-bg-layer-02">
-                    <div
-                      class={`absolute inset-y-0 left-0 rounded-[3px] ${PALETTE[i() % PALETTE.length]}`}
-                      style={{ width: `${Math.min(100, Math.max(2, ((end - start) / dayMs) * 100))}%` }}
-                    />
-                  </div>
-                  <span class="w-20 shrink-0 text-right text-[10px] text-v2-text-text-faint">
-                    {formatHour(segment.start)}
-                    {segment.end ? `–${formatHour(segment.end)}` : " ·"}
-                  </span>
+          <For each={rows()}>
+            {(row, i) => (
+              <div class="flex items-center gap-2">
+                <span class="w-16 shrink-0 truncate text-[10px] text-v2-text-text-faint" title={row.app}>
+                  {row.app}
+                </span>
+                <div class="relative h-3 min-w-0 flex-1 rounded-[3px] bg-v2-background-bg-layer-02">
+                  <For each={row.segments}>
+                    {(segment) => {
+                      const start = Math.max(segment.start, dayStart())
+                      const end = Math.min(segment.end, dayStart() + DAY_MS)
+                      const left = Math.max(0, ((start - dayStart()) / DAY_MS) * 100)
+                      const width = Math.max(0.5, ((end - start) / DAY_MS) * 100)
+                      return (
+                        <div
+                          class={`absolute inset-y-0 rounded-[3px] ${PALETTE[i() % PALETTE.length]}`}
+                          style={{ left: `${left}%`, width: `${Math.min(100, width)}%` }}
+                          title={`${formatHour(segment.start)}–${formatHour(segment.end)}`}
+                        />
+                      )
+                    }}
+                  </For>
                 </div>
-              )
-            }}
+                <span class="w-11 shrink-0 text-right text-[10px] text-v2-text-text-faint">
+                  {formatDuration(row.totalMs)}
+                </span>
+              </div>
+            )}
           </For>
         </div>
       </div>

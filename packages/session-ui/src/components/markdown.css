@@ -209,6 +209,7 @@
 
   .markdown-mermaid {
     overflow-x: auto;
+    line-height: 1.4;
   }
 
   .markdown-mermaid svg {

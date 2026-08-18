@@ -71,8 +71,11 @@ const require = __cjs_mod__.createRequire(import.meta.url);
       {
         name: "opencode:copy-server-assets",
         async writeBundle() {
+          // The sidecar chunk serves the embedded web UI from the same directory, so every
+          // asset next to dist/node/node.js (app html/js/css, fonts, wasm) must ship alongside
+          // it. Skip the server bundle itself, its sourcemap, and any sidecar chunk file.
           for (const l of await fs.readdir(OPENCODE_SERVER_DIST)) {
-            if (!l.endsWith(".wasm")) continue
+            if (l === "node.js" || l.endsWith(".map") || /^node-.+\.js$/.test(l)) continue
             await fs.writeFile(`./out/main/chunks/${l}`, await fs.readFile(`${OPENCODE_SERVER_DIST}/${l}`))
           }
         },

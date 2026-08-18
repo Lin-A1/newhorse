@@ -31,7 +31,7 @@ import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
-import { renderMermaid } from "./markdown-mermaid"
+import { renderMermaid, subscribeThemeChange } from "./markdown-mermaid"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -382,6 +382,7 @@ export function Markdown(
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
   const completedCode = new Map<string, Extract<RenderedBlock, { mode: "code" }>>()
+  const [themeVersion, bumpThemeVersion] = createSignal(0)
   const projection = createMemo((previous: Projection | undefined) =>
     project(previous, local.text, local.streaming ?? false),
   )
@@ -391,6 +392,7 @@ export function Markdown(
         text: local.text,
         key: local.cacheKey,
         projection: projection(),
+        themeVersion: themeVersion(),
       }
     },
     async (src) => {
@@ -419,12 +421,15 @@ export function Markdown(
             const cached = completedCode.get(blockKey)
             if (cached?.raw === block.raw && (cached.mermaid || cached.mermaidError)) return cached
             const diagram = await mermaid(block.src)
+            // The theme version is part of the hash so a theme switch replaces
+            // the rendered SVG in the DOM (hash is also the DOM-update key).
+            const hash = `${String(block.raw.length)}:${src.themeVersion}`
             if (diagram) {
               const rendered = {
                 key: blockKey,
                 mode: block.mode,
                 raw: block.raw,
-                hash: String(block.raw.length),
+                hash,
                 complete: true,
                 language: "mermaid",
                 generation: 0,
@@ -442,7 +447,7 @@ export function Markdown(
               key: blockKey,
               mode: block.mode,
               raw: block.raw,
-              hash: String(block.raw.length),
+              hash,
               complete: true,
               language: "mermaid",
               generation: 0,
@@ -507,6 +512,16 @@ export function Markdown(
   )
 
   let copyCleanup: (() => void) | undefined
+
+  createEffect(() => {
+    const unsubscribe = subscribeThemeChange(() => {
+      for (const [key, block] of completedCode) {
+        if (block.mermaid || block.mermaidError) completedCode.delete(key)
+      }
+      bumpThemeVersion(themeVersion() + 1)
+    })
+    onCleanup(unsubscribe)
+  })
 
   createEffect(() => {
     const container = root()

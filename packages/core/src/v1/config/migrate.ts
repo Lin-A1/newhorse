@@ -162,9 +162,13 @@ function migrateMcp(info: ConfigMCPV1.Info) {
   }
 }
 
-function providers(info?: Readonly<Record<string, ConfigProviderV1.Info>>) {
+function providers(info?: Readonly<Record<string, ConfigProviderV1.Info | null>>) {
   if (!info) return undefined
-  return Object.fromEntries(Object.entries(info).map(([name, provider]) => [name, migrateProvider(provider)]))
+  return Object.fromEntries(
+    Object.entries(info)
+      .filter((entry): entry is [string, ConfigProviderV1.Info] => entry[1] !== null)
+      .map(([name, provider]) => [name, migrateProvider(provider)]),
+  )
 }
 
 function migrateProvider(info: ConfigProviderV1.Info) {

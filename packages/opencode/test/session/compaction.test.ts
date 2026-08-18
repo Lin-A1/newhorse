@@ -519,12 +519,27 @@ describe("session.compaction.isOverflow", () => {
   )
 
   it.live(
-    "returns false when model context limit is 0",
+    "treats an undeclared context limit as a large default so compaction still triggers from usage",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        // Custom/relay models without a declared limit get context: 0. Auto
+        // compaction must not silently disable itself: observed usage above the
+        // assumed default window (200k context, minus output headroom) triggers.
+        const model = createModel({ context: 0, output: 32_000 })
+        const tokens = { input: 200_000, output: 10_000, reasoning: 0, cache: { read: 50_000, write: 0 } }
+        expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
+      }),
+    ),
+  )
+
+  it.live(
+    "stays below the overflow threshold for undeclared context when usage is modest",
     provideTmpdirInstance(() =>
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 0, output: 32_000 })
-        const tokens = { input: 100_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
+        const tokens = { input: 50_000, output: 5_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
       }),
     ),

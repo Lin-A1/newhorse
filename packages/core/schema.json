@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "8352f8c7-1527-44ea-acb8-0939cebe77ff",
+  "id": "cdc3d3f6-096d-49d9-9cb2-269e58ebc772",
   "prevIds": [
-    "b0d94feb-dc4d-4346-988b-e235039e645b"
+    "8352f8c7-1527-44ea-acb8-0939cebe77ff"
   ],
   "ddl": [
     {
@@ -68,6 +68,10 @@
     },
     {
       "name": "permission",
+      "entityType": "tables"
+    },
+    {
+      "name": "presence_segment",
       "entityType": "tables"
     },
     {
@@ -1357,6 +1361,46 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "permission"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "day",
+      "entityType": "columns",
+      "table": "presence_segment"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "app",
+      "entityType": "columns",
+      "table": "presence_segment"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "start",
+      "entityType": "columns",
+      "table": "presence_segment"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "end",
+      "entityType": "columns",
+      "table": "presence_segment"
     },
     {
       "type": "text",

@@ -32,6 +32,7 @@ export const Status = Schema.Literals(["proposed", "active", "paused", "rejected
 export const Info = Schema.Struct({
   id: Schema.String,
   workspaceID: Schema.optional(Schema.String),
+  directory: Schema.optional(Schema.String),
   profileID: Schema.optional(Schema.String),
   scope: Scope,
   kind: Kind,
@@ -271,6 +272,7 @@ const layer = Layer.effect(
     const decode = (row: typeof MemoryTable.$inferSelect): Info => ({
       id: row.id,
       workspaceID: row.workspace_id ?? undefined,
+      directory: row.directory ?? undefined,
       profileID: row.profile_id ?? undefined,
       scope: row.scope,
       kind: row.kind,

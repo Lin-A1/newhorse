@@ -16,6 +16,13 @@ function required<T>(response: ClientResponse<T>, message: string) {
   throw new Error(message, { cause: response.error })
 }
 
+type ServerSDK = ReturnType<ReturnType<typeof useServerSDK>>
+type ScopedSource = {
+  key: string
+  routing: { workspace?: string; session?: string; directory?: string }
+  client: ReturnType<ServerSDK["createClient"]>
+}
+
 export function useMemoryCenterState(sessionID?: string) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
@@ -25,7 +32,7 @@ export function useMemoryCenterState(sessionID?: string) {
     const value = id()
     return value ? serverSync().session.get(value) : undefined
   })
-  const source = createMemo(() => {
+  const source = createMemo((): ScopedSource | undefined => {
     const sessionID = id()
     const current = session()
     if (sessionID && !current) return
@@ -100,10 +107,9 @@ export function useMemoryCenterState(sessionID?: string) {
     await actions.refetch()
   }
 
-  const current = (item?: MemoryInfo) => {
+  const current = () => {
     const value = activeSource()
     if (!value || !sameSource(source(), value)) throw new Error("Session scope is not ready")
-    if (item && !state.items.some((current) => current.id === item.id)) throw new Error("Memory record is stale")
     return value
   }
 
@@ -125,11 +131,46 @@ export function useMemoryCenterState(sessionID?: string) {
 
   const replace = (scoped: NonNullable<ReturnType<typeof source>>, item: MemoryInfo) => {
     if (!sameSource(source(), scoped) || !sameSource(activeSource(), scoped)) return
+    if (!state.items.some((current) => current.id === item.id)) return
     if (item.status === "rejected" || item.status === "deleted") {
       setState("items", (items) => items.filter((current) => current.id !== item.id))
       return
     }
     setState("items", (current) => current.id === item.id, reconcile(item))
+  }
+
+  // Route a mutation to the workspace that owns a record. The Memory Center
+  // "all" view lists rows from every workspace, but the backend scopes
+  // mutations to the request's routed workspace — so records that are not part
+  // of the currently loaded page get their own client pointing at their
+  // workspaceID (or, for legacy directory-scoped rows, their directory).
+  // Records from the current page reuse the active client so the "current"
+  // view stays in sync after an edit.
+  const clientFor = (item: MemoryInfo) => {
+    const base = current()
+    if (!state.items.some((current) => current.id === item.id)) {
+      if (item.workspaceID) {
+        return {
+          key: `item:${item.workspaceID}`,
+          routing: { workspace: item.workspaceID },
+          client: serverSDK().createClient({
+            experimental_workspaceID: item.workspaceID,
+            throwOnError: true,
+          }),
+        }
+      }
+      if (item.directory) {
+        return {
+          key: `item:dir:${item.directory}`,
+          routing: { directory: item.directory },
+          client: serverSDK().createClient({
+            directory: item.directory,
+            throwOnError: true,
+          }),
+        }
+      }
+    }
+    return base
   }
 
   return {
@@ -157,7 +198,7 @@ export function useMemoryCenterState(sessionID?: string) {
       }
     },
     decide(item: MemoryInfo, decision: "accept" | "reject") {
-      const scoped = current(item)
+      const scoped = clientFor(item)
       return mutate(item.id, async () => {
         const value = required(
           await scoped.client.memory.decide({
@@ -173,7 +214,7 @@ export function useMemoryCenterState(sessionID?: string) {
       })
     },
     update(item: MemoryInfo, input: { content: string; kind: MemoryKind; expiresAt?: number | null }) {
-      const scoped = current(item)
+      const scoped = clientFor(item)
       return mutate(item.id, async () => {
         const value = required(
           await scoped.client.memory.update({
@@ -192,7 +233,7 @@ export function useMemoryCenterState(sessionID?: string) {
       })
     },
     pause(item: MemoryInfo, paused: boolean) {
-      const scoped = current(item)
+      const scoped = clientFor(item)
       return mutate(item.id, async () => {
         const value = required(
           await scoped.client.memory.pause({
@@ -208,7 +249,7 @@ export function useMemoryCenterState(sessionID?: string) {
       })
     },
     remove(item: MemoryInfo) {
-      const scoped = current(item)
+      const scoped = clientFor(item)
       return mutate(item.id, async () => {
         const removed = required(
           await scoped.client.memory.remove({
@@ -225,10 +266,32 @@ export function useMemoryCenterState(sessionID?: string) {
         return true
       })
     },
-    clear(target: "workspace" | "relationship" | "user_global") {
-      const scoped = current()
+    clear(target: "workspace" | "relationship" | "user_global", workspaceID?: string, directory?: string) {
+      const base = current()
+      const scoped = workspaceID
+        ? {
+            key: `clear:${workspaceID}`,
+            routing: { workspace: workspaceID },
+            client: serverSDK().createClient({
+              experimental_workspaceID: workspaceID,
+              throwOnError: true,
+            }),
+          }
+        : directory
+          ? {
+              key: `clear:dir:${directory}`,
+              routing: { directory },
+              client: serverSDK().createClient({
+                directory,
+                throwOnError: true,
+              }),
+            }
+          : base
       return mutate(`clear:${target}`, async () => {
-        const result = required(await scoped.client.memory.clear({ ...scoped.routing, target }), "Memory clear failed")
+        const result = required(
+          await scoped.client.memory.clear({ ...scoped.routing, target }),
+          "Memory clear failed",
+        )
         await reload(scoped)
         return result
       })
@@ -241,7 +304,7 @@ export function useMemoryCenterState(sessionID?: string) {
       )
     },
     async history(item: MemoryInfo) {
-      const scoped = current(item)
+      const scoped = clientFor(item)
       return required(
         await scoped.client.memory.history({ ...scoped.routing, memoryID: item.id }),
         "Memory history failed",

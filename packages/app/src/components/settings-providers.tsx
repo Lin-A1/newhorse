@@ -132,13 +132,13 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
     return true
   }
 
-  const disableProvider = async (providerID: string, name: string) => {
+  const removeProvider = async (providerID: string, name: string) => {
     const before = serverSync().data.config.disabled_providers ?? []
-    const next = before.includes(providerID) ? before : [...before, providerID]
+    const next = before.filter((id) => id !== providerID)
     serverSync().set("config", "disabled_providers", next)
 
     await serverSync()
-      .updateConfig({ disabled_providers: next })
+      .updateConfig({ provider: { [providerID]: null }, disabled_providers: next })
       .then(() => {
         showToast({
           variant: "success",
@@ -159,7 +159,7 @@ const SettingsProvidersContent: Component<{ onBack?: () => void }> = (props) => 
       await serverSDK()
         .client.auth.remove({ providerID })
         .catch(() => undefined)
-      await disableProvider(providerID, name)
+      await removeProvider(providerID, name)
       return
     }
     await serverSDK()

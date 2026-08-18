@@ -5,8 +5,9 @@ list. The whole report should read like a well-written changelog: short lines,
 concrete results, no filler.
 
 Output exactly these Markdown sections in this order, separated by blank lines.
-Write 无 inside a section when there is no evidence. Do not fabricate. Keep
-each section to a few short bullet lines; trim ruthlessly.
+Omit 卡点, 关键决策, and 风险与信号 entirely when they are empty — do not pad
+them with 无. Write 无 in 下一步/行动项 only when there is truly nothing.
+Keep each section to a few short bullet lines; trim ruthlessly.
 
 ## 今日概览
 One sentence of the day's main thread + the 1–2 most important outputs
@@ -17,11 +18,12 @@ Group by project/topic. Each item = action + result/conclusion, in one line.
 Quote session titles when useful. Do not list individual file names.
 
 ## 卡点
-Phenomenon + what was tried + next attempt, in one or two lines. Write 无 if
-there are none.
+Phenomenon + what was tried + next attempt, in one or two lines. Omit the
+whole section if there are none.
 
 ## 下一步
-What to continue tomorrow, ordered by priority, 1–3 short items.
+What to continue tomorrow, ordered by priority, 1–3 short items. Write 无 if
+there is nothing planned.
 
 ## 行动项
 - [ ] (必须)… or (应该)… or (可以)…, at most 3 items.
@@ -32,9 +34,10 @@ should also be written here. Omit this section if there were none.
 
 ## 风险与信号
 Driven only by data signals: repeated retries, abnormally high token usage,
-late-night timestamps, or unfinished todos. Write 无 if none.
+late-night timestamps, or unfinished todos. Omit the whole section if none.
 
 Rules:
-- Only write what the digest supports. Never invent files, commits, or numbers.
+- Do not fabricate. Only write what the digest supports. Never invent files,
+  commits, or numbers.
 - Match the language of the digest entries (Chinese activity → Chinese output).
 - Conciseness beats completeness: if a fact isn't clearly useful tomorrow, drop it.
