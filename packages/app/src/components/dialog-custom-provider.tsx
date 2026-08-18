@@ -294,20 +294,20 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
   }
 
   return (
-    <div class="flex flex-col gap-6 px-2.5 pb-3 overflow-y-auto max-h-[60vh]">
-      <div class="px-2.5 flex gap-4 items-center">
+    <div class="flex max-h-[72vh] flex-col gap-5 overflow-y-auto px-2.5 pb-3">
+      <div class="flex items-center gap-3 px-2.5">
         <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
         <div class="text-16-medium text-text-strong">{language.t("provider.custom.title")}</div>
       </div>
 
-      <form onSubmit={save} class="px-2.5 pb-6 flex flex-col gap-6">
+      <form onSubmit={save} class="flex flex-col gap-4 px-2.5 pb-6">
         <p class="text-14-regular text-text-base">
           {language.t("provider.custom.description.prefix")}
           {language.t("provider.custom.description.link")}
           {language.t("provider.custom.description.suffix")}
         </p>
 
-        <div class="flex flex-col gap-4">
+        <section class="grid grid-cols-1 gap-4 rounded-lg border border-border-base bg-surface-base p-4 sm:grid-cols-2">
           <TextField
             autofocus={props.autofocus ?? true}
             label={language.t("provider.custom.field.providerID.label")}
@@ -326,14 +326,17 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
             validationState={form.err.name ? "invalid" : undefined}
             error={form.err.name}
           />
-          <Select
-            placeholder={language.t("provider.custom.field.api.label")}
-            options={(["openai-completions", "openai-responses", "anthropic-messages"] as const)}
-            current={form.api}
-            label={(value) => language.t(`provider.custom.field.api.option.${value}`)}
-            onSelect={(value) => value && setApi(value)}
-            triggerProps={{ "aria-label": language.t("provider.custom.field.api.label") }}
-          />
+          <div class="flex min-w-0 flex-col gap-1.5">
+            <span class="text-12-medium text-text-weak">{language.t("provider.custom.field.api.label")}</span>
+            <Select
+              placeholder={language.t("provider.custom.field.api.label")}
+              options={(["openai-completions", "openai-responses", "anthropic-messages"] as const)}
+              current={form.api}
+              label={(value) => language.t(`provider.custom.field.api.option.${value}`)}
+              onSelect={(value) => value && setApi(value)}
+              triggerProps={{ "aria-label": language.t("provider.custom.field.api.label") }}
+            />
+          </div>
           <TextField
             label={language.t("provider.custom.field.baseURL.label")}
             placeholder={language.t("provider.custom.field.baseURL.placeholder")}
@@ -349,9 +352,9 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
             value={form.apiKey}
             onChange={(v) => setField("apiKey", v)}
           />
-        </div>
+        </section>
 
-        <div class="flex flex-col gap-3">
+        <section class="flex flex-col gap-3 rounded-lg border border-border-base bg-surface-base p-4">
           <div class="flex items-center justify-between gap-2">
             <label class="text-12-medium text-text-weak">{language.t("provider.custom.models.label")}</label>
             <Show when={PROTOCOL_FETCH_MODELS[form.api]}>
@@ -373,7 +376,7 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
           </div>
           <For each={form.models}>
             {(m, i) => (
-              <div class="flex gap-2 items-start" data-row={m.row}>
+              <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-start gap-2" data-row={m.row}>
                 <div class="flex-1">
                   <TextField
                     label={language.t("provider.custom.models.id.label")}
@@ -413,13 +416,13 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
           <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addModel} class="self-start">
             {language.t("provider.custom.models.add")}
           </Button>
-        </div>
+        </section>
 
-        <div class="flex flex-col gap-3">
+        <section class="flex flex-col gap-3 rounded-lg border border-border-base bg-surface-base p-4">
           <label class="text-12-medium text-text-weak">{language.t("provider.custom.headers.label")}</label>
           <For each={form.headers}>
             {(h, i) => (
-              <div class="flex gap-2 items-start" data-row={h.row}>
+              <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-start gap-2" data-row={h.row}>
                 <div class="flex-1">
                   <TextField
                     label={language.t("provider.custom.headers.key.label")}
@@ -459,10 +462,10 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
           <Button type="button" size="small" variant="ghost" icon="plus-small" onClick={addHeader} class="self-start">
             {language.t("provider.custom.headers.add")}
           </Button>
-        </div>
+        </section>
 
         <Button
-          class="w-auto self-start"
+          class="sticky bottom-0 w-auto self-end shadow-sm"
           type="submit"
           size="large"
           variant="primary"

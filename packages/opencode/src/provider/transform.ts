@@ -399,7 +399,15 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
     },
   }
 
-  for (const msg of unique([...system, ...middle, ...final])) {
+  // Anthropic-style providers allow at most four explicit cache breakpoints.
+  // Keep stable system markers and the final two history markers first; only
+  // spend remaining capacity on the middle-history marker. The previous code
+  // could emit five (2 system + middle + 2 final), which providers may reject
+  // or silently ignore and which materially reduces the cache-hit rate.
+  const middleBudget = Math.max(0, 4 - system.length - final.length)
+  const markers = unique([...system, ...middle.slice(0, middleBudget), ...final]).slice(0, 4)
+
+  for (const msg of markers) {
     const useMessageLevelOptions =
       model.providerID === "anthropic" ||
       model.providerID.includes("bedrock") ||

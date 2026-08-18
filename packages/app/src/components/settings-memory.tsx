@@ -248,9 +248,9 @@ export function SettingsMemory(props: { sessionID?: string }) {
         </div>
       </div>
 
-      <div class="flex items-center gap-3 max-w-[720px]">
+      <div class="flex max-w-[720px] flex-col gap-3 sm:flex-row sm:items-center">
         <div
-          class="flex flex-1 items-center rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-0.5"
+          class="flex min-w-[260px] flex-1 items-center rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-0.5"
           role="radiogroup"
           aria-label={language.t("settings.memory.title")}
         >
@@ -287,7 +287,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
             onChange={setSearch}
             placeholder={language.t("settings.memory.search.placeholder")}
             aria-label={language.t("settings.memory.search.placeholder")}
-            class="w-56 shrink-0"
+            class="w-full shrink-0 sm:w-56"
           />
         </Show>
       </div>
@@ -316,7 +316,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
                   const isOpen = () => !collapsed()[groupKey]
                   return (
                     <section
-                      class="flex flex-col gap-3 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
+                      class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
                       data-memory-group={group.workspaceID ?? group.directory ?? "global"}
                     >
                       <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
@@ -396,7 +396,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
                     const isOpen = () => !collapsed()[group.key]
                     return (
                       <section
-                        class="flex flex-col gap-3 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
+                        class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
                         data-memory-group={group.key}
                       >
                         <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
@@ -519,7 +519,7 @@ function MemoryCard(props: {
 
   return (
     <article
-      class="flex flex-col gap-3 rounded-[10px] border border-v2-border-border-muted bg-v2-background-bg-base p-4 transition-colors hover:border-v2-border-border-active"
+      class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-base p-4 transition-colors hover:border-v2-border-border-active hover:bg-v2-background-bg-layer-01"
       data-memory-id={item().id}
     >
       <div class="flex flex-wrap items-center justify-between gap-2">

@@ -3348,6 +3348,30 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     })
   })
 
+  test("anthropic never emits more than four explicit cache breakpoints", () => {
+    const model = createModel({
+      providerID: "anthropic",
+      api: {
+        id: "claude-sonnet-4",
+        url: "https://api.anthropic.com",
+        npm: "@ai-sdk/anthropic",
+      },
+    })
+    const msgs = [
+      { role: "system", content: "stable system" },
+      { role: "system", content: "stable instructions" },
+      { role: "system", content: "dynamic context" },
+      ...Array.from({ length: 48 }, (_, index) => ({
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `message ${index}`,
+      })),
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+    const marked = result.filter((message) => message.providerOptions?.anthropic?.cacheControl)
+    expect(marked).toHaveLength(4)
+  })
+
   test("does not add explicit breakpoints when Anthropic automatic caching is enabled", () => {
     const model = createModel({
       providerID: "anthropic",
