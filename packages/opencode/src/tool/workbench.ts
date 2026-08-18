@@ -40,7 +40,11 @@ export const WorkbenchTool = Tool.define<typeof Parameters, Metadata, Workbench.
           const instance = yield* InstanceState.context
 
           if (params.action === "list") {
-            const items = yield* workbench.list({ directory: instance.directory })
+            // Cross-directory: work sessions list their own workspace's todos,
+            // but the Companion (newhorse) session lives in the personal
+            // workspace and must still see todos created in any project
+            // workspace — so list always queries across directories.
+            const items = yield* workbench.listOpen(50)
             return { title: `${items.length} todos`, metadata: { count: items.length }, output: render(items) }
           }
 
@@ -60,11 +64,22 @@ export const WorkbenchTool = Tool.define<typeof Parameters, Metadata, Workbench.
             }
           }
 
-          if (params.action === "update") {
-            if (!params.id) return yield* Effect.fail(new Error("update requires id"))
+          if (params.action === "update" || params.action === "remove") {
+            if (!params.id) return yield* Effect.fail(new Error(`${params.action} requires id`))
+            // Todos are cross-directory (Companion lists them across all
+            // workspaces), so resolve the owning directory by id before the
+            // scoped update/remove call.
+            const all = yield* workbench.listOpen(200)
+            const target = all.find((item) => item.id === params.id)
+            if (!target) return yield* Effect.fail(new Error(`Todo not found: ${params.id}`))
+            if (params.action === "remove") {
+              const removed = yield* workbench.remove({ id: params.id, directory: target.directory })
+              if (!removed) return yield* Effect.fail(new Error(`Todo not found: ${params.id}`))
+              return { title: "Todo removed", metadata: {}, output: "Todo removed." }
+            }
             const updated = yield* workbench.update({
               id: params.id,
-              directory: instance.directory,
+              directory: target.directory,
               content: params.content,
               status: params.status,
               priority: params.priority,
@@ -72,13 +87,6 @@ export const WorkbenchTool = Tool.define<typeof Parameters, Metadata, Workbench.
             })
             if (!updated) return yield* Effect.fail(new Error(`Todo not found: ${params.id}`))
             return { title: "Todo updated", metadata: {}, output: render([updated]) }
-          }
-
-          if (params.action === "remove") {
-            if (!params.id) return yield* Effect.fail(new Error("remove requires id"))
-            const removed = yield* workbench.remove({ id: params.id, directory: instance.directory })
-            if (!removed) return yield* Effect.fail(new Error(`Todo not found: ${params.id}`))
-            return { title: "Todo removed", metadata: {}, output: "Todo removed." }
           }
 
           return yield* Effect.fail(new Error(`Unknown action: ${params.action}`))
