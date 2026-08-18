@@ -28,10 +28,24 @@ import {
 // `/v1` suffix (many providers host the OpenAI surface under /v1), and finally
 // strips an `/anthropic` compat sub-path for Anthropic-style endpoints that
 // still expose /v1/models. Mirrors the approach cc-switch uses.
-async function fetchModelsFromProvider(baseURL: string, apiKey: string): Promise<{ id: string }[]> {
+async function fetchModelsFromProvider(
+  baseURL: string,
+  apiKey: string,
+  customHeaders: Array<{ key: string; value: string }> = [],
+): Promise<{ id: string }[]> {
   const normalized = baseURL.trim().replace(/\/+$/, "")
   if (!normalized) throw new Error("no base url")
-  const candidates = [normalized, `${normalized}/v1`, normalized.replace(/\/anthropic$/, ""), normalized.replace(/\/anthropic$/, "/v1")]
+  const candidates = [
+    normalized.endsWith("/v1") ? normalized : `${normalized}/v1`,
+    normalized,
+    normalized.replace(/\/anthropic$/, "/v1"),
+    normalized.replace(/\/anthropic$/, ""),
+  ]
+  const headers = Object.fromEntries(
+    customHeaders
+      .map((item) => [item.key.trim(), item.value.trim()] as const)
+      .filter(([key, value]) => key.length > 0 && value.length > 0),
+  )
   let lastError: unknown
   for (const candidate of [...new Set(candidates)]) {
     const url = `${candidate}/models`
@@ -39,6 +53,7 @@ async function fetchModelsFromProvider(baseURL: string, apiKey: string): Promise
       const res = await fetch(url, {
         headers: {
           accept: "application/json",
+          ...headers,
           ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
         },
         signal: AbortSignal.timeout(10_000),
@@ -48,8 +63,14 @@ async function fetchModelsFromProvider(baseURL: string, apiKey: string): Promise
         lastError = new Error(`http:${res.status}`)
         continue
       }
-      const data = (await res.json()) as { data?: { id: string }[] }
-      const models = (data.data ?? []).filter((m) => typeof m.id === "string" && m.id.length > 0)
+      const data = (await res.json()) as
+        | { data?: Array<{ id?: string } | string>; models?: Array<{ id?: string } | string> }
+        | Array<{ id?: string } | string>
+      const items = Array.isArray(data) ? data : data.data ?? data.models ?? []
+      const models = items
+        .map((item) => (typeof item === "string" ? item : item.id))
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+        .map((id) => ({ id }))
       if (models.length > 0) return models
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("auth:")) throw error
@@ -189,7 +210,11 @@ export function CustomProviderForm(props: { autofocus?: boolean } = {}) {
     }
     setFetchingModels(true)
     try {
-      const models = await fetchModelsFromProvider(base, key)
+      const models = await fetchModelsFromProvider(
+        base,
+        key,
+        form.headers.map((item) => ({ key: item.key, value: item.value })),
+      )
       if (models.length === 0) {
         showToast({ title: language.t("provider.custom.models.fetch.none") })
         return

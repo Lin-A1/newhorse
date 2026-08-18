@@ -43,6 +43,22 @@ function mergeConfig(target: Info, source: Info): Info {
   return mergeDeep(target, source) as Info
 }
 
+// Provider model maps are replacement semantics, not ordinary deep-merge
+// semantics. A custom-provider editor sends the complete current model map;
+// retaining keys that disappeared from the form makes deleted models reappear
+// after the config reload.
+function mergeConfigReplacingProviderModels(target: Info, source: Info): Info {
+  const merged = mergeConfig(target, source)
+  if (!source.provider || !merged.provider) return merged
+  for (const [providerID, patch] of Object.entries(source.provider)) {
+    if (!patch || !("models" in patch)) continue
+    const current = merged.provider[providerID]
+    if (!current) continue
+    merged.provider[providerID] = { ...current, models: patch.models }
+  }
+  return merged
+}
+
 function mergeConfigConcatArrays(target: Info, source: Info): Info {
   const merged = mergeConfig(target, source)
   if (target.instructions && source.instructions) {
@@ -154,6 +170,17 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
         insertSpaces: true,
         tabSize: 2,
       },
+    })
+    return applyEdits(input, edits)
+  }
+
+  // jsonc-parser's recursive patching also behaves like a deep merge. Model
+  // maps are edited as a complete snapshot by the custom-provider form, so
+  // replace that object in one edit instead of leaving removed model keys in
+  // the JSONC document.
+  if (path.at(-1) === "models") {
+    const edits = modify(input, path, patch, {
+      formattingOptions: { insertSpaces: true, tabSize: 2 },
     })
     return applyEdits(input, edits)
   }
@@ -673,7 +700,7 @@ const layer = Layer.effect(
       const file = path.join(dir, "config.json")
       const existing = yield* loadFile(file)
       yield* fs
-        .writeFileString(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
+        .writeFileString(file, JSON.stringify(mergeConfigReplacingProviderModels(writable(existing), writable(config)), null, 2))
         .pipe(Effect.orDie)
     })
 
@@ -690,7 +717,7 @@ const layer = Layer.effect(
       let changed: boolean
       if (!file.endsWith(".jsonc")) {
         const existing = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(before, file), file)
-        const merged = mergeDeep(writable(existing), patch)
+        const merged = mergeConfigReplacingProviderModels(writable(existing), patch)
         const serialized = JSON.stringify(merged, null, 2)
         changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
