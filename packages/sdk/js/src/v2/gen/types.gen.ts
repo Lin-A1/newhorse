@@ -11902,6 +11902,38 @@ export type PresenceUpdateResponses = {
   200: unknown
 }
 
+export type PresenceTimelineData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/presence/timeline"
+}
+
+export type PresenceTimelineErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type PresenceTimelineError = PresenceTimelineErrors[keyof PresenceTimelineErrors]
+
+export type PresenceTimelineResponses = {
+  /**
+   * Today's focus-app timeline
+   */
+  200: {
+    segments: Array<{
+      app: string
+      start: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      end?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+    live: boolean
+  }
+}
+
+export type PresenceTimelineResponse = PresenceTimelineResponses[keyof PresenceTimelineResponses]
+
 export type SessionListData = {
   body?: never
   path?: never

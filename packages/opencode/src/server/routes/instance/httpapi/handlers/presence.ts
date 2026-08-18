@@ -16,5 +16,6 @@ export const presenceHandlers = HttpApiBuilder.group(InstanceHttpApi, "presence"
         }),
       )
       .handle("update", (ctx) => presence.update(ctx.payload))
+      .handle("timeline", () => presence.timeline())
   }),
 )

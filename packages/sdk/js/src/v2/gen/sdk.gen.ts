@@ -180,6 +180,8 @@ import type {
   PolicyAuditListResponses,
   PresenceCurrentErrors,
   PresenceCurrentResponses,
+  PresenceTimelineErrors,
+  PresenceTimelineResponses,
   PresenceUpdateErrors,
   PresenceUpdateResponses,
   ProjectCommands,
@@ -4904,6 +4906,18 @@ export class Presence extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Get today's focus-app timeline
+   *
+   * Today's OS foreground-app segments (Gantt rows) reported by the desktop host.
+   */
+  public timeline<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<PresenceTimelineResponses, PresenceTimelineErrors, ThrowOnError>({
+      url: "/presence/timeline",
+      ...options,
     })
   }
 }

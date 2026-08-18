@@ -28,6 +28,7 @@ export const dict = {
 
   "workbench.presence.meeting": "In a meeting",
   "workbench.presence.title": "Presence",
+  "workbench.presence.gantt": "Today's focus timeline",
   "workbench.remove": "Remove todo",
   "workbench.sourceNewhorse": "newhorse",
   "workbench.title": "Workbench",

@@ -191,4 +191,23 @@ describe("markdown stream", () => {
       complete: true,
     })
   })
+
+  test("parses non-live (complete) mermaid fenced blocks as code blocks", () => {
+    const text = "Intro\n\n```mermaid\ngraph LR\n  A --> B\n```\n\nOutro"
+    const blocks = stream(text, false)
+    const mermaid = blocks.find((block) => block.mode === "code" && block.language === "mermaid")
+    expect(mermaid).toEqual({
+      raw: "```mermaid\ngraph LR\n  A --> B\n```",
+      src: "graph LR\n  A --> B",
+      mode: "code",
+      language: "mermaid",
+      complete: true,
+    })
+  })
+
+  test("non-live plain text stays a single full block", () => {
+    expect(stream("just some text", false)).toEqual([
+      { raw: "just some text", src: "just some text", mode: "full" },
+    ])
+  })
 })

@@ -311,19 +311,52 @@ export function SettingsMemory(props: { sessionID?: string }) {
               }
             >
               <For each={aggregate()}>
-                {(group) => (
-                  <section class="flex flex-col gap-3" data-memory-group={group.workspaceID ?? group.directory ?? "global"}>
-                    <h3 class="text-[13px] font-medium text-v2-text-text-muted">
-                      {group.scope === "user_global"
-                        ? language.t("settings.memory.all.global")
-                        : (group.workspaceID ?? group.directory ?? language.t("settings.memory.all.workspace"))}
-                      <span class="ml-2 text-[11px] text-v2-text-text-weaker">
-                        {group.items.length} {language.t("settings.memory.all.count")}
-                      </span>
-                    </h3>
-                    <For each={group.items}>{(item) => <MemoryCard item={item} />}</For>
-                  </section>
-                )}
+                {(group, gi) => {
+                  const groupKey = group.scope === "user_global" ? `all-global` : `all-${group.workspaceID ?? group.directory ?? gi()}`
+                  const isOpen = () => !collapsed()[groupKey]
+                  return (
+                    <section
+                      class="flex flex-col gap-3 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
+                      data-memory-group={group.workspaceID ?? group.directory ?? "global"}
+                    >
+                      <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
+                        <button
+                          type="button"
+                          class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
+                          aria-expanded={isOpen()}
+                          aria-label={language.t("settings.memory.group.toggle")}
+                          onClick={() => toggleGroup(groupKey)}
+                        >
+                          <Icon
+                            name={isOpen() ? "chevron-down" : "chevron-right"}
+                            class="size-3.5 shrink-0 text-v2-text-text-faint"
+                          />
+                          <span class="truncate text-[13px] font-medium text-v2-text-text-base">
+                            {group.scope === "user_global"
+                              ? language.t("settings.memory.all.global")
+                              : (group.workspaceID ?? group.directory ?? language.t("settings.memory.all.workspace"))}
+                          </span>
+                          <span class="ml-1 shrink-0 text-[11px] text-v2-text-text-weaker">
+                            {group.items.length} {language.t("settings.memory.all.count")}
+                          </span>
+                        </button>
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          class="shrink-0"
+                          onClick={() => confirmClear(group.scope === "user_global" ? "user_global" : "workspace")}
+                        >
+                          {language.t("settings.memory.clear.short")}
+                        </Button>
+                      </div>
+                      <Show when={isOpen()}>
+                        <div class="flex flex-col gap-3">
+                          <For each={group.items}>{(item) => <MemoryCard item={item} />}</For>
+                        </div>
+                      </Show>
+                    </section>
+                  )
+                }}
               </For>
             </Show>
           </Show>

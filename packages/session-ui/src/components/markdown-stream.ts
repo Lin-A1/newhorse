@@ -50,6 +50,25 @@ function heal(text: string) {
 }
 
 export function stream(text: string, live: boolean): Block[] {
+  // Parse non-live (already complete) text the same way as live text so code
+  // blocks — including ```mermaid — are emitted as mode:"code" blocks and get
+  // rendered (mermaid SVG, syntax highlight). Previously a complete message
+  // collapsed to a single mode:"full" block, so fenced mermaid never rendered
+  // in replayed history.
+  if (!live && !refs(text)) {
+    const tokens = marked.lexer(text)
+    const result: Block[] = []
+    for (const token of tokens) {
+      if (token.type === "space") continue
+      if (token.type === "code") {
+        const code = token as Tokens.Code
+        result.push({ raw: token.raw, src: code.text, mode: "code", language: language(code.lang), complete: true })
+        continue
+      }
+      result.push({ raw: token.raw, src: token.raw, mode: "full" })
+    }
+    return result.length > 0 ? result : [{ raw: text, src: text, mode: "full" }]
+  }
   if (!live) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
   if (refs(text)) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
   const tokens = marked.lexer(text)

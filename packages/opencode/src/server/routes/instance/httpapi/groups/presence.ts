@@ -14,6 +14,15 @@ export const PresenceApi = HttpApi.make("presence").add(
       HttpApiEndpoint.get("current", root, {
         success: described(Presence.Info, "Current bounded presence"),
       }).annotateMerge(OpenApi.annotations({ identifier: "presence.current", summary: "Get current presence" })),
+      HttpApiEndpoint.get("timeline", `${root}/timeline`, {
+        success: described(Presence.Timeline, "Today's focus-app timeline"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "presence.timeline",
+          summary: "Get today's focus-app timeline",
+          description: "Today's OS foreground-app segments (Gantt rows) reported by the desktop host.",
+        }),
+      ),
     )
     .add(
       HttpApiEndpoint.post(

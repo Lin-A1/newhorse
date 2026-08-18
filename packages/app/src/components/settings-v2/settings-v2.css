@@ -761,6 +761,11 @@ body[data-platform="desktop"] .settings-v2-dialog
   color: var(--v2-state-fg-danger);
 }
 
+[data-slot="settings-v2-row-control"] > .settings-v2-lan-urls {
+  width: 100%;
+  min-width: 0;
+}
+
 .settings-v2-lan-urls {
   display: flex;
   flex-direction: column;
@@ -773,17 +778,25 @@ body[data-platform="desktop"] .settings-v2-dialog
 .settings-v2-lan-urls li {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
+  min-width: 0;
 }
 
 .settings-v2-lan-url {
+  flex: 1;
   min-width: 0;
   font-size: 12px;
   font-weight: 440;
   line-height: 1.4;
   color: var(--v2-text-text-base);
   word-break: break-all;
+}
+
+.settings-v2-lan-urls li > [class*="button"],
+.settings-v2-lan-urls li > button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .settings-v2-lan-empty {

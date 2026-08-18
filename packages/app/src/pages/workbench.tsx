@@ -219,6 +219,68 @@ function PresenceStrip() {
   )
 }
 
+// Today's focus-app Gantt: rows per app with segments across the day, built
+// from Presence.timeline (desktop host reports the OS foreground window). Rows
+// render as stacked horizontal bars; the whole strip is capped in height and
+// scrolls when many apps were used.
+function PresenceGantt() {
+  const serverSDK = useServerSDK()
+  const language = useLanguage()
+  const [timeline] = createResource(async () => {
+    const res = await serverSDK().client.presence.timeline().catch(() => undefined)
+    return res?.data
+  })
+
+  const num = (value: number | string | undefined, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback
+  const formatHour = (value: number | string) => {
+    const d = new Date(num(value, Date.now()))
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+  }
+
+  const PALETTE = [
+    "bg-v2-accent-accent/80",
+    "bg-v2-warning-warning/70",
+    "bg-v2-info-info/70",
+    "bg-v2-success-success/70",
+    "bg-v2-danger-danger/60",
+    "bg-v2-accent-accent/40",
+    "bg-v2-warning-warning/40",
+  ]
+
+  return (
+    <Show when={(timeline()?.segments.length ?? 0) > 0}>
+      <div class="mt-3 flex flex-col gap-1.5">
+        <div class="text-[11px] font-medium text-v2-text-text-muted">{language.t("workbench.presence.gantt")}</div>
+        <div class="flex flex-col gap-1 overflow-y-auto no-scrollbar max-h-40 pr-1">
+          <For each={timeline()!.segments}>
+            {(segment, i) => {
+              const start = num(segment.start, Date.now())
+              const end = num(segment.end, Date.now())
+              const dayMs = 24 * 60 * 60 * 1000
+              return (
+                <div class="flex items-center gap-2">
+                  <span class="w-16 shrink-0 truncate text-[10px] text-v2-text-text-faint">{segment.app}</span>
+                  <div class="relative h-3 min-w-0 flex-1 rounded-[3px] bg-v2-background-bg-layer-02">
+                    <div
+                      class={`absolute inset-y-0 left-0 rounded-[3px] ${PALETTE[i() % PALETTE.length]}`}
+                      style={{ width: `${Math.min(100, Math.max(2, ((end - start) / dayMs) * 100))}%` }}
+                    />
+                  </div>
+                  <span class="w-20 shrink-0 text-right text-[10px] text-v2-text-text-faint">
+                    {formatHour(segment.start)}
+                    {segment.end ? `–${formatHour(segment.end)}` : " ·"}
+                  </span>
+                </div>
+              )
+            }}
+          </For>
+        </div>
+      </div>
+    </Show>
+  )
+}
+
 export default function WorkbenchPage() {
   const language = useLanguage()
   const navigate = useNavigate()
@@ -340,6 +402,7 @@ export default function WorkbenchPage() {
               <div class="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
                 <section class="flex min-h-0 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
                   <PresenceStrip />
+                  <PresenceGantt />
                 </section>
                 <section class="flex min-h-0 flex-1 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
                   <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">

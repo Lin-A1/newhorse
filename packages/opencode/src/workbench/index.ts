@@ -1,7 +1,7 @@
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Database } from "@newhorse/core/database/database"
 import { WorkbenchTodoTable } from "@newhorse/core/workbench/sql"
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, or } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Identifier } from "@newhorse/core/id/id"
 import { WorkspaceV2 } from "@newhorse/core/workspace"
@@ -77,6 +77,7 @@ function isValidTransition(from: Todo["status"], to: Todo["status"]): boolean {
 
 export interface Interface {
   readonly list: (input: ListInput) => Effect.Effect<Todo[]>
+  readonly listOpen: (limit: number) => Effect.Effect<Todo[]>
   readonly create: (input: CreateInput) => Effect.Effect<Todo, Error>
   readonly update: (input: UpdateInput) => Effect.Effect<Todo | undefined, Error>
   readonly remove: (input: { id: string; directory: string }) => Effect.Effect<boolean>
@@ -114,6 +115,22 @@ const layer = Layer.effect(
           ),
         )
         .orderBy(desc(WorkbenchTodoTable.time_created))
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map(rowToTodo)
+    })
+
+    // Cross-directory open todos, newest first. Used for Companion prompt
+    // injection so newhorse can see workbench todos created in any project
+    // workspace (the Companion session lives in the personal workspace, so a
+    // directory-scoped query would always miss them).
+    const listOpen = Effect.fn("Workbench.listOpen")(function* (limit: number) {
+      const rows = yield* db
+        .select()
+        .from(WorkbenchTodoTable)
+        .where(or(eq(WorkbenchTodoTable.status, "open"), eq(WorkbenchTodoTable.status, "in_progress")))
+        .orderBy(desc(WorkbenchTodoTable.time_updated))
+        .limit(limit)
         .all()
         .pipe(Effect.orDie)
       return rows.map(rowToTodo)
@@ -193,7 +210,7 @@ const layer = Layer.effect(
       return true
     })
 
-    return Service.of({ list, create, update, remove })
+    return Service.of({ list, listOpen, create, update, remove })
   }),
 )
 

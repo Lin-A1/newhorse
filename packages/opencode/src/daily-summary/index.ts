@@ -228,7 +228,15 @@ const layer = Layer.effect(
     // Overview (LLM): a compact digest of the aggregated activity + external
     // Claude Code / Codex user snippets, distilled into a short Chinese recap.
     // ---------------------------------------------------------------------
-    const fallbackOverview = (digest: string) => `今天在本机 AI 工具中有以下活动：\n${digest}`
+    // Fallback when the LLM path is unavailable (no provider/anchor/instance).
+    // Still structured so the report page renders sections instead of a plain
+    // dump: the digest lines become the 进展 bullets.
+    const fallbackOverview = (digest: string) =>
+      `## 今日概览\n（未生成 — LLM 不可用，展示当日活动记录）\n\n## 进展\n${digest
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => `- ${line}`)
+        .join("\n")}\n\n## 下一步\n无\n\n## 行动项\n- [ ] (应该) 检查 provider 配置后重新生成今日总结\n\n## 风险与信号\nLLM 生成失败（fallback 模式），请检查模型配置。`
 
     const synthesize = Effect.fn("DailySummary.synthesize")(function* (
       digest: string,

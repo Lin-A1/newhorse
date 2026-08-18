@@ -1593,9 +1593,11 @@ const layer = Layer.effect(
                     continuity: continuityContext,
                     crisisRegion: profile.crisisRegion,
                     todos: yield* Effect.gen(function* () {
-                      const list = yield* workbench.list({ directory: session.directory })
+                      // Cross-directory: the Companion session lives in the
+                      // personal workspace, so a directory-scoped query would
+                      // never see todos created in project workspaces.
+                      const list = yield* workbench.listOpen(10)
                       return list
-                        .filter((item) => item.status === "open" || item.status === "in_progress")
                         .sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority))
                         .slice(0, 5)
                         .map((item) => `- [${item.status}] ${item.content}`)

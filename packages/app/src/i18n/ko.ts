@@ -22,6 +22,7 @@ export const dict = {
   "workbench.presence.active": "Active",
   "workbench.presence.idle": "Idle for {{minutes}} min",
   "workbench.presence.title": "Presence",
+  "workbench.presence.gantt": "오늘의 포커스 타임라인",
   "workbench.remove": "Remove todo",
   "workbench.sourceNewhorse": "newhorse",
   "workbench.title": "Workbench",

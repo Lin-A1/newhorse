@@ -27,6 +27,7 @@ export const dict = {
   "workbench.presence.focusing": "正在使用",
   "workbench.presence.idle": "空闲 {{minutes}} 分钟",
   "workbench.presence.title": "感知",
+  "workbench.presence.gantt": "今日感知时间线",
   "workbench.remove": "删除待办",
   "workbench.sourceNewhorse": "newhorse 代建",
   "workbench.title": "工作台",

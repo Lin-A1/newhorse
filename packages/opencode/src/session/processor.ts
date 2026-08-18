@@ -695,6 +695,17 @@ const layer = Layer.effect(
           if (ctx.needsCompaction) return "compact"
           if (ctx.blocked || ctx.assistantMessage.error) return "stop"
 
+          // End-of-turn: refresh the session row's usage-based stats for sync
+          // clients. Every step-finish part is published synchronously through
+          // the event bus, so the projector has already accumulated cost/tokens
+          // into SessionTable by the time we get here; touch() re-reads the row
+          // and publishes session.updated with the fresh values (context panel,
+          // cache-hit rate). Done here — not in the projector — because the
+          // projector runs inside the original event's commit transaction and
+          // publishing a second durable event from there nests a transaction
+          // on the same SQLite connection.
+          yield* session.touch(ctx.sessionID)
+
           // End-of-turn hook: after a terminal assistant message (final finish
           // — not a tool-call round, not a compaction summary), allow plugins
           // to review the output and force a synthetic continuation round
