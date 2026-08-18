@@ -1,4 +1,4 @@
-import { createResource, createSignal, For, Show, onCleanup } from "solid-js"
+import { createResource, createSignal, For, Show, onCleanup, onMount } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
@@ -135,7 +135,7 @@ function PresenceStrip() {
   const serverSDK = useServerSDK()
   const language = useLanguage()
   const platform = usePlatform()
-  const [presence] = createResource(async () => {
+  const [presence, { refetch }] = createResource(async () => {
     // Desktop-first: real idle/lock/focus from the host. Fall back to the
     // server-derived idle (last session activity) on web.
     const desktop = await platform.getPresence?.().catch(() => undefined)
@@ -150,6 +150,11 @@ function PresenceStrip() {
     }
     const res = await serverSDK().client.presence.current().catch(() => undefined)
     return res?.data
+  })
+
+  onMount(() => {
+    const timer = setInterval(() => void Promise.resolve(refetch()), 15_000)
+    onCleanup(() => clearInterval(timer))
   })
 
   const activityLevel = (idleMs: number): 0 | 1 | 2 | 3 => {
@@ -226,9 +231,14 @@ function PresenceStrip() {
 function PresenceGantt() {
   const serverSDK = useServerSDK()
   const language = useLanguage()
-  const [timeline] = createResource(async () => {
+  const [timeline, { refetch }] = createResource(async () => {
     const res = await serverSDK().client.presence.timeline().catch(() => undefined)
     return res?.data
+  })
+
+  onMount(() => {
+    const timer = setInterval(() => void Promise.resolve(refetch()), 15_000)
+    onCleanup(() => clearInterval(timer))
   })
 
   const num = (value: number | string | undefined, fallback: number) =>

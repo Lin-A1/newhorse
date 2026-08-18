@@ -314,25 +314,25 @@ export function registerIpcHandlers(deps: Deps) {
     const probe = await probeForeground()
     // Prefer the OS foreground window over the "newhorse is focused" proxy.
     const focusedApp = probe.focusApp || (win?.isFocused() ? "newhorse" : undefined)
-    // When LAN is enabled the password is durable, so the host can push its
-    // real presence onto the server for other devices to read via the API.
-    const lan = getLanConfig()
-    if (lan.enabled && lan.password) {
-      const url = await deps.getDefaultServerUrl()
-      if (url) {
-        void fetch(`${url}/presence`, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Basic ${lan.token}`,
-          },
-          body: JSON.stringify({
-            locked: probe.locked,
-            focusApp: focusedApp,
-            inMeeting: probe.inMeeting,
-          }),
-        }).catch(() => undefined)
-      }
+    // Push every desktop probe to the local server, even when LAN mode is off.
+    // The sidecar always has credentials (random loopback password when LAN is
+    // disabled); limiting this to durable LAN credentials left the Gantt empty
+    // for normal desktop-only users.
+    const ready = await deps.awaitInitialization().catch(() => undefined)
+    if (ready) {
+      const token = Buffer.from(`${ready.username ?? "opencode"}:${ready.password}`).toString("base64")
+      void fetch(`${ready.url}/presence`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Basic ${token}`,
+        },
+        body: JSON.stringify({
+          locked: probe.locked,
+          focusApp: focusedApp,
+          inMeeting: probe.inMeeting,
+        }),
+      }).catch(() => undefined)
     }
     return {
       idleSeconds: powerMonitor.getSystemIdleTime(),

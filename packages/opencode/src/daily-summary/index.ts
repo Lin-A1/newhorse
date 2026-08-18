@@ -328,7 +328,7 @@ const layer = Layer.effect(
       const anchor = yield* db
         .select({ directory: SessionTable.directory, model: SessionTable.model })
         .from(SessionTable)
-        .where(isNull(SessionTable.time_archived))
+        .where(and(isNull(SessionTable.time_archived), eq(SessionTable.profile_id, "companion")))
         .orderBy(desc(SessionTable.time_updated))
         .limit(1)
         .get()
