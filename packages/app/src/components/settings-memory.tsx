@@ -11,7 +11,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { exportMemory } from "./settings-memory-export"
 import { MemoryHistoryPanel } from "./settings-memory-history"
-import { useMemoryCenterState, type MemoryKind, type MemoryScope, type MemoryStatus } from "./settings-memory-state"
+import { useMemoryCenterState, type MemoryKind, type MemoryScope } from "./settings-memory-state"
 import { useSettings } from "@/context/settings"
 import { useConfirm } from "./confirm-dialog"
 
@@ -29,53 +29,6 @@ export function memoryScopeLabel(
   value: MemoryScope,
 ) {
   return t(`settings.memory.scope.${value}`)
-}
-
-export function memoryStatusLabel(
-  t: (key: string, params?: Record<string, string | number | boolean>) => string,
-  value: MemoryStatus,
-) {
-  return t(`settings.memory.status.${value}`)
-}
-
-export function memoryProvenanceLabel(
-  t: (key: string, params?: Record<string, string | number | boolean>) => string,
-  value: MemoryInfo["provenance"],
-) {
-  return t(`settings.memory.provenance.${value}`)
-}
-
-// Category-toned tag pills: each facet (kind/status/scope/provenance) gets its
-// own weak color so a memory's metadata reads as grouped at a glance.
-function memoryKindTag(memoryKind: MemoryKind): string {
-  switch (memoryKind) {
-    case "relationship":
-    case "summary":
-      return "border-v2-border-border-muted bg-v2-background-bg-layer-03 text-v2-text-text-accent"
-    default:
-      return "border-v2-border-border-muted bg-v2-background-bg-layer-02 text-v2-text-text-muted"
-  }
-}
-
-function memoryStatusTag(status: MemoryStatus): string {
-  switch (status) {
-    case "active":
-      return "border-v2-border-border-muted bg-v2-background-bg-layer-02 text-v2-text-text-accent"
-    case "paused":
-      return "border-v2-border-border-muted bg-v2-background-bg-layer-02 text-v2-text-text-muted"
-    default:
-      return "border-v2-border-border-muted bg-v2-background-bg-layer-01 text-v2-text-text-faint"
-  }
-}
-
-function memoryScopeTag(scope: MemoryScope): string {
-  return scope === "user_global"
-    ? "border-v2-border-border-muted bg-v2-background-bg-layer-02 text-v2-text-text-accent"
-    : "border-v2-border-border-muted bg-v2-background-bg-layer-01 text-v2-text-text-faint"
-}
-
-function memoryProvenanceTag(): string {
-  return "border-v2-border-border-muted bg-transparent text-v2-text-text-weaker"
 }
 
 type Group = {
@@ -100,10 +53,6 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const [view, setView] = createSignal<"current" | "all">("current")
   const [search, setSearch] = createSignal("")
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({})
-  const [kindFilter, setKindFilter] = createSignal<MemoryKind>()
-  const [statusFilter, setStatusFilter] = createSignal<MemoryStatus>()
-  const [scopeFilter, setScopeFilter] = createSignal<MemoryScope>()
-  const [provenanceFilter, setProvenanceFilter] = createSignal<MemoryInfo["provenance"]>()
 
   const [aggregate, { refetch: refetchAggregate }] = createResource(
     () => (view() === "all" ? view() : undefined),
@@ -206,10 +155,6 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const loadHistory = (item: MemoryInfo) => memory.history(item)
 
   const matchesSearch = (item: MemoryInfo) => {
-    if (kindFilter() && item.kind !== kindFilter()) return false
-    if (statusFilter() && item.status !== statusFilter()) return false
-    if (scopeFilter() && item.scope !== scopeFilter()) return false
-    if (provenanceFilter() && item.provenance !== provenanceFilter()) return false
     const query = search().trim().toLowerCase()
     if (!query) return true
     return (
@@ -220,29 +165,8 @@ export function SettingsMemory(props: { sessionID?: string }) {
     )
   }
 
-  const hasActiveFilter = () =>
-    Boolean(kindFilter() || statusFilter() || scopeFilter() || provenanceFilter())
-
-  const clearFilters = () => {
-    setKindFilter(undefined)
-    setStatusFilter(undefined)
-    setScopeFilter(undefined)
-    setProvenanceFilter(undefined)
-  }
-
-  const filters = {
-    kind: kindFilter,
-    setKind: setKindFilter,
-    status: statusFilter,
-    setStatus: setStatusFilter,
-    scope: scopeFilter,
-    setScope: setScopeFilter,
-    provenance: provenanceFilter,
-    setProvenance: setProvenanceFilter,
-  }
-
-  // "all" view: the aggregate is filtered through the same search + facet
-  // filters as the current view. Groups with no matching records are dropped.
+  // "all" view: the aggregate is filtered through the same search as the
+  // current view. Groups with no matching records are dropped.
   const allGroups = createMemo(() => {
     const groups = aggregate()
     if (!groups) return undefined
@@ -251,9 +175,6 @@ export function SettingsMemory(props: { sessionID?: string }) {
       .filter((group) => group.items.length > 0)
   })
 
-  // "current" view: split items by workspace so each workspace has a
-  // collapsible header. Items without a workspaceID fall under the current
-  // workspace group; user_global items are split into a global bucket.
   // "current" view: only the current workspace's own memories, plus the
   // user_global bucket (shown last so it never reads as part of the workspace).
   // Memories from other workspaces are hidden here — use "all" to see them.
@@ -383,11 +304,6 @@ export function SettingsMemory(props: { sessionID?: string }) {
             {language.t("settings.memory.clear.all")}
           </Button>
         </Show>
-        <Show when={hasActiveFilter()}>
-          <Button size="small" variant="ghost" class="shrink-0" onClick={clearFilters}>
-            {language.t("settings.memory.filter.clear")}
-          </Button>
-        </Show>
       </div>
 
       <div class="mt-4 flex flex-col gap-4 max-w-[720px]">
@@ -440,7 +356,11 @@ export function SettingsMemory(props: { sessionID?: string }) {
                             <span class="truncate text-[13px] font-medium text-v2-text-text-base">
                               {group.scope === "user_global"
                                 ? language.t("settings.memory.all.global")
-                                : (group.workspaceID ?? group.directory ?? language.t("settings.memory.all.workspace"))}
+                                : group.workspaceID || group.directory
+                                  ? language.t("settings.memory.group.workspace", {
+                                      id: (group.workspaceID ?? group.directory) ?? "",
+                                    })
+                                  : language.t("settings.memory.all.workspace")}
                             </span>
                             <span class="ml-1 shrink-0 text-[11px] text-v2-text-text-weaker">
                               {group.items.length} {language.t("settings.memory.all.count")}
@@ -463,7 +383,6 @@ export function SettingsMemory(props: { sessionID?: string }) {
                                   item={item}
                                   language={language}
                                   memory={memory}
-                                  filters={filters}
                                   editing={editing}
                                   setEditing={setEditing}
                                   content={content}
@@ -567,7 +486,6 @@ export function SettingsMemory(props: { sessionID?: string }) {
                                   item={item}
                                   language={language}
                                   memory={memory}
-                                  filters={filters}
                                   editing={editing}
                                   setEditing={setEditing}
                                   content={content}
@@ -627,16 +545,6 @@ function MemoryCard(props: {
   item: MemoryInfo
   language?: ReturnType<typeof useLanguage>
   memory?: ReturnType<typeof useMemoryCenterState>
-  filters?: {
-    kind: () => MemoryKind | undefined
-    setKind: (value: MemoryKind | undefined) => void
-    status: () => MemoryStatus | undefined
-    setStatus: (value: MemoryStatus | undefined) => void
-    scope: () => MemoryScope | undefined
-    setScope: (value: MemoryScope | undefined) => void
-    provenance: () => MemoryInfo["provenance"] | undefined
-    setProvenance: (value: MemoryInfo["provenance"] | undefined) => void
-  }
   editing?: () => string | undefined
   setEditing?: (id: string | undefined) => void
   content?: () => string
@@ -661,99 +569,12 @@ function MemoryCard(props: {
   const editable = () => Boolean(props.editing && props.setEditing && props.startEdit)
   const auditOpen = () => props.auditID?.() === item().id
 
-  // A facet pill doubles as a filter toggle when filter wiring is provided;
-  // the active state (accent border + ring) makes the toggle visible.
-  const pill = (active: boolean, base: string) =>
-    active
-      ? `${base} border-v2-border-border-active bg-v2-background-bg-layer-03 text-v2-text-text-accent ring-1 ring-v2-border-border-active`
-      : base
-
   return (
     <article
       class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-base p-4 transition-colors hover:border-v2-border-border-active hover:bg-v2-background-bg-layer-01"
       data-memory-id={item().id}
     >
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <div class="flex flex-wrap gap-1.5 text-[11px]">
-          <Show
-            when={props.filters}
-            fallback={
-              <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryKindTag(item().kind)}`}>
-                {memoryKindLabel(t, item().kind)}
-              </span>
-            }
-          >
-            <button
-              type="button"
-              aria-pressed={props.filters!.kind() === item().kind}
-              class={`rounded-[4px] border px-1.5 py-0.5 transition-colors ${pill(props.filters!.kind() === item().kind, memoryKindTag(item().kind))}`}
-              onClick={() =>
-                props.filters!.setKind(props.filters!.kind() === item().kind ? undefined : item().kind)
-              }
-            >
-              {memoryKindLabel(t, item().kind)}
-            </button>
-          </Show>
-          <Show
-            when={props.filters}
-            fallback={
-              <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryStatusTag(item().status)}`}>
-                {memoryStatusLabel(t, item().status)}
-              </span>
-            }
-          >
-            <button
-              type="button"
-              aria-pressed={props.filters!.status() === item().status}
-              class={`rounded-[4px] border px-1.5 py-0.5 transition-colors ${pill(props.filters!.status() === item().status, memoryStatusTag(item().status))}`}
-              onClick={() =>
-                props.filters!.setStatus(props.filters!.status() === item().status ? undefined : item().status)
-              }
-            >
-              {memoryStatusLabel(t, item().status)}
-            </button>
-          </Show>
-          <Show
-            when={props.filters}
-            fallback={
-              <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryScopeTag(item().scope)}`}>
-                {memoryScopeLabel(t, item().scope)}
-              </span>
-            }
-          >
-            <button
-              type="button"
-              aria-pressed={props.filters!.scope() === item().scope}
-              class={`rounded-[4px] border px-1.5 py-0.5 transition-colors ${pill(props.filters!.scope() === item().scope, memoryScopeTag(item().scope))}`}
-              onClick={() =>
-                props.filters!.setScope(props.filters!.scope() === item().scope ? undefined : item().scope)
-              }
-            >
-              {memoryScopeLabel(t, item().scope)}
-            </button>
-          </Show>
-          <Show
-            when={props.filters}
-            fallback={
-              <span class={`rounded-[4px] border px-1.5 py-0.5 ${memoryProvenanceTag()}`}>
-                {memoryProvenanceLabel(t, item().provenance)}
-              </span>
-            }
-          >
-            <button
-              type="button"
-              aria-pressed={props.filters!.provenance() === item().provenance}
-              class={`rounded-[4px] border px-1.5 py-0.5 transition-colors ${pill(props.filters!.provenance() === item().provenance, memoryProvenanceTag())}`}
-              onClick={() =>
-                props.filters!.setProvenance(
-                  props.filters!.provenance() === item().provenance ? undefined : item().provenance,
-                )
-              }
-            >
-              {memoryProvenanceLabel(t, item().provenance)}
-            </button>
-          </Show>
-        </div>
         <span class="text-[11px] text-v2-text-text-weaker">{source(item(), t)}</span>
       </div>
 

@@ -86,7 +86,12 @@ const layer = Layer.effect(
       .all()
       .pipe(Effect.orDie)
     const segments = yield* Ref.make<Segment[]>(
-      persisted.map((row) => ({ app: row.app, start: row.start, end: row.end ?? undefined })),
+      persisted
+        // Never seed an empty-app segment: update() only opens on a real app
+        // name, and a legacy "" row would render as a one-row one-bar Gantt
+        // with an empty label while staying open for every failed probe.
+        .filter((row) => row.app.length > 0 && Number.isFinite(row.start))
+        .map((row) => ({ app: row.app, start: row.start, end: row.end ?? undefined })),
     )
 
     const get = Effect.fn("Presence.get")(function* (input: { directory: string }) {
@@ -122,7 +127,14 @@ const layer = Layer.effect(
       // Locking, though, ends the current segment: the user stepped away.
       const start = dayStart()
       yield* Ref.update(segments, (items) => {
-        const kept = items.filter((segment) => segment.end === undefined || segment.end >= start)
+        // Close any open segment that rolled over from a previous day at
+        // midnight. Without this the first probe of the day that matches the
+        // carried segment is a no-op and the Gantt shows one long bar spanning
+        // the boundary instead of starting today clean.
+        const closed = items.map((segment) =>
+          segment.end === undefined && segment.start < start ? { ...segment, end: start } : segment,
+        )
+        const kept = closed.filter((segment) => segment.end === undefined || segment.end >= start)
         const open = kept.find((segment) => segment.end === undefined)
         const app = input.focusApp || ""
         if (open && open.app === app) return kept
@@ -172,7 +184,14 @@ const layer = Layer.effect(
       const start = dayStart()
       const now = Date.now()
       const items = yield* Ref.get(segments)
-      const kept = items.filter((segment) => (segment.end ?? now) >= start)
+      // Defensive rollover: an open segment persisted from a previous day (or
+      // seeded from a stale DB row) is clamped to midnight so it never renders
+      // as a full-width bar in today's Gantt.
+      const kept = items
+        .map((segment) =>
+          segment.end === undefined && segment.start < start ? { ...segment, end: start } : segment,
+        )
+        .filter((segment) => (segment.end ?? now) >= start)
       // A single live segment (end undefined) means the host is active right now.
       const live = kept.some((segment) => segment.end === undefined)
       return {

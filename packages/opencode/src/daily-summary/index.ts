@@ -238,10 +238,10 @@ const layer = Layer.effect(
       const bullets = digest
         .split("\n")
         .filter(Boolean)
-        .slice(0, 12)
+        .slice(0, 8)
         .map((line) => `- ${line}`)
         .join("\n")
-      return `## 今日概览\n（未生成 — LLM 不可用，展示当日活动记录）\n\n## 进展\n${bullets}\n\n## 下一步\n无\n\n## 行动项\n- [ ] (应该) 检查 provider 配置后重新生成今日总结\n\n## 风险与信号\nLLM 生成失败（fallback 模式），请检查模型配置。`
+      return `## 今日概览\n（LLM 暂不可用，以下为当日活动记录）\n\n## 进展\n${bullets}\n\n## 下一步\n无\n\n## 行动项\n- [ ] 检查 provider / 模型配置后重新生成今日总结`
     }
 
     const synthesize = Effect.fn("DailySummary.synthesize")(function* (
@@ -274,6 +274,10 @@ const layer = Layer.effect(
         role: "user",
         time: { created: Date.now() },
         sessionID: SessionID.make("ses-daily-summary"),
+        // SessionV1.User.model is required: LLMRequestPrep reads
+        // `user.model.variant` (request.ts), so a synthetic user without a
+        // model crashes the stream and drops the report into the fallback.
+        model: { providerID: selected.providerID, modelID: selected.modelID },
         text: "",
       } as unknown as SessionV1.User
 
@@ -307,6 +311,25 @@ const layer = Layer.effect(
       return cleaned || fallbackOverview(digest)
     })
 
+    // Most recent non-archived session directory+model, optionally restricted
+    // to one profile. The anchor only supplies instance context (any directory
+    // yields the same provider/agent catalog), so the profile filter is a
+    // preference, not a requirement.
+    const latestAnchor = (profileID?: string) =>
+      db
+        .select({ directory: SessionTable.directory, model: SessionTable.model })
+        .from(SessionTable)
+        .where(
+          and(
+            isNull(SessionTable.time_archived),
+            profileID ? eq(SessionTable.profile_id, profileID) : undefined,
+          ),
+        )
+        .orderBy(desc(SessionTable.time_updated))
+        .limit(1)
+        .get()
+        .pipe(Effect.orDie)
+
     const generateOverview = Effect.fn("DailySummary.generateOverview")(function* (digest: string, dateKey: string) {
       // Cross-day continuity: the previous day's report overview is injected
       // into the synthesis so the model can first check which "next steps"
@@ -324,16 +347,10 @@ const layer = Layer.effect(
         // no prior report; proceed without continuity
       }
       // Anchor the LLM call to a real instance context (the 23:00 scheduler runs
-      // in a global fiber with no InstanceRef). Any directory yields the same
-      // provider/agent catalog; the load is cached by InstanceStore.
-      const anchor = yield* db
-        .select({ directory: SessionTable.directory, model: SessionTable.model })
-        .from(SessionTable)
-        .where(and(isNull(SessionTable.time_archived), eq(SessionTable.profile_id, "companion")))
-        .orderBy(desc(SessionTable.time_updated))
-        .limit(1)
-        .get()
-        .pipe(Effect.orDie)
+      // in a global fiber with no InstanceRef). Prefer a companion-profile session;
+      // fall back to the most recent non-archived session of any profile so
+      // work-only users still get a real LLM summary instead of the fallback text.
+      const anchor = (yield* latestAnchor("companion")) ?? (yield* latestAnchor())
       if (!anchor) return fallbackOverview(digest)
       return yield* instanceStore
         .provide(

@@ -70,6 +70,12 @@ let probeProcess: ChildProcess | undefined
 let probeProcessStarting: Promise<void> | undefined
 let probeBuffer = ""
 let probeWaiters: Array<{ timer: NodeJS.Timeout; resolve: (line: string) => void }> = []
+// Consecutive empty/timeout probes since the last successful reading. A wedged
+// persistent PowerShell process stays alive but stops answering; counting
+// failures lets us kill and respawn it instead of silently freezing the Gantt
+// on the last known open segment.
+let probeFailures = 0
+const PROBE_MAX_FAILURES = 3
 
 function drainProbeWaiters() {
   const stale = probeWaiters.splice(0)
@@ -77,6 +83,13 @@ function drainProbeWaiters() {
     clearTimeout(waiter.timer)
     waiter.resolve("")
   }
+}
+
+function resetProbeProcess() {
+  probeProcess?.kill()
+  probeProcess = undefined
+  probeBuffer = ""
+  drainProbeWaiters()
 }
 
 function startProbeProcess(): Promise<void> {
@@ -105,13 +118,16 @@ function startProbeProcess(): Promise<void> {
       }
     })
     child.stderr.on("data", () => {})
+    child.stdin.on("error", () => {
+      // Broken stdin (e.g. after sleep/resume) means the persistent process can
+      // no longer be probed; force a clean respawn on the next request.
+      resetProbeProcess()
+    })
     child.on("error", () => {
-      probeProcess = undefined
-      drainProbeWaiters()
+      resetProbeProcess()
     })
     child.on("exit", () => {
-      probeProcess = undefined
-      drainProbeWaiters()
+      resetProbeProcess()
     })
     resolve()
   }).finally(() => {
@@ -150,6 +166,18 @@ async function probeForeground(): Promise<ForegroundProbe> {
     locked: lockedText === "True",
     inMeeting: meetingName.length > 0,
     observedAt: now,
+  }
+  // A valid reading resets the failure streak. Repeated failures mean the
+  // persistent probe is wedged: respawn it so the next probe starts fresh
+  // instead of the Gantt silently freezing on the last open segment.
+  if (!appName) {
+    probeFailures += 1
+    if (probeFailures >= PROBE_MAX_FAILURES) {
+      probeFailures = 0
+      resetProbeProcess()
+    }
+  } else {
+    probeFailures = 0
   }
   foregroundProbe = probe
   return probe

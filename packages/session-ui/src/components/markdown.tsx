@@ -31,7 +31,12 @@ import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
-import { renderMermaid, subscribeThemeChange } from "./markdown-mermaid"
+import {
+  isMermaidRenderFresh,
+  MERMAID_MAX_RETRIES,
+  renderMermaid,
+  subscribeThemeChange,
+} from "./markdown-mermaid"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -47,6 +52,8 @@ type RenderedBlock =
       unstable: MarkdownToken[]
       mermaid?: { svg: string }
       mermaidError?: string
+      themeVersion?: number
+      retries?: number
     }
 
 type RenderResult = {
@@ -383,6 +390,15 @@ export function Markdown(
   const activeCodeKeys = new Set<string>()
   const completedCode = new Map<string, Extract<RenderedBlock, { mode: "code" }>>()
   const [themeVersion, bumpThemeVersion] = createSignal(0)
+  const [mermaidRetry, bumpMermaidRetry] = createSignal(0)
+  let mermaidRetryTimer: ReturnType<typeof setTimeout> | undefined
+  const scheduleMermaidRetry = () => {
+    if (mermaidRetryTimer !== undefined) return
+    mermaidRetryTimer = setTimeout(() => {
+      mermaidRetryTimer = undefined
+      bumpMermaidRetry(mermaidRetry() + 1)
+    }, 600)
+  }
   const projection = createMemo((previous: Projection | undefined) =>
     project(previous, local.text, local.streaming ?? false),
   )
@@ -393,6 +409,7 @@ export function Markdown(
         key: local.cacheKey,
         projection: projection(),
         themeVersion: themeVersion(),
+        mermaidRetry: mermaidRetry(),
       }
     },
     async (src) => {
@@ -419,7 +436,7 @@ export function Markdown(
 
           if (block.mode === "code" && block.language?.toLowerCase() === "mermaid" && block.complete) {
             const cached = completedCode.get(blockKey)
-            if (cached?.raw === block.raw && (cached.mermaid || cached.mermaidError)) return cached
+            if (cached && isMermaidRenderFresh(cached, block, src.themeVersion)) return cached
             const diagram = await mermaid(block.src)
             // The theme version is part of the hash so a theme switch replaces
             // the rendered SVG in the DOM (hash is also the DOM-update key).
@@ -436,13 +453,26 @@ export function Markdown(
                 stable: [],
                 unstable: [],
                 mermaid: diagram,
+                themeVersion: src.themeVersion,
+                retries: 0,
               } satisfies Extract<RenderedBlock, { mode: "code" }>
               completedCode.set(blockKey, rendered)
               return rendered
             }
-            // Rendering failed (invalid diagram, worker/bundle issue). Surface a
-            // hint instead of silently showing the raw source as a plain code
-            // block, so the user can tell it was *tried* and see the source.
+            // Rendering failed (invalid diagram, worker/bundle issue). If this
+            // exact source already rendered once, keep that SVG on screen and
+            // retry in the background instead of flashing back to a plain-text
+            // code block — the cached diagram is only dropped when the source
+            // actually changed. Failures are retried (bounded) so a transient
+            // hiccup during a session switch or theme flip recovers instead of
+            // permanently degrading the diagram to plain text.
+            const retries = cached?.mermaidError ? (cached.retries ?? 0) + 1 : 1
+            if (cached?.mermaid && cached.raw === block.raw) {
+              const kept = { ...cached, retries } satisfies Extract<RenderedBlock, { mode: "code" }>
+              completedCode.set(blockKey, kept)
+              if (retries < MERMAID_MAX_RETRIES) scheduleMermaidRetry()
+              return kept
+            }
             const failed = {
               key: blockKey,
               mode: block.mode,
@@ -454,8 +484,11 @@ export function Markdown(
               stable: [],
               unstable: [],
               mermaidError: "render failed",
+              themeVersion: src.themeVersion,
+              retries,
             } satisfies Extract<RenderedBlock, { mode: "code" }>
             completedCode.set(blockKey, failed)
+            if (retries < MERMAID_MAX_RETRIES) scheduleMermaidRetry()
             return failed
           }
 
@@ -514,10 +547,12 @@ export function Markdown(
   let copyCleanup: (() => void) | undefined
 
   createEffect(() => {
+    // Keep the rendered SVGs cached on a theme flip: `isMermaidRenderFresh`
+    // compares the theme epoch, so the resource re-renders diagrams while the
+    // previous SVG stays in the DOM until the new one is ready. Clearing the
+    // cache here would force a from-scratch render whose transient failure
+    // permanently degraded the block to plain text.
     const unsubscribe = subscribeThemeChange(() => {
-      for (const [key, block] of completedCode) {
-        if (block.mermaid || block.mermaidError) completedCode.delete(key)
-      }
       bumpThemeVersion(themeVersion() + 1)
     })
     onCleanup(unsubscribe)
@@ -564,6 +599,7 @@ export function Markdown(
   })
 
   onCleanup(() => {
+    if (mermaidRetryTimer !== undefined) clearTimeout(mermaidRetryTimer)
     if (copyCleanup) copyCleanup()
     activeCodeKeys.forEach(disposeCode)
     completedCode.clear()
@@ -679,6 +715,13 @@ function updateCodeBlock(
   next.dataset.markdownComplete = block.complete ? "true" : "false"
   next.dataset.markdownMermaidError = block.mermaidError ? "true" : undefined
   next.style.display = "contents"
+
+  if (block.mermaidError && !next.querySelector('[data-slot="markdown-mermaid-error"]')) {
+    const banner = document.createElement("div")
+    banner.setAttribute("data-slot", "markdown-mermaid-error")
+    banner.textContent = "Mermaid diagram failed to render — showing source."
+    next.insertBefore(banner, next.firstChild)
+  }
 
   const code = existing?.querySelector("code")
   if (code instanceof HTMLElement) {

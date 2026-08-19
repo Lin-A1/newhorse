@@ -138,6 +138,21 @@ describe("listAllSessions", () => {
     expect(await listAllSessions(serverSDK)).toEqual([])
     expect(calls).toHaveLength(1)
   })
+
+  test("surfaces an error when the first page fails (endpoint missing)", async () => {
+    const sdk = {
+      client: {
+        experimental: {
+          session: {
+            list: async () => {
+              throw new Error("404 Not Found")
+            },
+          },
+        },
+      },
+    } as unknown as ServerSDK
+    await expect(listAllSessions(() => sdk)).rejects.toThrow("404 Not Found")
+  })
 })
 
 describe("rangeStart", () => {

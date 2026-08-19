@@ -267,7 +267,14 @@ export async function listAllSessions(serverSDK: () => ServerSDK): Promise<Sessi
         archived: true,
         ...(cursor !== undefined ? { cursor } : {}),
       })
-      .catch(() => undefined)
+      .catch((error) => {
+        // The listing route itself is unavailable (older server, missing
+        // endpoint). Fail the first page so callers surface a real error
+        // instead of rendering an empty-looking heatmap/stats grid. Later-page
+        // failures are transient and degrade to whatever was already fetched.
+        if (page === 0) throw error
+        return undefined
+      })
     if (!res) break
     const pageSessions = (res.data ?? []) as SessionUsage[]
     sessions.push(...pageSessions)

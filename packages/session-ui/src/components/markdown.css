@@ -201,13 +201,14 @@
 
   [data-component="markdown-code"][data-mermaid="true"] {
     margin: 12px 0 24px;
-    padding: 12px;
-    border-radius: 8px;
-    border: 0.5px solid var(--v2-border-border-base);
-    background: var(--v2-background-bg-base);
+    padding: 14px 14px 10px;
+    border-radius: 10px;
+    border: 0.5px solid var(--v2-border-border-muted);
+    background: var(--v2-background-bg-layer-01);
   }
 
   .markdown-mermaid {
+    max-width: 100%;
     overflow-x: auto;
     line-height: 1.4;
   }
@@ -217,6 +218,10 @@
     max-width: 100%;
     height: auto;
     margin: 0 auto;
+  }
+
+  .markdown-mermaid svg text {
+    font-family: var(--font-family-sans);
   }
 
   [data-slot="markdown-mermaid-error"] {

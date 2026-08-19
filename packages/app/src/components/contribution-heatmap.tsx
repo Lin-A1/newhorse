@@ -18,12 +18,16 @@ type DayCell = {
   level: 0 | 1 | 2 | 3 | 4
 }
 
-function levelFor(tokens: number, max: number): 0 | 1 | 2 | 3 | 4 {
-  if (tokens <= 0) return 0
-  const ratio = max > 0 ? tokens / max : 0
-  if (ratio <= 0.1) return 1
-  if (ratio <= 0.35) return 2
-  if (ratio <= 0.7) return 3
+// Level from the percentile rank of `tokens` among all active days, so a
+// single huge outlier day does not crush the rest of the month into the
+// faintest bucket (which rendered as "no heatmap").
+function levelFor(tokens: number, active: number[]): 0 | 1 | 2 | 3 | 4 {
+  if (tokens <= 0 || active.length === 0) return 0
+  const atOrBelow = active.filter((value) => value <= tokens).length
+  const fraction = atOrBelow / active.length
+  if (fraction <= 0.25) return 1
+  if (fraction <= 0.5) return 2
+  if (fraction <= 0.75) return 3
   return 4
 }
 
@@ -44,20 +48,18 @@ export function ContributionHeatmap() {
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
       byDay.set(key, (byDay.get(key) ?? 0) + tokens)
     }
+    const active = [...byDay.values()].filter((value) => value > 0).sort((a, b) => a - b)
 
     // Build the last 90 days ending today (today on the right).
     const today = new Date()
     today.setHours(0, 0, 0, 0)
     const out: DayCell[] = []
-    let max = 0
     for (let i = DAYS - 1; i >= 0; i--) {
       const d = new Date(today.getTime() - i * 86_400_000)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
       const tokens = byDay.get(key) ?? 0
-      if (tokens > max) max = tokens
-      out.push({ key, label: `${d.getMonth() + 1}/${d.getDate()}`, tokens, level: 0 })
+      out.push({ key, label: `${d.getMonth() + 1}/${d.getDate()}`, tokens, level: levelFor(tokens, active) })
     }
-    for (const cell of out) cell.level = levelFor(cell.tokens, max)
     return out
   })
 

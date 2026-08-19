@@ -43,12 +43,12 @@
 
 import path from "path"
 import fs from "node:fs"
-import { spawn } from "node:child_process"
+import { spawn, type ChildProcess } from "node:child_process"
 import { Effect, Schema } from "effect"
 import { Global } from "@newhorse/core/global"
 import { KeyedMutex } from "@newhorse/core/effect/keyed-mutex"
 import { which } from "@newhorse/core/util/which"
-import { Process } from "@/util/process"
+import { errorMessage } from "@/util/error"
 import { sniffAttachmentMime } from "@/util/media"
 import * as Tool from "./tool"
 
@@ -102,8 +102,25 @@ const PERMISSION = "browser"
 
 const COLD_START_BACKOFF_MS = [200, 500, 1000] as const
 const RESET_COMMAND_TIMEOUT_MS = 5_000
+const POST_CALL_CLEANUP_GRACE_MS = 5_000
+
+/**
+ * Cap on captured output. A snapshot can be large but never needs to exceed
+ * this; anything beyond the cap is drained and discarded so the pipe can never
+ * fill up and wedge the child.
+ */
+const MAX_COMMAND_OUTPUT_BYTES = 64 * 1024 * 1024
+
+/**
+ * After the client exits, give the streams a short window to deliver buffered
+ * tail output before the result is resolved. The per-session daemon inherits
+ * the client's pipe handles, so EOF may never arrive; the grace period bounds
+ * that wait to a few hundred milliseconds instead of forever.
+ */
+const STREAM_CLOSE_GRACE_MS = 500
 
 const sessionLocks = KeyedMutex.makeUnsafe<string>()
+const lastSessionActivity = new Map<string, number>()
 
 /**
  * Thrown by `resolveAgentBrowserPath` when no agent-browser binary is found
@@ -257,10 +274,27 @@ export interface RunAgentBrowserResult {
   timedOut: boolean
 }
 
+interface Capture {
+  text: string
+  bytes: number
+}
+
 /**
- * Spawn `agent-browser` with the given args and a hard timeout. The CLI keeps
- * a per-session daemon alive, so a timeout kills the client only; the daemon
- * (and any launched Chrome) is left to agent-browser's own idle timeout.
+ * Spawn `agent-browser` with the given args and a hard timeout.
+ *
+ * The CLI client forks a long-lived per-session daemon that inherits the
+ * client's stdout/stderr pipe handles. Waiting for stream EOF — as
+ * `Process.run`'s `buffer()` does — hangs forever: the daemon keeps the pipes
+ * open after the client exits, and even a timeout cannot help because killing
+ * just the client leaves the daemon holding the pipe, so the await never
+ * settles and the per-session mutex is held forever. Output is instead
+ * captured incrementally (bounded by `MAX_COMMAND_OUTPUT_BYTES`) and the
+ * promise resolves on the client's `exit` event, allowing a short grace
+ * period for buffered tail output before the streams are destroyed.
+ *
+ * A timeout always resolves (never hangs), marks the result `timedOut`, and
+ * kills the client's process tree (`taskkill /T` on Windows) so a wedged CDP
+ * session cannot leak Chrome children and the next call cold-starts cleanly.
  */
 export async function runAgentBrowser(
   binary: string,
@@ -268,22 +302,77 @@ export async function runAgentBrowser(
   opts: { timeoutMs?: number } = {},
 ): Promise<RunAgentBrowserResult> {
   const timeoutMs = Math.min(opts.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS, MAX_COMMAND_TIMEOUT_MS)
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const result = await Process.run([binary, ...args], { abort: controller.signal })
-    return { code: result.code, stdout: result.stdout.toString(), stderr: result.stderr.toString(), timedOut: false }
-  } catch (err) {
-    if (controller.signal.aborted) {
-      return { code: 1, stdout: "", stderr: `Timed out after ${timeoutMs}ms`, timedOut: true }
+
+  return new Promise((resolve) => {
+    let child: ChildProcess
+    try {
+      child = spawn(binary, args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      })
+    } catch (error) {
+      resolve({ code: 1, stdout: "", stderr: `failed to spawn agent-browser: ${errorMessage(error)}`, timedOut: false })
+      return
     }
-    if (err instanceof Process.RunFailedError) {
-      return { code: err.code, stdout: err.stdout.toString(), stderr: err.stderr.toString(), timedOut: false }
+    const stdout = child.stdout!
+    const stderr = child.stderr!
+
+    const out: Capture = { text: "", bytes: 0 }
+    const err: Capture = { text: "", bytes: 0 }
+    let timedOut = false
+    let settled = false
+    let graceTimer: ReturnType<typeof setTimeout> | undefined
+    let killTimer: ReturnType<typeof setTimeout> | undefined
+
+    const onData = (capture: Capture, chunk: Buffer): void => {
+      if (capture.bytes >= MAX_COMMAND_OUTPUT_BYTES) return
+      const remaining = MAX_COMMAND_OUTPUT_BYTES - capture.bytes
+      const text = chunk.toString("utf8").slice(0, remaining)
+      capture.bytes += Buffer.byteLength(text)
+      capture.text += text
     }
-    throw err
-  } finally {
-    clearTimeout(timer)
-  }
+
+    const settle = (code: number, message?: string): void => {
+      if (settled) return
+      settled = true
+      if (killTimer) clearTimeout(killTimer)
+      if (graceTimer) clearTimeout(graceTimer)
+      stdout.destroy()
+      stderr.destroy()
+      const stderrText = message ? (err.text ? `${err.text}\n${message}` : message) : err.text
+      resolve({ code, stdout: out.text, stderr: stderrText, timedOut })
+    }
+
+    stdout.on("data", (chunk: Buffer) => onData(out, chunk))
+    stderr.on("data", (chunk: Buffer) => onData(err, chunk))
+
+    child.once("exit", (code) => {
+      const exitCode = code ?? 1
+      const streamsEnded = () =>
+        (stdout.readableEnded || stdout.destroyed) && (stderr.readableEnded || stderr.destroyed)
+      if (streamsEnded()) {
+        settle(exitCode)
+        return
+      }
+      const finishOnEnd = () => {
+        if (streamsEnded()) settle(exitCode)
+      }
+      stdout.once("end", finishOnEnd)
+      stderr.once("end", finishOnEnd)
+      stdout.once("close", finishOnEnd)
+      stderr.once("close", finishOnEnd)
+      graceTimer = setTimeout(() => settle(exitCode), STREAM_CLOSE_GRACE_MS)
+    })
+
+    child.once("error", (error) => settle(1, `failed to spawn agent-browser: ${errorMessage(error)}`))
+
+    killTimer = setTimeout(() => {
+      timedOut = true
+      settle(1, `Timed out after ${timeoutMs}ms`)
+      const pid = child.pid
+      if (pid !== undefined) void killProcessTreeRaw(pid)
+    }, timeoutMs)
+  })
 }
 
 export interface AgentBrowserResponse {
@@ -524,33 +613,34 @@ function resetBrowserSession(binary: string, sessionName: string): Effect.Effect
   })
 }
 
-function killProcessTree(pid: number): Effect.Effect<void> {
-  return Effect.promise(
-    () =>
-      new Promise<void>((resolve) => {
-        const finish = () => resolve()
-        if (process.platform === "win32") {
-          const child = spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
-            stdio: "ignore",
-            windowsHide: true,
-          })
-          child.once("exit", finish)
-          child.once("error", finish)
-        } else {
-          try {
-            process.kill(-pid, "SIGKILL")
-          } catch {
-            // pgid kill may not be permitted; fall back to plain kill
-            try {
-              process.kill(pid, "SIGKILL")
-            } catch {
-              // already gone
-            }
-          }
-          finish()
+function killProcessTreeRaw(pid: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const finish = () => resolve()
+    if (process.platform === "win32") {
+      const killer = spawn("taskkill", ["/F", "/T", "/PID", String(pid)], {
+        stdio: "ignore",
+        windowsHide: true,
+      })
+      killer.once("exit", finish)
+      killer.once("error", finish)
+    } else {
+      try {
+        process.kill(-pid, "SIGKILL")
+      } catch {
+        // pgid kill may not be permitted; fall back to plain kill
+        try {
+          process.kill(pid, "SIGKILL")
+        } catch {
+          // already gone
         }
-      }),
-  )
+      }
+      finish()
+    }
+  })
+}
+
+function killProcessTree(pid: number): Effect.Effect<void> {
+  return Effect.promise(() => killProcessTreeRaw(pid))
 }
 
 /**
@@ -582,6 +672,7 @@ function runBrowser(
         ).pipe(Effect.mapError((cause) => toError(cause)))
         last = result
         if (result.stdout.trim().length > 0 && !result.timedOut) {
+          lastSessionActivity.set(sessionName, Date.now())
           yield* schedulePostCallCleanup(binary, sessionName)
           return { stdout: result.stdout, stderr: result.stderr, timedOut: false }
         }
@@ -605,15 +696,18 @@ function runBrowser(
  * `browser_*` call in the same session reuse the live daemon without paying
  * the cold-start cost; once the window elapses, the daemon and its detached
  * Chrome children are reclaimed so a long-running session does not accumulate
- * orphan Chrome processes. Concurrent calls are already serialized by
- * `sessionLocks.withLock`, so the cleanup runs only after the queue has
- * drained. Failures are swallowed — the next browser call will cold-start.
+ * orphan Chrome processes. Each successful call refreshes
+ * `lastSessionActivity`, so a cleanup that observes a newer call bails out and
+ * leaves the teardown to that call's own cleanup fiber — the daemon is never
+ * killed under an in-flight call. The cleanup does not take the session lock:
+ * holding it for the grace window would queue (and stall) the very follow-up
+ * calls the grace period exists for. Failures are swallowed — the next
+ * browser call will cold-start.
  */
-const POST_CALL_CLEANUP_GRACE_MS = 5_000
-
 function schedulePostCallCleanup(binary: string, sessionName: string): Effect.Effect<void> {
   return Effect.gen(function* () {
     yield* Effect.sleep(`${POST_CALL_CLEANUP_GRACE_MS} millis`)
+    if (Date.now() - (lastSessionActivity.get(sessionName) ?? 0) < POST_CALL_CLEANUP_GRACE_MS) return
     const info = yield* Effect.promise(() =>
       runAgentBrowser(binary, buildBrowserArgs({ kind: "session", action: "info" }, sessionName), {
         timeoutMs: RESET_COMMAND_TIMEOUT_MS,
@@ -623,6 +717,7 @@ function schedulePostCallCleanup(binary: string, sessionName: string): Effect.Ef
     const parsed = parseBrowserResponse(info.stdout, info.stderr)
     if (!parsed.success || !parsed.data) return
     if (typeof parsed.data !== "object" || parsed.data === null) return
+    if (Date.now() - (lastSessionActivity.get(sessionName) ?? 0) < POST_CALL_CLEANUP_GRACE_MS) return
     const data = parsed.data as { pid?: unknown }
     if (typeof data.pid !== "number" || data.pid <= 0) return
     yield* killProcessTree(data.pid).pipe(Effect.orElseSucceed(() => undefined))

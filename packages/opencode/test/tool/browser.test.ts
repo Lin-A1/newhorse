@@ -323,6 +323,47 @@ describe("runAgentBrowser", () => {
     expect(result.timedOut).toBe(true)
     expect(result.stdout).toBe("")
   })
+
+  test("resolves promptly when a descendant keeps the output pipe open", async () => {
+    // The agent-browser client forks a per-session daemon that inherits the
+    // client's stdout/stderr pipes. Waiting for stream EOF would hang until
+    // the daemon exits; runAgentBrowser must resolve on client exit.
+    const script = [
+      `const { spawn } = require("node:child_process")`,
+      `const keeper = spawn(process.execPath, ["-e", "setTimeout(() => {}, 8000)"], {`,
+      `  stdio: ["ignore", "inherit", "inherit"],`,
+      `  detached: true,`,
+      `})`,
+      `keeper.unref()`,
+      `console.log(JSON.stringify({ success: true, data: { url: "http://x" } }))`,
+    ].join("\n")
+    const start = Date.now()
+    const result = await runAgentBrowser(process.execPath, ["-e", script], { timeoutMs: 10_000 })
+    const elapsed = Date.now() - start
+    expect(result.timedOut).toBe(false)
+    expect(result.stdout).toContain("success")
+    expect(elapsed).toBeLessThan(4_000)
+  })
+
+  test("times out instead of hanging when a descendant holds the pipe", async () => {
+    // A wedged client whose daemon keeps the pipes open used to defeat even
+    // the timeout (killing the client left the pipe open, so the await never
+    // settled). The timeout must resolve and report timedOut.
+    const script = [
+      `const { spawn } = require("node:child_process")`,
+      `const keeper = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], {`,
+      `  stdio: ["ignore", "inherit", "inherit"],`,
+      `  detached: true,`,
+      `})`,
+      `keeper.unref()`,
+      `setInterval(() => {}, 30000)`,
+    ].join("\n")
+    const start = Date.now()
+    const result = await runAgentBrowser(process.execPath, ["-e", script], { timeoutMs: 500 })
+    const elapsed = Date.now() - start
+    expect(result.timedOut).toBe(true)
+    expect(elapsed).toBeLessThan(5_000)
+  })
 })
 
 describe("ensureAgentBrowserBinary", () => {

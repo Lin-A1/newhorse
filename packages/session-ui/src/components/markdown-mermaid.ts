@@ -2,8 +2,11 @@ import type { MermaidConfig } from "mermaid"
 
 export type MermaidRenderResult = { svg: string }
 
-type ThemeVariables = Record<string, string>
+type ThemeVariables = Record<string, string | Record<string, string>>
 
+// Ultimate fallbacks used when the v2 design tokens cannot be resolved (SSR,
+// tests, or a page that never loaded the v2 theme). Values mirror the v2
+// palette so diagrams stay close to the app even without tokens.
 const lightTheme: ThemeVariables = {
   primaryColor: "#ecf1fe",
   primaryTextColor: "#161616",
@@ -16,6 +19,15 @@ const lightTheme: ThemeVariables = {
   edgeLabelBackground: "#ffffff",
   nodeTextColor: "#161616",
   background: "#ffffff",
+
+  // Flowchart / class nodes resolve through mainBkg + nodeBorder (defaults are
+  // the generic mermaid lavender/purple, so pin them to the accent palette).
+  mainBkg: "#ecf1fe",
+  nodeBorder: "#3b5cf6",
+  textColor: "#161616",
+  titleColor: "#161616",
+  border1: "#3b5cf6",
+  border2: "#dbdbdb",
 
   actorBkg: "#f2f2f2",
   actorBorder: "#3b5cf6",
@@ -37,6 +49,11 @@ const lightTheme: ThemeVariables = {
   taskTextLightColor: "#161616",
   taskTextColor: "#161616",
   taskTextDarkColor: "#161616",
+
+  stateBkg: "#ecf1fe",
+  stateBorder: "#3b5cf6",
+  stateLabelColor: "#161616",
+  labelBackgroundColor: "#ffffff",
 }
 
 const darkTheme: ThemeVariables = {
@@ -51,6 +68,13 @@ const darkTheme: ThemeVariables = {
   edgeLabelBackground: "#161616",
   nodeTextColor: "#fafafa",
   background: "#161616",
+
+  mainBkg: "#1b2852",
+  nodeBorder: "#7698fd",
+  textColor: "#fafafa",
+  titleColor: "#fafafa",
+  border1: "#7698fd",
+  border2: "#5c5c5c",
 
   actorBkg: "#242424",
   actorBorder: "#7698fd",
@@ -72,7 +96,44 @@ const darkTheme: ThemeVariables = {
   taskTextLightColor: "#fafafa",
   taskTextColor: "#fafafa",
   taskTextDarkColor: "#fafafa",
+
+  stateBkg: "#1b2852",
+  stateBorder: "#7698fd",
+  stateLabelColor: "#fafafa",
+  labelBackgroundColor: "#161616",
 }
+
+// Data-series fills (pie slices, timeline rows, xychart plots) are emitted as
+// inline SVG attribute values, so they must be literal hex — CSS variables do
+// not resolve inside SVG presentation attributes.
+const lightPalette = [
+  "#3b5cf6",
+  "#7152f4",
+  "#49c970",
+  "#e7af36",
+  "#ff8648",
+  "#f1484f",
+  "#f64aab",
+  "#00abcf",
+  "#2c47c8",
+  "#623be2",
+  "#198b43",
+  "#cb9f34",
+]
+const darkPalette = [
+  "#7698fd",
+  "#8271f8",
+  "#6bd586",
+  "#f6c251",
+  "#ffa478",
+  "#f17471",
+  "#f26cb2",
+  "#00c5df",
+  "#a2bcff",
+  "#9e99f7",
+  "#b8e9c1",
+  "#f3da9b",
+]
 
 export type ThemeProbe = {
   computedColorScheme(): string
@@ -164,8 +225,7 @@ function colorLuminance(value: string): number | undefined {
   return undefined
 }
 
-function pick(light: string[], dark: string[], fallback: string): string {
-  const names = isDark() ? dark : light
+function pick(names: string[], fallback: string): string {
   for (const name of names) {
     const value = rawVar(name)
     if (!value) continue
@@ -176,46 +236,111 @@ function pick(light: string[], dark: string[], fallback: string): string {
   return fallback
 }
 
+function seriesPalette(keys: string[], colors: string[]): Record<string, string> {
+  return Object.fromEntries(keys.map((key, index) => [key, colors[index % colors.length]!]))
+}
+
 function buildThemeVariables(): ThemeVariables {
-  const base = isDark() ? darkTheme : lightTheme
-  const text = ["--v2-text-text-base", isDark() ? "--v2-grey-100" : "--v2-grey-1100"]
-  const bgBase = ["--v2-background-bg-base", isDark() ? "--v2-grey-1100" : "--v2-grey-50"]
-  const bgLayer = ["--v2-background-bg-layer-01", isDark() ? "--v2-grey-1000" : "--v2-grey-100"]
-  const accent = isDark() ? "--v2-blue-500" : "--v2-blue-600"
+  const dark = isDark()
+  const base = dark ? darkTheme : lightTheme
+  const accent = dark ? "--v2-blue-500" : "--v2-blue-600"
+  const accentSoft = dark ? "--v2-blue-1000" : "--v2-blue-100"
+  const accentSoftDeep = dark ? "--v2-blue-1200" : "--v2-blue-200"
+  const palette = dark ? darkPalette : lightPalette
   return {
     ...base,
-    primaryColor: pick(["--v2-blue-100"], ["--v2-blue-1000"], base.primaryColor),
-    primaryTextColor: pick(text, text, base.primaryTextColor),
-    primaryBorderColor: pick([accent], [accent], base.primaryBorderColor),
-    lineColor: pick([accent], [accent], base.lineColor),
-    secondaryColor: pick(bgLayer, bgLayer, base.secondaryColor),
-    tertiaryColor: pick(bgLayer, bgLayer, base.tertiaryColor),
-    clusterBkg: pick(bgLayer, bgLayer, base.clusterBkg),
-    clusterBorder: pick(["--v2-border-border-strong", "--v2-grey-400"], ["--v2-border-border-strong", "--v2-grey-600"], base.clusterBorder),
-    edgeLabelBackground: pick(bgBase, bgBase, base.edgeLabelBackground),
-    nodeTextColor: pick(text, text, base.nodeTextColor),
-    background: pick(bgBase, bgBase, base.background),
+    primaryColor: pick([accentSoft], base.primaryColor as string),
+    primaryTextColor: pick(["--v2-text-text-base"], base.primaryTextColor as string),
+    primaryBorderColor: pick([accent], base.primaryBorderColor as string),
+    lineColor: pick([accent], base.lineColor as string),
+    secondaryColor: pick(["--v2-background-bg-layer-02"], base.secondaryColor as string),
+    tertiaryColor: pick(["--v2-background-bg-layer-01"], base.tertiaryColor as string),
+    clusterBkg: pick(["--v2-background-bg-layer-01"], base.clusterBkg as string),
+    clusterBorder: pick([dark ? "--v2-grey-600" : "--v2-grey-400"], base.clusterBorder as string),
+    edgeLabelBackground: pick(["--v2-background-bg-base"], base.edgeLabelBackground as string),
+    nodeTextColor: pick(["--v2-text-text-base"], base.nodeTextColor as string),
+    background: pick(["--v2-background-bg-base"], base.background as string),
 
-    actorBkg: pick(bgLayer, bgLayer, base.actorBkg),
-    actorBorder: pick([accent], [accent], base.actorBorder),
-    actorTextColor: pick(text, text, base.actorTextColor),
-    signalColor: pick(["--v2-text-text-muted", "--v2-grey-700"], ["--v2-text-text-muted", "--v2-grey-500"], base.signalColor),
-    signalTextColor: pick(text, text, base.signalTextColor),
-    labelBoxBkgColor: pick(bgBase, bgBase, base.labelBoxBkgColor),
-    labelBoxBorderColor: pick([accent], [accent], base.labelBoxBorderColor),
-    labelTextColor: pick(text, text, base.labelTextColor),
-    noteBkgColor: pick(["--v2-yellow-100"], ["--v2-yellow-1200"], base.noteBkgColor),
-    noteBorderColor: pick(["--v2-yellow-700"], ["--v2-yellow-700"], base.noteBorderColor),
-    noteTextColor: pick(text, text, base.noteTextColor),
-    activationBkgColor: pick(["--v2-blue-200"], ["--v2-blue-1000"], base.activationBkgColor),
-    sequenceNumberColor: pick(bgBase, bgBase, base.sequenceNumberColor),
-    sectionBkgColor: pick(["--v2-blue-200"], ["--v2-blue-1000"], base.sectionBkgColor),
-    altSectionBkgColor: pick(bgLayer, bgLayer, base.altSectionBkgColor),
-    taskBorderColor: pick([accent], [accent], base.taskBorderColor),
-    taskBkgColor: pick(["--v2-blue-100"], ["--v2-blue-1000"], base.taskBkgColor),
-    taskTextLightColor: pick(text, text, base.taskTextLightColor),
-    taskTextColor: pick(text, text, base.taskTextColor),
-    taskTextDarkColor: pick(text, text, base.taskTextDarkColor),
+    mainBkg: pick([accentSoft], base.mainBkg as string),
+    nodeBorder: pick([accent], base.nodeBorder as string),
+    textColor: pick(["--v2-text-text-base"], base.textColor as string),
+    titleColor: pick(["--v2-text-text-base"], base.titleColor as string),
+    border1: pick([accent], base.border1 as string),
+    border2: pick([dark ? "--v2-grey-600" : "--v2-grey-400"], base.border2 as string),
+
+    actorBkg: pick(["--v2-background-bg-layer-02"], base.actorBkg as string),
+    actorBorder: pick([accent], base.actorBorder as string),
+    actorTextColor: pick(["--v2-text-text-base"], base.actorTextColor as string),
+    signalColor: pick(["--v2-text-text-muted"], base.signalColor as string),
+    signalTextColor: pick(["--v2-text-text-base"], base.signalTextColor as string),
+    labelBoxBkgColor: pick(["--v2-background-bg-base"], base.labelBoxBkgColor as string),
+    labelBoxBorderColor: pick([accent], base.labelBoxBorderColor as string),
+    labelTextColor: pick(["--v2-text-text-base"], base.labelTextColor as string),
+    noteBkgColor: pick([dark ? "--v2-yellow-1200" : "--v2-yellow-100"], base.noteBkgColor as string),
+    noteBorderColor: pick([dark ? "--v2-yellow-700" : "--v2-yellow-800"], base.noteBorderColor as string),
+    noteTextColor: pick(["--v2-text-text-base"], base.noteTextColor as string),
+    activationBkgColor: pick([accentSoft], base.activationBkgColor as string),
+    sequenceNumberColor: pick(["--v2-background-bg-base"], base.sequenceNumberColor as string),
+    sectionBkgColor: pick([accentSoftDeep], base.sectionBkgColor as string),
+    altSectionBkgColor: pick(["--v2-background-bg-layer-01"], base.altSectionBkgColor as string),
+    taskBorderColor: pick([accent], base.taskBorderColor as string),
+    taskBkgColor: pick([accentSoft], base.taskBkgColor as string),
+    taskTextLightColor: pick(["--v2-text-text-base"], base.taskTextLightColor as string),
+    taskTextColor: pick(["--v2-text-text-base"], base.taskTextColor as string),
+    taskTextDarkColor: pick(["--v2-text-text-base"], base.taskTextDarkColor as string),
+
+    stateBkg: pick([accentSoft], base.stateBkg as string),
+    stateBorder: pick([accent], base.stateBorder as string),
+    stateLabelColor: pick(["--v2-text-text-base"], base.stateLabelColor as string),
+    labelBackgroundColor: pick(["--v2-background-bg-base"], base.labelBackgroundColor as string),
+
+    ...seriesPalette(
+      [
+        "pie1",
+        "pie2",
+        "pie3",
+        "pie4",
+        "pie5",
+        "pie6",
+        "pie7",
+        "pie8",
+        "pie9",
+        "pie10",
+        "pie11",
+        "pie12",
+      ],
+      palette,
+    ),
+    ...seriesPalette(
+      [
+        "cScale0",
+        "cScale1",
+        "cScale2",
+        "cScale3",
+        "cScale4",
+        "cScale5",
+        "cScale6",
+        "cScale7",
+        "cScale8",
+        "cScale9",
+        "cScale10",
+        "cScale11",
+      ],
+      palette,
+    ),
+    xyChart: {
+      backgroundColor: pick(["--v2-background-bg-base"], base.background as string),
+      titleColor: pick(["--v2-text-text-base"], base.primaryTextColor as string),
+      xAxisLabelColor: pick(["--v2-text-text-muted"], base.signalColor as string),
+      xAxisTitleColor: pick(["--v2-text-text-base"], base.primaryTextColor as string),
+      xAxisTickColor: pick(["--v2-text-text-muted"], base.signalColor as string),
+      xAxisLineColor: pick([accent], base.lineColor as string),
+      yAxisLabelColor: pick(["--v2-text-text-muted"], base.signalColor as string),
+      yAxisTitleColor: pick(["--v2-text-text-base"], base.primaryTextColor as string),
+      yAxisTickColor: pick(["--v2-text-text-muted"], base.signalColor as string),
+      yAxisLineColor: pick([accent], base.lineColor as string),
+      plotColorPalette: palette.join(", "),
+    },
   }
 }
 
@@ -234,13 +359,13 @@ function config(themeVariables: ThemeVariables): MermaidConfig {
     theme: "base",
     securityLevel: "strict",
     fontFamily: appFontFamily(),
-    fontSize: 13,
+    fontSize: 14,
     flowchart: {
       curve: "basis",
       htmlLabels: true,
       nodeSpacing: 60,
       rankSpacing: 60,
-      padding: 10,
+      padding: 12,
     },
     themeVariables,
   }
@@ -250,15 +375,46 @@ let mermaidPromise: Promise<Module> | undefined
 type Module = typeof import("mermaid")
 
 function loadMermaid(): Promise<Module> {
-  mermaidPromise ??= import("mermaid").then((mod) => {
-    mod.default.initialize(config(buildThemeVariables()))
-    return mod
-  })
+  if (!mermaidPromise) {
+    mermaidPromise = import("mermaid").then(
+      (mod) => {
+        mod.default.initialize(config(buildThemeVariables()))
+        return mod
+      },
+      (error) => {
+        // Do not cache a failed import; a transient bundle failure should not
+        // permanently disable diagrams for the rest of the page lifetime.
+        mermaidPromise = undefined
+        throw error
+      },
+    )
+  }
   return mermaidPromise
 }
 
 let sequence = 0
 let renderQueue: Promise<void> = Promise.resolve()
+
+// A hung mermaid render must not wedge the queue forever: every later diagram
+// (including re-renders triggered by theme flips and session switches) would
+// otherwise stay pending and the block would degrade to plain text.
+const RENDER_TIMEOUT_MS = 20_000
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Mermaid render timed out")), timeoutMs)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    )
+  })
+}
 
 export async function renderMermaid(source: string): Promise<MermaidRenderResult> {
   let result: MermaidRenderResult | undefined
@@ -270,7 +426,7 @@ export async function renderMermaid(source: string): Promise<MermaidRenderResult
       // streaming markdown updates cannot race each other.
       mermaid.initialize(config(buildThemeVariables()))
       const id = `newhorse-mermaid-${Date.now()}-${++sequence}`
-      const rendered = await mermaid.render(id, source)
+      const rendered = await withTimeout(mermaid.render(id, source), RENDER_TIMEOUT_MS)
       result = { svg: rendered.svg }
     } catch (error) {
       failure = error
@@ -283,32 +439,71 @@ export async function renderMermaid(source: string): Promise<MermaidRenderResult
   return result
 }
 
+export type MermaidCacheEntry = {
+  raw: string
+  themeVersion?: number
+  mermaid?: { svg: string }
+  mermaidError?: string
+  retries?: number
+}
+
+export const MERMAID_MAX_RETRIES = 3
+
+// A cached diagram can be reused only while the raw source and the theme epoch
+// match. Failed renders are retried until the retry budget is exhausted so a
+// transient failure (e.g. while the render queue is busy during a session
+// switch) recovers instead of permanently degrading to a code block.
+export function isMermaidRenderFresh(
+  cached: MermaidCacheEntry | undefined,
+  block: { raw: string },
+  themeVersion: number,
+): boolean {
+  if (!cached || cached.raw !== block.raw || cached.themeVersion !== themeVersion) return false
+  if (cached.mermaid) return true
+  return !!cached.mermaidError && (cached.retries ?? 0) >= MERMAID_MAX_RETRIES
+}
+
 export type ThemeChangeListener = () => void
+
+// Listeners fire only when the effective dark/light state actually flips; the
+// initial probe (no previous state) and same-state mutations are no-ops.
+export function themeFlipDetected(previous: boolean | undefined, current: boolean): boolean {
+  return previous !== undefined && previous !== current
+}
 
 const themeChangeListeners = new Set<ThemeChangeListener>()
 let lastDarkState: boolean | undefined
 let themeObserver: MutationObserver | undefined
 let systemDarkQuery: MediaQueryList | undefined
 let systemDarkListener: (() => void) | undefined
+let themeEvaluationQueued = false
 
-function emitThemeChanges(): void {
-  const dark = isDark()
-  if (dark === lastDarkState) return
-  lastDarkState = dark
-  for (const listener of themeChangeListeners) listener()
+// Applying a theme touches several attributes in one synchronous batch, so
+// evaluate once per microtask instead of once per mutation. Listeners fire
+// only when the effective dark/light state actually flips.
+function scheduleThemeEvaluation(): void {
+  if (themeEvaluationQueued) return
+  themeEvaluationQueued = true
+  queueMicrotask(() => {
+    themeEvaluationQueued = false
+    const dark = isDark()
+    if (!themeFlipDetected(lastDarkState, dark)) return
+    lastDarkState = dark
+    for (const listener of themeChangeListeners) listener()
+  })
 }
 
 function ensureThemeChangeObserver(): void {
   if (themeObserver) return
   if (typeof document === "undefined" || typeof MutationObserver === "undefined" || typeof window === "undefined") return
   lastDarkState = isDark()
-  themeObserver = new MutationObserver(emitThemeChanges)
+  themeObserver = new MutationObserver(scheduleThemeEvaluation)
   themeObserver.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ["data-theme", "data-color-scheme", "style"],
   })
   systemDarkQuery = window.matchMedia("(prefers-color-scheme: dark)")
-  systemDarkListener = () => emitThemeChanges()
+  systemDarkListener = () => scheduleThemeEvaluation()
   systemDarkQuery.addEventListener("change", systemDarkListener)
 }
 

@@ -215,6 +215,10 @@ function createSidecarEnv(): Record<string, string> {
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
   if (!app.isPackaged) env.OPENCODE_DISABLE_CHANNEL_DB = "1"
+  // The desktop main sets this to keep its own renderer off the embedded web
+  // UI, but the sidecar MUST serve it over LAN. Strip it so the LAN server
+  // falls through to the embedded bundle instead of the placeholder.
+  delete env.OPENCODE_DISABLE_EMBEDDED_WEB_UI
   return env
 }
 
