@@ -3444,6 +3444,103 @@ describe("ProviderTransform.message - cache control on gateway", () => {
   })
 })
 
+describe("ProviderTransform.message - cache prefix stability", () => {
+  const createModel = (overrides: Partial<any> = {}) =>
+    ({
+      id: "anthropic/claude-sonnet-4",
+      providerID: "anthropic",
+      api: {
+        id: "claude-sonnet-4",
+        url: "https://api.anthropic.com",
+        npm: "@ai-sdk/anthropic",
+      },
+      name: "Claude Sonnet 4",
+      capabilities: {
+        temperature: true,
+        reasoning: false,
+        attachment: true,
+        toolcall: true,
+        input: { text: true, audio: false, image: true, video: false, pdf: true },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved: false,
+      },
+      cost: { input: 0.001, output: 0.002, cache: { read: 0.0001, write: 0.0002 } },
+      limit: { context: 200_000, output: 8192 },
+      status: "active",
+      options: {},
+      headers: {},
+      ...overrides,
+    }) as any
+
+  const hasBreakpoint = (msg: any) => msg?.providerOptions?.anthropic?.cacheControl?.type === "ephemeral"
+
+  test("marks the stable system breakpoint BEFORE the dynamic content", () => {
+    const model = createModel()
+    // LLMRequestPrep.prepare emits the stable system as the only system message
+    // and appends the dynamic tail (memory/date/user.system) as a trailing user
+    // message marked NO_CACHE_MESSAGE. The breakpoint must land on the stable
+    // system, not on the changing dynamic tail.
+    const dynamic = { role: "user", content: "Today's date: Wed Aug 19 2026\nRelevant memories..." } as any
+    dynamic[ProviderTransform.NO_CACHE_MESSAGE] = true
+    const msgs = [
+      { role: "system", content: "stable system" },
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+      { role: "user", content: "second question" },
+      dynamic,
+    ] as any[]
+
+    const result = ProviderTransform.message(msgs, model, {}) as any[]
+
+    expect(hasBreakpoint(result[0])).toBe(true)
+    // The trailing dynamic message must never carry a cache breakpoint: a
+    // changing dynamic tail would invalidate the prefix hash of every breakpoint
+    // after it (the whole history segment).
+    expect(hasBreakpoint(result.at(-1))).toBe(false)
+    // The dynamic message keeps its marker and is the last message.
+    expect(result.at(-1)).toBe(dynamic)
+    expect(result.at(-1).providerOptions).toBeUndefined()
+    // History messages between the system and the tail still get breakpoints so
+    // a growing conversation keeps hitting the cached prefix.
+    expect(hasBreakpoint(result[2])).toBe(true)
+    expect(hasBreakpoint(result[3])).toBe(true)
+  })
+
+  test("emits the same request prefix across two turns for stable inputs", () => {
+    const model = createModel()
+    const stableSystem = { role: "system", content: "stable system" }
+    const history = [
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+    ] as any[]
+    const turn1 = { role: "user", content: "second question" } as any
+    const dynamic1 = { role: "user", content: "Today's date: Wed Aug 19 2026\nRelevant memories..." } as any
+    dynamic1[ProviderTransform.NO_CACHE_MESSAGE] = true
+    const turn2 = { role: "user", content: "third question" } as any
+    const dynamic2 = { role: "user", content: "Today's date: Wed Aug 19 2026\nRelevant memories: new" } as any
+    dynamic2[ProviderTransform.NO_CACHE_MESSAGE] = true
+
+    const first = ProviderTransform.message([stableSystem, ...history, turn1, dynamic1], model, {}) as any[]
+    const second = ProviderTransform.message([stableSystem, ...history, turn1, turn2, dynamic2], model, {}) as any[]
+
+    // The content prefix shared by both turns (stable system + immutable history
+    // + the first user turn) must be byte-identical, so the provider's prefix
+    // cache reads it instead of re-encoding the whole conversation. Breakpoint
+    // markers legitimately move forward as history grows, so compare content.
+    const contentPrefix = (msgs: any[]) => msgs.slice(0, 4).map((m) => ({ role: m.role, content: m.content }))
+    expect(contentPrefix(second)).toEqual(contentPrefix(first))
+    // The stable system carries the breakpoint in both turns.
+    expect(hasBreakpoint(first[0])).toBe(true)
+    expect(hasBreakpoint(second[0])).toBe(true)
+    // The breakpoint moves to the newest message so the previous turn's tail
+    // stays in the cached prefix.
+    expect(hasBreakpoint(second.at(-2))).toBe(true)
+    // The dynamic tails differ and carry no breakpoint.
+    expect(second.at(-1).content).toContain("Relevant memories: new")
+    expect(hasBreakpoint(second.at(-1))).toBe(false)
+  })
+})
+
 describe("ProviderTransform.temperature - Cohere North", () => {
   test("defaults north-mini-code models to 1.0", () => {
     expect(

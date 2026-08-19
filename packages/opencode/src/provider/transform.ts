@@ -354,16 +354,27 @@ function normalizeMessages(
   return msgs
 }
 
+// Marker placed on the trailing dynamic-content message (session memory /
+// continuity + user-attached system prompt) by LLMRequestPrep so applyCaching
+// never places a cache breakpoint on it. The dynamic tail is emitted after all
+// history; giving it a breakpoint would write the whole cached prefix under a
+// changing hash every turn. See request.ts.
+export const NO_CACHE_MESSAGE = Symbol("newhorse.noCacheMessage")
+
 function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage[] {
-  // The trailing system message carries dynamic content (session memory,
-  // continuity, user-attached system prompt) and must NOT be cached: a changing
-  // dynamic tail would otherwise invalidate the whole cached prefix. Mark only
-  // the stable prefix — every system message except the last one, capped at 2
-  // to stay inside the provider's breakpoint limit. A lone system message is
-  // always the stable prefix.
+  // The stable system prefix receives the cache breakpoint. Dynamic content
+  // (session memory, continuity, user-attached system prompt) is emitted as a
+  // trailing message AFTER the history and carries NO_CACHE_MESSAGE, so it
+  // never participates in a cached segment: a changing dynamic tail would
+  // otherwise invalidate the prefix hash of every breakpoint after it. Mark
+  // every system message except the last one, capped at 2 to stay inside the
+  // provider's breakpoint limit. A lone system message is always the stable
+  // prefix.
   const sysMsgs = msgs.filter((msg) => msg.role === "system")
   const system = sysMsgs.slice(0, Math.max(1, Math.min(sysMsgs.length - 1, 2)))
-  const nonSystem = msgs.filter((msg) => msg.role !== "system")
+  const isCacheable = (msg: ModelMessage) =>
+    msg.role !== "system" && !(msg as { [NO_CACHE_MESSAGE]?: boolean })[NO_CACHE_MESSAGE]
+  const nonSystem = msgs.filter(isCacheable)
   const final = nonSystem.slice(-2)
 
   // For long conversations, add intermediate breakpoints roughly every

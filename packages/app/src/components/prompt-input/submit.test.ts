@@ -29,6 +29,7 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
 const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
+const statusWrites: Array<{ id: string; status: { type: string } }> = []
 
 let params: { id?: string } = {}
 let search: { draftId?: string } = {}
@@ -216,7 +217,9 @@ beforeAll(async () => {
           remove: () => undefined,
         },
       },
-      set: () => undefined,
+      set: (_path: string, id: string, status: { type: string }) => {
+        statusWrites.push({ id, status })
+      },
     }),
   }))
 
@@ -224,7 +227,9 @@ beforeAll(async () => {
     useServerSync: () => () => ({
       session: {
         remember: () => undefined,
-        set: () => undefined,
+        set: (_path: string, id: string, status: { type: string }) => {
+          statusWrites.push({ id, status })
+        },
       },
       child: (directory: string) => {
         syncedDirectories.push(directory)
@@ -273,6 +278,7 @@ beforeEach(() => {
   optimisticSeeded.length = 0
   promoted.length = 0
   promotedDrafts.length = 0
+  statusWrites.length = 0
   params = {}
   search = {}
   sentShell.length = 0
@@ -565,5 +571,32 @@ describe("prompt submit worktree selection", () => {
 
     expect(storedSessions["/repo/worktree-a"]).toEqual([{ id: "session-1", title: "New session 1" }])
     expect(optimisticSeeded).toEqual([true])
+  })
+
+  test("optimistically marks non-project sessions busy so the thinking indicator shows immediately", async () => {
+    params = { id: "session-1" }
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+
+    await submit.handleSubmit(event)
+
+    expect(statusWrites).toContainEqual({ id: "session-1", status: { type: "busy" } })
   })
 })

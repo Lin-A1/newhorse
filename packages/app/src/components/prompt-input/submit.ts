@@ -595,15 +595,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const worktree = WorktreeState.get(sdk().scope, sessionDirectory)
       if (!worktree || worktree.status !== "pending") return true
 
-      if (sessionDirectory === projectDirectory) {
-        sync().set("session_status", session.id, { type: "busy" })
-      }
+      sync().set("session_status", session.id, { type: "busy" })
 
       const controller = new AbortController()
       const cleanup = () => {
-        if (sessionDirectory === projectDirectory) {
-          sync().set("session_status", session.id, { type: "idle" })
-        }
+        sync().set("session_status", session.id, { type: "idle" })
         removeOptimisticMessage()
         if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
       }
@@ -655,13 +651,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       serverSync: serverSync(),
       draft,
       messageID,
-      optimisticBusy: sessionDirectory === projectDirectory,
+      optimisticBusy: true,
       before: waitForWorktree,
     }).catch((err) => {
       pending.delete(pendingKey(session.id))
-      if (sessionDirectory === projectDirectory) {
-        sync().set("session_status", session.id, { type: "idle" })
-      }
+      sync().set("session_status", session.id, { type: "idle" })
       showToast({
         title: language.t("prompt.toast.promptSendFailed.title"),
         description: errorMessage(err),

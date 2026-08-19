@@ -8,9 +8,13 @@ import DESCRIPTION from "./grep.txt"
 import * as Tool from "./tool"
 
 export const Parameters = Schema.Struct({
-  pattern: Schema.String.annotate({ description: "The regex pattern to search for in file contents" }),
+  pattern: Schema.String.annotate({
+    description:
+      "The regular expression to search for in file contents. This is a regex, not a glob - do not pass patterns like '*.ts'; use the `include` parameter to filter files by name.",
+  }),
   path: Schema.optional(Schema.String).annotate({
-    description: "The directory to search in. Defaults to the current working directory.",
+    description:
+      "The directory to search in. Defaults to the current working directory (shown in the environment info). Relative paths resolve against the working directory.",
   }),
   include: Schema.optional(Schema.String).annotate({
     description: 'File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")',
@@ -30,7 +34,7 @@ export const GrepTool = Tool.define(
           const empty = {
             title: params.pattern,
             metadata: { matches: 0, truncated: false },
-            output: "No files found",
+            output: "No matches found",
           }
           if (!params.pattern) {
             throw new Error("pattern is required")

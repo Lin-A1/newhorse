@@ -33,7 +33,10 @@ const Edit = Schema.Struct({
 })
 
 export const Parameters = Schema.Struct({
-  filePath: Schema.String.annotate({ description: "The absolute path to the file to modify" }),
+  filePath: Schema.String.annotate({
+    description:
+      "Path to the file to modify. Relative paths resolve against the working directory (shown in the environment info); absolute paths are recommended.",
+  }),
   edits: Schema.Array(Edit).annotate({
     description:
       "The replacements to apply, in order. Each oldString must match exactly once in the file content as it exists after the previous edits (or set replaceAll on that edit to match every occurrence).",

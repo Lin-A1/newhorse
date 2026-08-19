@@ -476,6 +476,19 @@ describe("Runner", () => {
     }),
   )
 
+  it.live(
+    "onBusy fires when ensureRunning admits a run",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const count = yield* Ref.make(0)
+      const runner = Runner.make<string>(s, {
+        onBusy: Ref.update(count, (n) => n + 1),
+      })
+      yield* runner.ensureRunning(Effect.succeed("ok"))
+      expect(yield* Ref.get(count)).toBe(1)
+    }),
+  )
+
   // --- busy flag ---
 
   it.live(

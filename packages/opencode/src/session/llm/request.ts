@@ -69,8 +69,13 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   // env + instructions + MCP + skills) and a dynamic tail (session memory /
   // continuity + user-attached system prompt). The stable prefix is the only
   // part that receives the cache_control breakpoint (see ProviderTransform
-  // applyCaching); the dynamic tail is emitted as a trailing system message
-  // AFTER that breakpoint, so memory changes never invalidate the cached prefix.
+  // applyCaching). The dynamic tail must NOT be emitted as a system message:
+  // providers serialize every system message before the history, so a changing
+  // dynamic block between the stable system and the history would invalidate
+  // the prefix hash of every message breakpoint after it (see the prefix-hash
+  // semantics in the Anthropic docs). Instead it is appended as a trailing user
+  // message AFTER the history and marked NO_CACHE_MESSAGE so applyCaching never
+  // places a breakpoint on it — memory changes only re-encode the small tail.
   const stableSystem = [
     ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
     ...input.system,
@@ -95,7 +100,6 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     system.length = 0
     system.push(header, rest.join("\n"))
   }
-  if (dynamicSystem) system.push(dynamicSystem)
   system = [...system]
   const protectedSystem = input.protectedSystem?.filter((value) => value.trim()).join("\n")
   if (protectedSystem) {
@@ -124,18 +128,26 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   }
   if (isOpenaiOauth) options.instructions = system.join("\n")
 
-  const messages =
-    isOpenaiOauth || input.isWorkflow
-      ? input.messages
-      : [
-          ...system.map(
-            (x): ModelMessage => ({
-              role: "system",
-              content: x,
-            }),
-          ),
-          ...input.messages,
-        ]
+  const messages: ModelMessage[] = isOpenaiOauth || input.isWorkflow
+    ? [...input.messages]
+    : [
+        ...system.map(
+          (x): ModelMessage => ({
+            role: "system",
+            content: x,
+          }),
+        ),
+        ...input.messages,
+      ]
+
+  // Append the dynamic tail as a trailing user message after ALL history so the
+  // cached prefix (stable system + immutable history) stays byte-stable across
+  // turns. Mark it so applyCaching never gives it a cache breakpoint.
+  if (dynamicSystem) {
+    const dynamic: ModelMessage = { role: "user", content: dynamicSystem }
+    ;(dynamic as { [ProviderTransform.NO_CACHE_MESSAGE]?: boolean })[ProviderTransform.NO_CACHE_MESSAGE] = true
+    messages.push(dynamic)
+  }
 
   const params = yield* input.plugin.trigger(
     "chat.params",

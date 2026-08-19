@@ -310,6 +310,11 @@ const layer = Layer.effect(
           tools: {},
           model,
           sessionID: "daily-summary",
+          // The daily prompt changes every day and shares a constant cache key
+          // ("daily-summary"), so it can never hit a previously written entry.
+          // Writing a breakpoint here only evicts the real session prefixes;
+          // opt out of cache writes entirely (mirrors memory extraction).
+          cache: false,
           retries: 2,
           messages: [{ role: "user", content: prompt }],
         })

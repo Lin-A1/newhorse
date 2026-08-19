@@ -48,7 +48,7 @@ exports[`tool parameters JSON Schema (wire shape) edit 1`] = `
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
     "filePath": {
-      "description": "The absolute path to the file to modify",
+      "description": "Path to the file to modify. Relative paths resolve against the working directory (shown in the environment info); absolute paths are recommended.",
       "type": "string",
     },
     "newString": {
@@ -78,11 +78,11 @@ exports[`tool parameters JSON Schema (wire shape) glob 1`] = `
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
     "path": {
-      "description": "The directory to search in. If not specified, the current working directory will be used. IMPORTANT: Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior. Must be a valid directory path if provided.",
+      "description": "The directory to search in. If not specified, the current working directory will be used (shown in the environment info). Relative paths resolve against the working directory. IMPORTANT: Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default behavior. Must be a valid directory path if provided.",
       "type": "string",
     },
     "pattern": {
-      "description": "The glob pattern to match files against",
+      "description": "The glob pattern to match file paths against. The pattern is relative to the \`path\` argument (or the working directory shown in the environment info when \`path\` is omitted).",
       "type": "string",
     },
   },
@@ -102,11 +102,11 @@ exports[`tool parameters JSON Schema (wire shape) grep 1`] = `
       "type": "string",
     },
     "path": {
-      "description": "The directory to search in. Defaults to the current working directory.",
+      "description": "The directory to search in. Defaults to the current working directory (shown in the environment info). Relative paths resolve against the working directory.",
       "type": "string",
     },
     "pattern": {
-      "description": "The regex pattern to search for in file contents",
+      "description": "The regular expression to search for in file contents. This is a regex, not a glob - do not pass patterns like '*.ts'; use the \`include\` parameter to filter files by name.",
       "type": "string",
     },
   },
@@ -196,6 +196,7 @@ exports[`tool parameters JSON Schema (wire shape) memory 1`] = `
         "list",
         "search",
         "save",
+        "update",
         "forget",
         "consolidate",
         "archive",
@@ -208,7 +209,7 @@ exports[`tool parameters JSON Schema (wire shape) memory 1`] = `
       "type": "string",
     },
     "id": {
-      "description": "Memory id (required for forget)",
+      "description": "Memory id (required for update/forget)",
       "type": "string",
     },
     "ids": {
@@ -291,7 +292,7 @@ exports[`tool parameters JSON Schema (wire shape) multi_edit 1`] = `
       "type": "array",
     },
     "filePath": {
-      "description": "The absolute path to the file to modify",
+      "description": "Path to the file to modify. Relative paths resolve against the working directory (shown in the environment info); absolute paths are recommended.",
       "type": "string",
     },
   },
@@ -375,7 +376,7 @@ exports[`tool parameters JSON Schema (wire shape) read 1`] = `
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
     "filePath": {
-      "description": "The absolute path to the file or directory to read",
+      "description": "Path to the file or directory to read. Relative paths resolve against the working directory (shown in the environment info); absolute paths are recommended.",
       "type": "string",
     },
     "limit": {
@@ -586,7 +587,7 @@ exports[`tool parameters JSON Schema (wire shape) write 1`] = `
       "type": "string",
     },
     "filePath": {
-      "description": "The absolute path to the file to write (must be absolute, not relative)",
+      "description": "Path to the file to write. Relative paths resolve against the working directory (shown in the environment info); absolute paths are recommended.",
       "type": "string",
     },
   },
