@@ -3,7 +3,7 @@ import { Database } from "@newhorse/core/database/database"
 import { DailySummaryTable } from "@newhorse/core/daily-summary/sql"
 import { SessionTable, TodoTable } from "@newhorse/core/session/sql"
 import { and, desc, eq, gte, inArray, isNull, lt } from "drizzle-orm"
-import { Context, Duration, Effect, Layer, Schedule, Schema } from "effect"
+import { Cause, Context, Duration, Effect, Layer, Schedule, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { FSUtil } from "@newhorse/core/fs-util"
 import { Agent } from "@/agent/agent"
@@ -233,15 +233,18 @@ const layer = Layer.effect(
     // ---------------------------------------------------------------------
     // Fallback when the LLM path is unavailable (no provider/anchor/instance).
     // Still structured so the report page renders sections instead of a plain
-    // dump: the digest lines become the 进展 bullets.
-    const fallbackOverview = (digest: string) => {
+    // dump: the digest lines become the 进展 bullets. When a reason is known it
+    // is surfaced in the heading so the user can report the actual failure
+    // instead of a generic "LLM unavailable".
+    const fallbackOverview = (digest: string, reason?: string) => {
       const bullets = digest
         .split("\n")
         .filter(Boolean)
         .slice(0, 8)
         .map((line) => `- ${line}`)
         .join("\n")
-      return `## 今日概览\n（LLM 暂不可用，以下为当日活动记录）\n\n## 进展\n${bullets}\n\n## 下一步\n无\n\n## 行动项\n- [ ] 检查 provider / 模型配置后重新生成今日总结`
+      const detail = reason ? `：${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}` : ""
+      return `## 今日概览\n（LLM 暂不可用${detail}，以下为当日活动记录）\n\n## 进展\n${bullets}\n\n## 下一步\n无\n\n## 行动项\n- [ ] 检查 provider / 模型配置后重新生成今日总结`
     }
 
     const synthesize = Effect.fn("DailySummary.synthesize")(function* (
@@ -251,22 +254,31 @@ const layer = Layer.effect(
       fallbackModel?: { providerID: string; modelID: string },
     ) {
       const ag = yield* agent.get("daily-summary")
+      if (!ag) return fallbackOverview(digest, "agent「daily-summary」未注册")
       const def = yield* provider.defaultModel().pipe(Effect.catch(() => Effect.succeed(undefined)))
-      const selected = def ??
-        (fallbackModel
-          ? {
-              providerID: ProviderV2.ID.make(fallbackModel.providerID),
-              modelID: ModelV2.ID.make(fallbackModel.modelID),
-            }
-          : undefined)
-      if (!ag || !selected) return fallbackOverview(digest)
-      // Daily summaries use the user's configured/default model, not the small
-      // model: quality matters more than cost here, and `small: true` degrades
-      // the output (shorter, messier sections).
-      const model = yield* provider.getModel(selected.providerID, selected.modelID).pipe(
-        Effect.catch(() => Effect.succeed(undefined)),
-      )
-      if (!model) return fallbackOverview(digest)
+      const anchorRef = fallbackModel
+        ? {
+            providerID: ProviderV2.ID.make(fallbackModel.providerID),
+            modelID: ModelV2.ID.make(fallbackModel.modelID),
+          }
+        : undefined
+      // Try the default model first, then the anchor session's model. A stale
+      // `cfg.model` / model.json entry (removed provider or renamed model) makes
+      // `defaultModel()` resolve but `getModel()` fail — previously that dropped
+      // straight into the fallback even though the anchor's model still works.
+      const candidates = [def, anchorRef].filter((x): x is NonNullable<typeof x> => x !== undefined)
+      if (candidates.length === 0) return fallbackOverview(digest, "未配置默认模型，且锚点会话未记录模型")
+      const resolved = yield* Effect.forEach(candidates, (candidate) =>
+        provider.getModel(candidate.providerID, candidate.modelID).pipe(
+          Effect.map((model) => ({ providerID: candidate.providerID, modelID: candidate.modelID, model })),
+          Effect.catch(() => Effect.succeed(undefined)),
+        ),
+      ).pipe(Effect.map((results) => results.find((r): r is NonNullable<typeof r> => r !== undefined)))
+      if (!resolved) {
+        const tried = candidates.map((c) => `${c.providerID}/${c.modelID}`).join("、")
+        return fallbackOverview(digest, `模型不可用（已尝试：${tried}）`)
+      }
+      const { providerID, modelID, model } = resolved
 
       const user = {
         id: MessageID.make("msg-daily-summary"),
@@ -277,7 +289,7 @@ const layer = Layer.effect(
         // SessionV1.User.model is required: LLMRequestPrep reads
         // `user.model.variant` (request.ts), so a synthetic user without a
         // model crashes the stream and drops the report into the fallback.
-        model: { providerID: selected.providerID, modelID: selected.modelID },
+        model: { providerID, modelID },
         text: "",
       } as unknown as SessionV1.User
 
@@ -305,10 +317,12 @@ const layer = Layer.effect(
           Stream.filter(LLMEvent.is.textDelta),
           Stream.map((e) => e.text),
           Stream.mkString,
-          Effect.orDie,
+          // The stream failure (auth, network, circuit breaker, …) is a real
+          // error, not a defect — surface its message so the user can act on it.
+          Effect.catchCause((cause) => Effect.succeed(fallbackOverview(digest, `LLM 请求失败：${Cause.pretty(cause)}`))),
         )
       const cleaned = text.replace(/<think>[\s\S]*?<\/think>\s*/g, "").trim()
-      return cleaned || fallbackOverview(digest)
+      return cleaned || fallbackOverview(digest, "模型未返回内容")
     })
 
     // Most recent non-archived session directory+model, optionally restricted
@@ -367,7 +381,7 @@ const layer = Layer.effect(
         .pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("daily summary synthesis failed", { cause }).pipe(
-              Effect.as(fallbackOverview(digest)),
+              Effect.as(fallbackOverview(digest, `内部错误：${Cause.pretty(cause)}`)),
             ),
           ),
         )

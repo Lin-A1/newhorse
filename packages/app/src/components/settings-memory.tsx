@@ -268,7 +268,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
             }`}
             onClick={() => setView("current")}
           >
-            {language.t("settings.memory.view.current")}
+            {language.t("settings.memory.view.workspace")}
           </button>
           <button
             type="button"
@@ -281,7 +281,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
             }`}
             onClick={() => setView("all")}
           >
-            {language.t("settings.memory.view.all")}
+            {language.t("settings.memory.view.global")}
           </button>
         </div>
         <Show when={view() === "current"}>

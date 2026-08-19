@@ -1094,6 +1094,103 @@ it.instance("loop stops provider overflow instead of auto-compacting when disabl
   }),
 )
 
+it.instance("loop skips auto-compaction when the last compaction retained no tail", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      // Tiny preserve budget: the recent turn can never be retained, so select
+      // falls back to a full summary with no tail_start_id (no reduction).
+      compaction: { auto: true, tail_turns: 1, preserve_recent_tokens: 10 },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+
+    // Build the post-compaction state directly: an over-limit finished turn
+    // followed by a compaction that retained no tail. The loop must answer the
+    // next prompt directly instead of cycling summary + synthetic continue.
+    const hello = yield* user(chat.id, "hello")
+    const seeded: SessionV1.Assistant = {
+      id: MessageID.ascending(),
+      role: "assistant",
+      parentID: hello.id,
+      sessionID: chat.id,
+      mode: "build",
+      agent: "build",
+      path: { cwd: "/tmp", root: "/tmp" },
+      cost: 0,
+      tokens: { input: 95_000, output: 5_000, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: ref.modelID,
+      providerID: ref.providerID,
+      time: { created: Date.now() },
+      finish: "stop",
+    }
+    yield* sessions.updateMessage(seeded)
+    const marker = yield* user(chat.id, "compaction marker")
+    yield* sessions.updatePart({
+      id: PartID.ascending(),
+      messageID: marker.id,
+      sessionID: chat.id,
+      type: "compaction",
+      auto: true,
+    })
+    const summaryMsg: SessionV1.Assistant = {
+      id: MessageID.ascending(),
+      role: "assistant",
+      parentID: marker.id,
+      sessionID: chat.id,
+      mode: "compaction",
+      agent: "compaction",
+      path: { cwd: "/tmp", root: "/tmp" },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: ref.modelID,
+      providerID: ref.providerID,
+      time: { created: Date.now() },
+      summary: true,
+      finish: "stop",
+    }
+    yield* sessions.updateMessage(summaryMsg)
+    const continueUser = yield* user(chat.id, "Continue if you have next steps")
+    const continueMsg: SessionV1.Assistant = {
+      id: MessageID.ascending(),
+      role: "assistant",
+      parentID: continueUser.id,
+      sessionID: chat.id,
+      mode: "build",
+      agent: "build",
+      path: { cwd: "/tmp", root: "/tmp" },
+      cost: 0,
+      tokens: { input: 95_000, output: 5_000, reasoning: 0, cache: { read: 0, write: 0 } },
+      modelID: ref.modelID,
+      providerID: ref.providerID,
+      time: { created: Date.now() },
+      finish: "stop",
+    }
+    yield* sessions.updateMessage(continueMsg)
+
+    yield* llm.pushMatch(
+      (hit) => JSON.stringify(hit.body).includes("third message"),
+      reply().text("direct answer").stop(),
+    )
+    const third = yield* prompt.prompt({
+      sessionID: chat.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "third message" }],
+    })
+    const result = yield* prompt.loop({ sessionID: chat.id })
+
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") {
+      expect(result.info.parentID).toBe(third.info.id)
+      expect(result.parts.some((part) => part.type === "text" && part.text === "direct answer")).toBe(true)
+    }
+    // The retained-context overflow must not trigger another compaction cycle.
+    expect((yield* llm.inputs).filter((body) => JSON.stringify(body).includes("conversation history"))).toHaveLength(0)
+  }),
+)
+
 noLLMServer.instance.skip(
   "prompt emits v2 prompted and synthetic events (v2 projector disabled)",
   () =>

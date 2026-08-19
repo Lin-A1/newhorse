@@ -1434,8 +1434,27 @@ const layer = Layer.effect(
             lastFinished.summary !== true &&
             (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
           ) {
-            yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
-            continue
+            // A compaction that retained no tail (tail_start_id unset) does not
+            // shrink the model-visible context (filterCompacted keeps the whole
+            // history when there is no tail boundary). Repeating it on every
+            // subsequent turn would stall the session behind compaction cycles
+            // that never converge — each user message answered via the synthetic
+            // continue prompt instead of directly. Skip auto-compaction so the
+            // turn proceeds; the provider surfaces a visible context-overflow
+            // error if the context is genuinely too large.
+            const lastCompaction = msgs
+              .filter((msg) =>
+                msg.parts.some((part): part is SessionV1.CompactionPart => part.type === "compaction"),
+              )
+              .at(-1)
+              ?.parts.find((part): part is SessionV1.CompactionPart => part.type === "compaction")
+            if (!lastCompaction || lastCompaction.tail_start_id) {
+              yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
+              continue
+            }
+            yield* Effect.logWarning("skipping auto-compaction: previous compaction retained no tail", {
+              "session.id": sessionID,
+            })
           }
 
           const agent = yield* agents.get(lastUser.agent)

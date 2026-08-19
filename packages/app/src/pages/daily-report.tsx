@@ -64,6 +64,19 @@ export default function DailyReportPage() {
         showToast({ variant: "error", title: language.t("dailyReport.noActivity") })
         return
       }
+      // The backend returns 200 with the fallback overview when the LLM path
+      // failed; surface the embedded reason so the user can act on it instead
+      // of silently re-seeing the generic fallback text.
+      const fallback = res.data.overview.match(/LLM 暂不可用(?:：([^，\n]+))?/)
+      if (fallback) {
+        await refetch()
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: fallback[1],
+        })
+        return
+      }
       await refetch()
       showToast({ variant: "success", title: language.t("dailyReport.regenerated") })
     } catch (error) {
