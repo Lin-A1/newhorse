@@ -55,7 +55,7 @@ Profiles are not storage boundaries. Persistent content stays isolated by scope 
 - Structured memory with no-approval lifecycle: extracted and tool-saved memories apply immediately, and stay editable/deletable in the Memory Center
 - Persistent reminders with create, pause, resume, cancel, lease, and idempotent delivery
 - Follow-up scheduling and a Companion Plan surface for memory, reminders, and continuity grants
-- Daily activity summaries: one LLM-generated recap per day across your newhorse work, newhorse, Claude Code, and Codex sessions, auto-generated once after 23:00 local
+- Daily activity summaries: one simple LLM-generated fused recap per day ("what was done today", 3–5 lines, grouped by project, not detailed file lists) across your newhorse work, newhorse, Claude Code, and Codex sessions, auto-generated once after 23:00 local; extraction is deduplicated and truncated for quality
 - Todo-continuation enforcer: automatically resumes work when open todos remain after a turn
 - Multi-model fallback chains: switch to an available provider/model when the primary one fails
 - Automatic permission acceptance with session, lineage, and directory precedence
@@ -105,7 +105,7 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 - Prompt caching is prefix-friendly: the stable system prompt (identity/env/instructions/skills/persona) is cached as a segment; dynamic memory/continuity lives in a separate post-breakpoint segment, so memory changes don't invalidate the cached prefix
 - FTS5/BM25 retrieval plus entity extraction & boost — no embedding model required
 - Persistent reminders, follow-ups, continuity grants, and Companion Plan
-- Daily activity summaries across newhorse, Claude Code, and Codex sessions, including archived (non-deleted) sessions; visible in the session right-side panel and sidebar, with a generate-now button and an agent query tool
+- Daily activity summaries across newhorse, Claude Code, and Codex sessions (including archived) — now a simple 3–5 line fused "what was done today" recap (grouped by project, not per-file details) via a structured JSON digest; visible in the session right-side panel and sidebar, with a generate-now button and an agent query tool
 - A dedicated daily report page (`/daily`) renders each day as a structured, deliverable report — an AI overview plus deterministic work output (files/additions/deletions), per-session detail with todo status, and usage/cost rollup
 - Every day's summary is recorded and retained: the daily-summary store is date-keyed, auto-generated each day past 23:00 (with one-day backfill), and the timeline lists the full history
 - Companion tone is example-driven (short instruction + five Chinese few-shot dialogues covering small talk/help/emotion-first/uncertainty/humor) with a behavioral default persona, not rule-stacking
@@ -118,7 +118,7 @@ Newhorse keeps the OpenCode runtime as its base and layers newhorse-specific cap
 
 **newhorse workbench (Companion-only)**
 - A dedicated workbench page (`/workbench`) is the newhorse "butler" hub: a presence strip, personal todos, the full daily-summary history, and usage stats in one place
-- Workbench v2 layout: the 90-day contribution heatmap spans full width on top, with a two-column body (presence + todos | usage + daily-summary timeline) that collapses to a single column on narrow screens; scroll position is preserved across data refreshes so the page never jumps back to the top
+- Workbench v2 layout: the 90-day contribution heatmap (GitHub green light/dark, centered, weekday/month labels, token→count fallback for empty days) spans full width on top, with a two-column body (presence + todos | usage + daily-summary timeline) that collapses to a single column on narrow screens; scroll position is preserved across data refreshes so the page never jumps back to the top
 - Real presence sensing: on desktop the host reports the actual foreground app, lock state, and meeting state (Win32 foreground-window probe, request-driven with a 15s cache — no resident daemon); the server exposes a `POST /presence` endpoint backed by an in-memory ref so LAN/mobile clients read the same live signal, while web falls back to session-derived idle time
 - Personal workbench todos: user-created or newhorse-proposed (`workbench` tool), with a status state machine (open → in_progress → done/cancelled), priorities, deadlines, and per-directory isolation
 - Companion context injects the current open todos (top 5 by priority) so newhorse can act on them conversationally
@@ -182,7 +182,7 @@ Major foundations already implemented include:
 - Structured daily report page (`/daily`): AI overview + deterministic work output, per-session detail with todos, and usage/cost rollup, stored as a versioned JSON report with backward-compatible rendering of older plain-text summaries
 - Server-backed dynamic model/provider catalogs
 - v2-only layout (the legacy interface and its retirement migration were removed)
-- Memory retrieval upgrades: FTS5/BM25 search, entity extraction + boost, and post-turn auto-extraction that applies immediately (no approval gate)
+- Memory retrieval upgrades: FTS5/BM25 search, entity extraction + boost, post-turn auto-extraction that applies immediately (no approval gate), and per-session once-only recall (relevance-gated, global+workspace, cache-safe — not re-injected every turn)
 - Memory layering: four content scopes (project / personal / relationship / user-global) with automatic migration of existing memories
 - Memory no-approval: extracted and tool-saved memories become active directly; Memory Center is edit/delete/pause, with per-scope labels and no accept/reject step
 - Work-session memory injection: assistant sessions get project/user-global memories in context, not just on-demand tool lookup
