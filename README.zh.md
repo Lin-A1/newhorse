@@ -18,6 +18,10 @@
 
 ---
 
+## 下载
+
+预编译安装包见 https://github.com/Lin-A1/newhorse/releases — 最新为 [v1.19.0](https://github.com/Lin-A1/newhorse/releases/tag/v1.19.0)（`newhorse-desktop-win-x64.exe`）。
+
 ## 概览
 
 Newhorse 是一个独立的 [OpenCode](https://github.com/anomalyco/opencode) 分支，把编码智能体运行时扩展成更完整的工作与生活环境。相同的运行时同时支撑桌面端、Web 端、TUI、SDK、自动化、模型、工具、MCP Server、Session 和 Workspace。

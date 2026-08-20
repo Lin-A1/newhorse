@@ -18,6 +18,10 @@
 
 ---
 
+## Download
+
+Prebuilt installers for each release are at https://github.com/Lin-A1/newhorse/releases — latest is [v1.19.0](https://github.com/Lin-A1/newhorse/releases/tag/v1.19.0) (`newhorse-desktop-win-x64.exe`).
+
 ## Overview
 
 Newhorse is an independent [OpenCode](https://github.com/anomalyco/opencode) fork that extends a coding-agent runtime into a broader work and life environment. The same runtime powers the desktop app, web app, TUI, SDK, automation, models, tools, MCP servers, sessions, and workspaces.
