@@ -448,6 +448,24 @@ export type MermaidCacheEntry = {
 }
 
 export const MERMAID_MAX_RETRIES = 3
+const MERMAID_CACHE_LIMIT = 500
+const completedMermaid = new Map<string, MermaidCacheEntry>()
+
+export function getCachedMermaid(key: string) {
+  const cached = completedMermaid.get(key)
+  if (!cached) return
+  completedMermaid.delete(key)
+  completedMermaid.set(key, cached)
+  return cached
+}
+
+export function cacheMermaid(key: string, entry: MermaidCacheEntry) {
+  completedMermaid.delete(key)
+  completedMermaid.set(key, entry)
+  if (completedMermaid.size <= MERMAID_CACHE_LIMIT) return
+  const oldest = completedMermaid.keys().next().value
+  if (oldest !== undefined) completedMermaid.delete(oldest)
+}
 
 // A cached diagram can be reused only while the raw source and the theme epoch
 // match. Failed renders are retried until the retry budget is exhausted so a

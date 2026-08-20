@@ -523,6 +523,36 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       })
     })
 
+    // Web / fresh browser: inherit the desktop/remote server's known projects,
+    // worktrees and their recent sessions. When the locally persisted project
+    // list is empty but the server already knows projects (from the desktop
+    // client or a previous sync), mirror them locally so the Web app is not
+    // stuck in a disconnected empty state. The server remains the source of
+    // truth for worktrees/sandboxes — re-opening keeps local enrichment.
+    createEffect(() => {
+      if (!serverSync().ready) return
+      if (server.projects.list().length > 0) return
+      const serverProjects = serverSync().data.project
+      if (!serverProjects.length) return
+      // Preserve server recency: oldest first so `open` prepend semantics
+      // keep the most recent project at the front after the batch.
+      const ordered = [...serverProjects]
+        .filter((project) => !!project.worktree)
+        .sort((a, b) => (a.time.updated ?? a.time.created ?? 0) - (b.time.updated ?? b.time.created ?? 0))
+      if (ordered.length === 0) return
+      for (const project of ordered) {
+        // `open` is a no-op for duplicates; also loads sessions for the dir.
+        server.projects.open(project.worktree)
+        // Re-expand previously expanded projects and restore sandboxes.
+        if (project.worktree && serverSync().data.project.find((candidate) => candidate.worktree === project.worktree)) {
+          serverSync().project.loadSessions(project.worktree)
+        }
+      }
+      // Keep selection usable: point recently closed filter and recent-session
+      // aggregation at something real immediately.
+      if (ordered[0]?.worktree) server.projects.touch(ordered[0].worktree)
+    })
+
     createEffect(() => {
       const projects = enriched()
       if (projects.length === 0) return

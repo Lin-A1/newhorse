@@ -1,10 +1,11 @@
 import { createOpencodeClient } from "@newhorse/sdk/v2/client"
 import { OpenCode, type OpenCodeClient } from "@newhorse/client/promise"
 import type { ServerConnection } from "@/context/server"
+import { base64Encode } from "@newhorse/core/util/encode"
 import { decode64 } from "@/utils/base64"
 
 export function authTokenFromCredentials(input: { username?: string; password: string }) {
-  return btoa(`${input.username ?? "opencode"}:${input.password}`)
+  return base64Encode(`${input.username ?? "opencode"}:${input.password}`)
 }
 
 export function authFromToken(token: string | null) {

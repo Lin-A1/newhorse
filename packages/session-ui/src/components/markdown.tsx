@@ -32,6 +32,8 @@ import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-s
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import {
+  cacheMermaid,
+  getCachedMermaid,
   isMermaidRenderFresh,
   MERMAID_MAX_RETRIES,
   renderMermaid,
@@ -301,6 +303,37 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   markCodeLinks(root)
 }
 
+async function svgToPngBlob(svgMarkup: string): Promise<Blob | undefined> {
+  try {
+    const doc = new DOMParser().parseFromString(svgMarkup, "image/svg+xml")
+    const svg = doc.documentElement as unknown as SVGSVGElement
+    if (svg.tagName.toLowerCase() !== "svg" || !svg.viewBox) return undefined
+    const width = Number(svg.getAttribute("width")) || svg.viewBox.baseVal.width || 800
+    const height = Number(svg.getAttribute("height")) || svg.viewBox.baseVal.height || 600
+    const serialized = new XMLSerializer().serializeToString(svg)
+    const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(serialized)
+    const img = new Image()
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error("svg load failed"))
+      img.src = url
+    })
+    const canvas = document.createElement("canvas")
+    const scale = 2
+    canvas.width = Math.max(1, Math.round(width * scale))
+    canvas.height = Math.max(1, Math.round(height * scale))
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return undefined
+    ctx.scale(scale, scale)
+    ctx.drawImage(img, 0, 0, width, height)
+    return await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), "image/png")).then(
+      (b) => b ?? undefined,
+    )
+  } catch {
+    return undefined
+  }
+}
+
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
   const timeouts = new Map<HTMLElement, ReturnType<typeof setTimeout>>()
 
@@ -310,24 +343,50 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
     setCopyState(button, labels, copied)
   }
 
-  const handleClick = async (event: MouseEvent) => {
-    const target = event.target
-    if (!(target instanceof Element)) return
-
-    const button = target.closest('[data-slot="markdown-copy-button"]')
-    if (!(button instanceof HTMLElement)) return
-    const code = button.closest('[data-component="markdown-code"]')?.querySelector("code")
-    const content = code?.textContent ?? ""
-    if (!content) return
-    const clipboard = navigator?.clipboard
-    if (!clipboard) return
-    await clipboard.writeText(content)
+  const flashCopied = (button: HTMLElement) => {
     const labels = getLabels()
     setCopyState(button, labels, true)
     const existing = timeouts.get(button)
     if (existing) clearTimeout(existing)
     const timeout = setTimeout(() => setCopyState(button, labels, false), 2000)
     timeouts.set(button, timeout)
+  }
+
+  const handleClick = async (event: MouseEvent) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+
+    const button = target.closest('[data-slot="markdown-copy-button"]')
+    if (!(button instanceof HTMLElement)) return
+    const wrapper = button.closest('[data-component="markdown-code"]')
+    const code = wrapper?.querySelector("code")
+    const content = code?.textContent ?? ""
+    if (!content) return
+    const clipboard = navigator?.clipboard
+    if (!clipboard) return
+
+    const isMermaid = wrapper?.getAttribute("data-mermaid") === "true"
+    if (isMermaid && "write" in clipboard) {
+      const diagram = wrapper?.querySelector(".markdown-mermaid")
+      const png = diagram ? await svgToPngBlob(diagram.innerHTML) : undefined
+      if (png) {
+        try {
+          await clipboard.write([
+            new ClipboardItem({
+              "image/png": png,
+              "text/plain": new Blob([content], { type: "text/plain" }),
+            }),
+          ])
+          flashCopied(button)
+          return
+        } catch {
+          // fall through to plain text copy when the rich write is blocked
+        }
+      }
+    }
+
+    await clipboard.writeText(content)
+    flashCopied(button)
   }
 
   const buttons = Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]'))
@@ -435,7 +494,23 @@ export function Markdown(
           const blockKey = markdownBlockKey(owner, src.key, index, block.mode)
 
           if (block.mode === "code" && block.language?.toLowerCase() === "mermaid" && block.complete) {
-            const cached = completedCode.get(blockKey)
+            const persistentKey = base ? markdownBlockKey("mermaid", base, index, block.mode) : undefined
+            const persisted = persistentKey ? getCachedMermaid(persistentKey) : undefined
+            const cached =
+              completedCode.get(blockKey) ??
+              (persisted
+                ? ({
+                    key: blockKey,
+                    mode: block.mode,
+                    hash: `${String(persisted.raw.length)}:${persisted.themeVersion ?? 0}`,
+                    complete: true,
+                    language: "mermaid",
+                    generation: 0,
+                    stable: [],
+                    unstable: [],
+                    ...persisted,
+                  } satisfies Extract<RenderedBlock, { mode: "code" }>)
+                : undefined)
             if (cached && isMermaidRenderFresh(cached, block, src.themeVersion)) return cached
             const diagram = await mermaid(block.src)
             // The theme version is part of the hash so a theme switch replaces
@@ -457,6 +532,7 @@ export function Markdown(
                 retries: 0,
               } satisfies Extract<RenderedBlock, { mode: "code" }>
               completedCode.set(blockKey, rendered)
+              if (persistentKey) cacheMermaid(persistentKey, rendered)
               return rendered
             }
             // Rendering failed (invalid diagram, worker/bundle issue). If this
@@ -466,10 +542,11 @@ export function Markdown(
             // actually changed. Failures are retried (bounded) so a transient
             // hiccup during a session switch or theme flip recovers instead of
             // permanently degrading the diagram to plain text.
-            const retries = cached?.mermaidError ? (cached.retries ?? 0) + 1 : 1
+            const retries = (cached?.retries ?? 0) + 1
             if (cached?.mermaid && cached.raw === block.raw) {
               const kept = { ...cached, retries } satisfies Extract<RenderedBlock, { mode: "code" }>
               completedCode.set(blockKey, kept)
+              if (persistentKey) cacheMermaid(persistentKey, kept)
               if (retries < MERMAID_MAX_RETRIES) scheduleMermaidRetry()
               return kept
             }
@@ -488,6 +565,7 @@ export function Markdown(
               retries,
             } satisfies Extract<RenderedBlock, { mode: "code" }>
             completedCode.set(blockKey, failed)
+            if (persistentKey) cacheMermaid(persistentKey, failed)
             if (retries < MERMAID_MAX_RETRIES) scheduleMermaidRetry()
             return failed
           }

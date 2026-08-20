@@ -37,6 +37,7 @@ export interface MockServerConfig {
     list: (
       query: URLSearchParams,
     ) => { items: unknown[]; nextCursor?: string } | Promise<{ items: unknown[]; nextCursor?: string }>
+    aggregate?: (query: URLSearchParams) => unknown[] | Promise<unknown[]>
     export?: (query: URLSearchParams) => unknown[]
     mutate?: (input: { method: string; path: string; query: URLSearchParams; body?: unknown }) => unknown
   }
@@ -108,6 +109,34 @@ export async function mockOpenCodeServer(page: Page, config: MockServerConfig) {
       return json(route, { healthy: true, version: "2.0.0", pid: 1 })
     if (path === "/experimental/capabilities") return json(route, { backgroundSubagents: true })
     if (path === "/capability") return json(route, config.capability ?? defaultCapability())
+    if (path === "/memory/all" && route.request().method() === "GET") {
+      const items = (await config.memory?.aggregate?.(url.searchParams)) ?? []
+      const groups = new Map<
+        string,
+        { scope: "workspace" | "user_global"; workspaceID?: string; directory?: string; items: unknown[] }
+      >()
+      for (const item of items) {
+        const value = item as { scope?: string; workspaceID?: string; directory?: string }
+        if (value.scope === "user_global") {
+          const group = groups.get("global")
+          if (group) group.items.push(item)
+          else groups.set("global", { scope: "user_global", items: [item] })
+          continue
+        }
+        const key = value.workspaceID ?? `dir:${value.directory ?? ""}`
+        const group = groups.get(key)
+        if (group) group.items.push(item)
+        else {
+          groups.set(key, {
+            scope: "workspace",
+            ...(value.workspaceID ? { workspaceID: value.workspaceID } : {}),
+            ...(value.directory ? { directory: value.directory } : {}),
+            items: [item],
+          })
+        }
+      }
+      return json(route, Array.from(groups.values()))
+    }
     if (path === "/memory" && route.request().method() === "GET") {
       return json(route, (await config.memory?.list(url.searchParams)) ?? { items: [] })
     }

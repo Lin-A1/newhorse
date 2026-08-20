@@ -3,23 +3,17 @@
 // phone on the LAN opens the share link (which carries ?auth_token=) and the
 // browser then requests every /src/* and /assets/* dependency without that
 // token, so these paths must bypass auth or the page 401s and the browser pops
-// a Basic-auth dialog. Only the API surface (mounted under /api, /global, /event,
-// /pty-connect, ...) requires credentials; those prefixes are never treated as
-// public here.
-const PUBLIC_UI_PREFIXES = ["/src/", "/assets/", "/favicon", "/apple-touch-icon", "/social-share", "/sprite"]
-
-export const PUBLIC_UI_PATHS = new Set<string>([
-  "/",
-  "/index.html",
-  "/site.webmanifest",
-  "/web-app-manifest-192x192.png",
-  "/web-app-manifest-512x512.png",
-  "/sw.js",
-  "/oc-theme-preload.js",
-])
+// a Basic-auth dialog.
+//
+// Only the API surface requires credentials. The UI is a single-page app under
+// the catch-all /* route, so its client-side routes (/session/..., /workbench,
+// ...) are NOT enumerable — refreshing any of them must serve index.html
+// without auth, otherwise a deep-link refresh on LAN pops the Basic dialog.
+// Treat every non-API GET as public UI instead.
+const API_PREFIXES = ["/api", "/global", "/event", "/pty-connect", "/control", "/doc"]
 
 export function isPublicUIPath(method: string, pathname: string) {
   if (method !== "GET") return false
-  if (PUBLIC_UI_PATHS.has(pathname)) return true
-  return PUBLIC_UI_PREFIXES.some((prefix) => pathname.startsWith(prefix))
+  if (API_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))) return false
+  return true
 }

@@ -132,6 +132,114 @@ function sourceLabel(source: DailySource): string {
   return source === "work" ? "work" : source === "companion" ? "newhorse" : source === "claude" ? "Claude Code" : "Codex"
 }
 
+function toSessionDetails(rows: RawRow[], todosBySession: Map<string, TodoInfo[]>): SessionDetail[] {
+  return rows.map((row) => {
+    const diffs = row.summary_diffs ?? []
+    const files = diffs.flatMap((diff) => (diff.file ? [diff.file] : []))
+    return {
+      sessionID: row.id,
+      title: row.title,
+      source: row.profile_id === "companion" ? "companion" : "work",
+      directory: row.directory,
+      model: modelLabel(row.model),
+      filesChanged: row.summary_files ?? diffs.length,
+      additions: row.summary_additions ?? diffs.reduce((sum, diff) => sum + diff.additions, 0),
+      deletions: row.summary_deletions ?? diffs.reduce((sum, diff) => sum + diff.deletions, 0),
+      files,
+      todos: todosBySession.get(row.id) ?? [],
+    }
+  })
+}
+
+function formatFileList(files: readonly string[], limit = 8): string {
+  if (files.length === 0) return ""
+  const shown = files.slice(0, limit)
+  const lines = shown.map((file) => `- ${file}`).join("\n")
+  return files.length > limit ? `${lines}\n- …and ${files.length - limit} more` : lines
+}
+
+function formatTodos(todos: readonly TodoInfo[], limit = 5): string {
+  if (todos.length === 0) return ""
+  const done = todos.filter((t) => t.status === "done" || t.status === "completed").length
+  const shown = todos.slice(0, limit).map((t) => t.content)
+  const suffix = todos.length > limit ? `、…and ${todos.length - limit} more` : ""
+  const summary = `待办：${shown.join("、")}${suffix}`
+  return done > 0 ? `${summary}（已完成 ${done}/${todos.length}）` : summary
+}
+
+function toWorkSections(sessions: readonly SessionDetail[]): Section[] {
+  return sessions
+    .filter((s) => s.filesChanged > 0 || s.additions > 0 || s.deletions > 0)
+    .map((s) => {
+      const head = `**${s.title}** · +${s.additions} −${s.deletions} · ${s.filesChanged} 文件`
+      const body = formatFileList(s.files)
+      return { title: s.title, body: body ? `${head}\n${body}` : head }
+    })
+}
+
+function toUsageRollup(rows: RawRow[]): UsageRollup {
+  const cost = rows.reduce((sum, row) => sum + (row.cost ?? 0), 0)
+  const tokens = rows.reduce(
+    (acc, row) => ({
+      input: acc.input + row.tokens_input,
+      output: acc.output + row.tokens_output,
+      reasoning: acc.reasoning + row.tokens_reasoning,
+      cache: {
+        read: acc.cache.read + row.tokens_cache_read,
+        write: acc.cache.write + row.tokens_cache_write,
+      },
+    }),
+    { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  )
+  const models = [...new Set(rows.flatMap((row) => (modelLabel(row.model) ? [modelLabel(row.model)!] : [])))]
+  return { cost, tokens, sessions: rows.length, models } satisfies UsageRollup
+}
+
+function toDigestLines(
+  sessions: readonly SessionDetail[],
+  claude: readonly string[],
+  codex: readonly string[],
+): string[] {
+  const lines: string[] = []
+  for (const s of sessions) {
+    const detail = s.filesChanged > 0 ? `：改动 ${s.filesChanged} 文件（+${s.additions} −${s.deletions}）` : ""
+    const todos = formatTodos(s.todos)
+    const suffix = todos ? `；${todos}` : ""
+    lines.push(`[${sourceLabel(s.source as DailySource)}] ${s.title}${detail}${suffix}`)
+  }
+  if (claude.length > 0) lines.push(`[Claude Code] ${claude.slice(0, 6).map((s) => truncate(s, 80)).join("；")}`)
+  if (codex.length > 0) lines.push(`[Codex] ${codex.slice(0, 6).map((s) => truncate(s, 80)).join("；")}`)
+  return lines
+}
+
+function toStructuredDigest(
+  sessions: readonly SessionDetail[],
+  claude: readonly string[],
+  codex: readonly string[],
+  usage: UsageRollup,
+): string {
+  const byProject = new Map<string, SessionDetail[]>()
+  for (const s of sessions) {
+    const key = s.directory || "unknown"
+    const list = byProject.get(key) ?? []
+    list.push(s)
+    byProject.set(key, list)
+  }
+  const projects = [...byProject.entries()].map(([directory, list]) => ({
+    directory,
+    sessions: list.map((s) => ({
+      title: s.title,
+      model: s.model,
+      files: s.files.slice(0, 8),
+      filesChanged: s.filesChanged,
+      additions: s.additions,
+      deletions: s.deletions,
+      todos: s.todos.slice(0, 5),
+    })),
+  }))
+  return JSON.stringify({ projects, external: { claude: claude.slice(0, 6), codex: codex.slice(0, 6) }, usage }, null, 2)
+}
+
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -180,50 +288,11 @@ const layer = Layer.effect(
         todosBySession.set(todo.session_id, list)
       }
 
-      const sessions: SessionDetail[] = rows.map((row) => {
-        const diffs = row.summary_diffs ?? []
-        const files = diffs.flatMap((diff) => (diff.file ? [diff.file] : []))
-        return {
-          sessionID: row.id,
-          title: row.title,
-          source: row.profile_id === "companion" ? "companion" : "work",
-          directory: row.directory,
-          model: modelLabel(row.model),
-          filesChanged: row.summary_files ?? diffs.length,
-          additions: row.summary_additions ?? diffs.reduce((sum, diff) => sum + diff.additions, 0),
-          deletions: row.summary_deletions ?? diffs.reduce((sum, diff) => sum + diff.deletions, 0),
-          files,
-          todos: todosBySession.get(row.id) ?? [],
-        }
-      })
-
-      const work: Section[] = sessions
-        .filter((s) => s.filesChanged > 0 || s.additions > 0 || s.deletions > 0)
-        .map((s) => {
-          const lines = s.files.map((file) => `- ${file}`).join("\n")
-          const head = `**${s.title}** · +${s.additions} −${s.deletions} · ${s.filesChanged} 文件`
-          return { title: s.title, body: lines ? `${head}\n${lines}` : head }
-        })
-
-      const cost = rows.reduce((sum, row) => sum + (row.cost ?? 0), 0)
-      const tokens = rows.reduce(
-        (acc, row) => ({
-          input: acc.input + row.tokens_input,
-          output: acc.output + row.tokens_output,
-          reasoning: acc.reasoning + row.tokens_reasoning,
-          cache: {
-            read: acc.cache.read + row.tokens_cache_read,
-            write: acc.cache.write + row.tokens_cache_write,
-          },
-        }),
-        { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-      )
-      const models = [...new Set(rows.flatMap((row) => (modelLabel(row.model) ? [modelLabel(row.model)!] : [])))]
-
+      const sessions = toSessionDetails(rows, todosBySession)
       return {
         sessions,
-        work,
-        usage: { cost, tokens, sessions: rows.length, models } satisfies UsageRollup,
+        work: toWorkSections(sessions),
+        usage: toUsageRollup(rows),
       }
     })
 
@@ -237,14 +306,24 @@ const layer = Layer.effect(
     // is surfaced in the heading so the user can report the actual failure
     // instead of a generic "LLM unavailable".
     const fallbackOverview = (digest: string, reason?: string) => {
-      const bullets = digest
-        .split("\n")
-        .filter(Boolean)
-        .slice(0, 8)
+      let lines: string[]
+      try {
+        const parsed = JSON.parse(digest) as { projects?: Array<{ sessions: Array<{ title: string }> }> }
+        if (parsed && Array.isArray(parsed.projects)) {
+          lines = parsed.projects.flatMap((p) => p.sessions.map((s) => s.title)).filter(Boolean)
+          if (lines.length === 0) lines = digest.split("\n").filter(Boolean)
+        } else {
+          lines = digest.split("\n").filter(Boolean)
+        }
+      } catch {
+        lines = digest.split("\n").filter(Boolean)
+      }
+      const bullets = lines
+        .slice(0, 5)
         .map((line) => `- ${line}`)
         .join("\n")
-      const detail = reason ? `：${reason.length > 160 ? `${reason.slice(0, 160)}…` : reason}` : ""
-      return `## 今日概览\n（LLM 暂不可用${detail}，以下为当日活动记录）\n\n## 进展\n${bullets}\n\n## 下一步\n无\n\n## 行动项\n- [ ] 检查 provider / 模型配置后重新生成今日总结`
+      const detail = reason ? `（${reason.length > 120 ? `${reason.slice(0, 120)}…` : reason}）` : ""
+      return `## 今日做了什么\n${detail ? `${detail}\n` : ""}${bullets || "- 今日无有效会话记录。"}`
     }
 
     const synthesize = Effect.fn("DailySummary.synthesize")(function* (
@@ -262,11 +341,12 @@ const layer = Layer.effect(
             modelID: ModelV2.ID.make(fallbackModel.modelID),
           }
         : undefined
-      // Try the default model first, then the anchor session's model. A stale
+      // Prefer the anchor session's model so summaries use the same provider as
+      // Companion, then fall back to the configured default. A stale
       // `cfg.model` / model.json entry (removed provider or renamed model) makes
       // `defaultModel()` resolve but `getModel()` fail — previously that dropped
       // straight into the fallback even though the anchor's model still works.
-      const candidates = [def, anchorRef].filter((x): x is NonNullable<typeof x> => x !== undefined)
+      const candidates = [anchorRef, def].filter((x): x is NonNullable<typeof x> => x !== undefined)
       if (candidates.length === 0) return fallbackOverview(digest, "未配置默认模型，且锚点会话未记录模型")
       const resolved = yield* Effect.forEach(candidates, (candidate) =>
         provider.getModel(candidate.providerID, candidate.modelID).pipe(
@@ -315,7 +395,9 @@ const layer = Layer.effect(
           // Writing a breakpoint here only evicts the real session prefixes;
           // opt out of cache writes entirely (mirrors memory extraction).
           cache: false,
-          retries: 2,
+          // This is a background report: surface provider failures immediately
+          // instead of repeating quota/auth failures through the AI SDK.
+          retries: 0,
           messages: [{ role: "user", content: prompt }],
         })
         .pipe(
@@ -407,18 +489,8 @@ const layer = Layer.effect(
       if (agg.sessions.length === 0 && claude.length === 0 && codex.length === 0) return undefined
 
       const dateKey = localDateKey(start)
-      const lines: string[] = []
-      for (const s of agg.sessions) {
-        const detail = s.filesChanged > 0 ? `：改动 ${s.filesChanged} 文件（+${s.additions} −${s.deletions}）` : ""
-        const todos = s.todos.length > 0 ? `；待办：${s.todos.map((t) => t.content).join("、")}` : ""
-        lines.push(`[${sourceLabel(s.source)}] ${s.title}${detail}${todos}`)
-      }
-      if (claude.length > 0)
-        lines.push(`[Claude Code] ${claude.slice(0, 6).map((s) => truncate(s, 80)).join("；")}`)
-      if (codex.length > 0)
-        lines.push(`[Codex] ${codex.slice(0, 6).map((s) => truncate(s, 80)).join("；")}`)
-
-      const overview = yield* generateOverview(lines.join("\n"), dateKey)
+      const structured = toStructuredDigest(agg.sessions, claude, codex, agg.usage)
+      const overview = yield* generateOverview(structured, dateKey)
       return {
         date: dateKey,
         overview,

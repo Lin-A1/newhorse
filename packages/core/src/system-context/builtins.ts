@@ -30,13 +30,10 @@ const builtIns = Layer.effectDiscard(
           ["Here is some useful information about the environment you are running in:", environment].join("\n"),
         update: (_previous, environment) => ["The environment you are running in is now:", environment].join("\n"),
       }),
-      SystemContext.make({
-        key: SystemContext.Key.make("core/date"),
-        codec: Schema.toCodecJson(Schema.String),
-        load: DateTime.nowAsDate.pipe(Effect.map((date) => date.toDateString())),
-        baseline: (date) => `Today's date: ${date}`,
-        update: (_previous, date) => `Today's date is now: ${date}`,
-      }),
+      // The date is injected via dynamicSystem in prompt.ts as a user message
+      // after the cache breakpoint, so a day rollover never invalidates the
+      // cached stable prefix (working dir, platform, instructions, tools).
+      // Do NOT put it in the baseline/update prefix.
     ])
 
     yield* registry.register({ key: SystemContext.Key.make("core/builtins"), load: Effect.succeed(context) })

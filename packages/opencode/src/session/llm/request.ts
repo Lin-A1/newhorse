@@ -142,7 +142,10 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
 
   // Append the dynamic tail as a trailing user message after ALL history so the
   // cached prefix (stable system + immutable history) stays byte-stable across
-  // turns. Mark it so applyCaching never gives it a cache breakpoint.
+  // turns. Mark it so applyCaching never gives it a cache breakpoint. The
+  // current date is NOT part of this tail: it lives in the stable system
+  // envelope to avoid models echoing a trailing date-only user message as if it
+  // were the instruction to answer.
   if (dynamicSystem) {
     const dynamic: ModelMessage = { role: "user", content: dynamicSystem }
     ;(dynamic as { [ProviderTransform.NO_CACHE_MESSAGE]?: boolean })[ProviderTransform.NO_CACHE_MESSAGE] = true

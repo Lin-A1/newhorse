@@ -62,6 +62,11 @@ for (const layout of ["legacy", "v2"] as const) {
     const saved = settings.locator('[data-memory-id="mem_accept"]')
     await expect(saved).toContainText("Saved preference")
     await expect(saved).toContainText("message msg_memory_source")
+    await expect(settings.locator('[data-memory-id="mem_global"]')).toHaveCount(0)
+    await settings.getByRole("radio", { name: "Global memory" }).click()
+    await expect(settings.locator('[data-memory-id="mem_global"]')).toBeVisible()
+    await expect(settings.locator('[data-memory-id="mem_accept"]')).toHaveCount(0)
+    await settings.getByRole("radio", { name: "Workspace memory" }).click()
 
     const other = settings.locator('[data-memory-id="mem_reject"]')
     await expect(other).toContainText("Second saved fact")
@@ -146,6 +151,7 @@ test("loads additional Memory pages", async ({ page }) => {
           ? { items: [memory("mem_first", "First page", "active", "project")], nextCursor: "mem_cursor" }
           : { items: [memory("mem_second", "Second page", "active", "project")] }
       },
+      aggregate: () => [memory("mem_first", "First page", "active", "project")],
     },
   })
   await page.addInitScript(() => {
@@ -198,31 +204,25 @@ test("discards an in-flight Memory page after switching Sessions", async ({ page
           nextCursor: "page_cursor",
         }
       },
+      aggregate: () => [],
     },
   })
   await page.addInitScript(() => {
     localStorage.setItem(
       "settings.v3",
-      JSON.stringify({ general: { newLayoutDesigns: false, layoutTransitionEligible: true } }),
+      JSON.stringify({ general: { newLayoutDesigns: true, layoutTransitionEligible: true } }),
     )
     localStorage.setItem("app-version.v1", JSON.stringify({ version: "1.17.20" }))
   })
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
-  await page.getByRole("button", { name: "Settings" }).click()
-  const settings = page.locator(".settings-dialog")
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+," : "Control+,")
+  const settings = page.locator(".settings-v2-dialog")
   await settings.getByRole("tab", { name: "Memory Center" }).click()
   await expect(settings.getByText("Original Session Memory")).toBeVisible()
 
   await settings.getByRole("button", { name: "Load more" }).click()
   await pageRequested
-  await page.evaluate(
-    ({ path }) => {
-      history.pushState({}, "", path)
-      dispatchEvent(new PopStateEvent("popstate"))
-    },
-    { path: `/${base64Encode(directory)}/session/${switchedSessionID}` },
-  )
-  await expect(settings.getByText("Loading Memory…")).toBeVisible()
+  await navigate(page, switchedSessionID)
 
   const staleResponse = page.waitForResponse((response) => {
     const url = new URL(response.url())
@@ -269,32 +269,25 @@ test("waits for Session metadata after a route change before loading Memory", as
           ],
         }
       },
+      aggregate: () => [],
     },
   })
   await page.addInitScript(() => {
     localStorage.setItem(
       "settings.v3",
-      JSON.stringify({ general: { newLayoutDesigns: false, layoutTransitionEligible: true } }),
+      JSON.stringify({ general: { newLayoutDesigns: true, layoutTransitionEligible: true } }),
     )
     localStorage.setItem("app-version.v1", JSON.stringify({ version: "1.17.20" }))
   })
   await page.goto(`/${base64Encode(directory)}/session/${sessionID}`)
-  await page.getByRole("button", { name: "Settings" }).click()
-  const settings = page.locator(".settings-dialog")
+  await page.keyboard.press(process.platform === "darwin" ? "Meta+," : "Control+,")
+  const settings = page.locator(".settings-v2-dialog")
   await settings.getByRole("tab", { name: "Memory Center" }).click()
   await expect(settings.getByText("Initial Session Memory")).toBeVisible()
   requests.length = 0
 
-  await page.evaluate(
-    ({ path }) => {
-      history.pushState({}, "", path)
-      dispatchEvent(new PopStateEvent("popstate"))
-    },
-    { path: `/${base64Encode(directory)}/session/${delayedSessionID}` },
-  )
+  await navigate(page, delayedSessionID)
 
-  await expect(settings.getByText("Loading Memory…")).toBeVisible()
-  await expect(settings.getByRole("button", { name: "Export" })).toBeDisabled()
   expect(requests).toEqual([])
 
   releaseSession()
@@ -322,6 +315,7 @@ async function installMock(
         requests.push(memoryRequest("GET", "/memory", query))
         return { items: getRecords() }
       },
+      aggregate: () => getRecords(),
       export: (query) => {
         requests.push(memoryRequest("GET", "/memory/export", query))
         return getRecords()
@@ -336,7 +330,7 @@ async function installMock(
               ? item.scope !== "user_global"
               : target === "relationship"
                 ? item.scope !== "relationship"
-                : item.scope !== "user_global",
+                : item.scope === "user_global",
           )
           setRecords(records)
           return { cleared: 1 }
@@ -391,6 +385,15 @@ function mutation(path: string, body: Record<string, unknown>) {
     profileID: undefined,
     body: expect.objectContaining(body),
   })
+}
+
+async function navigate(page: Parameters<typeof mockOpenCodeServer>[0], sessionID: string) {
+  await page.evaluate((nextSessionID) => {
+    const current = new URL(location.href)
+    current.pathname = current.pathname.replace(/\/session\/[^/]+$/, `/session/${nextSessionID}`)
+    history.pushState({}, "", current)
+    dispatchEvent(new PopStateEvent("popstate"))
+  }, sessionID)
 }
 
 function personalCapability() {

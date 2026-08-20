@@ -430,7 +430,8 @@ it.live("session.processor effect tests capture reasoning from http mock", () =>
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "reason")
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
-        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const base = yield* provider.getModel(ref.providerID, ref.modelID)
+        const mdl = { ...base, limit: { context: 100, output: 10 } }
         const handle = yield* processors.create({
           assistantMessage: msg,
           sessionID: chat.id,
@@ -1080,7 +1081,8 @@ it.live("session.processor effect tests accumulate tokens across tool-round step
         const chat = yield* session.create({})
         const parent = yield* user(chat.id, "accumulate")
         const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
-        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const base = yield* provider.getModel(ref.providerID, ref.modelID)
+        const mdl = { ...base, limit: { context: 100, output: 10 } }
         const handle = yield* processors.create({ assistantMessage: msg, sessionID: chat.id, model: mdl })
 
         const input = {
@@ -1108,7 +1110,8 @@ it.live("session.processor effect tests accumulate tokens across tool-round step
         // Outer loop simulation: the tool round hands control back, so the
         // prompt loop calls process again with the tool result in history.
         yield* handle.process(input)
-        yield* handle.process(input)
+        const result = yield* handle.process(input)
+        expect(result).toBe("compact")
 
         const updated = yield* session.messages({ sessionID: chat.id, limit: 10 })
         const last = [...updated].reverse().find((item) => item.info.role === "assistant")

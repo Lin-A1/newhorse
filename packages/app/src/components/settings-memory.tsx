@@ -11,6 +11,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { exportMemory } from "./settings-memory-export"
 import { MemoryHistoryPanel } from "./settings-memory-history"
+import { splitAggregateByScope, splitByScope } from "./settings-memory-scope"
 import { useMemoryCenterState, type MemoryKind, type MemoryScope } from "./settings-memory-state"
 import { useSettings } from "@/context/settings"
 import { useConfirm } from "./confirm-dialog"
@@ -50,12 +51,14 @@ export function SettingsMemory(props: { sessionID?: string }) {
   const [expires, setExpires] = createSignal("")
   const [exporting, setExporting] = createSignal(false)
   const [auditID, setAuditID] = createSignal<string>()
-  const [view, setView] = createSignal<"current" | "all">("current")
+  const [view, setView] = createSignal<"workspace" | "global">("workspace")
   const [search, setSearch] = createSignal("")
   const [collapsed, setCollapsed] = createSignal<Record<string, boolean>>({})
 
+  // Both tabs use the aggregate: the workspace tab lists other workspaces'
+  // groups, the global tab lists the user_global group.
   const [aggregate, { refetch: refetchAggregate }] = createResource(
-    () => (view() === "all" ? view() : undefined),
+    () => (memory.aggregateReady() ? view() : undefined),
     () => memory.aggregate(),
   )
 
@@ -84,7 +87,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
       .update(item, { content: content(), kind: kind(), expiresAt: time })
       .then(() => {
         setEditing(undefined)
-        if (view() === "all") void refetchAggregate()
+        void refetchAggregate()
       })
       .catch(fail)
   }
@@ -101,7 +104,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
       message: language.t("settings.memory.clear.confirm", { target: label }),
     })
     if (!confirmed) return
-    void memory.clear(target).catch(fail)
+    void memory.clear(target).then(() => refetchAggregate()).catch(fail)
   }
 
   const confirmClearGroup = async (group: MemoryAggregateGroup) => {
@@ -120,8 +123,10 @@ export function SettingsMemory(props: { sessionID?: string }) {
       .catch(fail)
   }
 
+  // "Clear all workspaces" only touches workspace-scoped groups; the global
+  // tab owns the user_global clear.
   const confirmClearAll = async () => {
-    const groups = aggregate()
+    const groups = workspaceAggregateGroups()
     if (!groups || groups.length === 0) return
     const confirmed = await confirm({
       title: language.t("common.clear"),
@@ -132,16 +137,13 @@ export function SettingsMemory(props: { sessionID?: string }) {
     if (!confirmed) return
     for (const group of groups) {
       try {
-        await memory.clear(
-          group.scope === "user_global" ? "user_global" : "workspace",
-          group.workspaceID,
-          group.directory,
-        )
+        await memory.clear("workspace", group.workspaceID, group.directory)
       } catch (error) {
         fail(error)
       }
     }
     void refetchAggregate()
+    void memory.refresh().catch(fail)
   }
 
   const exportRecords = () => {
@@ -165,61 +167,76 @@ export function SettingsMemory(props: { sessionID?: string }) {
     )
   }
 
-  // "all" view: the aggregate is filtered through the same search as the
-  // current view. Groups with no matching records are dropped.
-  const allGroups = createMemo(() => {
+  // The paginated list is scoped to the current workspace (+ user_global), so
+  // its workspace slice identifies the current workspace inside the aggregate.
+  // Derived from the records because the source routing may not carry a
+  // workspaceID (implicit-local placement).
+  const currentWorkspaceKey = createMemo(() => {
+    const item = splitByScope(memory.state.items).workspace[0]
+    if (!item) return undefined
+    return item.workspaceID ?? item.directory
+  })
+
+  const workspaceAggregateGroups = createMemo(() => {
     const groups = aggregate()
     if (!groups) return undefined
+    return splitAggregateByScope(groups).workspace
+  })
+
+  // "workspace" tab: the current workspace's own records from the paginated
+  // list (keeps search + load-more working), rendered as one group.
+  const currentGroup = createMemo<Group | undefined>(() => {
+    const items = splitByScope(memory.state.items).workspace.filter(matchesSearch)
+    if (items.length === 0) return undefined
+    return {
+      key: "__current__",
+      label: language.t("settings.memory.group.current"),
+      items,
+      defaultOpen: true,
+    }
+  })
+
+  // "workspace" tab: every other workspace's records from the aggregate,
+  // excluding the current workspace so nothing is shown twice.
+  const otherGroups = createMemo(() => {
+    const groups = workspaceAggregateGroups()
+    if (!groups) return undefined
+    const currentKey = currentWorkspaceKey()
     return groups
+      .filter((group) => (group.workspaceID ?? group.directory) !== currentKey)
       .map((group) => ({ ...group, items: group.items.filter(matchesSearch) }))
       .filter((group) => group.items.length > 0)
   })
 
-  // "current" view: only the current workspace's own memories, plus the
-  // user_global bucket (shown last so it never reads as part of the workspace).
-  // Memories from other workspaces are hidden here — use "all" to see them.
-  const currentGroups = createMemo<Group[]>(() => {
-    const items = memory.state.items.filter(matchesSearch)
-    if (items.length === 0) return []
-    const buckets = new Map<string, MemoryInfo[]>()
-    for (const item of items) {
-      if (item.scope === "user_global") {
-        const list = buckets.get("__global__") ?? []
-        list.push(item)
-        buckets.set("__global__", list)
-        continue
-      }
-      // Workspace scoped: only the current workspace's workspaceID (or the
-      // current directory for legacy rows). Anything else is a different
-      // workspace's memory and belongs in the "all" view.
-      // Legacy rows without a workspaceID bucket under the current workspace.
-      if (item.workspaceID) {
-        const currentID = memory.currentWorkspaceID()
-        if (currentID && item.workspaceID !== currentID) continue
-      }
-      const list = buckets.get("__current__") ?? []
-      list.push(item)
-      buckets.set("__current__", list)
-    }
-    const out: Group[] = []
-    for (const [key, list] of buckets) {
-      out.push({
-        key,
-        label:
-          key === "__global__"
-            ? language.t("settings.memory.group.global")
-            : language.t("settings.memory.group.current"),
-        items: list,
-        defaultOpen: true,
-      })
-    }
-    // Stable order: current workspace first, then global.
-    out.sort((a, b) => {
-      if (a.key === "__current__") return -1
-      if (b.key === "__global__") return 1
-      return a.key.localeCompare(b.key)
-    })
-    return out
+  // "global" tab: all user_global records, from the aggregate (the paginated
+  // list interleaves them with workspace records, so it is not a reliable
+  // complete source).
+  const globalGroups = createMemo(() => {
+    const groups = aggregate()
+    if (!groups) return undefined
+    return splitAggregateByScope(groups)
+      .global.map((group) => ({ ...group, items: group.items.filter(matchesSearch) }))
+      .filter((group) => group.items.length > 0)
+  })
+
+  const cardProps = () => ({
+    language,
+    memory,
+    editing,
+    setEditing,
+    content,
+    setContent,
+    kind,
+    setKind,
+    expires,
+    setExpires,
+    auditID,
+    setAuditID,
+    save,
+    startEdit,
+    fail,
+    confirm,
+    loadHistory,
   })
 
   const toggleGroup = (key: string) => {
@@ -260,159 +277,52 @@ export function SettingsMemory(props: { sessionID?: string }) {
           <button
             type="button"
             role="radio"
-            aria-checked={view() === "current"}
+            aria-checked={view() === "workspace"}
             class={`flex-1 rounded-md px-3 py-1 text-[13px] transition-colors ${
-              view() === "current"
+              view() === "workspace"
                 ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-[var(--v2-elevation-raised)]"
                 : "text-v2-text-text-weak hover:text-v2-text-text-base"
             }`}
-            onClick={() => setView("current")}
+            onClick={() => setView("workspace")}
           >
             {language.t("settings.memory.view.workspace")}
           </button>
           <button
             type="button"
             role="radio"
-            aria-checked={view() === "all"}
+            aria-checked={view() === "global"}
             class={`flex-1 rounded-md px-3 py-1 text-[13px] transition-colors ${
-              view() === "all"
+              view() === "global"
                 ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-[var(--v2-elevation-raised)]"
                 : "text-v2-text-text-weak hover:text-v2-text-text-base"
             }`}
-            onClick={() => setView("all")}
+            onClick={() => setView("global")}
           >
             {language.t("settings.memory.view.global")}
           </button>
         </div>
-        <Show when={view() === "current"}>
-          <TextField
-            value={search()}
-            onChange={setSearch}
-            placeholder={language.t("settings.memory.search.placeholder")}
-            aria-label={language.t("settings.memory.search.placeholder")}
-            class="w-full shrink-0 sm:w-56"
-          />
-        </Show>
-        <Show when={view() === "all"}>
+        <Show when={view() === "workspace"}>
           <Button
             size="small"
             variant="secondary"
             class="shrink-0"
-            disabled={!aggregate() || aggregate()!.length === 0}
+            disabled={!workspaceAggregateGroups() || workspaceAggregateGroups()!.length === 0}
             onClick={() => void confirmClearAll()}
           >
             {language.t("settings.memory.clear.all")}
           </Button>
         </Show>
+        <TextField
+          value={search()}
+          onChange={setSearch}
+          placeholder={language.t("settings.memory.search.placeholder")}
+          aria-label={language.t("settings.memory.search.placeholder")}
+          class="w-full shrink-0 sm:w-56"
+        />
       </div>
 
       <div class="mt-4 flex flex-col gap-4 max-w-[720px]">
-        <Show when={view() === "all"}>
-          <Show
-            when={!aggregate.loading}
-            fallback={
-              <div role="status" aria-live="polite" data-state="loading" class="text-v2-text-text-faint">
-                {language.t("settings.memory.loading")}
-              </div>
-            }
-          >
-            <Show
-              when={(aggregate()?.length ?? 0) > 0}
-              fallback={
-                <div role="status" aria-live="polite" data-state="empty" class="text-v2-text-text-weak">
-                  {language.t("settings.memory.all.empty")}
-                </div>
-              }
-            >
-              <Show
-                when={(allGroups()?.length ?? 0) > 0}
-                fallback={
-                  <div role="status" aria-live="polite" data-state="empty" class="text-v2-text-text-weak">
-                    {language.t("settings.memory.search.empty")}
-                  </div>
-                }
-              >
-                <For each={allGroups()}>
-                  {(group, gi) => {
-                    const groupKey = group.scope === "user_global" ? `all-global` : `all-${group.workspaceID ?? group.directory ?? gi()}`
-                    const isOpen = () => !collapsed()[groupKey]
-                    return (
-                      <section
-                        class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
-                        data-memory-group={group.workspaceID ?? group.directory ?? "global"}
-                      >
-                        <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
-                          <button
-                            type="button"
-                            class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
-                            aria-expanded={isOpen()}
-                            aria-label={language.t("settings.memory.group.toggle")}
-                            onClick={() => toggleGroup(groupKey)}
-                          >
-                            <Icon
-                              name={isOpen() ? "chevron-down" : "chevron-right"}
-                              class="size-3.5 shrink-0 text-v2-text-text-faint"
-                            />
-                            <span class="truncate text-[13px] font-medium text-v2-text-text-base">
-                              {group.scope === "user_global"
-                                ? language.t("settings.memory.all.global")
-                                : group.workspaceID || group.directory
-                                  ? language.t("settings.memory.group.workspace", {
-                                      id: (group.workspaceID ?? group.directory) ?? "",
-                                    })
-                                  : language.t("settings.memory.all.workspace")}
-                            </span>
-                            <span class="ml-1 shrink-0 text-[11px] text-v2-text-text-weaker">
-                              {group.items.length} {language.t("settings.memory.all.count")}
-                            </span>
-                          </button>
-                          <Button
-                            size="small"
-                            variant="secondary"
-                            class="shrink-0"
-                            onClick={() => void confirmClearGroup(group)}
-                          >
-                            {language.t("settings.memory.clear.short")}
-                          </Button>
-                        </div>
-                        <Show when={isOpen()}>
-                          <div class="flex flex-col gap-3">
-                            <For each={group.items}>
-                              {(item) => (
-                                <MemoryCard
-                                  item={item}
-                                  language={language}
-                                  memory={memory}
-                                  editing={editing}
-                                  setEditing={setEditing}
-                                  content={content}
-                                  setContent={setContent}
-                                  kind={kind}
-                                  setKind={setKind}
-                                  expires={expires}
-                                  setExpires={setExpires}
-                                  auditID={auditID}
-                                  setAuditID={setAuditID}
-                                  save={save}
-                                  startEdit={startEdit}
-                                  fail={fail}
-                                  confirm={confirm}
-                                  loadHistory={loadHistory}
-                                  onMutated={() => void refetchAggregate()}
-                                />
-                              )}
-                            </For>
-                          </div>
-                        </Show>
-                      </section>
-                    )
-                  }}
-                </For>
-              </Show>
-            </Show>
-          </Show>
-        </Show>
-        <Show when={view() === "current"}>
+        <Show when={view() === "workspace"}>
           <Show
             when={!memory.loading()}
             fallback={
@@ -433,7 +343,7 @@ export function SettingsMemory(props: { sessionID?: string }) {
               }
             >
               <Show
-                when={currentGroups().length > 0}
+                when={currentGroup() || (otherGroups()?.length ?? 0) > 0}
                 fallback={
                   <div role="status" aria-live="polite" data-state="empty" class="text-v2-text-text-weak">
                     {search().trim() && memory.state.items.length > 0
@@ -442,96 +352,120 @@ export function SettingsMemory(props: { sessionID?: string }) {
                   </div>
                 }
               >
-                <For each={currentGroups()}>
-                  {(group) => {
-                    const isOpen = () => !collapsed()[group.key]
+                <Show when={currentGroup()}>
+                  {(group) => (
+                      <GroupSection
+                        groupKey={group().key}
+                        label={group().label}
+                        scope="workspace"
+                        items={group().items}
+                      isOpen={() => !collapsed()[group().key]}
+                      onToggle={() => toggleGroup(group().key)}
+                      onClear={() => void confirmClear("workspace")}
+                      cardProps={cardProps()}
+                    />
+                  )}
+                </Show>
+                <For each={otherGroups() ?? []}>
+                  {(group, gi) => {
+                    const groupKey = `ws:${group.workspaceID ?? group.directory ?? gi()}`
+                    const label = group.workspaceID || group.directory
+                      ? language.t("settings.memory.group.workspace", {
+                          id: (group.workspaceID ?? group.directory) ?? "",
+                        })
+                      : language.t("settings.memory.all.workspace")
                     return (
-                      <section
-                        class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
-                        data-memory-group={group.key}
-                      >
-                        <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
-                          <button
-                            type="button"
-                            class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
-                            aria-expanded={isOpen()}
-                            aria-label={language.t("settings.memory.group.toggle")}
-                            onClick={() => toggleGroup(group.key)}
-                          >
-                            <Icon
-                              name={isOpen() ? "chevron-down" : "chevron-right"}
-                              class="size-3.5 shrink-0 text-v2-text-text-faint"
-                            />
-                            <span class="truncate text-[13px] font-medium text-v2-text-text-base">{group.label}</span>
-                            <span class="ml-1 shrink-0 text-[11px] text-v2-text-text-weaker">
-                              {group.items.length} {language.t("settings.memory.all.count")}
-                            </span>
-                          </button>
-                          <Button
-                            size="small"
-                            variant="secondary"
-                            class="shrink-0"
-                            onClick={() =>
-                              confirmClear(group.key === "__global__" ? "user_global" : "workspace")
-                            }
-                          >
-                            {language.t("settings.memory.clear.short")}
-                          </Button>
-                        </div>
-                        <Show when={isOpen()}>
-                          <div class="flex flex-col gap-3">
-                            <For each={group.items}>
-                              {(item) => (
-                                <MemoryCard
-                                  item={item}
-                                  language={language}
-                                  memory={memory}
-                                  editing={editing}
-                                  setEditing={setEditing}
-                                  content={content}
-                                  setContent={setContent}
-                                  kind={kind}
-                                  setKind={setKind}
-                                  expires={expires}
-                                  setExpires={setExpires}
-                                  auditID={auditID}
-                                  setAuditID={setAuditID}
-                                  save={save}
-                                  startEdit={startEdit}
-                                  fail={fail}
-                                  confirm={confirm}
-                                  loadHistory={loadHistory}
-                                />
-                              )}
-                            </For>
-                          </div>
-                        </Show>
-                      </section>
+                      <GroupSection
+                        groupKey={group.workspaceID ?? group.directory ?? "other"}
+                        label={label}
+                        scope="workspace"
+                        items={group.items}
+                        isOpen={() => !collapsed()[groupKey]}
+                        onToggle={() => toggleGroup(groupKey)}
+                        onClear={() => void confirmClearGroup(group)}
+                        cardProps={{ ...cardProps(), onMutated: () => void refetchAggregate() }}
+                      />
                     )
                   }}
                 </For>
-              </Show>
-
-              <Show when={memory.state.nextCursor}>
-                <Button disabled={memory.state.loadingMore} onClick={() => void memory.loadMore().catch(fail)}>
-                  {language.t("common.loadMore")}
-                </Button>
-              </Show>
-
-              <Show when={memory.state.items.length > 0}>
-                <div class="flex flex-wrap gap-2 border-t border-v2-border-border-muted pt-4">
-                  <Button size="small" onClick={() => confirmClear("workspace")}>
-                    {language.t("settings.memory.clear.workspace")}
+                <Show when={memory.state.nextCursor}>
+                  <Button disabled={memory.state.loadingMore} onClick={() => void memory.loadMore().catch(fail)}>
+                    {language.t("common.loadMore")}
                   </Button>
-                  <Show when={memory.contentScope() === "personal"}>
-                    <Button size="small" onClick={() => confirmClear("relationship")}>
-                      {language.t("settings.memory.clear.relationship")}
+                </Show>
+                <Show when={splitByScope(memory.state.items).workspace.length > 0}>
+                  <div class="flex flex-wrap gap-2 border-t border-v2-border-border-muted pt-4">
+                    <Button size="small" onClick={() => confirmClear("workspace")}>
+                      {language.t("settings.memory.clear.workspace")}
                     </Button>
-                  </Show>
-                  <Button size="small" onClick={() => confirmClear("user_global")}>
-                    {language.t("settings.memory.clear.global")}
+                    <Show when={memory.contentScope() === "personal"}>
+                      <Button size="small" onClick={() => confirmClear("relationship")}>
+                        {language.t("settings.memory.clear.relationship")}
+                      </Button>
+                    </Show>
+                    <Button size="small" onClick={() => confirmClear("user_global")}>
+                      {language.t("settings.memory.clear.global")}
+                    </Button>
+                  </div>
+                </Show>
+              </Show>
+            </Show>
+          </Show>
+        </Show>
+        <Show when={view() === "global"}>
+          <Show
+            when={!aggregate.loading}
+            fallback={
+              <div role="status" aria-live="polite" data-state="loading" class="text-v2-text-text-faint">
+                {language.t("settings.memory.loading")}
+              </div>
+            }
+          >
+            <Show
+              when={!aggregate.error}
+              fallback={
+                <div class="flex items-center gap-3 text-v2-text-text-weak">
+                  <span>{language.t("common.requestFailed")}</span>
+                  <Button size="small" onClick={() => void refetchAggregate()}>
+                    {language.t("common.retry")}
                   </Button>
                 </div>
+              }
+            >
+              <Show
+                when={(globalGroups()?.length ?? 0) > 0}
+                fallback={
+                  <div role="status" aria-live="polite" data-state="empty" class="text-v2-text-text-weak">
+                    {search().trim() && (aggregate()?.length ?? 0) > 0
+                      ? language.t("settings.memory.search.empty")
+                      : language.t("settings.memory.empty")}
+                  </div>
+                }
+              >
+                <For each={globalGroups() ?? []}>
+                  {(group) => {
+                    const groupKey = "global"
+                    return (
+                      <GroupSection
+                        groupKey={groupKey}
+                        label={language.t("settings.memory.group.global")}
+                        scope="global"
+                        items={group.items}
+                        isOpen={() => !collapsed()[groupKey]}
+                        onToggle={() => toggleGroup(groupKey)}
+                        onClear={() => void confirmClear("user_global")}
+                        cardProps={{ ...cardProps(), onMutated: () => void refetchAggregate() }}
+                      />
+                    )
+                  }}
+                </For>
+                <Show when={(globalGroups()?.length ?? 0) > 0}>
+                  <div class="flex flex-wrap gap-2 border-t border-v2-border-border-muted pt-4">
+                    <Button size="small" onClick={() => confirmClear("user_global")}>
+                      {language.t("settings.memory.clear.global")}
+                    </Button>
+                  </div>
+                </Show>
               </Show>
             </Show>
           </Show>
@@ -541,8 +475,55 @@ export function SettingsMemory(props: { sessionID?: string }) {
   )
 }
 
-function MemoryCard(props: {
-  item: MemoryInfo
+function GroupSection(props: {
+  groupKey: string
+  label: JSX.Element
+  scope: "workspace" | "global"
+  items: MemoryInfo[]
+  isOpen: () => boolean
+  onToggle: () => void
+  onClear: () => void
+  cardProps: MemoryCardActions
+}) {
+  const language = useLanguage()
+  return (
+    <section
+      class="flex flex-col gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-3 transition-colors"
+      data-memory-group={props.groupKey}
+    >
+      <div class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1">
+        <button
+          type="button"
+          class="flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover"
+          aria-expanded={props.isOpen()}
+          aria-label={language.t("settings.memory.group.toggle")}
+          onClick={props.onToggle}
+        >
+          <Icon
+            name={props.isOpen() ? "chevron-down" : "chevron-right"}
+            class="size-3.5 shrink-0 text-v2-text-text-faint"
+          />
+          <span class="truncate text-[13px] font-medium text-v2-text-text-base">{props.label}</span>
+          <span class="ml-1 shrink-0 text-[11px] text-v2-text-text-weaker">
+            {props.items.length} {language.t("settings.memory.all.count")}
+          </span>
+        </button>
+        <Button size="small" variant="secondary" class="shrink-0" onClick={props.onClear}>
+          {language.t("settings.memory.clear.short")}
+        </Button>
+      </div>
+      <Show when={props.isOpen()}>
+        <div class="flex flex-col gap-3">
+          <For each={props.items}>
+            {(item) => <MemoryCard item={item} scope={props.scope} {...props.cardProps} />}
+          </For>
+        </div>
+      </Show>
+    </section>
+  )
+}
+
+type MemoryCardActions = {
   language?: ReturnType<typeof useLanguage>
   memory?: ReturnType<typeof useMemoryCenterState>
   editing?: () => string | undefined
@@ -561,7 +542,11 @@ function MemoryCard(props: {
   confirm?: ReturnType<typeof useConfirm>
   loadHistory?: (item: MemoryInfo) => Promise<MemoryHistoryInfo[]>
   onMutated?: () => void
-}) {
+}
+
+type MemoryCardProps = MemoryCardActions & { item: MemoryInfo; scope?: "workspace" | "global" }
+
+function MemoryCard(props: MemoryCardProps) {
   const language = () => props.language ?? useLanguage()
   const t = (key: string, params?: Record<string, string | number | boolean>) =>
     language().t(key, params)
@@ -575,7 +560,14 @@ function MemoryCard(props: {
       data-memory-id={item().id}
     >
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <span class="text-[11px] text-v2-text-text-weaker">{source(item(), t)}</span>
+        <span class="text-[11px] text-v2-text-text-weaker">
+          {props.scope === "global"
+            ? t("settings.memory.view.global")
+            : props.scope === "workspace"
+              ? t("settings.memory.view.workspace")
+              : memoryScopeLabel(t, item().scope)} · {source(item(), t)}
+        </span>
+        <span class="text-[11px] text-v2-text-text-weaker">{item().status}</span>
       </div>
 
       <Show

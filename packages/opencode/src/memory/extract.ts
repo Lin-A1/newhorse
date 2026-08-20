@@ -195,6 +195,7 @@ const layer = Layer.effect(
         '  2. PROJECT CONTEXT: anything specific to the current project — how it works, instructions or constraints the user set for it, goals/decisions about it (e.g. "The user asked to keep watching the data flow in this project."). kind = fact or goal.',
         "- Anything tied to a specific project, codebase, file, or workspace is PROJECT CONTEXT, never a USER PREFERENCE. Do not promote project instructions into cross-project user preferences.",
         "- Prefer durable facts, stable preferences, goals, and notable events. Skip one-off or task-specific chatter.",
+        "- NEVER propose process/meta memories: do NOT save the assistant's own investigation status, pending/redo fix lists, sub-agent activity, debugging progress, or 'broken X, to be fixed later' state. These go stale within one session and contaminate later context. Only save stable facts/preferences/decisions the user has actually settled on.",
         "- Never propose sensitive content (credentials, keys, tokens, payment details, addresses, health data).",
         "- Each memory is a single concise third-person sentence that preserves the user's actual meaning — do not over-generalize (\"watch the data flow in this project\" must not become \"the user likes watching data constantly\").",
         `- Propose at most ${MAX_MEMORIES} memories.`,

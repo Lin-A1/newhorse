@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
+  cacheMermaid,
+  getCachedMermaid,
   isMermaidRenderFresh,
   MERMAID_MAX_RETRIES,
   resolveDarkMode,
@@ -88,5 +90,16 @@ describe("isMermaidRenderFresh", () => {
     expect(isMermaidRenderFresh(error, block, 1)).toBe(false)
     expect(isMermaidRenderFresh({ ...error, retries: MERMAID_MAX_RETRIES }, block, 1)).toBe(true)
     expect(isMermaidRenderFresh({ ...error, retries: MERMAID_MAX_RETRIES + 1 }, block, 1)).toBe(true)
+  })
+})
+
+describe("completed Mermaid cache", () => {
+  test("retains a successful render across component instances", () => {
+    const key = `session-switch-${crypto.randomUUID()}`
+    const rendered = { raw: "graph LR\n  A --> B", themeVersion: 0, mermaid: { svg: "<svg/>" }, retries: 0 }
+
+    cacheMermaid(key, rendered)
+
+    expect(getCachedMermaid(key)).toEqual(rendered)
   })
 })

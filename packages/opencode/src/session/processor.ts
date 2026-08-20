@@ -492,7 +492,7 @@ const layer = Layer.effect(
               .pipe(Effect.ignore, Effect.forkIn(scope))
             if (
               !ctx.assistantMessage.summary &&
-              isOverflow({ cfg: yield* config.get(), tokens: usage.tokens, model: ctx.model })
+              isOverflow({ cfg: yield* config.get(), tokens: ctx.assistantMessage.tokens, model: ctx.model })
             ) {
               ctx.needsCompaction = true
             }

@@ -248,6 +248,7 @@ export function registerIpcHandlers(deps: Deps) {
     void probeForeground().then((probe) => void pushPresence(deps, probe))
   }, PRESENCE_PUSH_INTERVAL_MS)
   presenceTimer.unref?.()
+  void probeForeground().then((probe) => void pushPresence(deps, probe))
   app.once("will-quit", () => {
     clearInterval(presenceTimer)
     stopProbeProcess()

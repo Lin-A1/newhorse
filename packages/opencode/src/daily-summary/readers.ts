@@ -4,14 +4,14 @@ import path from "path"
 import { Effect } from "effect"
 
 const SNIPPET_LIMIT = 120
-const MAX_ENTRIES_PER_SOURCE = 10
-const MAX_FILES_PER_SOURCE = 200
+const MAX_FILES_SCANNED = 50
+const MAX_SNIPPETS_PER_SOURCE = 10
 
 export type DailySource = "work" | "companion" | "claude" | "codex"
 
 export function truncate(text: string, limit = SNIPPET_LIMIT) {
   const t = text.trim().replace(/\s+/g, " ")
-  return t.length > limit ? t.slice(0, limit) + "…" : t
+  return t.length > limit ? `${t.slice(0, limit)}…` : t
 }
 
 export function dayStartMs(date: Date) {
@@ -39,21 +39,43 @@ function within(ts: number, start: number, end: number) {
   return Number.isFinite(ts) && ts >= start && ts < end
 }
 
+function asTimestamp(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    // Heuristic: seconds vs millis — Codex/Claude jsonl mixes both.
+    return value < 1e12 ? value * 1000 : value
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : undefined
+  }
+  return undefined
+}
+
 /** Best-effort text extraction from a jsonl line (claude / codex shapes). */
 function extractText(value: unknown): string {
   if (typeof value === "string") return value
   if (Array.isArray(value)) return value.map(extractText).join(" ").trim()
   if (value && typeof value === "object") {
     const item = value as Record<string, unknown>
+    // Common wrappers — recurse.
     if (item.payload) return extractText(item.payload)
     if (item.message) return extractText(item.message)
+    // Claude/Codex content can be { content: [{ type: "text", text: "..." }] }.
+    if (Array.isArray(item.content)) return extractText(item.content)
     if (item.content) return extractText(item.content)
     if (item.text) return extractText(item.text)
+    if (item.parts) return extractText(item.parts)
   }
   return ""
 }
 
-function parseJsonlDay(text: string, start: number, end: number, isUser: (line: Record<string, unknown>) => boolean): string[] {
+function parseJsonlDay(
+  text: string,
+  start: number,
+  end: number,
+  isUser: (line: Record<string, unknown>) => boolean,
+): string[] {
+  const seen = new Set<string>()
   const out: string[] = []
   for (const raw of text.split("\n")) {
     if (!raw.trim()) continue
@@ -63,11 +85,13 @@ function parseJsonlDay(text: string, start: number, end: number, isUser: (line: 
     } catch {
       continue
     }
-    const ts = Date.parse(String(line.timestamp ?? line.time ?? ""))
-    if (!within(ts, start, end)) continue
+    const ts = asTimestamp(line.timestamp ?? line.time) ?? asTimestamp((line.message as Record<string, unknown> | undefined)?.timestamp)
+    if (ts === undefined || !within(ts, start, end)) continue
     if (!isUser(line)) continue
     const snippet = truncate(extractText(line))
-    if (snippet) out.push(snippet)
+    if (!snippet || seen.has(snippet)) continue
+    seen.add(snippet)
+    out.push(snippet)
   }
   return out
 }
@@ -83,37 +107,53 @@ const isCodexUser = (line: Record<string, unknown>) => {
   return payload?.role === "user" || message?.role === "user"
 }
 
+function readJsonlSource(
+  fs: FSUtil.Interface,
+  files: string[],
+  start: number,
+  end: number,
+  isUser: (line: Record<string, unknown>) => boolean,
+): Effect.Effect<string[]> {
+  return Effect.gen(function* () {
+    const entries: string[] = []
+    const seen = new Set<string>()
+    for (const file of files.slice(0, MAX_FILES_SCANNED)) {
+      const text = yield* fs.readFileStringSafe(file)
+      if (!text) continue
+      for (const snippet of parseJsonlDay(text, start, end, isUser)) {
+        if (seen.has(snippet)) continue
+        seen.add(snippet)
+        entries.push(snippet)
+        if (entries.length >= MAX_SNIPPETS_PER_SOURCE) break
+      }
+      if (entries.length >= MAX_SNIPPETS_PER_SOURCE) break
+    }
+    return entries.slice(0, MAX_SNIPPETS_PER_SOURCE)
+  }).pipe(Effect.catch(() => Effect.succeed([])))
+}
+
 /** Claude Code sessions under ~/.claude/projects (one jsonl per session). */
 export function readClaudeCode(fs: FSUtil.Interface, start: number, end: number): Effect.Effect<string[]> {
   return Effect.gen(function* () {
     const files = yield* fs.glob(path.join(Global.Path.home, ".claude", "projects", "*", "*.jsonl"))
-    const entries: string[] = []
-    for (const file of files.slice(0, MAX_FILES_PER_SOURCE)) {
-      const text = yield* fs.readFileStringSafe(file)
-      if (!text) continue
-      entries.push(...parseJsonlDay(text, start, end, isClaudeUser))
-      if (entries.length >= MAX_ENTRIES_PER_SOURCE) break
-    }
-    return entries.slice(0, MAX_ENTRIES_PER_SOURCE)
+    return yield* readJsonlSource(fs, files, start, end, isClaudeUser)
   }).pipe(Effect.catch(() => Effect.succeed([])))
 }
 
 /** OpenAI Codex sessions under ~/.codex/sessions/YYYY/MM/DD. */
-export function readCodex(fs: FSUtil.Interface, date: Date, start: number, end: number): Effect.Effect<string[]> {
+export function readCodex(
+  fs: FSUtil.Interface,
+  date: Date,
+  start: number,
+  end: number,
+): Effect.Effect<string[]> {
   return Effect.gen(function* () {
     const y = String(date.getFullYear())
     const m = String(date.getMonth() + 1).padStart(2, "0")
     const d = String(date.getDate()).padStart(2, "0")
     const dir = path.join(Global.Path.home, ".codex", "sessions", y, m, d)
     const files = yield* fs.glob(path.join(dir, "*.jsonl"))
-    const entries: string[] = []
-    for (const file of files.slice(0, MAX_FILES_PER_SOURCE)) {
-      const text = yield* fs.readFileStringSafe(file)
-      if (!text) continue
-      entries.push(...parseJsonlDay(text, start, end, isCodexUser))
-      if (entries.length >= MAX_ENTRIES_PER_SOURCE) break
-    }
-    return entries.slice(0, MAX_ENTRIES_PER_SOURCE)
+    return yield* readJsonlSource(fs, files, start, end, isCodexUser)
   }).pipe(Effect.catch(() => Effect.succeed([])))
 }
 

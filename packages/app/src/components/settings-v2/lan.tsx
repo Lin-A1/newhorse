@@ -57,11 +57,10 @@ async function copyText(value: string): Promise<boolean> {
 function withToken(host: string, port: number, password: string | null) {
   const base = `http://${host}:${port}`
   if (!password) return base
-  try {
-    return `${base}/?auth_token=${encodeURIComponent(btoa(`opencode:${password}`))}`
-  } catch {
-    return base
-  }
+  const bytes = new TextEncoder().encode(`opencode:${password}`)
+  let binary = ""
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return `${base}/?auth_token=${encodeURIComponent(btoa(binary))}`
 }
 
 export const SettingsLanV2: Component = () => {

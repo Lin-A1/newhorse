@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { LayerNode } from "@newhorse/core/effect/layer-node"
 import { Database } from "@newhorse/core/database/database"
 import { PresenceSegmentTable } from "@newhorse/core/presence/sql"
@@ -6,7 +6,7 @@ import { Context, Effect, Layer } from "effect"
 import * as LayerNS from "effect/Layer"
 import * as Scope from "effect/Scope"
 import { eq } from "drizzle-orm"
-import { Presence } from "../../src/presence"
+import { Presence, projectTimeline } from "../../src/presence"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([Presence.node, Database.node])))
@@ -123,9 +123,18 @@ describe("presence segments", () => {
       const timeline = yield* freshPresence.timeline()
       expect(timeline.segments).toHaveLength(2)
       expect(timeline.segments[0]?.app).toBe("vscode")
-      expect(timeline.segments[0]?.end).toBeUndefined()
       expect(timeline.segments[1]?.app).toBe("chrome")
-      expect(timeline.live).toBe(true)
+      // A restored open segment after a restart must not report live until the
+      // host reports again — the process has no observation yet.
+      expect(timeline.segments[0]?.end).toBeDefined()
+      expect(timeline.live).toBe(false)
+
+      // The first fresh report re-opens the app's segment and marks live.
+      yield* freshPresence.update({ locked: false, focusApp: "vscode", inMeeting: false })
+      const after = yield* freshPresence.timeline()
+      expect(after.segments[0]?.app).toBe("vscode")
+      expect(after.segments[0]?.end).toBeUndefined()
+      expect(after.live).toBe(true)
     }),
   )
 
@@ -158,4 +167,59 @@ describe("presence segments", () => {
       expect(timeline.live).toBe(false)
     }),
   )
+})
+
+describe("projectTimeline", () => {
+  const dayStart = 1_000_000_000_000
+  const hour = 3_600_000
+
+  test("stays live for the same app beyond the stale window while updates arrive", () => {
+    const segments = [{ app: "vscode", start: dayStart + 10 * hour }]
+    // The open segment started 10 hours ago, but the host reported 5s ago:
+    // the user sat in the editor all day — it must stay live.
+    const out = projectTimeline(segments, {
+      now: dayStart + 20 * hour,
+      dayStart,
+      lastSeen: dayStart + 20 * hour - 5_000,
+      staleAfterMs: 45_000,
+    })
+    expect(out.live).toBe(true)
+    expect(out.segments[0]?.end).toBeUndefined()
+  })
+
+  test("closes an open segment when the last report goes stale", () => {
+    const segments = [{ app: "vscode", start: dayStart + 10 * hour }]
+    const out = projectTimeline(segments, {
+      now: dayStart + 20 * hour,
+      dayStart,
+      lastSeen: dayStart + 20 * hour - 120_000,
+      staleAfterMs: 45_000,
+    })
+    expect(out.live).toBe(false)
+    // Closed at the last known observation, not at the current time.
+    expect(out.segments[0]?.end).toBe(dayStart + 20 * hour - 120_000)
+  })
+
+  test("a restored open segment is not live until the process observes again", () => {
+    const segments = [{ app: "vscode", start: dayStart + 10 * hour }]
+    const out = projectTimeline(segments, {
+      now: dayStart + 20 * hour,
+      dayStart,
+      lastSeen: 0,
+      staleAfterMs: 45_000,
+    })
+    expect(out.live).toBe(false)
+    expect(out.segments[0]?.end).toBe(dayStart + 10 * hour)
+  })
+
+  test("clamps a carried open segment from a previous day at midnight", () => {
+    const segments = [{ app: "yesterday-app", start: dayStart - 3 * hour }]
+    const out = projectTimeline(segments, {
+      now: dayStart + 1,
+      dayStart,
+      lastSeen: dayStart + 1,
+      staleAfterMs: 45_000,
+    })
+    expect(out.segments[0]?.end).toBe(dayStart)
+  })
 })

@@ -1,34 +1,56 @@
-import { createResource, For, onCleanup, onMount, Show } from "solid-js"
+import { For, Show, createResource, onCleanup, onMount } from "solid-js"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
 import { listAllSessions } from "@/components/settings-usage"
 
-/**
- * GitHub-style contribution heatmap: one column per week, one cell per day,
- * colored by that day's total tokens. Five levels (none/low/medium/high/peak)
- * bucketed from the 90-day token distribution. Clicking a day navigates to
- * the daily report.
- */
 const DAYS = 90
+const CELL = 12
+const GAP = 3
 
-type DayCell = {
+export type DayCell = {
   key: string
   label: string
   tokens: number
   level: 0 | 1 | 2 | 3 | 4
 }
 
-// Level from the percentile rank of `tokens` among all active days, so a
-// single huge outlier day does not crush the rest of the month into the
-// faintest bucket (which rendered as "no heatmap").
-function levelFor(tokens: number, active: number[]): 0 | 1 | 2 | 3 | 4 {
-  if (tokens <= 0 || active.length === 0) return 0
-  const atOrBelow = active.filter((value) => value <= tokens).length
+export function sessionTokenTotal(session: {
+  tokens?: { input: number; output: number; reasoning: number; cache?: { read: number; write: number } }
+}): number {
+  const tokens = session.tokens
+  if (!tokens) return 0
+  // Activity = newly produced tokens only. Cache reads are passive reuse of an
+  // already-billed prefix (they can reach tens of thousands of tokens per turn
+  // for long sessions) and would drown out real work in the heatmap.
+  return tokens.input + tokens.output + tokens.reasoning
+}
+
+export function sessionActivityTimestamp(session: { time?: { created?: number; updated?: number } }): number | undefined {
+  return session.time?.updated ?? session.time?.created
+}
+
+// Level from the percentile rank so one unusually large day does not flatten
+// every other active day into the faintest bucket.
+function levelFor(value: number, active: number[]): 0 | 1 | 2 | 3 | 4 {
+  if (value <= 0 || active.length === 0) return 0
+  const atOrBelow = active.filter((v) => v <= value).length
   const fraction = atOrBelow / active.length
   if (fraction <= 0.25) return 1
   if (fraction <= 0.5) return 2
   if (fraction <= 0.75) return 3
   return 4
+}
+
+/** Align day cells into complete Sunday-to-Saturday columns. */
+export function buildContributionWeeks(cells: DayCell[], offset: number): Array<Array<DayCell | null>> {
+  const padded: Array<DayCell | null> = [...Array(offset).fill(null), ...cells]
+  while (padded.length % 7 !== 0) padded.push(null)
+  const weeks: Array<Array<DayCell | null>> = []
+  for (let index = 0; index < padded.length; index += 7) {
+    const week = padded.slice(index, index + 7)
+    if (week.some((cell) => cell !== null)) weeks.push(week)
+  }
+  return weeks
 }
 
 export function ContributionHeatmap() {
@@ -37,34 +59,39 @@ export function ContributionHeatmap() {
 
   const [cells, { refetch }] = createResource(async (): Promise<DayCell[]> => {
     const sessions = await listAllSessions(serverSDK)
-    // Bucket tokens by local calendar day (yyyy-MM-dd).
-    const byDay = new Map<string, number>()
+    const byDayTokens = new Map<string, number>()
+    const byDayCount = new Map<string, number>()
     for (const session of sessions) {
-      const created = session.time?.created
-      if (!created) continue
-      const tokens = session.tokens ? session.tokens.input + session.tokens.output : 0
-      if (tokens <= 0) continue
-      const d = new Date(created)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-      byDay.set(key, (byDay.get(key) ?? 0) + tokens)
+      const activity = sessionActivityTimestamp(session)
+      if (!activity) continue
+      const date = new Date(activity)
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+      byDayTokens.set(key, (byDayTokens.get(key) ?? 0) + sessionTokenTotal(session))
+      byDayCount.set(key, (byDayCount.get(key) ?? 0) + 1)
     }
-    const active = [...byDay.values()].filter((value) => value > 0).sort((a, b) => a - b)
-
-    // Build the last 90 days ending today (today on the right).
+    // Prefer token volume, but if sessions report no tokens at all fall back to
+    // session count so the chart still reflects activity instead of going blank.
+    const anyTokens = [...byDayTokens.values()].some((value) => value > 0)
+    const valueFor = (key: string) => (anyTokens ? byDayTokens.get(key) ?? 0 : byDayCount.get(key) ?? 0)
+    const active = [...byDayTokens.keys(), ...byDayCount.keys()]
+      .map(valueFor)
+      .filter((value) => value > 0)
+      .sort((a, b) => a - b)
     const today = new Date()
     today.setHours(0, 0, 0, 0)
-    const out: DayCell[] = []
-    for (let i = DAYS - 1; i >= 0; i--) {
-      const d = new Date(today.getTime() - i * 86_400_000)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-      const tokens = byDay.get(key) ?? 0
-      out.push({ key, label: `${d.getMonth() + 1}/${d.getDate()}`, tokens, level: levelFor(tokens, active) })
-    }
-    return out
+    return Array.from({ length: DAYS }, (_, index) => {
+      const date = new Date(today.getTime() - (DAYS - 1 - index) * 86_400_000)
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+      const value = valueFor(key)
+      return {
+        key,
+        label: `${date.getMonth() + 1}/${date.getDate()}`,
+        tokens: byDayTokens.get(key) ?? 0,
+        level: levelFor(value, active),
+      }
+    })
   })
 
-  // Keep the heatmap current while the tab is mounted: a modest 60s poll plus
-  // a refetch when the window regains focus (mirrors the usage tab's pattern).
   onMount(() => {
     const refresh = () => {
       if (cells.loading) return
@@ -78,107 +105,97 @@ export function ContributionHeatmap() {
     })
   })
 
-  // Layout: grid with one row per weekday (Sun..Sat), one column per week.
-  const weeks: DayCell[][] = []
-  const cellsData = cells()
-  if (cellsData && cellsData.length > 0) {
-    // First day's weekday offset so columns align to weeks.
+  const weeks = () => {
+    const data = cells()
+    if (!data?.length) return []
     const first = new Date()
     first.setHours(0, 0, 0, 0)
     first.setDate(first.getDate() - (DAYS - 1))
-    const offset = first.getDay() // 0=Sun
-    const padded: (DayCell | null)[] = [...Array(offset).fill(null), ...cellsData]
-    while (padded.length % 7 !== 0) padded.push(null)
-    for (let i = 0; i < padded.length; i += 7) {
-      const col = padded.slice(i, i + 7)
-      const nonNull = col.some((c) => c !== null)
-      if (nonNull) weeks.push(col as DayCell[])
-    }
+    return buildContributionWeeks(data, first.getDay())
   }
 
   const monthLabels = () => {
-    if (!cellsData || cellsData.length === 0) return []
-    const labels: { text: string; col: number }[] = []
-    let prevMonth = -1
-    weeks.forEach((week, wi) => {
-      const first = week.find((c) => c !== null)
+    const labels: Array<{ text: string; col: number }> = []
+    let previousMonth = -1
+    weeks().forEach((week, index) => {
+      const first = week.find((cell): cell is DayCell => cell !== null)
       if (!first) return
-      const m = Number(first.key.slice(5, 7))
-      if (m !== prevMonth) {
-        labels.push({ text: `${m}月`, col: wi })
-        prevMonth = m
-      }
+      const month = Number(first.key.slice(5, 7))
+      if (month === previousMonth) return
+      labels.push({ text: `${month}月`, col: index })
+      previousMonth = month
     })
     return labels
   }
 
-  const LEVEL_CLASS = [
-    "bg-v2-background-bg-layer-02",
-    "bg-v2-accent-accent/15",
-    "bg-v2-accent-accent/35",
-    "bg-v2-accent-accent/60",
-    "bg-v2-accent-accent",
+  const levelClass = [
+    "bg-[#ebedf0] dark:bg-[#21262d]",
+    "bg-[#9be9a8] dark:bg-[#0e4429]",
+    "bg-[#40c463] dark:bg-[#006d32]",
+    "bg-[#30a14e] dark:bg-[#26a641]",
+    "bg-[#216e39] dark:bg-[#39d353]",
   ]
 
   return (
-    <div class="flex min-w-0 flex-col gap-1.5">
+    <div class="flex min-w-0 flex-col gap-2">
       <div class="flex items-center justify-between">
         <span class="text-[11px] font-medium text-v2-text-text-muted">{language.t("workbench.activity")}</span>
         <span class="text-[10px] text-v2-text-text-faint">90 {language.t("workbench.days")}</span>
       </div>
-
       <Show
-        when={!cells.loading && weeks.length > 0}
+        when={!cells.loading && weeks().length > 0}
         fallback={
-          <div class="flex h-16 items-center justify-center text-[11px] text-v2-text-text-faint">
-            {cells.loading
-              ? language.t("common.loading")
-              : cells.error
-                ? language.t("workbench.activity.error")
-                : language.t("workbench.activity.empty")}
+          <div class="flex h-[120px] items-center justify-center text-[11px] text-v2-text-text-faint">
+            {cells.loading ? language.t("common.loading") : cells.error ? language.t("workbench.activity.error") : language.t("workbench.activity.empty")}
           </div>
         }
       >
-        {/* Month labels */}
-        <div class="flex gap-[3px] pl-5">
-          <For each={monthLabels()}>
-            {(m) => (
-              <div class="w-[10px] text-[9px] leading-3 text-v2-text-text-faint" style={{ "margin-left": m.col > 0 ? `${(m.col - 1) * 13}px` : undefined }}>
-                {m.text}
-              </div>
-            )}
-          </For>
-        </div>
-
-        <div class="flex gap-[3px]">
-          <For each={weeks}>
-            {(week) => (
-              <div class="flex w-[10px] flex-col gap-[3px]">
-                <For each={week}>
-                  {(cell) => (
-                    <Show
-                      when={cell !== null}
-                      fallback={<div class="h-[10px] w-[10px]" />}
-                    >
-                      <div
-                        title={`${cell!.label}: ${cell!.tokens.toLocaleString(language.intl())}`}
-                        class={`h-[10px] w-[10px] rounded-[2px] ${LEVEL_CLASS[cell!.level]}`}
-                      />
-                    </Show>
+        <div class="flex justify-center overflow-x-auto pb-1 no-scrollbar">
+          <div class="inline-flex flex-col gap-[3px]">
+            <div class="flex gap-[3px]">
+              <div class="shrink-0" style={{ width: "22px" }} />
+              <div class="grid gap-[3px]" style={{ "grid-template-columns": `repeat(${weeks().length}, ${CELL}px)` }}>
+                <For each={monthLabels()}>
+                  {(month) => (
+                    <div class="text-[9px] leading-[10px] text-v2-text-text-faint" style={{ "grid-column": month.col + 1 }}>
+                      {month.text}
+                    </div>
                   )}
                 </For>
               </div>
-            )}
-          </For>
-        </div>
-
-        {/* Legend */}
-        <div class="flex items-center justify-end gap-1 pt-0.5">
-          <span class="text-[9px] text-v2-text-text-faint">{language.t("workbench.less")}</span>
-          <For each={LEVEL_CLASS}>
-            {(cls) => <div class={`h-[8px] w-[8px] rounded-[2px] ${cls}`} />}
-          </For>
-          <span class="text-[9px] text-v2-text-text-faint">{language.t("workbench.more")}</span>
+            </div>
+            <div class="flex gap-[3px]">
+              <div class="flex shrink-0 flex-col gap-[3px]" style={{ width: "22px" }}>
+                <For each={[0, 1, 2, 3, 4, 5, 6]}>
+                  {(row) => (
+                    <div class="h-[12px] text-[9px] leading-[12px] text-v2-text-text-faint">
+                      {row === 1 ? language.t("workbench.weekday.mon") : row === 3 ? language.t("workbench.weekday.wed") : row === 5 ? language.t("workbench.weekday.fri") : ""}
+                    </div>
+                  )}
+                </For>
+              </div>
+              <For each={weeks()}>
+                {(week) => (
+                  <div class="flex flex-col gap-[3px]">
+                    <For each={week}>
+                      {(cell) => (
+                        <div
+                          title={cell ? `${cell.label}: ${cell.tokens.toLocaleString(language.intl())}` : undefined}
+                          class={`rounded-[2px] ${levelClass[cell ? cell.level : 0]}`}
+                          style={{ width: `${CELL}px`, height: `${CELL}px` }}
+                        />
+                      )}
+                    </For>
+                  </div>
+                )}
+              </For>
+            </div>
+            <div class="flex items-center justify-end gap-1 pt-0.5">
+              <span class="text-[9px] text-v2-text-text-faint">{language.t("workbench.less")}</span>
+              <For each={levelClass}>{(className) => <div class={`h-[9px] w-[9px] rounded-[2px] ${className}`} />}</For>
+              <span class="text-[9px] text-v2-text-text-faint">{language.t("workbench.more")}</span>
+            </div>
+          </div>
         </div>
       </Show>
     </div>

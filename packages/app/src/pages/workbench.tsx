@@ -1,4 +1,4 @@
-import { createResource, createSignal, For, Show, onCleanup, onMount } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show, onCleanup, onMount } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useServerSDK } from "@/context/server-sdk"
 import { useLanguage } from "@/context/language"
@@ -9,7 +9,17 @@ import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
 import { SidebarTimeline } from "@/components/sidebar-timeline"
 import { SettingsUsage } from "@/components/settings-usage"
 import { ContributionHeatmap } from "@/components/contribution-heatmap"
-import { DAY_MS, dayStartMs, formatDuration, groupSegments } from "@/lib/presence-gantt"
+import {
+  HOUR_MS,
+  appColorIndex,
+  buildCompressedGaps,
+  compressedRatioToPercent,
+  compressedTotalMs,
+  dayStartMs,
+  groupSegments,
+  timeToCompressedRatio,
+  timelineEndHour,
+} from "@/lib/presence-gantt"
 
 type WorkbenchTodo = {
   id: string
@@ -220,15 +230,16 @@ function PresenceStrip() {
             </Show>
           </div>
         </Show>
+        <Show when={!presence.loading && !presence()}>
+          <div class="text-[12px] leading-4 text-v2-text-text-faint">
+            {language.t("common.requestFailed")}
+          </div>
+        </Show>
       </div>
     </section>
   )
 }
 
-// Today's focus-app Gantt: one row per app, each with colored bars placed at
-// their actual time of day, built from Presence.timeline (desktop host reports
-// the OS foreground window). Hour ticks make the bars interpretable; the list
-// is capped to the most-used apps and scrolls when the day is busy.
 function PresenceGantt() {
   const serverSDK = useServerSDK()
   const language = useLanguage()
@@ -251,76 +262,137 @@ function PresenceGantt() {
 
   const now = () => Date.now()
   const dayStart = () => dayStartMs(now())
-  const rows = () => groupSegments(timeline()?.segments ?? [], now())
+  const endHour = () => timelineEndHour(now())
+  const endMs = () => dayStart() + endHour() * HOUR_MS
+  const rows = createMemo(() => groupSegments(timeline()?.segments ?? [], now()))
   const live = () => timeline()?.live === true
+  const gaps = createMemo(() => buildCompressedGaps(rows(), dayStart(), endMs()))
+  const totalCompressed = createMemo(() => compressedTotalMs(dayStart(), endMs(), gaps()))
 
-  const PALETTE = [
-    "bg-v2-accent-accent/80",
-    "bg-v2-warning-warning/70",
-    "bg-v2-info-info/70",
-    "bg-v2-success-success/70",
-    "bg-v2-danger-danger/60",
-    "bg-v2-accent-accent/40",
-    "bg-v2-warning-warning/40",
-    "bg-v2-info-info/40",
+  const palette = [
+    "#b77561",
+    "#b9965e",
+    "#6f9aa4",
+    "#83a276",
+    "#8a96b4",
+    "#a77f9c",
+    "#9284b8",
+    "#829b8a",
   ]
+  const color = (app: string) => palette[appColorIndex(app, palette.length)]
+  const ticks = () => Array.from({ length: endHour() / 2 - 1 }, (_, index) => (index + 1) * 2).filter((hour) => {
+    const time = dayStart() + hour * HOUR_MS
+    return !gaps().some((gap) => time >= gap.start && time <= gap.end)
+  })
 
-  const HOUR_TICKS = [0, 6, 12, 18, 24]
+  const tickLeft = (hour: number) => {
+    const time = dayStart() + hour * HOUR_MS
+    const ratio = timeToCompressedRatio(time, dayStart(), gaps())
+    return compressedRatioToPercent(ratio, totalCompressed())
+  }
+  const segmentStyle = (start: number, end: number) => {
+    const clampedStart = Math.max(start, dayStart())
+    const clampedEnd = Math.min(end, endMs())
+    if (clampedEnd <= clampedStart) return null
+    const startRatio = timeToCompressedRatio(clampedStart, dayStart(), gaps())
+    const endRatio = timeToCompressedRatio(clampedEnd, dayStart(), gaps())
+    const left = compressedRatioToPercent(startRatio, totalCompressed())
+    const right = compressedRatioToPercent(endRatio, totalCompressed())
+    const width = Math.max(0.45, right - left)
+    return { left, width: Math.min(100 - left, width) }
+  }
 
   return (
     <Show when={rows().length > 0}>
-      <div class="mt-3 flex flex-col gap-1.5">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-1.5 text-[11px] font-medium text-v2-text-text-muted">
-            {language.t("workbench.presence.gantt")}
-            <Show when={live()}>
-              <span class="inline-block size-1.5 rounded-full bg-v2-accent-accent" aria-hidden="true" />
-            </Show>
+      <div class="overflow-x-auto pb-1 no-scrollbar">
+        <div class="min-w-[720px]">
+          <div class="grid grid-cols-[150px_minmax(0,1fr)] items-start gap-x-4 border-b border-v2-border-border-muted pb-4">
+            <div class="flex items-center gap-2 text-[15px] font-semibold text-v2-text-text-strong">
+              {language.t("workbench.presence.gantt")}
+              <Show when={live()}>
+                <span class="inline-block size-1.5 rounded-full bg-v2-accent-accent" aria-hidden="true" />
+              </Show>
+            </div>
+            <div class="flex flex-wrap gap-x-4 gap-y-2 pt-0.5">
+              <For each={rows()}>
+                {(row) => (
+                  <div class="flex min-w-0 items-center gap-1.5 text-[11px] text-v2-text-text-muted">
+                    <span class="size-3 shrink-0 rounded-[3px]" style={{ "background-color": color(row.app) }} />
+                    <span class="max-w-28 truncate" title={row.app}>
+                      {row.app}
+                    </span>
+                  </div>
+                )}
+              </For>
+            </div>
           </div>
-        </div>
-        {/* Hour ticks along the same scale as the bars below. */}
-        <div class="relative h-3">
-          <For each={HOUR_TICKS}>
-            {(hour) => (
-              <span
-                class="absolute top-0 -translate-x-1/2 text-[9px] leading-3 text-v2-text-text-faint"
-                style={{ left: `${(hour / 24) * 100}%` }}
-              >
-                {hour === 24 ? "24" : hour}
-              </span>
-            )}
-          </For>
-        </div>
-        <div class="flex flex-col gap-1 overflow-y-auto no-scrollbar max-h-40 pr-1">
-          <For each={rows()}>
-            {(row, i) => (
-              <div class="flex items-center gap-2">
-                <span class="w-16 shrink-0 truncate text-[10px] text-v2-text-text-faint" title={row.app}>
-                  {row.app}
-                </span>
-                <div class="relative h-3 min-w-0 flex-1 rounded-[3px] bg-v2-background-bg-layer-02">
-                  <For each={row.segments}>
-                    {(segment) => {
-                      const start = Math.max(segment.start, dayStart())
-                      const end = Math.min(segment.end, dayStart() + DAY_MS)
-                      const left = Math.max(0, ((start - dayStart()) / DAY_MS) * 100)
-                      const width = Math.max(0.5, ((end - start) / DAY_MS) * 100)
-                      return (
-                        <div
-                          class={`absolute inset-y-0 rounded-[3px] ${PALETTE[i() % PALETTE.length]}`}
-                          style={{ left: `${left}%`, width: `${Math.min(100, width)}%` }}
-                          title={`${formatHour(segment.start)}–${formatHour(segment.end)}`}
-                        />
-                      )
-                    }}
-                  </For>
-                </div>
-                <span class="w-11 shrink-0 text-right text-[10px] text-v2-text-text-faint">
-                  {formatDuration(row.totalMs)}
-                </span>
-              </div>
-            )}
-          </For>
+          <div class="grid grid-cols-[150px_minmax(0,1fr)] gap-x-4 pt-5">
+            <div class="flex flex-col">
+              <For each={rows()}>
+                {(row) => (
+                  <div class="flex h-11 items-center justify-end truncate pr-1 text-[12px] text-v2-text-text-muted" title={row.app}>
+                    {row.app}
+                  </div>
+                )}
+              </For>
+            </div>
+            <div class="relative border-l border-v2-border-border-strong">
+              <For each={ticks()}>
+                {(hour) => (
+                  <div
+                    class="absolute inset-y-0 border-l border-v2-border-border-muted/60"
+                    style={{ left: `${tickLeft(hour)}%` }}
+                  >
+                    <span class="absolute -bottom-6 -translate-x-1/2 whitespace-nowrap text-[10px] text-v2-text-text-faint">
+                      {String(hour).padStart(2, "0")}:00
+                    </span>
+                  </div>
+                )}
+              </For>
+              {/* Compressed gap break markers */}
+              <For each={gaps()}>
+                {(gap) => {
+                  const ratio = timeToCompressedRatio(gap.start, dayStart(), gaps())
+                  const left = compressedRatioToPercent(ratio, totalCompressed())
+                  return (
+                    <div
+                      class="absolute inset-y-0 flex items-center justify-center"
+                      style={{ left: `calc(${left}% - 8px)` }}
+                      title={`压缩空白 ${Math.round(gap.duration / 60000)}m → 14m`}
+                    >
+                      <span class="rounded-[4px] bg-v2-background-bg-layer-02 px-1 py-0.5 text-[9px] font-medium leading-none text-v2-text-text-faint shadow-sm ring-1 ring-v2-border-border-muted">
+                        //
+                      </span>
+                    </div>
+                  )
+                }}
+              </For>
+              <For each={rows()}>
+                {(row) => (
+                  <div class="relative h-11">
+                    <For each={row.segments}>
+                      {(segment) => {
+                        const style = segmentStyle(segment.start, segment.end)
+                        if (!style) return null
+                        return (
+                          <div
+                            class="absolute top-2 h-7 rounded-[4px] opacity-90"
+                            style={{
+                              left: `${style.left}%`,
+                              width: `${style.width}%`,
+                              "background-color": color(row.app),
+                            }}
+                            title={`${row.app} - ${formatHour(segment.start)}-${formatHour(segment.end)}`}
+                          />
+                        )
+                      }}
+                    </For>
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+          <div class="h-7" />
         </div>
       </div>
     </Show>
@@ -439,26 +511,49 @@ export default function WorkbenchPage() {
           }}
           onScroll={(e) => rememberScroll(e.currentTarget as HTMLDivElement)}
         >
-          <div ref={watchContent} class="mx-auto flex min-h-full w-full max-w-[1024px] flex-col gap-4 px-4 py-4">
+          <div ref={watchContent} class="mx-auto flex min-h-full w-full max-w-[1320px] flex-col gap-5 px-5 py-6">
             <Show when={section() === "overview"}>
-              {/* Overview: heatmap full width, then presence + recent summaries */}
-              <section class="rounded-[10px] bg-v2-background-bg-layer-01 p-4">
-                <ContributionHeatmap />
-              </section>
-              <div class="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
-                <section class="flex min-h-0 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
+              <div class="flex flex-col gap-1 px-1">
+                <h2 class="text-[14px] font-semibold tracking-[-0.04px] text-v2-text-text-strong">
+                  {language.t("workbench.section.overview")}
+                </h2>
+                <p class="text-[12px] leading-4 text-v2-text-text-faint">
+                  {language.t("workbench.overview.subtitle") ?? "Activity, presence and recent daily digests at a glance."}
+                </p>
+              </div>
+              <div class="grid min-h-0 grid-cols-1 gap-5">
+                <section class="flex min-h-0 flex-col gap-4 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                  <ContributionHeatmap />
+                </section>
+                <section class="flex min-h-0 flex-col gap-4 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
                   <PresenceStrip />
+                  <div class="h-px bg-v2-border-border-muted/70" />
                   <PresenceGantt />
                 </section>
-                <section class="flex min-h-0 flex-1 flex-col gap-3 rounded-[10px] bg-v2-background-bg-layer-01 p-4">
-                  <h2 class="text-[13px] font-medium tracking-[-0.04px] text-v2-text-text-muted">
-                    {language.t("workbench.dailySummary")}
-                  </h2>
-                  <div class="min-h-0 flex-1">
-                    <SidebarTimeline showHeader={false} bodyClass="px-0 pb-0" />
-                  </div>
-                </section>
               </div>
+              <section class="flex min-h-0 w-full flex-col gap-3 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
+                <div class="flex items-center justify-between gap-3">
+                  <div class="flex items-center gap-2.5">
+                    <span class="flex size-7 items-center justify-center rounded-[8px] bg-v2-background-bg-layer-03 text-v2-text-text-muted">
+                      <IconV2 name="calendar" size="small" />
+                    </span>
+                    <div class="flex flex-col">
+                      <span class="text-[13px] font-semibold leading-4 text-v2-text-text-strong">
+                        {language.t("workbench.dailySummary")}
+                      </span>
+                      <span class="text-[11px] leading-3 text-v2-text-text-faint">
+                        {language.t("sidebar.dailySummary.subtitle") ?? "Recent digests — polished vertical timeline"}
+                      </span>
+                    </div>
+                  </div>
+                  <ButtonV2 size="small" variant="ghost-muted" onClick={() => switchSection("summary")}>
+                    {language.t("common.viewAll") ?? "View all"}
+                  </ButtonV2>
+                </div>
+                <div class="min-h-0 flex-1 rounded-[10px] border border-v2-border-border-muted/60 bg-v2-background-bg-base px-4 py-4">
+                  <SidebarTimeline showHeader={false} bodyClass="px-1 pb-1" />
+                </div>
+              </section>
             </Show>
 
             <Show when={section() === "todos"}>

@@ -14,6 +14,10 @@ import type { DailyReport } from "@newhorse/sdk/v2"
 
 const num = (value: number | string): number => Number(value)
 
+export function dailyReportLlmUnavailable(report: Pick<DailyReport, "overview"> | undefined) {
+  return report?.overview.includes("LLM 暂不可用") === true
+}
+
 const todoStatusKey = (
   status: string,
 ): "dailyReport.todo.pending" | "dailyReport.todo.in_progress" | "dailyReport.todo.completed" | "dailyReport.todo.cancelled" => {
@@ -103,6 +107,11 @@ export default function DailyReportPage() {
     <div class="m-2 min-h-0 self-stretch flex-1 overflow-hidden rounded-[10px] bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]">
       <ScrollView class="h-full [container-type:size]">
         <div class="mx-auto flex min-h-full w-full max-w-[720px] flex-col gap-4 px-4 py-6">
+          <Show when={dailyReportLlmUnavailable(report())}>
+            <div class="rounded-[8px] border border-v2-warning-warning/40 bg-v2-warning-warning/10 px-3 py-2 text-[12px] text-v2-warning-warning">
+              {language.t("common.requestFailed")}: LLM unavailable. Check the provider/model configuration and regenerate the report.
+            </div>
+          </Show>
           <header class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-2">
               <button

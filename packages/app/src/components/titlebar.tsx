@@ -28,6 +28,7 @@ import { tabKey, useTabs } from "@/context/tabs"
 import type { PromptSession } from "@/context/prompt"
 import { ensureCompanionSession, ensurePersonalWorkspace } from "@/components/prompt-input/companion-session"
 import { legacySessionHref } from "@/utils/session-route"
+import { defaultProjectDirectory } from "@/utils/project-directory"
 import { showToast } from "@/utils/toast"
 import { errorMessage } from "@/pages/layout/helpers"
 import type { Session } from "@newhorse/sdk/v2/client"
@@ -320,15 +321,25 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                 if (route.type === "home") return layout.home.selection()?.directory
               }
               // Fallback for global routes (e.g. /workbench) that carry no
-              // directory: any connected server's first project worktree, so
-              // the pinned Companion tab always has a directory to open.
+              // directory: any connected server's default project directory, so
+              // the pinned Companion tab always has a directory to open. In LAN
+              // web mode the persisted project list is empty, so this also falls
+              // back to the server's known projects and its default directory.
+              const resolve = (conn: ServerConnection.Any) => {
+                const ctx = global.ensureServerCtx(conn)
+                return defaultProjectDirectory({
+                  known: ctx.projects.list(),
+                  projects: ctx.sync.data.project,
+                  serverDirectory: ctx.sync.data.path.directory,
+                })
+              }
               const conn = global.servers.list().find((item) => ServerConnection.key(item) === server.key)
               if (conn) {
-                const worktree = global.ensureServerCtx(conn).projects.list()[0]?.worktree
+                const worktree = resolve(conn)
                 if (worktree) return worktree
               }
               for (const item of global.servers.list()) {
-                const worktree = global.ensureServerCtx(item).projects.list()[0]?.worktree
+                const worktree = resolve(item)
                 if (worktree) return worktree
               }
               return undefined
@@ -347,7 +358,12 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
               if (!conn || !directory) {
                 let fallbackDirectory: string | undefined
                 for (const item of global.servers.list()) {
-                  const worktree = global.ensureServerCtx(item).projects.list()[0]?.worktree
+                  const ctx = global.ensureServerCtx(item)
+                  const worktree = defaultProjectDirectory({
+                    known: ctx.projects.list(),
+                    projects: ctx.sync.data.project,
+                    serverDirectory: ctx.sync.data.path.directory,
+                  })
                   if (worktree) {
                     conn = item
                     fallbackDirectory = worktree
@@ -469,9 +485,26 @@ export function Titlebar(props: { update?: TitlebarUpdate; debugTools?: { visibl
                 const project = global.ensureServerCtx(conn).projects.list()[0]
                 return project ? [{ server: ServerConnection.key(conn), project }] : []
               })[0]
-              if (!fallback) return
+              if (fallback) {
+                tabs.newDraft({ server: fallback.server, directory: fallback.project.worktree }, "")
+                return
+              }
 
-              tabs.newDraft({ server: fallback.server, directory: fallback.project.worktree }, "")
+              // LAN web mode has no persisted projects yet; fall back to the
+              // server's known projects or its default working directory so the
+              // new-session button still works on a fresh browser.
+              for (const conn of global.servers.list()) {
+                const ctx = global.ensureServerCtx(conn)
+                const directory = defaultProjectDirectory({
+                  known: ctx.projects.list(),
+                  projects: ctx.sync.data.project,
+                  serverDirectory: ctx.sync.data.path.directory,
+                })
+                if (directory) {
+                  tabs.newDraft({ server: ServerConnection.key(conn), directory }, "")
+                  return
+                }
+              }
             }
             const toggleHome = () => tabs.toggleHome({ home: layout.route().type === "home", current: currentTab() })
 

@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { DAY_MS, MAX_GANTT_ROWS, dayStartMs, formatDuration, groupSegments } from "./presence-gantt"
+import {
+  DAY_MS,
+  MAX_GANTT_ROWS,
+  appColorIndex,
+  dayStartMs,
+  formatDuration,
+  groupSegments,
+  timelineEndHour,
+} from "./presence-gantt"
 
 const HOUR = 60 * 60 * 1000
 
@@ -76,5 +84,22 @@ describe("formatDuration", () => {
   })
   test("rounds half hours", () => {
     expect(formatDuration(HOUR + 30 * 60_000)).toBe("1h30m")
+  })
+})
+
+describe("timeline scale", () => {
+  test("ends at the next even hour", () => {
+    const now = new Date(2026, 7, 19, 17, 12).getTime()
+    expect(timelineEndHour(now)).toBe(18)
+  })
+
+  test("keeps an early-day minimum and caps at midnight", () => {
+    expect(timelineEndHour(new Date(2026, 7, 19, 0, 10).getTime())).toBe(2)
+    expect(timelineEndHour(new Date(2026, 7, 19, 23, 10).getTime())).toBe(24)
+  })
+
+  test("assigns an app a stable palette entry", () => {
+    expect(appColorIndex("Code.exe", 8)).toBe(appColorIndex("Code.exe", 8))
+    expect(appColorIndex("Code.exe", 8)).toBeLessThan(8)
   })
 })

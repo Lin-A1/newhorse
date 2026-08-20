@@ -366,11 +366,13 @@ export async function runAgentBrowser(
 
     child.once("error", (error) => settle(1, `failed to spawn agent-browser: ${errorMessage(error)}`))
 
-    killTimer = setTimeout(() => {
+    killTimer = setTimeout(async () => {
       timedOut = true
-      settle(1, `Timed out after ${timeoutMs}ms`)
       const pid = child.pid
-      if (pid !== undefined) void killProcessTreeRaw(pid)
+      settle(1, `Timed out after ${timeoutMs}ms`)
+      // Resolve the command timeout independently of descendant cleanup. A
+      // wedged taskkill/Chrome child must never hold the tool mutex forever.
+      if (pid !== undefined) void killProcessTreeRaw(pid).catch(() => undefined)
     }, timeoutMs)
   })
 }
@@ -707,20 +709,24 @@ function runBrowser(
 function schedulePostCallCleanup(binary: string, sessionName: string): Effect.Effect<void> {
   return Effect.gen(function* () {
     yield* Effect.sleep(`${POST_CALL_CLEANUP_GRACE_MS} millis`)
-    if (Date.now() - (lastSessionActivity.get(sessionName) ?? 0) < POST_CALL_CLEANUP_GRACE_MS) return
-    const info = yield* Effect.promise(() =>
-      runAgentBrowser(binary, buildBrowserArgs({ kind: "session", action: "info" }, sessionName), {
-        timeoutMs: RESET_COMMAND_TIMEOUT_MS,
+    yield* sessionLocks.withLock(sessionName)(
+      Effect.gen(function* () {
+        if (Date.now() - (lastSessionActivity.get(sessionName) ?? 0) < POST_CALL_CLEANUP_GRACE_MS) return
+        const info = yield* Effect.promise(() =>
+          runAgentBrowser(binary, buildBrowserArgs({ kind: "session", action: "info" }, sessionName), {
+            timeoutMs: RESET_COMMAND_TIMEOUT_MS,
+          }),
+        ).pipe(Effect.orElseSucceed(() => ({ stdout: "", stderr: "", timedOut: false, code: 1 }) as RunAgentBrowserResult))
+        if (!info.stdout) return
+        const parsed = parseBrowserResponse(info.stdout, info.stderr)
+        if (!parsed.success || !parsed.data) return
+        if (typeof parsed.data !== "object" || parsed.data === null) return
+        if (Date.now() - (lastSessionActivity.get(sessionName) ?? 0) < POST_CALL_CLEANUP_GRACE_MS) return
+        const data = parsed.data as { pid?: unknown }
+        if (typeof data.pid !== "number" || data.pid <= 0) return
+        yield* killProcessTree(data.pid).pipe(Effect.orElseSucceed(() => undefined))
       }),
-    ).pipe(Effect.orElseSucceed(() => ({ stdout: "", stderr: "", timedOut: false, code: 1 }) as RunAgentBrowserResult))
-    if (!info.stdout) return
-    const parsed = parseBrowserResponse(info.stdout, info.stderr)
-    if (!parsed.success || !parsed.data) return
-    if (typeof parsed.data !== "object" || parsed.data === null) return
-    if (Date.now() - (lastSessionActivity.get(sessionName) ?? 0) < POST_CALL_CLEANUP_GRACE_MS) return
-    const data = parsed.data as { pid?: unknown }
-    if (typeof data.pid !== "number" || data.pid <= 0) return
-    yield* killProcessTree(data.pid).pipe(Effect.orElseSucceed(() => undefined))
+    )
   }).pipe(Effect.forkDetach, Effect.ignore)
 }
 

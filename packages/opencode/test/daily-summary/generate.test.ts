@@ -173,6 +173,42 @@ describe("daily-summary generate", () => {
     ),
   )
 
+  it.live("prefers the anchor session model over the configured default", () =>
+    provideTmpdirServer(
+      ({ dir, llm }) =>
+        Effect.gen(function* () {
+          const { db } = yield* Database.Service
+          yield* seedSession(db, {
+            profile: "companion",
+            directory: dir,
+            model: { id: "test-model", providerID: "test" },
+          })
+          yield* llm.text("## 今日概览\n使用 Companion 模型生成。")
+
+          const report = yield* (yield* DailySummary.Service).draft({ date: Date.now() })
+          const inputs = yield* llm.inputs
+
+          expect(report?.overview).toContain("使用 Companion 模型生成")
+          expect(inputs[0]?.model).toBe("test-model")
+        }),
+      {
+        config: (url) => ({
+          ...providerCfg(url),
+          model: "test/default-model",
+          provider: {
+            test: {
+              ...providerCfg(url).provider.test,
+              models: {
+                ...providerCfg(url).provider.test.models,
+                "default-model": { ...providerCfg(url).provider.test.models["test-model"], id: "default-model" },
+              },
+            },
+          },
+        }),
+      },
+    ),
+  )
+
   it.live("draft returns undefined when there is no activity at all", () =>
     provideTmpdirServer(
       ({ dir }) =>

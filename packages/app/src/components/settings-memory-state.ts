@@ -27,10 +27,15 @@ export function useMemoryCenterState(sessionID?: string) {
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
   const params = useParams<{ id?: string }>()
-  const id = createMemo(() => sessionID ?? params.id)
+  const id = createMemo(() => params.id ?? sessionID)
   const session = createMemo(() => {
     const value = id()
     return value ? serverSync().session.get(value) : undefined
+  })
+  createEffect(() => {
+    const value = id()
+    if (!value || session()) return
+    void serverSync().session.resolve(value).catch(() => undefined)
   })
   const source = createMemo((): ScopedSource | undefined => {
     const sessionID = id()
@@ -177,6 +182,7 @@ export function useMemoryCenterState(sessionID?: string) {
     state,
     ready,
     loading: () => !activeSource() || !sameSource(source(), activeSource()) || ready.loading,
+    aggregateReady: () => !!activeSource() && sameSource(source(), activeSource()),
     contentScope: () => state.contentScope,
     currentWorkspaceID: () => activeSource()?.routing.workspace,
     refresh,

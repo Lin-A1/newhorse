@@ -74,6 +74,7 @@ import { archiveHomeSession } from "./home-session-archive"
 import { shouldOpenSessionInBackground } from "./home-session-open"
 import { showToast } from "@/utils/toast"
 import { fileManagerApp } from "@/utils/file-manager"
+import { defaultProjectDirectory } from "@/utils/project-directory"
 import {
   loadHomeSessionIndex,
   retainHomeSessions,
@@ -333,11 +334,24 @@ export function NewHome() {
   )
   const homedir = createMemo(() => focusedSync().data.path.home ?? "")
   const selectedProject = createMemo(() => projects().find((project) => project.worktree === selection().directory))
+  // In LAN web mode a fresh browser has no persisted projects, so fall back to
+  // the server's known projects or its default working directory to keep the
+  // new-session entry points working without first picking a project.
+  const defaultDirectory = createMemo(() => {
+    const ctx = focusedServerCtx()
+    if (!ctx) return undefined
+    return defaultProjectDirectory({
+      known: ctx.projects.list(),
+      projects: ctx.sync.data.project,
+      serverDirectory: ctx.sync.data.path.directory,
+    })
+  })
   const newSessionProject = createMemo(
     () =>
       selectedProject() ??
       projects().find((project) => project.worktree === focusedServerCtx()?.projects.last()) ??
-      projects()[0],
+      projects()[0] ??
+      (defaultDirectory() ? ({ worktree: defaultDirectory()!, expanded: true } as LocalProject) : undefined),
   )
   const directories = (project: LocalProject) => [project.worktree, ...(project.sandboxes ?? [])]
   const projectDirectories = createMemo(() => {

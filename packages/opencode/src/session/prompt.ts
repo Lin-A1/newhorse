@@ -109,6 +109,70 @@ function memoryRecallQuery(message: { parts: readonly { type: string; text?: str
     .slice(0, 500)
 }
 
+// Significant recall terms from the user query. Short ASCII fragments (under
+// 6 chars) and single CJK characters are dropped because FTS trigram windows
+// and common words like "the/work/back" match far too broadly — keeping them
+// would let a memory that merely mentions the project name or "session" pass
+// as "relevant" to every turn. CJK runs emit overlapping 3..6 char windows so
+// a 3-character Chinese word still counts.
+const RECALL_MIN_ASCII_TERM = 6
+const RECALL_CJK_RE = /[㐀-䶿一-鿿豈-﫿]+/u
+
+// Project-level / conversational generics that every memory in a workspace
+// tends to repeat. A memory sharing only these terms is not relevant to the
+// current turn — it just lives in the same project.
+const RECALL_STOPWORDS = new Set([
+  "newhorse",
+  "project",
+  "session",
+  "sessions",
+  "assistant",
+  "user",
+  "work",
+  "fix",
+  "fixed",
+  "fixes",
+  "test",
+  "tests",
+  "issue",
+  "issues",
+])
+
+function significantRecallTerms(query: string): string[] {
+  const terms = new Set<string>()
+  for (const token of query.split(/\s+/).filter(Boolean)) {
+    for (const fragment of token.split(/([A-Za-z0-9_@#.-]+)/g).filter(Boolean)) {
+      if (RECALL_CJK_RE.test(fragment)) {
+        const max = Math.min(6, fragment.length)
+        for (let length = 3; length <= max; length++) {
+          for (let index = 0; index + length <= fragment.length; index++) {
+            terms.add(fragment.slice(index, index + length).toLowerCase())
+          }
+        }
+      } else {
+        const clean = fragment.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").toLowerCase()
+        if (clean.length >= RECALL_MIN_ASCII_TERM && !RECALL_STOPWORDS.has(clean)) terms.add(clean)
+      }
+    }
+  }
+  return [...terms]
+}
+
+export { significantRecallTerms }
+
+// A recalled memory is only injected when it actually shares a significant
+// term with the user's query. Without this gate the search path surfaces any
+// memory that matches a generic trigram (project name, "session", …), so a
+// session about one topic would carry summaries of entirely different work.
+// A query with no significant terms (generic greeting) injects nothing.
+function relevantRecall(content: string, terms: string[]): boolean {
+  if (terms.length === 0) return false
+  const haystack = content.toLowerCase()
+  return terms.some((term) => haystack.includes(term))
+}
+
+export { relevantRecall }
+
 // Auto-continuity: how long a source session must wait before proposing again
 // after its most recent grant (any status), and how long a proposed grant lives.
 const AUTO_PROPOSE_MIN_INTERVAL_MS = 2 * 60 * 60 * 1000
@@ -1337,6 +1401,7 @@ const layer = Layer.effect(
         )
         let structured: unknown
         let step = 0
+        const injectedMemoryIds = new Set<string>()
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
         const profile = yield* profiles.runtime(session.profileID ?? Profile.ID.make("assistant")).pipe(Effect.orDie)
         const titleRefreshInterval = (yield* config.get()).experimental?.session_title_refresh_interval ?? 10
@@ -1575,13 +1640,35 @@ const layer = Layer.effect(
                       limit: 5,
                       userRuleset: session.permission,
                     })
-                    if (found.length > 0) return found
-                    // No keyword match: fall back to the most recent memories
-                    // so the assistant still has some context. Relevance first,
-                    // recency second — never the full history.
+                    // Relevance gate: only inject memories that actually share
+                    // a significant term with the query. FTS matches on generic
+                    // trigrams (project name, "session", …), so a session about
+                    // one topic would otherwise carry unrelated summaries.
+                    const relevant = found.filter((item) =>
+                      relevantRecall(item.content, significantRecallTerms(query)),
+                    )
+                    // Inject each memory at most once per session so the model
+                    // is not re-fed the same block on every turn. After the
+                    // relevant memories have been surfaced once, the block stays
+                    // empty for the rest of the session, keeping the tail stable
+                    // and the cached system prefix intact.
+                    const fresh = relevant.filter((item) => !injectedMemoryIds.has(item.id))
+                    if (fresh.length > 0) {
+                      fresh.forEach((item) => injectedMemoryIds.add(item.id))
+                      return fresh
+                    }
+                    // Companion relationship memory is a small personal
+                    // continuity store: fall back to recent entries so the
+                    // persona can reference the user's life even when the
+                    // exact words do not match. Work (assistant) sessions get
+                    // NO recency fallback — injecting the latest unrelated
+                    // project memories into the system prompt is the context
+                    // contamination vector (a fresh session about one topic
+                    // would surface memories from entirely different work).
+                    if (profile.kind !== "companion") return []
                     return yield* memory.retrieve({
                       profileID: profile.id,
-                      relationshipOnly: profile.kind === "companion",
+                      relationshipOnly: true,
                       limit: 5,
                       userRuleset: session.permission,
                     })
@@ -1622,11 +1709,13 @@ const layer = Layer.effect(
             ]
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
-            // The date is emitted as part of the dynamic tail, after the
-            // caching breakpoint, so a day rollover never invalidates the
-            // cached stable prefix (working dir, platform, instructions, tools).
+            // Session memory / continuity is the only dynamic tail content. The
+            // current date lives in the stable system envelope (SystemPrompt
+            // environment) instead: a trailing date-only user message was being
+            // echoed back verbatim by models that treat the last user turn as
+            // the instruction to answer.
             const memoryblocks = Array.isArray(memorySystem) ? memorySystem : memorySystem ? [memorySystem] : []
-            const dynamicSystem = [`Today's date: ${new Date().toDateString()}`, ...memoryblocks]
+            const dynamicSystem = memoryblocks
             const result = yield* handle.process({
               user: lastUser,
               agent,

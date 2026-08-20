@@ -5,6 +5,7 @@ import {
   createServerProjects,
   migrateCanonicalLocalServerState,
   nextServerAfterRemoval,
+  persistStartupCredentials,
   resolveServerList,
   ServerConnection,
 } from "./server"
@@ -59,6 +60,50 @@ describe("resolveServerList", () => {
     })
     expect(list[0]?.type === "http" ? list[0].authToken : true).toBeUndefined()
   })
+
+  test("does not wipe persisted credentials across same-origin page loads", () => {
+    // A same-origin navigation WITHOUT ?auth_token produces a credential-less
+    // startup props. It must not override credentials already persisted for
+    // that URL, or every refresh would drop the password and force re-auth.
+    const list = resolveServerList({
+      stored: [
+        {
+          url: "https://server.example.test",
+          username: "opencode",
+          password: "saved",
+        },
+      ],
+      props: [{ type: "http", http: { url: "https://server.example.test" } }],
+    })
+
+    expect(list).toHaveLength(1)
+    expect(list[0]?.type === "http" ? list[0].http.password : undefined).toBe("saved")
+  })
+})
+
+test("persists startup auth credentials for the matching server", () => {
+  const next = persistStartupCredentials(
+    [{ url: "https://server.example.test" }],
+    [{ type: "http", authToken: true, http: { url: "https://server.example.test", username: "kit", password: "secret" } }],
+  )
+
+  expect(next).toEqual([
+    { type: "http", http: { url: "https://server.example.test", username: "kit", password: "secret" } },
+  ])
+})
+
+test("persists startup credentials on a fresh origin (empty stored list)", () => {
+  // First visit to a LAN origin carries ?auth_token. The stored server list is
+  // empty, so the credentials must be appended (not silently dropped) — this is
+  // what makes later same-origin navigations remember the password.
+  const next = persistStartupCredentials(
+    [],
+    [{ type: "http", authToken: true, http: { url: "https://server.example.test", username: "kit", password: "secret" } }],
+  )
+
+  expect(next).toEqual([
+    { type: "http", http: { url: "https://server.example.test", username: "kit", password: "secret" } },
+  ])
 })
 
 test("treats WSL sidecars as remote server connections", () => {

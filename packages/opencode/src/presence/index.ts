@@ -30,6 +30,37 @@ export const Extras = Schema.Struct({
 export type Extras = Schema.Schema.Type<typeof Extras>
 
 type RefState = Extras & { observedAt: number }
+const STALE_AFTER_MS = 45_000
+
+// Pure timeline projection: an open segment is "live" only while the host has
+// actually reported in the stale window. Segment start alone is not enough —
+// a user sitting in the same app for hours would otherwise go dark after the
+// first stale window even though updates keep arriving. `lastSeen` is the last
+// update observation (0 = never in this process, e.g. a restored DB segment
+// after a restart, which must not render as live until the host reports again).
+export function projectTimeline(
+  segments: Segment[],
+  opts: { now: number; dayStart: number; lastSeen: number; staleAfterMs: number },
+): { segments: Segment[]; live: boolean } {
+  const { now, dayStart, lastSeen, staleAfterMs } = opts
+  // Defensive rollover: an open segment persisted from a previous day (or
+  // seeded from a stale DB row) is clamped to midnight so it never renders
+  // as a full-width bar in today's Gantt.
+  const kept = segments
+    .map((segment) =>
+      segment.end === undefined && segment.start < dayStart ? { ...segment, end: dayStart } : segment,
+    )
+    .filter((segment) => (segment.end ?? now) >= dayStart)
+  const fresh = lastSeen > 0 && now - lastSeen <= staleAfterMs
+  // A single live segment (end undefined) plus a fresh host report means the
+  // host is active right now. A stale/absent report closes the open segment at
+  // the last known observation so the Gantt never shows an eternal bar.
+  const live = fresh && kept.some((segment) => segment.end === undefined)
+  const resolved = kept.map((segment) =>
+    segment.end === undefined && !fresh ? { ...segment, end: Math.max(segment.start, lastSeen) } : segment,
+  )
+  return { segments: [...resolved].reverse(), live }
+}
 
 export const Segment = Schema.Struct({
   app: Schema.String,
@@ -65,6 +96,10 @@ const layer = Layer.effect(
     // standalone CLI/background fibers, where get falls back to session-derived
     // idle only (locked: false, no focusApp).
     const extras = yield* Ref.make<RefState | undefined>(undefined)
+    // Last wall-clock observation from update(), 0 until the first report in
+    // this process. A restored DB segment must not render as live until the
+    // host actually reports again (see projectTimeline).
+    const lastSeen = yield* Ref.make(0)
 
     const dayStart = () => {
       const d = new Date(Date.now())
@@ -106,18 +141,20 @@ const layer = Layer.effect(
         .pipe(Effect.orDie)
       const lastActivity = last?.time_updated ?? now
       const reported = yield* Ref.get(extras)
+      const fresh = reported && now - reported.observedAt <= STALE_AFTER_MS ? reported : undefined
       return {
         idleMs: Math.max(0, now - lastActivity),
-        locked: reported?.locked ?? false,
-        focusApp: reported?.focusApp,
-        inMeeting: reported?.inMeeting ?? false,
-        observedAt: reported?.observedAt ?? now,
+        locked: fresh?.locked ?? false,
+        focusApp: fresh?.focusApp,
+        inMeeting: fresh?.inMeeting ?? false,
+        observedAt: fresh?.observedAt ?? now,
       } satisfies Info
     })
 
     const update = Effect.fn("Presence.update")(function* (input: Extras) {
       const now = Date.now()
       yield* Ref.set(extras, { ...input, observedAt: now })
+      yield* Ref.set(lastSeen, now)
 
       // Grow the focus-app Gantt: close the previous segment at `now` when the
       // app changed, then start/keep the current app's segment. Segments older
@@ -181,23 +218,14 @@ const layer = Layer.effect(
     })
 
     const timeline = Effect.fn("Presence.timeline")(function* () {
-      const start = dayStart()
-      const now = Date.now()
       const items = yield* Ref.get(segments)
-      // Defensive rollover: an open segment persisted from a previous day (or
-      // seeded from a stale DB row) is clamped to midnight so it never renders
-      // as a full-width bar in today's Gantt.
-      const kept = items
-        .map((segment) =>
-          segment.end === undefined && segment.start < start ? { ...segment, end: start } : segment,
-        )
-        .filter((segment) => (segment.end ?? now) >= start)
-      // A single live segment (end undefined) means the host is active right now.
-      const live = kept.some((segment) => segment.end === undefined)
-      return {
-        segments: [...kept].reverse(),
-        live,
-      } satisfies Timeline
+      const seen = yield* Ref.get(lastSeen)
+      return projectTimeline(items, {
+        now: Date.now(),
+        dayStart: dayStart(),
+        lastSeen: seen,
+        staleAfterMs: STALE_AFTER_MS,
+      })
     })
 
     return Service.of({ get, update, timeline })

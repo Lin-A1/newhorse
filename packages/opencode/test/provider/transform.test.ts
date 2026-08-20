@@ -3480,7 +3480,7 @@ describe("ProviderTransform.message - cache prefix stability", () => {
     // and appends the dynamic tail (memory/date/user.system) as a trailing user
     // message marked NO_CACHE_MESSAGE. The breakpoint must land on the stable
     // system, not on the changing dynamic tail.
-    const dynamic = { role: "user", content: "Today's date: Wed Aug 19 2026\nRelevant memories..." } as any
+    const dynamic = { role: "user", content: "Relevant memories..." } as any
     dynamic[ProviderTransform.NO_CACHE_MESSAGE] = true
     const msgs = [
       { role: "system", content: "stable system" },
@@ -3514,10 +3514,10 @@ describe("ProviderTransform.message - cache prefix stability", () => {
       { role: "assistant", content: "hi" },
     ] as any[]
     const turn1 = { role: "user", content: "second question" } as any
-    const dynamic1 = { role: "user", content: "Today's date: Wed Aug 19 2026\nRelevant memories..." } as any
+    const dynamic1 = { role: "user", content: "Relevant memories..." } as any
     dynamic1[ProviderTransform.NO_CACHE_MESSAGE] = true
     const turn2 = { role: "user", content: "third question" } as any
-    const dynamic2 = { role: "user", content: "Today's date: Wed Aug 19 2026\nRelevant memories: new" } as any
+    const dynamic2 = { role: "user", content: "Relevant memories: new" } as any
     dynamic2[ProviderTransform.NO_CACHE_MESSAGE] = true
 
     const first = ProviderTransform.message([stableSystem, ...history, turn1, dynamic1], model, {}) as any[]

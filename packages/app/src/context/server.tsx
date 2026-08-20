@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@newhorse/ui/context"
-import { type Accessor, batch, createMemo } from "solid-js"
+import { type Accessor, batch, createEffect, createMemo } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import { pathKey } from "@/utils/path-key"
@@ -168,14 +168,55 @@ export function resolveServerList(input: {
     const existing = deduped.get(key)
     if (existing)
       deduped.set(key, {
-        ...existing,
         ...conn,
-        http: { ...existing.http, ...conn.http },
+        ...existing,
+        // Startup props may contain credentials decoded from auth_token. They
+        // must win over a stale persisted connection with the same URL. But a
+        // credential-less startup props (a same-origin page load without
+        // ?auth_token) must NOT wipe credentials already persisted for that
+        // URL — otherwise every subsequent navigation drops the saved password
+        // and the next refresh asks for credentials again.
+        http: {
+          ...conn.http,
+          ...existing.http,
+          ...(existing.http.password
+            ? { username: existing.http.username, password: existing.http.password }
+            : {
+                ...("username" in conn.http ? { username: conn.http.username } : {}),
+                ...("password" in conn.http ? { password: conn.http.password } : {}),
+              }),
+        },
       })
     else deduped.set(key, conn)
   }
 
   return [...deduped.values()]
+}
+
+export function persistStartupCredentials(stored: StoredServer[], props?: Array<ServerConnection.Any>) {
+  let changed = false
+  const next = [...stored]
+
+  for (const conn of props ?? []) {
+    if (conn.type !== "http" || !conn.http.password) continue
+    const index = next.findIndex((value) => {
+      const url = typeof value === "string" ? value : "type" in value ? value.http.url : value.url
+      return url === conn.http.url
+    })
+    const value = { type: "http" as const, http: { ...conn.http } }
+    if (index === -1) {
+      next.push(value)
+      changed = true
+      continue
+    }
+    const current = next[index]
+    if (typeof current === "string" || !("type" in current) || current.http.username !== value.http.username || current.http.password !== value.http.password) {
+      next[index] = value
+      changed = true
+    }
+  }
+
+  return changed ? next : stored
 }
 
 export namespace ServerConnection {
@@ -274,6 +315,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     )
 
     const url = (x: StoredServer) => (typeof x === "string" ? x : "type" in x ? x.http.url : x.url)
+
+    createEffect(() => {
+      if (!ready()) return
+      const next = persistStartupCredentials(store.list, props.servers)
+      if (next !== store.list) setStore("list", next)
+    })
 
     const allServers = createMemo((): Array<ServerConnection.Any> => {
       return resolveServerList({ stored: store.list, props: props.servers })

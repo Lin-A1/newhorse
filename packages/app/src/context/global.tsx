@@ -37,7 +37,7 @@ export const { use: useGlobal, provider: GlobalProvider } = createSimpleContext(
 
     const serverCtxs = new Map<
       ServerConnection.Key,
-      { dispose: () => void; serverCtx: ReturnType<typeof createServerCtx> }
+      { dispose: () => void; serverCtx: ReturnType<typeof createServerCtx>; identity: string }
     >()
 
     const owner = getOwner()
@@ -45,12 +45,14 @@ export const { use: useGlobal, provider: GlobalProvider } = createSimpleContext(
     const ensureServerCtx = (conn: ServerConnection.Any) => {
       const key = ServerConnection.key(conn)
       const existing = serverCtxs.get(key)
-      if (existing) return existing.serverCtx
+      const identity = serverConnectionIdentity(conn)
+      if (existing?.identity === identity) return existing.serverCtx
+      existing?.dispose()
       const root = createRoot((dispose) => {
         const serverCtx = createServerCtx(conn, server.scope(key), server.projects.forServer(key))
         return { dispose, serverCtx }
       }, owner as any)
-      serverCtxs.set(key, root)
+      serverCtxs.set(key, { ...root, identity })
       return root.serverCtx
     }
 
@@ -151,6 +153,13 @@ function createServerCtx(
       recentlyClosed: recentlyClosedList,
     },
   }
+}
+
+function serverConnectionIdentity(conn: ServerConnection.Any) {
+  if (conn.type === "http") {
+    return `${conn.http.url}\n${conn.http.username ?? ""}\n${conn.http.password ?? ""}\n${conn.authToken ? "token" : ""}`
+  }
+  return `${conn.type}\n${conn.http.url}\n${conn.type === "sidecar" ? conn.variant : conn.host}`
 }
 
 export type ServerCtx = ReturnType<typeof createServerCtx>

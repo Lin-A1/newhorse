@@ -156,11 +156,12 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 if (root instanceof HTMLElement) {
   const auth = authFromToken(new URLSearchParams(location.search).get("auth_token"))
   clearAuthToken()
+  const currentUrl = getCurrentUrl()
   const server: ServerConnection.Http = {
     type: "http",
     authToken: !!auth,
     http: {
-      url: getCurrentUrl(),
+      url: currentUrl,
       ...auth,
     },
   }
@@ -169,7 +170,7 @@ if (root instanceof HTMLElement) {
       <PlatformProvider value={platform}>
         <AppBaseProviders>
           <AppInterface
-            defaultServer={ServerConnection.Key.make(getDefaultUrl())}
+            defaultServer={ServerConnection.Key.make(auth ? currentUrl : getDefaultUrl())}
             canonicalLocalServer={ServerConnection.key(server)}
             servers={[server]}
             disableHealthCheck

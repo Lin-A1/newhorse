@@ -37,6 +37,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
+import { WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
@@ -165,7 +166,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* SessionError.mapStorageNotFound(projectedSvc.projected(ctx.params.sessionID))
     })
 
-    const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
+    const create = Effect.fn("SessionHttpApi.create")(function* (ctx: {
+      payload?: Session.CreateInput
+      query?: typeof WorkspaceRoutingQuery.Type
+    }) {
       return yield* shareSvc.create(ctx.payload)
     })
 

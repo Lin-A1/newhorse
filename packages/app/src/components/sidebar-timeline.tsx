@@ -126,15 +126,16 @@ export function SidebarTimeline(props: {
             <div class="text-[13px] leading-5 text-v2-text-text-faint">{language.t("sidebar.dailySummary.empty")}</div>
           }
         >
-          <div class="flex flex-col">
+          <div class="relative flex flex-col gap-0 pl-2">
+            <div aria-hidden="true" class="pointer-events-none absolute bottom-2 left-[9px] top-2 w-px bg-v2-border-border-muted/70" />
             <For each={visible()}>
               {(s) => (
                 <button
                   type="button"
                   data-summary-date={s.date}
-                  class="relative block w-full border-l border-v2-border-border-muted pl-4 pb-5 text-left last:pb-0"
+                  class="group relative flex w-full items-start gap-3 rounded-[10px] px-2 py-3 text-left transition-colors hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
                   classList={{
-                    "[&_.summary-date-label]:text-v2-text-text-base": focused() === s.date,
+                    "bg-v2-background-bg-layer-03": focused() === s.date,
                   }}
                   onClick={() => {
                     setFocused(s.date)
@@ -143,19 +144,39 @@ export function SidebarTimeline(props: {
                 >
                   <span
                     aria-hidden="true"
-                    class="absolute -left-[5px] top-1 size-2 rounded-full bg-v2-background-bg-layer-04 ring-2 ring-v2-background-bg-base"
-                    classList={{ "bg-v2-accent-accent": focused() === s.date }}
-                  />
-                  <div class="summary-date-label text-[12px] font-medium leading-4 text-v2-text-text-muted">
-                    {label(s.date)}
+                    class="relative mt-1 flex size-[18px] shrink-0 items-center justify-center rounded-full border bg-v2-background-bg-base shadow-sm transition-colors"
+                    classList={{
+                      "border-v2-border-border-muted": focused() !== s.date,
+                      "border-v2-accent-accent": focused() === s.date,
+                    }}
+                  >
+                    <span
+                      class="size-2 rounded-full transition-colors"
+                      classList={{
+                        "bg-v2-background-bg-layer-04 group-hover:bg-v2-text-text-faint": focused() !== s.date,
+                        "bg-v2-accent-accent": focused() === s.date,
+                      }}
+                    />
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-baseline justify-between gap-2">
+                      <div class="summary-date-label truncate text-[12px] font-semibold leading-4 text-v2-text-text-base">
+                        {label(s.date)}
+                      </div>
+                      <div class="shrink-0 text-[11px] leading-4 text-v2-text-text-faint">
+                        {DateTime.fromISO(s.date).isValid ? DateTime.fromISO(s.date).toFormat("MM-dd") : s.date}
+                      </div>
+                    </div>
+                    <div class="text-[11px] leading-4 text-v2-text-text-faint">
+                      {DateTime.fromISO(s.date).isValid ? DateTime.fromISO(s.date).toFormat("yyyy-MM-dd · ccc") : s.date}
+                    </div>
+                    <div class="mt-2 rounded-[8px] border border-v2-border-border-muted/50 bg-v2-background-bg-base px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+                      <Markdown
+                        text={s.overview}
+                        class="line-clamp-3 text-[13px] leading-5 text-v2-text-text-base"
+                      />
+                    </div>
                   </div>
-                  <div class="text-[11px] leading-4 text-v2-text-text-faint">
-                    {DateTime.fromISO(s.date).isValid ? DateTime.fromISO(s.date).toFormat("yyyy-MM-dd") : s.date}
-                  </div>
-                  <Markdown
-                    text={s.overview}
-                    class="mt-1 line-clamp-3 text-[13px] leading-5 text-v2-text-text-base"
-                  />
                 </button>
               )}
             </For>
