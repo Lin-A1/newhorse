@@ -150,11 +150,11 @@ export function ContributionHeatmap() {
           </div>
         }
       >
-        <div class="flex justify-center overflow-x-auto pb-1 no-scrollbar">
-          <div class="inline-flex flex-col gap-[3px]">
-            <div class="flex gap-[3px]">
+        <div class="overflow-x-auto pb-1 no-scrollbar">
+          <div class="flex w-full max-w-[560px] flex-col gap-[3px] mx-auto">
+            <div class="flex gap-[3px] justify-center">
               <div class="shrink-0" style={{ width: "22px" }} />
-              <div class="grid gap-[3px]" style={{ "grid-template-columns": `repeat(${weeks().length}, ${CELL}px)` }}>
+              <div class="grid gap-[3px]" style={{ "grid-template-columns": `repeat(${weeks().length}, clamp(10px, 1.4vw, 14px))` }}>
                 <For each={monthLabels()}>
                   {(month) => (
                     <div class="text-[9px] leading-[10px] text-v2-text-text-faint" style={{ "grid-column": month.col + 1 }}>
@@ -164,11 +164,11 @@ export function ContributionHeatmap() {
                 </For>
               </div>
             </div>
-            <div class="flex gap-[3px]">
+            <div class="flex gap-[3px] justify-center">
               <div class="flex shrink-0 flex-col gap-[3px]" style={{ width: "22px" }}>
                 <For each={[0, 1, 2, 3, 4, 5, 6]}>
                   {(row) => (
-                    <div class="h-[12px] text-[9px] leading-[12px] text-v2-text-text-faint">
+                    <div class="flex items-center text-[9px] leading-[12px] text-v2-text-text-faint" style={{ height: "clamp(10px, 1.4vw, 14px)" }}>
                       {row === 1 ? language.t("workbench.weekday.mon") : row === 3 ? language.t("workbench.weekday.wed") : row === 5 ? language.t("workbench.weekday.fri") : ""}
                     </div>
                   )}
@@ -182,7 +182,7 @@ export function ContributionHeatmap() {
                         <div
                           title={cell ? `${cell.label}: ${cell.tokens.toLocaleString(language.intl())}` : undefined}
                           class={`rounded-[2px] ${levelClass[cell ? cell.level : 0]}`}
-                          style={{ width: `${CELL}px`, height: `${CELL}px` }}
+                          style={{ width: "clamp(10px, 1.4vw, 14px)", height: "clamp(10px, 1.4vw, 14px)" }}
                         />
                       )}
                     </For>
