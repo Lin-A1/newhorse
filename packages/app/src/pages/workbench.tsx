@@ -8,7 +8,6 @@ import { Icon as IconV2 } from "@newhorse/ui/v2/icon"
 import { ButtonV2 } from "@newhorse/ui/v2/button-v2"
 import { SidebarTimeline } from "@/components/sidebar-timeline"
 import { SettingsUsage } from "@/components/settings-usage"
-import { ContributionHeatmap } from "@/components/contribution-heatmap"
 import {
   HOUR_MS,
   appColorIndex,
@@ -522,9 +521,6 @@ export default function WorkbenchPage() {
                 </p>
               </div>
               <div class="grid min-h-0 grid-cols-1 gap-5">
-                <section class="flex min-h-0 flex-col gap-4 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
-                  <ContributionHeatmap />
-                </section>
                 <section class="flex min-h-0 flex-col gap-4 rounded-[12px] border border-v2-border-border-muted bg-v2-background-bg-layer-01 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)]">
                   <PresenceStrip />
                   <div class="h-px bg-v2-border-border-muted/70" />
