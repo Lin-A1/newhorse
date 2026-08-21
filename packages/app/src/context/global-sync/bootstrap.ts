@@ -13,6 +13,15 @@ import { showToast } from "@/utils/toast"
 import { getFilename } from "@newhorse/core/util/path"
 import { retry } from "@newhorse/core/util/retry"
 import { batch } from "solid-js"
+
+const lastReloadToast = new Map<string, number>()
+function shouldShowReloadToast(project: string) {
+  const now = Date.now()
+  const last = lastReloadToast.get(project) ?? 0
+  if (now - last < 30_000) return false
+  lastReloadToast.set(project, now)
+  return true
+}
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type { State, VcsCache } from "./types"
 import type { ServerSession } from "../server-session"
@@ -380,6 +389,7 @@ export async function bootstrapDirectory(input: {
       () =>
         input.queryClient.fetchQuery(loadProvidersQuery(input.scope, input.directory, input.sdk)).catch((err) => {
           const project = getFilename(input.directory)
+          if (!shouldShowReloadToast(project)) return
           showToast({
             variant: "error",
             title: input.translate("toast.project.reloadFailed.title", { project }),
@@ -393,6 +403,7 @@ export async function bootstrapDirectory(input: {
     if (slowErrs.length > 0) {
       console.error("Failed to finish bootstrap instance", slowErrs[0])
       const project = getFilename(input.directory)
+      if (!shouldShowReloadToast(project)) return
       showToast({
         variant: "error",
         title: input.translate("toast.project.reloadFailed.title", { project }),

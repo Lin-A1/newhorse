@@ -19,6 +19,15 @@ import {
   loadProvidersQuery,
   loadReferencesQuery,
 } from "./global-sync/bootstrap"
+
+const lastSessionListToast = new Map<string, number>()
+function shouldShowSessionListToast(project: string) {
+  const now = Date.now()
+  const last = lastSessionListToast.get(project) ?? 0
+  if (now - last < 30_000) return false
+  lastSessionListToast.set(project, now)
+  return true
+}
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent } from "./global-sync/event-reducer"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
@@ -327,6 +336,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
             .catch((err) => {
               console.error("Failed to load sessions", err)
               const project = getFilename(directory)
+              if (!shouldShowSessionListToast(project)) return
               showToast({
                 variant: "error",
                 title: language.t("toast.session.listFailed.title", { project }),
