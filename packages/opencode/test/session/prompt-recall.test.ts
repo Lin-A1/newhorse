@@ -61,3 +61,34 @@ describe("recall relevance gate", () => {
     expect(terms).toContain("注入修复")
   })
 })
+
+describe("once-per-session dedup + relevance gate", () => {
+  test("does not re-inject the same memory twice in one session", () => {
+    const injected = new Set<string>()
+    const memories = [
+      { id: "m1", content: "In the newhorse project, the heatmap adaptive layout was fixed using flex-1" },
+      { id: "m2", content: "In the newhorse project, presence gantt timeline for today was updated" },
+    ]
+    const query = "heatmap adaptive layout was fixed"
+    const terms = significantRecallTerms(query)
+    const first = memories.filter((m) => !injected.has(m.id) && relevantRecall(m.content, terms))
+    expect(first.map((m) => m.id)).toEqual(["m1"])
+    first.forEach((m) => injected.add(m.id))
+
+    const second = memories.filter((m) => !injected.has(m.id) && relevantRecall(m.content, terms))
+    expect(second).toEqual([])
+
+    memories.push({ id: "m3", content: "heatmap adaptive layout v2 with clamp was added" })
+    const third = memories.filter((m) => !injected.has(m.id) && relevantRecall(m.content, terms))
+    expect(third.map((m) => m.id)).toEqual(["m3"])
+  })
+
+  test("global and workspace memories are both eligible when relevant", () => {
+    const query = "memory recall should inject both global and workspace"
+    const terms = significantRecallTerms(query)
+    const globalMem = "memory recall should inject both global and workspace when relevant"
+    const workspaceMem = "workspace memory recall for heatmap"
+    expect(relevantRecall(globalMem, terms)).toBe(true)
+    expect(relevantRecall(workspaceMem, terms)).toBe(true)
+  })
+})
