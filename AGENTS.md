@@ -88,6 +88,16 @@ The runtime treats **AGENTS.md as an ambient, model-visible context source** —
 - Avoid importing app-side modules from core. If a type or concept is needed by core, remodel the domain shape in core first.
 - Preserve the "model-visible ⟺ logged" rule: everything the model can see must be in the append-only session log first.
 - Keep durable prompt admission separate from model execution.
+- **No reverse dependency from core to upper layers** (enforced by package.json dependency direction + lint import rules): core may never import app / TUI / server / CLI / SDK. Keep each package's `dependencies` minimal and only toward lower layers.
+- **No scattered type branches**: all capability (tools, agents, commands, hooks, providers) is registered through a seam, never wired as one-off `if`/`switch` chains. A consumer pulls from the seam rather than branching on types inline.
+
+## Extendability (no "sand castle")
+
+The unsaid risk of building incrementally is an architecture that collapses when the next feature lands. This is prevented structurally, not by discipline alone:
+
+- **Freeze the skeleton contract early**: the seam three-part shape (Definition / Provider / Consumer), the canonical `LLMRequest` / `LLMEvent` vocabulary, the event-sourced storage shape `(aggregate_id, seq, type, data)`, and the dependency direction are fixed in M1 and recorded in specs. Changing them late is expensive, so they are locked now.
+- **Leave wide mouths for narrow implementations**: M1 implements few concrete capabilities (e.g. only tools), but the registration mechanism must be able to accept agents, commands, hooks, and providers (see `specs/v2/agent-runtime.md` §6). Cost-down (`costDown?`), DAG (`dependsOn?`), and butler interface signatures are declared now even if unimplemented.
+- **Stable skeleton, swappable abilities**: the more stable the skeleton, the safer it is to stack features on top. Do not let a concrete provider or a single hard-coded model shape leak into the turn loop or the LLM vocabulary.
 
 ## Branch Model
 

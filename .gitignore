@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+build/
+test-results/
+*.tmp/
+*.log
+*.tsbuildinfo
+.bun/
+
+# v1 build artifacts accidentally present in workspace
+packages/opencode/dist/
+packages/desktop/out/

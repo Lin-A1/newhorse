@@ -32,7 +32,7 @@
 │  Agent Runtime（薄骨架 + 自研调度位）             │
 │    session seam · agent seam · llm seam          │
 ├──────────────────────────────────────────────────────┤
-│  Cordis 插件内核（上游 @cordis，seam 三段式）            │
+│  Cordis 插件内核（自实现 seam 三段式，不引 @cordis 运行时）│
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -251,13 +251,13 @@ tools + agents + commands + hooks + providers
 ## 8. 命名决策
 
 - 项目对外对内一律叫 `newhorse`，不再另起代号。
-- 上游 `@cordis`（Koishi 生态插件内核）仅作为内核库引用名，不作项目命名来源，避免与生态撞名。
+- 项目名与上游 `@cordis`（Koishi 生态插件内核）无关——只用其 seam 三段式**语义**，不引其运行时，避免命名混淆也避免生态负担。如需引完整 `@cordis` 内核，判断标准只有一个：出现真实需求要跑别人(Koishi/DSH)生态插件。
 
 ---
 
 ## 9. M1 落地清单（Checklist）
 
-- [ ] 上游 `@cordis` 引入 + seam 三段式最小骨架
+- [ ] seam 三段式最小骨架（自实现容器，Cordis 语义）
 - [ ] session seam：SQLite 存储 + trait 抽象 + admission inbox + 幂等 admit
 - [ ] agent seam：会话 + inbox + turn 循环（同步）+ spawn/task_id 接口
 - [ ] llm seam：OpenAI 兼容 + Anthropic 兼容两 adapter + 四轴 Route + 嵌入式 SDK 解耦位

@@ -1,0 +1,39 @@
+import { describe, expect, it } from "bun:test"
+import { discoverPlugin } from "./discovery"
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
+async function fixture(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "nh-plugin-"))
+  await mkdir(join(dir, "agents"), { recursive: true })
+  await mkdir(join(dir, "commands"), { recursive: true })
+  await mkdir(join(dir, "hooks"), { recursive: true })
+  await mkdir(join(dir, "tools"), { recursive: true })
+  await writeFile(join(dir, "agents", "explore.md"), `---\nname: explore\ndescription: A code explorer\n---\nBody`)
+  await writeFile(join(dir, "commands", "plan.md"), `---\nname: plan\ndescription: Make a plan\n---\nDo it`)
+  await writeFile(join(dir, "hooks", "hooks.json"), JSON.stringify({ hooks: [{ name: "validator", event: "pre-tool-use", mode: "command", command: "echo ok" }, { name: "bogus", event: "NotARealEvent" }] }))
+  await writeFile(join(dir, "tools", "search.json"), JSON.stringify({ name: "search", description: "search" }))
+  return dir
+}
+
+describe("directory discovery", () => {
+  it("discovers agents, commands, hooks, and tools by convention", async () => {
+    const dir = await fixture()
+    try {
+      const caps = await discoverPlugin(dir)
+      const agent = caps.find((c) => c.kind === "agent")
+      const command = caps.find((c) => c.kind === "command")
+      const tool = caps.find((c) => c.kind === "tool")
+      const hooks = caps.filter((c) => c.kind === "hook")
+      expect(agent?.name).toBe("explore")
+      expect(command?.name).toBe("plan")
+      expect(tool?.name).toBe("search")
+      // only the whitelisted hook event survives; the bogus one is filtered
+      expect(hooks.length).toBe(1)
+      expect(hooks[0]?.event).toBe("pre-tool-use")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})

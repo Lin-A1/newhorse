@@ -1,0 +1,16 @@
+{
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "types": ["bun"],
+    "baseUrl": ".",
+    "paths": {
+      "@newhorse/core": ["../core/src/index.ts"],
+      "@newhorse/schema": ["../schema/src/index.ts"],
+      "@newhorse/llm": ["../llm/src/index.ts"],
+      "@newhorse/plugin": ["../plugin/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

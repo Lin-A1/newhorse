@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@tsconfig/bun/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "types": ["bun"],
+    "baseUrl": ".",
+    "paths": {
+      "@newhorse/core": ["./packages/core/src/index.ts"],
+      "@newhorse/schema": ["./packages/schema/src/index.ts"],
+      "@newhorse/llm": ["./packages/llm/src/index.ts"],
+      "@newhorse/plugin": ["./packages/plugin/src/index.ts"],
+      "@newhorse/cli": ["./packages/cli/src/index.ts"]
+    }
+  }
+}

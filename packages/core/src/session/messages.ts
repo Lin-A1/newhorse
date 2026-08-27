@@ -1,0 +1,67 @@
+import type { ContentPart, Message, SessionMessage } from "@newhorse/schema"
+
+/**
+ * Convert projected session messages into the canonical LLM message vocabulary.
+ *
+ * This is the single seam between the session log (what the model saw) and the
+ * provider-agnostic `LLMRequest` (what the provider will be asked). It must
+ * preserve tool-call/tool-result pairing so the protocol encoders can rebuild
+ * provider-native shapes (OpenAI `tool_call_id`, Anthropic `tool_result`
+ * following `tool_use`).
+ *
+ * `selectedModel` implements model-relative history lowering: when the message
+ * was produced by a different model than the one now running, reasoning parts
+ * degrade to plain text and provider-native reasoning payload is dropped.
+ * Without this, one model's thinking format gets fed to another (a common
+ * cross-model failure).
+ */
+export function toLlmMessages(projected: readonly SessionMessage[], selectedModel: string): Message[] {
+  const out: Message[] = []
+
+  for (let i = 0; i < projected.length; i++) {
+    const m = projected[i]!
+    const loweredAs = m.kind === "assistant" && !!m.model && m.model !== selectedModel
+
+    switch (m.kind) {
+      case "user":
+        out.push({ role: "user", id: m.id, content: [{ type: "text", text: m.text }] })
+        break
+
+      case "system": {
+        // System context (e.g. ambient AGENTS.md) stays a system-role message so
+        // it is sent as a proper system prompt, not folded into user history.
+        out.push({ role: "system", id: m.id, content: [{ type: "text", text: m.text }] })
+        break
+      }
+
+      case "compaction":
+        out.push({ role: "user", id: m.id, content: [{ type: "text", text: m.text }] })
+        break
+
+      case "assistant": {
+        const content = lowerParts(m.content, loweredAs)
+        out.push({ role: "assistant", id: m.id, content, model: m.model, provider: m.provider })
+        break
+      }
+
+      case "tool": {
+        // Each tool-result row becomes its own canonical `tool` message keyed by
+        // callId. OpenAI requires one tool message per tool_call_id; the
+        // Anthropic encoder is responsible for folding a run of adjacent tool
+        // messages into a single user message (Anthropic's requirement). Keeping
+        // them separate here is the provider-neutral shape.
+        out.push({ role: "tool", id: m.id, content: [{ type: "tool-result", id: m.callId, name: m.name, output: m.output, isError: m.isError }] })
+        break
+      }
+    }
+  }
+
+  return out
+}
+
+function lowerParts(content: ContentPart[], lowered: boolean): ContentPart[] {
+  if (!lowered) return content
+  // On a model switch, provider-native reasoning payload is dropped and the
+  // reasoning text degrades to an ordinary text part.
+  return content.map((p): ContentPart => (p.type === "reasoning" && p.payload ? { type: "reasoning", text: p.text } : p))
+}
