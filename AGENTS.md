@@ -79,6 +79,7 @@ The runtime treats **AGENTS.md as an ambient, model-visible context source** —
 
 - Workspace root: the repo. Default branch is `dev`; `v1` holds archived v1 code.
 - Stack: Bun + Effect + Drizzle + SQLite. When the runtime reads AGENTS.md, it treats it as durable model-visible context, not as code it executes.
+- **Record core-technology designs in `docs/`**: whenever a core mechanism is designed (a seam, the LLM vocabulary/Route, event-sourcing shape, DAG scheduling, the turn loop, scope isolation, etc.), capture it as a design note in `docs/` alongside the code. `specs/v2/` holds the plan; `docs/` holds the implemented/decision design. Design-first before code: write the concept down, then build. Keep these notes current when the design materially changes.
 
 ## Architecture Boundaries
 
