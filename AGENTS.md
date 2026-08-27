@@ -100,6 +100,13 @@ The unsaid risk of building incrementally is an architecture that collapses when
 - **Leave wide mouths for narrow implementations**: M1 implements few concrete capabilities (e.g. only tools), but the registration mechanism must be able to accept agents, commands, hooks, and providers (see `specs/v2/agent-runtime.md` §6). Cost-down (`costDown?`), DAG (`dependsOn?`), and butler interface signatures are declared now even if unimplemented.
 - **Stable skeleton, swappable abilities**: the more stable the skeleton, the safer it is to stack features on top. Do not let a concrete provider or a single hard-coded model shape leak into the turn loop or the LLM vocabulary.
 
+## Engineering Rigor
+
+Two standing workflow rules, applied after every piece of work lands:
+
+- **Independent review before "done"**: after designing or implementing any significant mechanism (a seam, the LLM vocabulary/Route, event-sourcing, the turn loop, a protocol, the plugin surface, etc.), delegate a critical review to an independent subagent and iterate until it clears the findings — the reviewer is adversarial about correctness, coupling, and rework risk. "Done" means the review's must-fix findings are resolved, not merely that the code runs. Keep the review output honest; do not restate borrowed behavior as self-built.
+- **Design-first, documented**: write the concept down before coding it (or as soon as it is designed), and keep `docs/core-technology-notes.md` current whenever a core-technology design materially changes. See the `docs/` rule under Environment & Tech.
+
 ## Branch Model
 
 - Default branch is `dev`.
