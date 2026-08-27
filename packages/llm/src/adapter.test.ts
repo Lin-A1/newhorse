@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { openaiProtocol } from "./protocol/openai"
+import { openaiResponsesProtocol } from "./protocol/openai-responses"
 import { anthropicProtocol } from "./protocol/anthropic"
 import { makeLlmClient } from "./adapter"
 import type { Fetcher } from "./route"
@@ -134,6 +135,54 @@ describe("anthropic protocol", () => {
     expect(content.length).toBe(2)
     expect(content[0]!.tool_use_id).toBe("c1")
     expect(content[1]!.tool_use_id).toBe("c2")
+  })
+})
+
+describe("openai responses protocol", () => {
+  it("encodes to /v1/responses shape with input + instructions + structured tools", () => {
+    const body = openaiResponsesProtocol.encode(
+      req({
+        messages: [
+          { role: "system", content: [{ type: "text", text: "be brief" }] },
+          { role: "user", content: [{ type: "text", text: "hi" }] },
+        ],
+        tools: [{ name: "search", description: "d" }],
+      }),
+    )
+    expect(body.model).toBe("test-model")
+    expect(body.stream).toBe(true)
+    expect(body.instructions).toBe("be brief")
+    expect(body.tools).toEqual([{ type: "function", name: "search", description: "d", parameters: { type: "object", properties: {} } }])
+    expect(body.max_output_tokens).toBeUndefined() // no maxTokens provided
+  })
+
+  it("decodes output_text deltas and completes with usage", () => {
+    const state = openaiResponsesProtocol.init() as unknown
+    const r1 = openaiResponsesProtocol.step(state, { type: "response.output_text.delta", delta: "Hello" })
+    expect(r1.events).toEqual([{ type: "text.delta", text: "Hello" }])
+    const r2 = openaiResponsesProtocol.step(r1.state, { type: "response.completed", response: { usage: { input_tokens: 10, output_tokens: 4 } } })
+    expect(r2.events).toEqual([{ type: "step-finish", finish: "stop", usage: { inputTokens: 10, outputTokens: 4 } }])
+  })
+
+  it("decodes a function_call output item into a single tool-call", () => {
+    const state = openaiResponsesProtocol.init() as unknown
+    const r = openaiResponsesProtocol.step(state, {
+      type: "response.output_item.done",
+      item: { type: "function_call", call_id: "call_1", name: "search", arguments: '{"q":"a"}' },
+    })
+    expect(r.events).toEqual([{ type: "tool-call", id: "call_1", name: "search", input: '{"q":"a"}' }])
+  })
+
+  it("decodes reasoning deltas", () => {
+    const state = openaiResponsesProtocol.init() as unknown
+    const r = openaiResponsesProtocol.step(state, { type: "response.reasoning_text.delta", delta: "let me think" })
+    expect(r.events).toEqual([{ type: "reasoning.delta", text: "let me think" }])
+  })
+
+  it("emits provider-error on response.failed", () => {
+    const state = openaiResponsesProtocol.init() as unknown
+    const r = openaiResponsesProtocol.step(state, { type: "response.failed", response: { error: { code: "rate_limit_exceeded", message: "slow down" } } })
+    expect(r.events).toEqual([{ type: "provider-error", code: "rate_limit_exceeded", message: "slow down", retryable: false }])
   })
 })
 

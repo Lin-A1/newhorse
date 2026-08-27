@@ -2,9 +2,10 @@ import type { LLMRequest, LLMEvent } from "@newhorse/schema"
 import type { Fetcher, LlmAdapter, Route, Protocol } from "./route"
 import { streamRequest, streamWithRetry } from "./transport"
 import { openaiProtocol } from "./protocol/openai"
+import { openaiResponsesProtocol } from "./protocol/openai-responses"
 import { anthropicProtocol } from "./protocol/anthropic"
 
-export type ProviderKind = "openai" | "anthropic" | "openai-compatible"
+export type ProviderKind = "openai" | "openai-responses" | "anthropic" | "openai-compatible"
 
 export interface AdapterConfig {
   readonly kind: ProviderKind
@@ -44,7 +45,7 @@ export function makeRoute(parts: { readonly protocol: Protocol; readonly baseUrl
 /** Build a Route for a provider kind (convenience for the common cases). */
 function buildRoute(config: AdapterConfig): Route {
   const protocol = pickProtocol(config.kind)
-  const path = config.kind === "anthropic" ? "/v1/messages" : "/v1/chat/completions"
+  const path = pathFor(config.kind)
   const auth: Route["auth"] =
     config.kind === "anthropic"
       ? { header: "x-api-key", value: config.apiKey ?? "", extraHeaders: config.extraHeaders }
@@ -53,7 +54,15 @@ function buildRoute(config: AdapterConfig): Route {
 }
 
 function pickProtocol(kind: ProviderKind): Protocol {
-  return kind === "anthropic" ? anthropicProtocol : openaiProtocol
+  if (kind === "anthropic") return anthropicProtocol
+  if (kind === "openai-responses") return openaiResponsesProtocol
+  return openaiProtocol
+}
+
+function pathFor(kind: ProviderKind): string {
+  if (kind === "anthropic") return "/v1/messages"
+  if (kind === "openai-responses") return "/v1/responses"
+  return "/v1/chat/completions"
 }
 
 /**
