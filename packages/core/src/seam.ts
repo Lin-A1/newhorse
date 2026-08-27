@@ -73,6 +73,23 @@ export class Container {
   readonly #entries = new Map<symbol, unknown>()
   readonly #disposers = new Map<symbol, Disposer>()
   readonly #order: symbol[] = []
+  readonly #parent: Container | undefined
+
+  constructor(parent?: Container) {
+    this.#parent = parent
+  }
+
+  /**
+   * Create an isolated child scope that inherits this container's services for
+   * lookup. A child can register its own providers (which shadow the parent
+   * within the child's lookup) and disposing the child tears down only its own
+   * registrations, leaving the parent intact. This is how per-Location and per-
+   * DAG-node injection is isolated (each node gets a scope and picks its own
+   * model/tools) without polluting the global registry.
+   */
+  scope(): Container {
+    return new Container(this)
+  }
 
   /**
    * Register a provider; returns a disposer that un-registers it.
@@ -102,21 +119,23 @@ export class Container {
     return disposer
   }
 
-  /** Read a registered provider, throwing if absent. */
+  /** Read a provider, falling back to the parent scope; throws if absent. */
   get<A>(definition: ServiceDefinition<A>): A {
-    if (!this.#entries.has(definition.id.Service as symbol)) {
+    if (!this.has(definition)) {
       throw new SeamError(`service "${definition.displayName}" not registered`)
     }
-    return this.#entries.get(definition.id.Service as symbol) as A
+    return this.lookup(definition) as A
   }
 
-  /** Try to read a provider; returns undefined if absent (never throws). */
+  /** Try to read a provider (with parent fallback); undefined if absent. */
   getOrNull<A>(definition: ServiceDefinition<A>): A | undefined {
-    return this.#entries.get(definition.id.Service as symbol) as A | undefined
+    return this.lookup(definition)
   }
 
   has(definition: ServiceDefinition<unknown>): boolean {
-    return this.#entries.has(definition.id.Service as symbol)
+    const key = definition.id.Service as symbol
+    if (this.#entries.has(key)) return true
+    return this.#parent?.has(definition) ?? false
   }
 
   /** Resolve a consumer's dependencies into a plain object at use time. */
@@ -128,7 +147,7 @@ export class Container {
     return out as T
   }
 
-  /** Dispose all registrations in reverse registration order. */
+  /** Dispose only this scope's registrations in reverse order (parent untouched). */
   dispose(): void {
     for (let i = this.#order.length - 1; i >= 0; i--) {
       const key = this.#order[i]!
@@ -137,6 +156,17 @@ export class Container {
     this.#entries.clear()
     this.#order.length = 0
     this.#disposers.clear()
+  }
+
+  /**
+   * Look up a provider in this scope, then walk up the parent chain. A child
+   * registration shadows the parent's for downstream lookups within the child.
+   * Correctly distinguishes "entry exists with value undefined" from "absent".
+   */
+  protected lookup<A>(definition: ServiceDefinition<A>): A | undefined {
+    const key = definition.id.Service as symbol
+    if (this.#entries.has(key)) return this.#entries.get(key) as A
+    return this.#parent?.lookup(definition)
   }
 }
 

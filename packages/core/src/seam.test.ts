@@ -59,6 +59,14 @@ describe("seam container", () => {
     expect(c.get(consumer).log).toBeTypeOf("function")
   })
 
+  it("distinguishes a registered undefined value from an absent service", () => {
+    const c = new Container()
+    const s = defineService<void>("void-svc")
+    c.register(s, undefined)
+    expect(c.has(s)).toBe(true)
+    expect(c.get(s)).toBeUndefined()
+  })
+
   it("dispose tears down cleanup in reverse registration order", () => {
     const c = new Container()
     const order: number[] = []
@@ -70,5 +78,65 @@ describe("seam container", () => {
     expect(order).toEqual([2, 1])
     expect(() => c.get(s1)).toThrow(SeamError)
     expect(() => c.get(s2)).toThrow(SeamError)
+  })
+
+  it("a child scope inherits the parent's providers for lookup", () => {
+    const parent = new Container()
+    const llm = createSeam<string>("llm")
+    parent.register(llm.definition, "shared")
+    const child = parent.scope()
+    // child sees the parent-registered service
+    expect(child.get(llm.definition)).toBe("shared")
+    expect(child.has(llm.definition)).toBe(true)
+  })
+
+  it("a child can shadow a parent registration without affecting the parent", () => {
+    const parent = new Container()
+    const model = createSeam<string>("model")
+    parent.register(model.definition, "expensive")
+    const child = parent.scope()
+    child.register(model.definition, "cheap")
+
+    expect(child.get(model.definition)).toBe("cheap")
+    expect(parent.get(model.definition)).toBe("expensive")
+  })
+
+  it("disposing a child tears down only its own registrations, leaving the parent intact", () => {
+    const parent = new Container()
+    const s = createSeam<string>("s")
+    parent.register(s.definition, "parent-val")
+
+    const child = parent.scope()
+    child.register(s.definition, "child-val")
+    child.dispose()
+
+    // child's own registration is gone; lookup now falls back to the parent
+    expect(child.get(s.definition)).toBe("parent-val")
+    expect(parent.get(s.definition)).toBe("parent-val")
+  })
+
+  it("nested scopes resolve up the chain and dispose leaf-first", () => {
+    const root = new Container()
+    const tool = createSeam<string>("tool")
+    root.register(tool.definition, "root-tool")
+
+    const location = root.scope()
+    const node = location.scope()
+    // no override -> resolves to root value
+    expect(node.get(tool.definition)).toBe("root-tool")
+
+    // a node-level override shadows all ancestors inside the node
+    const order: string[] = []
+    const meta = createSeam<string>("meta")
+    const disposeNode = node.register(meta.definition, "node-meta", () => order.push("node"))
+    const disposeLoc = location.register(meta.definition, "loc-meta", () => order.push("loc"))
+    expect(node.get(meta.definition)).toBe("node-meta")
+
+    // disconnecting the leaf only unregisters the node's own entry
+    disposeNode()
+    expect(node.get(meta.definition)).toBe("loc-meta")
+    disposeLoc()
+    expect(() => node.get(meta.definition)).toThrow()
+    expect(order).toEqual(["node", "loc"])
   })
 })
