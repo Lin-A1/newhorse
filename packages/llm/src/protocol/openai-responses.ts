@@ -21,7 +21,10 @@ export const openaiResponsesProtocol: Protocol = {
   id: "openai-responses",
 
   encode(request: LLMRequest): Body {
-    // Responses uses `input` (a message array) + optional `instructions`.
+    // Responses uses `input` (an array of input items) + optional `instructions`.
+    // Tool calls/results are TOP-LEVEL input items ({type:"function_call", ...},
+    // {type:"function_call_output", ...}); plain text stays inside a
+    // {role, content:[input_text]} message.
     const input: unknown[] = []
     let instructions: string[] = []
     for (const m of request.messages) {
@@ -29,8 +32,16 @@ export const openaiResponsesProtocol: Protocol = {
         instructions.push(textOfContent(m.content))
         continue
       }
-      const content = m.content.flatMap((p) => mapContentPart(p))
-      input.push({ role: m.role === "tool" ? "user" : m.role, content })
+
+      // Emit tool-call / tool-result items at the top level.
+      const toolCalls = m.content.filter((p) => p.type === "tool-call")
+      const toolResults = m.content.filter((p) => p.type === "tool-result")
+      for (const tc of toolCalls) input.push({ type: "function_call", call_id: tc.id, name: tc.name, arguments: toJsonString(tc.input) })
+      for (const tr of toolResults) input.push({ type: "function_call_output", call_id: tr.id, output: toJsonString(tr.output) })
+
+      // Remaining text (and reasoning lowered to text) becomes a message item.
+      const text = textOfContent(m.content)
+      if (text) input.push({ role: m.role, content: [{ type: "input_text", text }] })
     }
 
     const body: Body = { model: request.model, input, stream: true }
@@ -52,7 +63,7 @@ export const openaiResponsesProtocol: Protocol = {
   },
 
   init(): State {
-    return { text: "", reasoning: "", toolAcc: new Map<string, { id: string; name: string; input: string }>(), finish: undefined }
+    return { text: "", reasoning: "", finish: undefined }
   },
 
   step(state: unknown, message: unknown): { state: State; events: LLMEvent[] } {
@@ -100,21 +111,39 @@ export const openaiResponsesProtocol: Protocol = {
         break
       }
 
+      case "response.incomplete": {
+        // truncated: report length so compaction/cost logic sees it, not "stop".
+        events.push({ type: "step-finish", finish: "length" })
+        s.finish = "length"
+        break
+      }
+
       case "response.completed": {
         const usage = ev.response?.usage
-        events.push({
-          type: "step-finish",
-          finish: "stop",
-          ...(usage ? { usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens } } : {}),
-        })
-        s.finish = "stop"
+        const status = ev.response?.status
+        // A completed response may still be truncated (status "incomplete").
+        const finish = status === "incomplete" ? "length" : "stop"
+        events.push({ type: "step-finish", finish, ...(usage ? { usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens } } : {}) })
+        s.finish = finish
         break
       }
 
       case "response.failed": {
         const code = ev.response?.error?.code ?? "provider"
         const message = ev.response?.error?.message ?? "response failed"
-        events.push({ type: "provider-error", code, message, retryable: false })
+        // A stream-resident failure can still be retryable (rate limit, server
+        // overload). surface the retryability so the caller may retry rather
+        // than treating every failure as fatal.
+        const retryable = isRetryable(code)
+        events.push({ type: "provider-error", code, message, retryable })
+        s.finish = "stop"
+        break
+      }
+
+      case "error": {
+        const code = ev.error?.code ?? "provider"
+        const message = ev.error?.message ?? "response error"
+        events.push({ type: "provider-error", code, message, retryable: isRetryable(code) })
         s.finish = "stop"
         break
       }
@@ -131,7 +160,6 @@ export const openaiResponsesProtocol: Protocol = {
 interface State {
   text: string
   reasoning: string
-  toolAcc: Map<string, { id: string; name: string; input: string }>
   finish: string | undefined
 }
 
@@ -139,7 +167,8 @@ type ResponseEvent = {
   type?: string
   delta?: string
   item?: Item
-  response?: { usage?: { input_tokens?: number; output_tokens?: number }; error?: { code?: string; message?: string } }
+  error?: { code?: string; message?: string }
+  response?: { status?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: { code?: string; message?: string } }
 }
 
 type Item = {
@@ -154,7 +183,12 @@ type Item = {
 function mapToolChoice(toolChoice: LLMRequest["toolChoice"]): unknown {
   if (!toolChoice || toolChoice === "auto") return "auto"
   if (toolChoice === "none") return "none"
-  return toolChoice.name
+  return { type: "function", name: toolChoice.name }
+}
+
+/** Whether a Responses stream-resident failure code is retryable. */
+function isRetryable(code: string): boolean {
+  return code === "rate_limit_exceeded" || code === "server_error" || code === "server_is_overloaded" || code === "slow_down"
 }
 
 function textOfContent(content: LLMRequest["messages"][number]["content"]): string {
@@ -164,15 +198,8 @@ function textOfContent(content: LLMRequest["messages"][number]["content"]): stri
     .join("")
 }
 
-function mapContentPart(part: LLMRequest["messages"][number]["content"][number]): unknown[] {
-  switch (part.type) {
-    case "text":
-      return [{ type: "input_text", text: part.text }]
-    case "reasoning":
-      return [{ type: "input_text", text: part.text }]
-    case "tool-call":
-      return [{ type: "function_call", call_id: part.id, name: part.name, arguments: typeof part.input === "string" ? part.input : JSON.stringify(part.input) }]
-    case "tool-result":
-      return [{ type: "function_call_output", call_id: part.id, output: typeof part.output === "string" ? part.output : JSON.stringify(part.output) }]
-  }
+/** Encode a tool input/output as a JSON string for the wire. */
+function toJsonString(value: unknown): string {
+  if (typeof value === "string") return value
+  return JSON.stringify(value)
 }

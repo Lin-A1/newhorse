@@ -35,7 +35,9 @@ The key axis is `Protocol` (`encode`/`init`/`step`). It is the *only* thing that
 - `openai-responses` — OpenAI Responses API (`/v1/responses`, the current recommended interface, used by Codex). A separate protocol that fits the same four-axis shape; the agent loop is untouched.
 - `anthropic` — Messages (`/v1/messages`), with thinking/signature round-trip.
 
-A `ProviderKind` (`openai` | `openai-responses` | `anthropic` | `openai-compatible`) picks the protocol + endpoint + auth; `makeLlmClient` is the convenience factory. Because a Protocol is an independent axis, adding a new wire shape never touches the turn loop.
+A `ProviderKind` (`openai` | `openai-responses` | `anthropic` | `openai-compatible`) picks the protocol + endpoint + auth via a `PROVIDERS` lookup table (not scattered if/switch); `makeLlmClient` is the convenience factory. Because a Protocol is an independent axis, adding a new wire shape never touches the turn loop.
+
+Responses-specific notes: tool calls/results are **top-level** `input` items (`function_call` / `function_call_output`), not nested in message content; `tool_choice` for a named function is `{type:"function", name}`; a `response.completed` with `status:"incomplete"` is reported as `finish:"length"`; a stream-resident `response.failed`/`error` maps to `provider-error` with retryability derived from the code (`rate_limit_exceeded`/`server_error`/... are retryable). Tool-call `arguments` are JSON strings that the loop normalizes to objects at a single boundary.
 
 ## 3. Event-sourced session (session)
 
@@ -63,8 +65,8 @@ A minimal Cordis-style three-part seam, self-implemented (we adopt Cordis *seman
 
 Key properties:
 - Register-as-disposer, revocable; duplicate registration throws.
-- `container.dispose()` tears down in reverse registration order (children before parents).
-- `scope()` creates a child inheriting the parent's providers for lookup, able to shadow them, with `dispose()` that only affects its own registrations — the isolation primitive for per-Location / per-DAG-node injection.
+- `container.dispose()` tears down in reverse registration order (children before parents) and **cascades to live children**, so a child never keeps resolving against a torn-down parent.
+- `scope()` creates a child inheriting the parent's providers for lookup, able to shadow them, with `dispose()` that only affects its own registrations — the isolation primitive for per-Location / per-DAG-node injection. A disposed container refuses further `register`/`get` with a clear error (no silent misuse).
 
 We deliberately do **not** pull in the full `@cordis` kernel: the value of a full DI kernel is ecosystem reuse (running someone else's Koishi/DSH plugins), which we do not need. We keep the seam contract and drop the heavy runtime.
 
@@ -93,6 +95,7 @@ Ambient `AGENTS.md` is a Context Source. `discoverWorkspaceContext` walks upward
 - `App` exposes `sessionId`, `events` (the EventStore), `onEvent(listener)` (live streamed model/tool events for incremental rendering), `prompt(text)` → `PromptResult`, and `resume()`.
 - `PromptResult` is structured (`step`, `needsContinuation`, `finish`); a shell renders it (e.g. `done (N steps)`) rather than a bare string, so the long-horizon `needsContinuation` signal is preserved.
 - `AppEvent` is aliased to `LoopEvent` (single source from core) — `text`/`reasoning`/`tool`/`tool-result`/`step`/`error`/`done` — so the corpus stays consistent and there's no duplicated live vocabulary.
+- The turn loop normalizes every provider-encoded tool `input` (a JSON string) into a JS object at a single boundary, so a tool's `execute` always receives an object regardless of protocol — no defensive parsing in tools.
 - Transports are thin: `cli`/`web`/`desktop`/`sdk` only read input, render output, and call `createApp`. They do not own any domain logic.
 - `runSession`/`runTurn` accept an optional `onEvent` sink so a shell can render streamed events without polling the log. Each listener is isolated with a try/catch so a broken listener cannot corrupt the settlement path.
 

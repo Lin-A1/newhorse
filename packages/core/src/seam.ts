@@ -74,9 +74,12 @@ export class Container {
   readonly #disposers = new Map<symbol, Disposer>()
   readonly #order: symbol[] = []
   readonly #parent: Container | undefined
+  readonly #children = new Set<Container>()
+  #disposed = false
 
   constructor(parent?: Container) {
     this.#parent = parent
+    if (parent) parent.#children.add(this)
   }
 
   /**
@@ -86,8 +89,13 @@ export class Container {
    * registrations, leaving the parent intact. This is how per-Location and per-
    * DAG-node injection is isolated (each node gets a scope and picks its own
    * model/tools) without polluting the global registry.
+   *
+   * Disposing a parent cascades to its live children, so a child never keeps
+   * resolving against a torn-down parent. A disposed container refuses further
+   * register/get with a clear error instead of silently misbehaving.
    */
   scope(): Container {
+    this.#assertUsable()
     return new Container(this)
   }
 
@@ -99,6 +107,7 @@ export class Container {
    * naturally tears down children before parents.
    */
   register<A>(definition: ServiceDefinition<A>, value: A, cleanup?: () => void): Disposer {
+    this.#assertUsable()
     const key = definition.id.Service as symbol
     if (this.#entries.has(key)) {
       throw new SeamError(`service "${definition.displayName}" already registered`)
@@ -121,6 +130,7 @@ export class Container {
 
   /** Read a provider, falling back to the parent scope; throws if absent. */
   get<A>(definition: ServiceDefinition<A>): A {
+    this.#assertUsable()
     if (!this.has(definition)) {
       throw new SeamError(`service "${definition.displayName}" not registered`)
     }
@@ -129,10 +139,12 @@ export class Container {
 
   /** Try to read a provider (with parent fallback); undefined if absent. */
   getOrNull<A>(definition: ServiceDefinition<A>): A | undefined {
+    this.#assertUsable()
     return this.lookup(definition)
   }
 
   has(definition: ServiceDefinition<unknown>): boolean {
+    this.#assertUsable()
     const key = definition.id.Service as symbol
     if (this.#entries.has(key)) return true
     return this.#parent?.has(definition) ?? false
@@ -147,8 +159,14 @@ export class Container {
     return out as T
   }
 
-  /** Dispose only this scope's registrations in reverse order (parent untouched). */
+  /** Dispose this scope (and its live children) in reverse order. */
   dispose(): void {
+    if (this.#disposed) return
+    this.#disposed = true
+    // Cascade to children first so a child never keeps resolving against a
+    // torn-down parent.
+    for (const child of this.#children) child.dispose()
+    this.#children.clear()
     for (let i = this.#order.length - 1; i >= 0; i--) {
       const key = this.#order[i]!
       this.#disposers.get(key)?.()
@@ -167,6 +185,12 @@ export class Container {
     const key = definition.id.Service as symbol
     if (this.#entries.has(key)) return this.#entries.get(key) as A
     return this.#parent?.lookup(definition)
+  }
+
+  #assertUsable(): void {
+    if (this.#disposed) {
+      throw new SeamError("container already disposed")
+    }
   }
 }
 

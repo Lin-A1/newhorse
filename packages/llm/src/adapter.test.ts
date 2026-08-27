@@ -156,6 +156,23 @@ describe("openai responses protocol", () => {
     expect(body.max_output_tokens).toBeUndefined() // no maxTokens provided
   })
 
+  it("emits tool calls and results as top-level input items with an object tool_choice", () => {
+    const body = openaiResponsesProtocol.encode(
+      req({
+        messages: [
+          { role: "assistant", content: [{ type: "tool-call", id: "c1", name: "search", input: { q: "a" } }] },
+          { role: "tool", content: [{ type: "tool-result", id: "c1", name: "search", output: { n: 2 } }] },
+        ],
+        toolChoice: { name: "search" },
+      }),
+    )
+    const input = body.input as Record<string, unknown>[]
+    // tool-call and tool-result are top-level items, not nested in a message.
+    expect(input[0]).toEqual({ type: "function_call", call_id: "c1", name: "search", arguments: '{"q":"a"}' })
+    expect(input[1]).toEqual({ type: "function_call_output", call_id: "c1", output: '{"n":2}' })
+    expect(body.tool_choice).toEqual({ type: "function", name: "search" })
+  })
+
   it("decodes output_text deltas and completes with usage", () => {
     const state = openaiResponsesProtocol.init() as unknown
     const r1 = openaiResponsesProtocol.step(state, { type: "response.output_text.delta", delta: "Hello" })
@@ -179,10 +196,16 @@ describe("openai responses protocol", () => {
     expect(r.events).toEqual([{ type: "reasoning.delta", text: "let me think" }])
   })
 
-  it("emits provider-error on response.failed", () => {
+  it("emits a retryable provider-error on a rate-limited response.failed", () => {
     const state = openaiResponsesProtocol.init() as unknown
     const r = openaiResponsesProtocol.step(state, { type: "response.failed", response: { error: { code: "rate_limit_exceeded", message: "slow down" } } })
-    expect(r.events).toEqual([{ type: "provider-error", code: "rate_limit_exceeded", message: "slow down", retryable: false }])
+    expect(r.events).toEqual([{ type: "provider-error", code: "rate_limit_exceeded", message: "slow down", retryable: true }])
+  })
+
+  it("reports a truncated/incomplete response as length, not stop", () => {
+    const state = openaiResponsesProtocol.init() as unknown
+    const r = openaiResponsesProtocol.step(state, { type: "response.completed", response: { status: "incomplete" } })
+    expect(r.events).toEqual([{ type: "step-finish", finish: "length" }])
   })
 })
 

@@ -126,10 +126,16 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
         }
         break
       }
-      case "tool-call":
-        opts.onEvent?.({ type: "tool", name: event.name, input: event.input })
-        assistantParts.push({ type: "tool-call", id: event.id, name: event.name, input: event.input })
+      case "tool-call": {
+        // Normalize provider-encoded input (a JSON string from any protocol) into
+        // a JS object at the single boundary — a tool always receives an object,
+        // never an opaque string, so tools don't need to defensively parse. This
+        // is the canonical contract upstream of tool.execute.
+        const input = normalizeToolInput(event.input)
+        opts.onEvent?.({ type: "tool", name: event.name, input })
+        assistantParts.push({ type: "tool-call", id: event.id, name: event.name, input })
         break
+      }
       case "step-finish":
         finish = event.finish
         opts.onEvent?.({ type: "step", step })
@@ -226,4 +232,14 @@ async function failInterruptedTools(events: TurnRuntime["events"], sessionId: st
   }
   await events.append(sessionId, "Session.Interrupted", { sessionId })
   void assistantId
+}
+
+/** Normalize a provider-encoded tool input (JSON string or object) to an object. */
+function normalizeToolInput(input: unknown): unknown {
+  if (typeof input !== "string") return input
+  try {
+    return JSON.parse(input)
+  } catch {
+    return input
+  }
 }

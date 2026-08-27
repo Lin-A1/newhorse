@@ -42,27 +42,22 @@ export function makeRoute(parts: { readonly protocol: Protocol; readonly baseUrl
   }
 }
 
+/** Provider wiring as a lookup table, not scattered if/switch chains. */
+const PROVIDERS: Record<ProviderKind, { readonly protocol: Protocol; readonly path: string; readonly authHeader: string }> = {
+  openai: { protocol: openaiProtocol, path: "/v1/chat/completions", authHeader: "Authorization" },
+  "openai-responses": { protocol: openaiResponsesProtocol, path: "/v1/responses", authHeader: "Authorization" },
+  anthropic: { protocol: anthropicProtocol, path: "/v1/messages", authHeader: "x-api-key" },
+  "openai-compatible": { protocol: openaiProtocol, path: "/v1/chat/completions", authHeader: "Authorization" },
+}
+
 /** Build a Route for a provider kind (convenience for the common cases). */
 function buildRoute(config: AdapterConfig): Route {
-  const protocol = pickProtocol(config.kind)
-  const path = pathFor(config.kind)
+  const p = PROVIDERS[config.kind]
   const auth: Route["auth"] =
-    config.kind === "anthropic"
+    p.authHeader === "x-api-key"
       ? { header: "x-api-key", value: config.apiKey ?? "", extraHeaders: config.extraHeaders }
       : { header: "Authorization", value: `Bearer ${config.apiKey ?? ""}`, ...(config.extraHeaders ? { extraHeaders: config.extraHeaders } : {}) }
-  return makeRoute({ protocol, baseUrl: config.baseUrl, path, auth })
-}
-
-function pickProtocol(kind: ProviderKind): Protocol {
-  if (kind === "anthropic") return anthropicProtocol
-  if (kind === "openai-responses") return openaiResponsesProtocol
-  return openaiProtocol
-}
-
-function pathFor(kind: ProviderKind): string {
-  if (kind === "anthropic") return "/v1/messages"
-  if (kind === "openai-responses") return "/v1/responses"
-  return "/v1/chat/completions"
+  return makeRoute({ protocol: p.protocol, baseUrl: config.baseUrl, path: p.path, auth })
 }
 
 /**

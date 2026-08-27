@@ -110,9 +110,23 @@ describe("seam container", () => {
     child.register(s.definition, "child-val")
     child.dispose()
 
-    // child's own registration is gone; lookup now falls back to the parent
-    expect(child.get(s.definition)).toBe("parent-val")
+    // disposing a child marks it done (unusable) and tears down its own entries;
+    // the parent stays intact and usable.
+    expect(() => child.get(s.definition)).toThrow(SeamError)
     expect(parent.get(s.definition)).toBe("parent-val")
+  })
+
+  it("disposing a parent cascades to live children", () => {
+    const parent = new Container()
+    const s = createSeam<string>("s")
+    parent.register(s.definition, "root")
+    const child = parent.scope()
+    expect(child.get(s.definition)).toBe("root")
+    parent.dispose()
+    // after the parent is disposed, the child is unusable too.
+    expect(() => child.get(s.definition)).toThrow(SeamError)
+    // parent also refuses further use.
+    expect(() => parent.register(s.definition, "again")).toThrow(SeamError)
   })
 
   it("nested scopes resolve up the chain and dispose leaf-first", () => {
