@@ -1,19 +1,17 @@
 {
-  "name": "@newhorse/cli",
+  "name": "@newhorse/runtime",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
-  "bin": {
-    "newhorse": "./src/index.ts"
-  },
   "scripts": {
     "typecheck": "bun typecheck"
   },
   "dependencies": {
-    "@newhorse/runtime": "workspace:*",
+    "@newhorse/core": "workspace:*",
+    "@newhorse/schema": "workspace:*",
     "@newhorse/llm": "workspace:*",
-    "@newhorse/schema": "workspace:*"
+    "@newhorse/plugin": "workspace:*"
   }
 }

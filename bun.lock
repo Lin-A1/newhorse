@@ -17,9 +17,8 @@
         "newhorse": "./src/index.ts",
       },
       "dependencies": {
-        "@newhorse/core": "workspace:*",
         "@newhorse/llm": "workspace:*",
-        "@newhorse/plugin": "workspace:*",
+        "@newhorse/runtime": "workspace:*",
         "@newhorse/schema": "workspace:*",
       },
     },
@@ -44,6 +43,16 @@
         "@newhorse/core": "workspace:*",
       },
     },
+    "packages/runtime": {
+      "name": "@newhorse/runtime",
+      "version": "0.0.0",
+      "dependencies": {
+        "@newhorse/core": "workspace:*",
+        "@newhorse/llm": "workspace:*",
+        "@newhorse/plugin": "workspace:*",
+        "@newhorse/schema": "workspace:*",
+      },
+    },
     "packages/schema": {
       "name": "@newhorse/schema",
       "version": "0.0.0",
@@ -57,6 +66,8 @@
     "@newhorse/llm": ["@newhorse/llm@workspace:packages/llm"],
 
     "@newhorse/plugin": ["@newhorse/plugin@workspace:packages/plugin"],
+
+    "@newhorse/runtime": ["@newhorse/runtime@workspace:packages/runtime"],
 
     "@newhorse/schema": ["@newhorse/schema@workspace:packages/schema"],
 

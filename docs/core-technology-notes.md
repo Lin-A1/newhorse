@@ -86,6 +86,20 @@ Five capability kinds register through one seam — `tool` / `agent` / `command`
 
 Ambient `AGENTS.md` is a Context Source. `discoverWorkspaceContext` walks upward from the session location (contained within a root), realpath-normalizing for containment; `composeSystemContext` orders deepest-first. It is admitted as a System-role context message once per session (reused, not re-appended per prompt).
 
+## 9. Runtime assembly + transport layering (runtime)
+
+`createApp` lives in `packages/runtime` and is the **domain assembly** shared by every transport. It composes the seams (store + inbox + llm + agent + tools), injects the ambient system context, and drives `runSession`. It holds no transport concerns.
+
+- `App` exposes `sessionId`, `events` (the EventStore), `onEvent(listener)` (live streamed model/tool events for incremental rendering), `prompt(text)` → `PromptResult`, and `resume()`.
+- `PromptResult` is structured (`step`, `needsContinuation`, `finish`); a shell renders it (e.g. `done (N steps)`) rather than a bare string, so the long-horizon `needsContinuation` signal is preserved.
+- `AppEvent` is aliased to `LoopEvent` (single source from core) — `text`/`reasoning`/`tool`/`tool-result`/`step`/`error`/`done` — so the corpus stays consistent and there's no duplicated live vocabulary.
+- Transports are thin: `cli`/`web`/`desktop`/`sdk` only read input, render output, and call `createApp`. They do not own any domain logic.
+- `runSession`/`runTurn` accept an optional `onEvent` sink so a shell can render streamed events without polling the log. Each listener is isolated with a try/catch so a broken listener cannot corrupt the settlement path.
+
+Dependency direction: `cli` depends on `runtime` (and `schema`/`llm` for its own transport types), not on `core`/`plugin` directly. `runtime` depends on `core`/`llm`/`plugin`/`schema`. `core` never imports upper layers.
+
+Known follow-ups (outside M1): a `runId` associating events with a specific `prompt()` call for re-used apps; a shared `resolveProvider` per shell; wiring `createApp` through the seam `Container` for provider injection.
+
 ## Usage
 
 Design docs live in `docs/`. Plans live in `specs/v2/`. When a core mechanism is implemented, record the decision here; when a design materially changes, update this file.

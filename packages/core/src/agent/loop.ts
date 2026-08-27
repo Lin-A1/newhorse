@@ -9,13 +9,26 @@ const MAX_STEPS = 50
 export interface TurnResult {
   readonly needsContinuation: boolean
   readonly step: number
+  readonly finish: "tool" | "stop" | "length" | "content-filter"
 }
+
+/** A live loop event a transport can render incrementally. */
+export type LoopEvent =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "reasoning"; readonly text: string }
+  | { readonly type: "tool"; readonly name: string; readonly input: unknown }
+  | { readonly type: "tool-result"; readonly name: string; readonly output: unknown; readonly isError?: boolean }
+  | { readonly type: "step"; readonly step: number }
+  | { readonly type: "error"; readonly code: string; readonly message: string }
+  | { readonly type: "done"; readonly step: number; readonly needsContinuation: boolean; readonly finish: string }
 
 export interface RunOptions {
   readonly agent: Agent
   readonly sessionId: string
   /** Call a registered tool; throws on unknown tool. */
   readonly resolveTool: (name: string) => Tool | undefined
+  /** Optional live-event sink for a shell to render streaming output. */
+  readonly onEvent?: (event: LoopEvent) => void
 }
 
 /**
@@ -69,7 +82,9 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     lastStepEnded = turn.finish
   }
 
-  return { needsContinuation: needsContinuation && lastStepEnded === "tool", step: turns }
+  const result: TurnResult = { needsContinuation: needsContinuation && lastStepEnded === "tool", step: turns, finish: lastStepEnded }
+  opts.onEvent?.({ type: "done", step: result.step, needsContinuation: result.needsContinuation, finish: lastStepEnded })
+  return result
 }
 
 /**
@@ -87,12 +102,14 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
   for await (const event of stream) {
     switch (event.type) {
       case "text.delta": {
+        opts.onEvent?.({ type: "text", text: event.text })
         const last = assistantParts[assistantParts.length - 1]
         if (last?.type === "text") assistantParts[assistantParts.length - 1] = { type: "text", text: last.text + event.text }
         else assistantParts.push({ type: "text", text: event.text })
         break
       }
       case "reasoning.delta": {
+        opts.onEvent?.({ type: "reasoning", text: event.text })
         const last = assistantParts[assistantParts.length - 1]
         if (last?.type === "reasoning") assistantParts[assistantParts.length - 1] = { type: "reasoning", text: last.text + event.text }
         else assistantParts.push({ type: "reasoning", text: event.text })
@@ -110,14 +127,17 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
         break
       }
       case "tool-call":
+        opts.onEvent?.({ type: "tool", name: event.name, input: event.input })
         assistantParts.push({ type: "tool-call", id: event.id, name: event.name, input: event.input })
         break
       case "step-finish":
         finish = event.finish
+        opts.onEvent?.({ type: "step", step })
         break
       case "provider-error":
         finish = "stop"
         needsContinuation = false
+        opts.onEvent?.({ type: "error", code: event.code, message: event.message })
         break
     }
   }
@@ -139,8 +159,10 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
       const outcome = settled[i]!
       if (outcome.status === "fulfilled") {
         await appendMessage(runtime, opts.sessionId, { kind: "tool", id: crypto.randomUUID(), seq: 0, callId: call.id, name: call.name, output: outcome.value })
+        opts.onEvent?.({ type: "tool-result", name: call.name, output: outcome.value })
       } else {
         await appendMessage(runtime, opts.sessionId, { kind: "tool", id: crypto.randomUUID(), seq: 0, callId: call.id, name: call.name, output: `tool error: ${outcome.reason}`, isError: true })
+        opts.onEvent?.({ type: "tool-result", name: call.name, output: `tool error: ${outcome.reason}`, isError: true })
       }
     }
   }

@@ -1,11 +1,11 @@
-import { createApp } from "./app"
+import { createApp } from "@newhorse/runtime"
 import type { AdapterConfig } from "@newhorse/llm"
 import type { SessionMessage } from "@newhorse/schema"
 
 /**
  * CLI entrypoint. Reads a single prompt from argv or stdin, runs one session,
  * and prints the visible history. Transport only — all domain logic lives in
- * the app/core layers.
+ * the runtime/core layers.
  */
 export async function main(argv: string[]): Promise<void> {
   const args = parseArgs(argv)
@@ -19,10 +19,16 @@ export async function main(argv: string[]): Promise<void> {
 
   const promptText = args.prompt ?? (await readStdin())
   if (!promptText) {
-    console.error("usage: newhorse [--provider openai|anthropic] [--model NAME] [--prompt TEXT]")
+    console.error("usage: newhorse [--provider openai|openai-responses|anthropic] [--model NAME] [--prompt TEXT]")
     return
   }
 
+  // Render streamed model output live, then print the finalized history.
+  app.onEvent((event) => {
+    if (event.type === "text") process.stdout.write(event.text)
+    else if (event.type === "reasoning") process.stdout.write(`\u001b[2m${event.text}\u001b[0m`)
+    else if (event.type === "error") process.stderr.write(`\u001b[31m${event.message}\u001b[0m\n`)
+  })
   await app.prompt(promptText)
   const history = await app.resume()
   for (const message of history.messages) {
@@ -53,9 +59,9 @@ function parseArgs(argv: string[]): Record<string, string> {
 
 function resolveProvider(args: Record<string, string>): AdapterConfig {
   const rawKind = args.provider ?? process.env.NEWHORSE_PROVIDER ?? "openai"
-  const allowed: AdapterConfig["kind"][] = ["openai", "anthropic", "openai-compatible"]
+  const allowed: AdapterConfig["kind"][] = ["openai", "openai-responses", "anthropic", "openai-compatible"]
   if (!allowed.includes(rawKind as AdapterConfig["kind"])) {
-    throw new Error(`invalid provider kind "${rawKind}" (expected openai | anthropic | openai-compatible)`)
+    throw new Error(`invalid provider kind "${rawKind}" (expected openai | openai-responses | anthropic | openai-compatible)`)
   }
   const kind = rawKind as AdapterConfig["kind"]
   const baseUrl = args.baseUrl ?? process.env.NEWHORSE_BASE_URL ?? (kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com")

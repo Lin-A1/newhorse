@@ -1,12 +1,14 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent } from "@newhorse/core"
 import { join } from "node:path"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry } from "@newhorse/plugin"
 
 /**
- * CLI application assembly. This is the ONLY transport layer wiring that builds
- * a TurnRuntime from concrete store/adapter/registry pieces. It holds no domain
- * logic — it composes the seams and hands control to the agent loop.
+ * Runtime assembly. This is the domain wiring shared by every transport
+ * (CLI / web / desktop / SDK). It composes the seams into a runnable agent
+ * session and exposes how the model-visible view is produced. It holds NO
+ * transport concerns — no stdin/stdout, no WebSocket, no UI. A shell imports
+ * `createApp`, drives `prompt`, and renders `events`/the returned history.
  */
 export interface AppConfig {
   readonly provider: AdapterConfig
@@ -23,11 +25,25 @@ export interface AppConfig {
   readonly fetch?: Fetcher
 }
 
+/** A live session event a shell may observe (streamed model output, etc.). */
+export type AppEvent = LoopEvent
+
 export interface App {
   readonly sessionId: string
   readonly events: EventStore
-  readonly prompt: (text: string) => Promise<string>
+  /** Subscribe to live session events; returns an unsubscribe function. */
+  readonly onEvent: (listener: (event: AppEvent) => void) => () => void
+  /** Run one prompt through admission → turn → settlement. */
+  readonly prompt: (text: string) => Promise<PromptResult>
+  /** Reconstruct the current session projection from the log. */
   readonly resume: () => Promise<Session>
+}
+
+/** Structured outcome of a prompt run (a shell renders this, not a string). */
+export interface PromptResult {
+  readonly step: number
+  readonly needsContinuation: boolean
+  readonly finish: "tool" | "stop" | "length" | "content-filter"
 }
 
 export async function createApp(config: AppConfig): Promise<App> {
@@ -49,10 +65,32 @@ export async function createApp(config: AppConfig): Promise<App> {
 
   const agent: Agent = { id: "primary", model: config.model, tools }
 
+  // Live event fan-out. The prompt run emits streamed model/tool events through
+  // a small hook so a shell can render incrementally without polling the log.
+  // Each listener is isolated: a throwing/slow listener must not corrupt the
+  // turn loop's settlement path.
+  const listeners = new Set<(event: AppEvent) => void>()
+  const emit = (event: AppEvent): void => {
+    for (const l of listeners) {
+      try {
+        l(event)
+      } catch {
+        // A broken listener must never sink the run.
+      }
+    }
+  }
+  const onEvent = (listener: (event: AppEvent) => void): (() => void) => {
+    listeners.add(listener)
+    return () => {
+      listeners.delete(listener)
+    }
+  }
+
   const app: App = {
     sessionId,
     events,
-    async prompt(text: string): Promise<string> {
+    onEvent,
+    async prompt(text: string): Promise<PromptResult> {
       // Ambient workspace AGENTS.md is a Context Source: discovered from the
       // session location and admitted as model-visible context BEFORE the prompt,
       // per the "model-visible ⟺ logged" rule. It is appended only once: once a
@@ -68,8 +106,13 @@ export async function createApp(config: AppConfig): Promise<App> {
         }
       }
       await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer" })
-      const result = await runSession(runtime, { agent, sessionId, resolveTool: (name) => toolMap.get(name) })
-      return summarize(result)
+      const result = await runSession(runtime, {
+        agent,
+        sessionId,
+        resolveTool: (name) => toolMap.get(name),
+        onEvent: emit,
+      })
+      return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
     },
     async resume(): Promise<Session> {
       return Session.replay(await events.read(sessionId))
@@ -88,8 +131,4 @@ async function createStore(dataDir?: string): Promise<EventStore> {
     return SqliteEventStore.open(join(dataDir, "events.db"))
   }
   return new MemoryEventStore()
-}
-
-function summarize(result: { needsContinuation: boolean; step: number }): string {
-  return result.step <= 1 ? "done" : `done (${result.step} steps)`
 }

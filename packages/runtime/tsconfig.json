@@ -6,9 +6,10 @@
     "types": ["bun"],
     "baseUrl": ".",
     "paths": {
-      "@newhorse/runtime": ["../runtime/src/index.ts"],
+      "@newhorse/core": ["../core/src/index.ts"],
       "@newhorse/schema": ["../schema/src/index.ts"],
-      "@newhorse/llm": ["../llm/src/index.ts"]
+      "@newhorse/llm": ["../llm/src/index.ts"],
+      "@newhorse/plugin": ["../plugin/src/index.ts"]
     }
   },
   "include": ["src"]
