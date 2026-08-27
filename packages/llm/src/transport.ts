@@ -131,7 +131,7 @@ export function classifyHttpError(status: number, message: string): LlmHttpError
   return new LlmHttpError(status, message, code, retryable)
 }
 
-function codeForStatus(status: number, message: string): string {
+export function codeForStatus(status: number, message: string): string {
   if (status === 400 && /context|length|token/i.test(message)) return "context-overflow"
   if (status === 429) return "rate-limited"
   if (status === 401 || status === 403) return "auth"
@@ -139,4 +139,39 @@ function codeForStatus(status: number, message: string): string {
   if (status === 413) return "too-large"
   if (status === 422) return "invalid-request"
   return status >= 500 ? "server" : "unknown"
+}
+
+/** Default base delay (ms) before a retry; doubled each attempt. */
+const RETRY_BASE_MS = 500
+const RETRY_MAX_MS = 8000
+
+/**
+ * Retry a streamed request on retryable errors (429 rate-limit, 5xx server),
+ * with exponential backoff + jitter, up to `maxRetries` attempts. Non-retryable
+ * errors (401/403/404/413/422/400 context-overflow) throw immediately. Returns
+ * the first successful stream, or throws the last retryable error after the
+ * budget is exhausted.
+ */
+export async function streamWithRetry(
+  attempt: () => Promise<AsyncIterable<LLMEvent>>,
+  maxRetries = 3,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<AsyncIterable<LLMEvent>> {
+  let lastError: LlmHttpError | undefined
+  for (let attemptNo = 0; attemptNo <= maxRetries; attemptNo++) {
+    try {
+      return await attempt()
+    } catch (e) {
+      if (!(e instanceof LlmHttpError) || !e.retryable) throw e
+      lastError = e
+      if (attemptNo >= maxRetries) break
+      const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** attemptNo) + jitter()
+      await sleep(delay)
+    }
+  }
+  throw lastError
+}
+
+function jitter(): number {
+  return Math.floor(Math.random() * 250)
 }

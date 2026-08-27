@@ -1,6 +1,6 @@
 import type { LLMRequest, LLMEvent } from "@newhorse/schema"
 import type { Fetcher, LlmAdapter, Route, Protocol } from "./route"
-import { streamRequest } from "./transport"
+import { streamRequest, streamWithRetry } from "./transport"
 import { openaiProtocol } from "./protocol/openai"
 import { anthropicProtocol } from "./protocol/anthropic"
 
@@ -12,6 +12,8 @@ export interface AdapterConfig {
   readonly apiKey?: string
   /** Extra auth headers a real deployment needs (e.g. `anthropic-version`). */
   readonly extraHeaders?: Readonly<Record<string, string>>
+  /** Max retry attempts for retryable HTTP errors (429/5xx). Default 3. */
+  readonly maxRetries?: number
 }
 
 export interface LlmClient {
@@ -60,11 +62,12 @@ function pickProtocol(kind: ProviderKind): Protocol {
  */
 export function makeLlmClient(config: AdapterConfig, fetch: Fetcher = globalThis.fetch.bind(globalThis)): LlmClient {
   const route = buildRoute(config)
+  const maxRetries = config.maxRetries ?? 3
   return {
     id: `${config.kind}:${route.endpoint.baseUrl}`,
     async stream(request: LLMRequest): Promise<AsyncIterable<LLMEvent>> {
       const body = route.protocol.encode(request)
-      return streamRequest(route, body, { fetch })
+      return streamWithRetry(() => streamRequest(route, body, { fetch }), maxRetries)
     },
   }
 }

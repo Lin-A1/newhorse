@@ -159,7 +159,7 @@ describe("makeLlmClient with injected fetch", () => {
 
   it("throws LlmHttpError with taxonomy on 429/5xx", async () => {
     const fakeFetch: Fetcher = async () => new Response("rate limited", { status: 429 })
-    const client = makeLlmClient({ kind: "anthropic", baseUrl: "https://api.example.com", apiKey: "k" }, fakeFetch)
+    const client = makeLlmClient({ kind: "anthropic", baseUrl: "https://api.example.com", apiKey: "k", maxRetries: 0 }, fakeFetch)
     let err: unknown
     try {
       for await (const _ of await client.stream(req())) void _
@@ -167,5 +167,21 @@ describe("makeLlmClient with injected fetch", () => {
       err = e
     }
     expect(err).toMatchObject({ status: 429, retryable: true })
+  })
+
+  it("retries a retryable 429 and succeeds on the next attempt", async () => {
+    let attempts = 0
+    const fakeFetch: Fetcher = async () => {
+      attempts += 1
+      if (attempts === 1) return new Response("rate limited", { status: 429 })
+      return new Response("data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n" + "data: [DONE]\n\n", { status: 200, headers: { "content-type": "text/event-stream" } })
+    }
+    const client = makeLlmClient({ kind: "openai", baseUrl: "https://api.example.com", apiKey: "k", maxRetries: 2 }, fakeFetch)
+    const text: string[] = []
+    for await (const e of await client.stream(req())) {
+      if (e.type === "text.delta") text.push(e.text)
+    }
+    expect(attempts).toBe(2)
+    expect(text.join("")).toBe("ok")
   })
 })

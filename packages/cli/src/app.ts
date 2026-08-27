@@ -15,6 +15,8 @@ export interface AppConfig {
   readonly workspace?: string
   /** A plugin registry whose tools back the agent. Optional. */
   readonly plugins?: PluginRegistry
+  /** Direct tool list override (for tests or embedding). Optional. */
+  readonly tools?: readonly Tool[]
   /** Data dir to persist the event store across restarts. */
   readonly dataDir?: string
   /** Injectable fetch for tests; defaults to globalThis.fetch. */
@@ -42,7 +44,7 @@ export async function createApp(config: AppConfig): Promise<App> {
     await events.append(sessionId, "Session.Created", { id: sessionId, location: config.workspace ?? "", createdAt: Date.now() })
   }
 
-  const tools = config.plugins?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute })) ?? []
+  const tools: Tool[] = config.tools ? [...config.tools] : config.plugins?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute })) ?? []
   const toolMap = new Map(tools.map((t) => [t.name, t]))
 
   const agent: Agent = { id: "primary", model: config.model, tools }

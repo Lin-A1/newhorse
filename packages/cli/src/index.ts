@@ -30,6 +30,14 @@ export async function main(argv: string[]): Promise<void> {
   }
 }
 
+if (import.meta.main) {
+  main(process.argv.slice(2)).catch((e) => {
+    const message = e instanceof Error ? e.message : String(e)
+    console.error(`\u001b[31m${message}\u001b[0m`)
+    process.exitCode = 1
+  })
+}
+
 function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {}
   for (let i = 0; i < argv.length; i++) {
@@ -69,8 +77,4 @@ function printMessage(message: SessionMessage): void {
     const text = message.content.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join("")
     if (text) process.stdout.write(`\u001b[32m${text}\u001b[0m\n`)
   }
-}
-
-if (import.meta.main) {
-  await main(process.argv.slice(2))
 }
