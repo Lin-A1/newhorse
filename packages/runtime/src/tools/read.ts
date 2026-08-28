@@ -43,7 +43,10 @@ export function createReadTool(workspace: string): Tool {
           const shown = raw.length > LINE_WIDTH_LIMIT ? raw.slice(0, LINE_WIDTH_LIMIT) + "...[truncated]" : raw
           out.push(`${String(i + 1).padStart(5, " ")} → ${shown}`)
         }
-        return { path: abs, totalLines: lines.length, lines: out, truncated: overlength }
+        // A from beyond the file is NOT an error, but a silent empty result
+        // confuses the model; say what happened so it can self-correct.
+        const offsetBeyond = from > lines.length
+        return { path: abs, totalLines: lines.length, lines: out, truncated: overlength, offsetBeyond, offset: from }
       } catch (e) {
         return fail(message(e))
       }

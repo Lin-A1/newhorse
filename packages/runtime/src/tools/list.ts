@@ -1,5 +1,5 @@
 import { resolveInWorkspace } from "./path"
-import { fail, collectFiles, toRel } from "./common"
+import { fail, collectFiles, toRel, globMatch } from "./common"
 import type { Tool } from "@newhorse/core"
 
 const DEFAULT_LIMIT = 200
@@ -28,8 +28,8 @@ export function createListTool(workspace: string): Tool {
       if (!pattern) return fail("pattern is required")
       try {
         const base = path ? await resolveInWorkspace(workspace, path) : workspace
-        const glob = new Bun.Glob(pattern)
         const cap = Math.max(1, Math.min(limit ?? DEFAULT_LIMIT, 1000))
+        const glob = new Bun.Glob(pattern)
         // Collect relative to `base` so the pattern and the returned paths use a
         // single, predictable reference frame. When no base is given, base ===
         // workspace and results are naturally workspace-relative.
@@ -38,7 +38,7 @@ export function createListTool(workspace: string): Tool {
         for (const f of files) {
           if (matches.length >= cap) break
           const rel = toRel(base, f)
-          if (glob.match(rel)) matches.push(rel)
+          if (globMatch(pattern, rel, glob)) matches.push(rel)
         }
         return { base, count: matches.length, files: matches, truncated: walkTruncated || matches.length >= cap }
       } catch (e) {

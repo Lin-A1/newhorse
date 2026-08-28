@@ -117,3 +117,17 @@ export async function collectFiles(root: string, opts: WalkOptions = {}): Promis
 export function toRel(root: string, abs: string): string {
   return relative(root, abs).split("\\").join("/")
 }
+
+/**
+ * Glob match that is case-insensitive on win32 (mirrors `resolveInWorkspace`'s
+ * case-fold) so list/search see the same casing semantics that read/write do.
+ * Bun.Glob's `caseInsensitive` does NOT apply to literal extensions, so we fold
+ * the pattern and the target ourselves and match on the lower-cased pair. On
+ * POSIX we match as-is. `glob` is optional and lets a caller reuse a pre-built
+ * glob on POSIX (ignored on win32 where we rebuild a folded one).
+ */
+export function globMatch(pattern: string, rel: string, glob?: Bun.Glob): boolean {
+  if (process.platform !== "win32") return (glob ?? new Bun.Glob(pattern)).match(rel)
+  const g = new Bun.Glob(pattern.toLowerCase())
+  return g.match(rel.toLowerCase())
+}

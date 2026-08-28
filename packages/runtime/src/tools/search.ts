@@ -1,15 +1,21 @@
 import { readFile } from "node:fs/promises"
 import { resolveInWorkspace } from "./path"
-import { fail, collectFiles, toRel, isLikelyBinary } from "./common"
+import { fail, collectFiles, toRel, isLikelyBinary, globMatch } from "./common"
 import type { Tool } from "@newhorse/core"
 
 const DEFAULT_LIMIT = 100
+const BYTES_BUDGET = 16 * 1024 * 1024
 
 /**
  * Content search (grep-like) over the workspace: returns file:line:match lines.
  * Capable of matching across files; excludes `.git`/node_modules/binary and caps
  * hits so a real-repo search stays fast, with a `truncated` + `totalMatches`
  * hint so the model knows there is more than it saw.
+ *
+ * Trust contract: the scan NEVER produces a false "no match". The byte budget
+ * stops the *walk* and reports `budgetExceeded: true` rather than silently
+ * dropping later files, so a match that was never reached is distinguishable
+ * from a confirmed absence.
  */
 export function createSearchTool(workspace: string): Tool {
   return {
@@ -42,19 +48,24 @@ export function createSearchTool(workspace: string): Tool {
         const hits: { file: string; line: number; text: string }[] = []
         let total = 0
         let bytesChecked = 0
+        let budgetExceeded = false
 
         for (const f of files) {
-          if (bytesChecked > 8 * 1024 * 1024) break
           const rel = toRel(base, f)
-          if (includeGlob && !includeGlob.match(rel)) continue
+          if (includeGlob && !globMatch(include!, rel, includeGlob)) continue
           if (isLikelyBinary(f)) continue
+          // Always attempt the current file; only decide whether to keep walking
+          // AFTER reading it. This prevents a huge early file from hiding matches
+          // in later files (a silent false no-match).
           let text: string
           try {
             text = await readFile(f, "utf8")
           } catch {
             continue
           }
-          bytesChecked += text.length
+          const checked = bytesChecked + text.length
+          const overBudget = checked > BYTES_BUDGET
+          bytesChecked = checked
           const lines = text.split(/\r?\n/)
           // Scan the ENTIRE file so a match deep in a long file is never silently
           // missed (the model would otherwise trust a false "no match"). We cap
@@ -67,9 +78,13 @@ export function createSearchTool(workspace: string): Tool {
               }
             }
           }
+          if (overBudget) {
+            budgetExceeded = true
+            break
+          }
         }
 
-        return { pattern, base, totalMatches: total, hits, truncated: total > hits.length }
+        return { pattern, base, totalMatches: total, hits, truncated: total > hits.length || budgetExceeded, budgetExceeded }
       } catch (e) {
         return fail(message(e))
       }

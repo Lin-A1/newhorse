@@ -227,4 +227,46 @@ describe("builtin tools", () => {
       await cleanup()
     }
   })
+
+  it("list glob is case-insensitive on win32 (extension casing)", async () => {
+    const { root, cleanup } = await ws()
+    try {
+      await mkdir(join(root, "src"), { recursive: true })
+      await writeFile(join(root, "src/Foo.TS"), "")
+      const list = byName(createBuiltinTools({ workspace: root }), "list")
+      const out = await list.execute({ pattern: "**/*.ts" }) as { files: string[] }
+      expect(out.files).toContain("src/Foo.TS")
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it("search flags a byte budget instead of silently returning a false no-match", async () => {
+    const { root, cleanup } = await ws()
+    try {
+      // A huge file first (alphabetically), then a tiny target file. The budget
+      // must mark `budgetExceeded`/`truncated` rather than dropping the target
+      // silently and reporting a confident 0 matches.
+      await writeFile(join(root, "aaa_big.txt"), "x".repeat(2 * 1024 * 1024))
+      await writeFile(join(root, "zzz_target.txt"), "TARGET_TOKEN")
+      const search = byName(createBuiltinTools({ workspace: root }), "search")
+      const out = await search.execute({ pattern: "TARGET_TOKEN" }) as { totalMatches: number; budgetExceeded: boolean; truncated: boolean }
+      expect(out.totalMatches).toBe(1)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it("read reports an offset beyond EOF instead of a silent empty result", async () => {
+    const { root, cleanup } = await ws()
+    try {
+      await writeFile(join(root, "f.txt"), "line1\nline2\nline3")
+      const read = byName(createBuiltinTools({ workspace: root }), "read")
+      const out = await read.execute({ path: "f.txt", offset: 999 }) as { lines: string[]; totalLines: number }
+      expect(out.totalLines).toBe(3)
+      expect(out.lines.length).toBe(0)
+    } finally {
+      await cleanup()
+    }
+  })
 })
