@@ -87,7 +87,10 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     try {
       turn = await runTurn(runtime, opts, request, turns)
     } catch (e) {
-      if (e instanceof SessionCancelled) return cancelledResult(runtime, opts, turns)
+      // A cancelled stream surfaces as either our SessionCancelled marker or the
+      // llm transport's LlmCancelled; both mean "interrupt the run". We detect
+      // by tag without importing the llm package (core must not depend on it).
+      if (isCancelled(e)) return cancelledResult(runtime, opts, turns)
       throw e
     }
     needsContinuation = turn.needsContinuation
@@ -116,6 +119,13 @@ export class SessionCancelled extends Error {
   }
 }
 
+/** Detect a cancellation from either core's marker or the llm transport. */
+function isCancelled(e: unknown): boolean {
+  if (e instanceof SessionCancelled) return true
+  // LlmCancelled (llm package) is detected structurally: core must not import it.
+  return (e as { name?: string; _tag?: string } | null)?.name === "LlmCancelled" || (e as { _tag?: string } | null)?._tag === "LlmCancelled"
+}
+
 /**
  * One provider turn: stream the request, archive assistant text + tool calls,
  * execute tools, and settle. Returns whether another turn is required.
@@ -129,12 +139,6 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
 
   const stream = await runtime.llm.stream(request, opts.signal)
   for await (const event of stream) {
-    if (opts.signal?.aborted) {
-      // Cancelled mid-stream: stop consuming and settle as interrupted so a
-      // long-running response can be stopped, not only between whole turns.
-      await runtime.events.append(opts.sessionId, "Session.Interrupted", { sessionId: opts.sessionId })
-      throw new SessionCancelled()
-    }
     switch (event.type) {
       case "text.delta": {
         opts.onEvent?.({ type: "text", text: event.text })

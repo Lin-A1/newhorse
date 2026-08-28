@@ -7,6 +7,15 @@ export interface StreamOptions {
   readonly signal?: AbortSignal
 }
 
+/** Thrown when a streamed request is cancelled via its AbortSignal. */
+export class LlmCancelled extends Error {
+  readonly _tag = "LlmCancelled"
+  constructor() {
+    super("LLM stream cancelled")
+    this.name = "LlmCancelled"
+  }
+}
+
 /**
  * Send a request through a Route and surface its canonical events.
  *
@@ -60,9 +69,9 @@ async function* sseEvents(route: Route, response: Response, signal?: AbortSignal
   const decoder = new TextDecoder()
 
   while (true) {
-    if (signal?.aborted) return
+    if (signal?.aborted) throw new LlmCancelled()
     const { done, value } = await readWithAbort(reader, signal)
-    if (signal?.aborted) return
+    if (signal?.aborted) throw new LlmCancelled()
     if (done) break
     buffer += decoder.decode(value, { stream: true })
 

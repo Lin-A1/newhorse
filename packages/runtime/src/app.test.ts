@@ -158,24 +158,33 @@ describe("runtime app", () => {
     }
   })
 
-  it("interrupt() cancels a live stream and does not poison later prompts", async () => {
-    // First run: a stream that emits a chunk, then keeps emitting so the loop
-    // iterates; interrupt() fires between events and cancels the run cleanly.
+  it("interrupt() cancels a live stream and does not poison later prompts on the same app", async () => {
+    // One app whose fetch is stateful: first call = held (interruptible) stream,
+    // later calls = a completing stream. This proves the same app, after an
+    // interrupt, can still run a later prompt (the one-shot-controller bug would
+    // silently no-op the second prompt).
+    let call = 0
     let cancelled = false
-    const heldFetch: Fetcher = async () => {
-      const body = new ReadableStream({
-        start(controller) {
-          const push = (text: string, i: number) => {
-            if (cancelled) return
-            controller.enqueue(new TextEncoder().encode('data: ' + JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: null }] }) + "\n\n"))
-            setTimeout(() => push("x", i + 1), 5)
-          }
-          push("partial", 0)
-        },
-      })
-      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })
-    }
-    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", fetch: heldFetch as never })
+    const app = await createApp({
+      provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" },
+      model: "m",
+      fetch: (async () => {
+        call += 1
+        if (call === 1) {
+          return new Response(new ReadableStream({
+            start(controller) {
+              const push = () => {
+                if (cancelled) return
+                controller.enqueue(new TextEncoder().encode('data: ' + JSON.stringify({ choices: [{ delta: { content: "partial" }, finish_reason: null }] }) + "\n\n"))
+                setTimeout(push, 5)
+              }
+              push()
+            },
+          }), { status: 200, headers: { "content-type": "text/event-stream" } })
+        }
+        return sse(['data: ' + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join(""))
+      }) as unknown as Fetcher,
+    })
 
     const run = app.prompt("go")
     await Bun.sleep(30)
@@ -183,17 +192,16 @@ describe("runtime app", () => {
     app.interrupt()
     const result = await run
     expect(result.needsContinuation).toBe(false)
+    expect(result.finish).toBe("interrupted")
 
-    // A second app whose prompt completes normally — proving interrupt() did not
-    // poison the shared mechanism (each prompt owns its own AbortController).
-    let secondRan = false
-    const normalFetch: Fetcher = async () => {
-      secondRan = true
-      return sse(['data: ' + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join(""))
-    }
-    const app2 = await createApp({ provider: { kind: "openai", baseUrl: "https://y", apiKey: "k" }, model: "m", fetch: normalFetch as never })
-    const r2 = await app2.prompt("again")
-    expect(secondRan).toBe(true)
+    // The cancellation must have appended Session.Interrupted exactly once, so
+    // the registry reflects an interrupted session (not a double append).
+    const rows = await app.listSessions()
+    expect(rows.some((r) => r.status === "interrupted")).toBe(true)
+
+    // Same app, later prompt — must actually run (call 2 returns a real stream).
+    const r2 = await app.prompt("again")
+    expect(call).toBe(2)
     expect(r2.needsContinuation).toBe(false)
   })
 
