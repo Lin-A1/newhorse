@@ -57,7 +57,13 @@ export const anthropicProtocol: Protocol = {
 
     const body: Body = { model: request.model, messages, stream: true, max_tokens: request.maxTokens ?? 4096 }
     if (request.system) systemText.push(request.system)
-    if (systemText.length > 0) body.system = systemText.join("\n\n")
+    if (systemText.length > 0) {
+      const cache = request.cacheControl !== false
+      // Anthropic caches a stable prefix only when it is marked with
+      // cache_control. Use block form so the system prompt can carry it; the
+      // cacheable system prefix is what makes repeated turns cheap (cost #3).
+      body.system = cache ? [{ type: "text", text: systemText.join("\n\n"), cache_control: { type: "ephemeral" } }] : systemText.join("\n\n")
+    }
     if (request.temperature !== undefined) body.temperature = request.temperature
     if (request.stop?.length) body.stop = request.stop
 
@@ -137,7 +143,7 @@ export const anthropicProtocol: Protocol = {
           events.push({
             type: "step-finish",
             finish: semantic,
-            ...(usage ? { usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens } } : {}),
+            ...(usage ? { usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, cacheReadTokens: usage.cache_read_input_tokens, cacheWriteTokens: usage.cache_creation_input_tokens } } : {}),
           })
         }
         break
@@ -159,8 +165,8 @@ type AnthropicEvent = {
   type?: string
   content_block?: { type?: string; id?: string; thinking?: string; signature?: string; name?: string }
   delta?: { type?: string; text?: string; thinking?: string; partial_json?: string; stop_reason?: string }
-  usage?: { input_tokens?: number; output_tokens?: number }
-  message?: { usage?: { input_tokens?: number; output_tokens?: number } }
+  usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
+  message?: { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }
   error?: { message?: string }
 }
 

@@ -41,6 +41,8 @@ export const openaiProtocol: Protocol = {
     })
 
     const body: Body = { model: request.model, messages, stream: true }
+    // OpenAI caches automatically; ask for usage so cache_read tokens surface.
+    if (request.cacheControl !== false) body.stream_options = { include_usage: true }
     if (request.system) body.system = request.system
     if (request.temperature !== undefined) body.temperature = request.temperature
     if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens
@@ -69,7 +71,7 @@ export const openaiProtocol: Protocol = {
     // still flushes the accumulated tool calls (some gateways send usage in the
     // same chunk as the finish).
     if (chunk.usage) {
-      s.usage = { inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens }
+      s.usage = { inputTokens: chunk.usage.prompt_tokens, outputTokens: chunk.usage.completion_tokens, cacheReadTokens: chunk.usage.prompt_tokens_details?.cached_tokens }
     }
 
     const delta = chunk.choices?.[0]?.delta
@@ -128,12 +130,12 @@ interface State {
   reasoning: string
   toolAcc: Map<number, { id: string; name: string; input: string }>
   finish: string | undefined
-  usage?: { inputTokens?: number; outputTokens?: number }
+  usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number }
 }
 
 type ChatChunk = {
   choices?: { delta?: { role?: string; content?: string; reasoning_content?: string; tool_calls?: ToolCallFragment[] }; finish_reason?: string }[]
-  usage?: { prompt_tokens?: number; completion_tokens?: number }
+  usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } }
 }
 
 type ToolCallFragment = {

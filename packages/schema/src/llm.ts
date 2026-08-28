@@ -96,6 +96,13 @@ export interface LLMRequest {
   readonly maxTokens?: number
   readonly stop?: string[]
   readonly system?: string
+  /**
+   * Prompt-cache opt-in. When true (default), the provider is asked to cache
+   * the stable system prefix so repeated turns hit the cache (Anthropic uses
+   * `cache_control: {type:"ephemeral"}`; OpenAI caches automatically). When
+   * false, no cache is requested. Cost balance (#3) relies on this.
+   */
+  readonly cacheControl?: boolean
 }
 
 /**
