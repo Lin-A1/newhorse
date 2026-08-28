@@ -1,0 +1,103 @@
+import type { Initiator, Tool, ToolCtx, SessionRow } from "@newhorse/core"
+import type { SessionRegistry } from "@newhorse/core"
+
+/**
+ * Butler tools (M2b). These are ordinary `Tool`s whose `execute` receives a
+ * `ToolCtx` carrying the trusted `caller` (injected by the loop). Each tool
+ * enforces its own authorization inside `execute` — reading `ctx.caller` (never
+ * the model's payload) and `ctx.registry` — and appends an audit entry for both
+ * allowed and denied decisions.
+ *
+ * The authority model (see specs/v2/m2b-butler-authority.md):
+ *   - list_sessions: any caller allowed (observation).
+ *   - interrupt: butler wide (any session), parent scoped to direct children,
+ *     user any. targetRequired.
+ *   - spawn_agent: any caller may spawn; spawner becomes the parent.
+ *   - send_to_session: default-deny; only user, or parent to its direct child.
+ *     targetRequired.
+ */
+export interface ButlerDeps {
+  readonly registry: SessionRegistry
+  readonly appendAudit: (entry: { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }) => Promise<void>
+}
+
+interface Decision {
+  allowed: boolean
+  reason?: string
+}
+
+/** Common helper: resolve target, short-circuit unknown, authorize, audit. */
+async function guarded(
+  deps: ButlerDeps,
+  ctx: ToolCtx,
+  op: string,
+  targetId: string | undefined,
+  authorize: (caller: Initiator, target?: SessionRow) => Decision,
+  run: () => Promise<unknown>,
+): Promise<unknown> {
+  const actorId = ctx.caller.kind === "user" ? "user" : ctx.caller.sessionId
+
+  let target: SessionRow | undefined
+  if (targetId) target = await deps.registry.get(targetId)
+
+  const decision = targetId && !target ? { allowed: false, reason: "unknown target" } : authorize(ctx.caller, target)
+  await deps.appendAudit({ actorKind: ctx.caller.kind, actorId, op, targetSessionId: targetId, outcome: decision.allowed ? "allowed" : "denied", reason: decision.reason })
+  if (!decision.allowed) throw new Error(`denied: ${decision.reason ?? "unknown target"}`)
+  return run()
+}
+
+function requireCtx(ctx?: ToolCtx): ToolCtx {
+  if (!ctx) throw new Error("butler tool missing ctx")
+  return ctx
+}
+
+/** Build the four butler tools as a registry-backed list. */
+export function createButlerTools(deps: ButlerDeps): Tool[] {
+  return [
+    {
+      name: "list_sessions",
+      description: "List sessions (observational, read-only).",
+      execute: async (input: unknown, ctx?: ToolCtx) => {
+        requireCtx(ctx)
+        return deps.registry.list(input as never)
+      },
+    },
+    {
+      name: "interrupt",
+      description: "Interrupt a running session. Butler may interrupt any; a parent only its direct child.",
+      execute: async (input: unknown, ctx?: ToolCtx) => {
+        const c = requireCtx(ctx)
+        const targetId = (input as { target?: string }).target
+        return guarded(deps, c, "interrupt", targetId, (caller, target) => {
+          if (caller.kind === "user") return { allowed: true }
+          if (caller.kind === "butler") return { allowed: true }
+          return target && target.parentId === caller.sessionId ? { allowed: true } : { allowed: false, reason: "only your direct child session" }
+        }, async () => ({ interrupted: true, targetId }))
+      },
+    },
+    {
+      name: "spawn_agent",
+      description: "Spawn a new agent session; the spawner becomes its parent.",
+      execute: async (input: unknown, ctx?: ToolCtx) => {
+        const c = requireCtx(ctx)
+        const model = (input as { model?: string }).model
+        const parentId = c.caller.kind === "user" ? "user" : c.caller.sessionId
+        return { spawned: true, model, parentId }
+      },
+    },
+    {
+      name: "send_to_session",
+      description: "Send a message to another session. Default-deny: only user, or a parent to its direct child.",
+      execute: async (input: unknown, ctx?: ToolCtx) => {
+        const c = requireCtx(ctx)
+        const targetId = (input as { target?: string }).target
+        const content = (input as { content?: string }).content
+        return guarded(deps, c, "send_to_session", targetId, (caller, target) => {
+          if (caller.kind === "user") return { allowed: true }
+          if (caller.kind === "parent") return target && target.parentId === caller.sessionId ? { allowed: true } : { allowed: false, reason: "only your direct child session" }
+          return { allowed: false, reason: "butler requires explicit user authorization" }
+        }, async () => ({ sent: true, targetId, content }))
+      },
+    },
+  ]
+}

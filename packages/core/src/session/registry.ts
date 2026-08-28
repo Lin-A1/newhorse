@@ -28,6 +28,17 @@ export interface SessionRow {
 
 export type SessionStatus = "created" | "active" | "settled" | "interrupted"
 
+/** A butler action audit row (folded from Session.ButlerAction events). */
+export interface AuditRow {
+  readonly actorKind: "user" | "butler" | "parent"
+  readonly actorId: string
+  readonly op: string
+  readonly targetSessionId?: string
+  readonly outcome: "allowed" | "denied"
+  readonly reason?: string
+  readonly ts: number
+}
+
 export interface RegistryQuery {
   readonly workspace?: string
   readonly status?: SessionStatus
@@ -69,6 +80,19 @@ export class SessionRegistry {
     this.#index.clear()
     await this.#hydrate()
     this.#hydrated = true
+  }
+
+  /** Fold butler audit actions for an actor (or all) into a readable list. */
+  async audit(actorSessionId?: string): Promise<AuditRow[]> {
+    const rows = await this.#events.aggregateIds()
+    const out: AuditRow[] = []
+    for (const aggregateId of rows) {
+      if (!aggregateId.startsWith("audit:")) continue
+      if (actorSessionId && aggregateId !== `audit:${actorSessionId}`) continue
+      const stored = await this.#events.read(aggregateId)
+      out.push(...foldAudit(stored))
+    }
+    return out.sort((a, b) => b.ts - a.ts)
   }
 
   async #ensureHydrated(): Promise<void> {
@@ -121,6 +145,12 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
         status = "interrupted"
         break
       }
+      case "Session.Spawned": {
+        // Record parent chain; does NOT set hasCreated (must pair with Created).
+        const d = event.data as { parentId?: string }
+        parentId = d.parentId
+        break
+      }
       case "Session.MessageAppended": {
         const d = event.data as { message?: SessionMessage }
         // Only touch updatedAt; MessageAppended carries no turn boundary, so we
@@ -145,4 +175,16 @@ function excerpt(content: readonly unknown[]): string {
   const firstText = content.find((p) => (p as { type?: string }).type === "text")
   const text = (firstText as { text?: string } | undefined)?.text ?? ""
   return text.length > 80 ? text.slice(0, 80) + "…" : text
+}
+
+/** Fold a butler-audit aggregate's events into audit rows. */
+export function foldAudit(stored: StoredEvent[]): AuditRow[] {
+  const out: AuditRow[] = []
+  for (const event of stored) {
+    if (event.type !== "Session.ButlerAction") continue
+    const d = event.data as { actorKind?: "user" | "butler" | "parent"; actorId?: string; op?: string; targetSessionId?: string; outcome?: "allowed" | "denied"; reason?: string; ts?: number }
+    if (!d.actorKind || !d.actorId || !d.op || !d.outcome) continue
+    out.push({ actorKind: d.actorKind, actorId: d.actorId, op: d.op, targetSessionId: d.targetSessionId, outcome: d.outcome, reason: d.reason, ts: d.ts ?? 0 })
+  }
+  return out
 }

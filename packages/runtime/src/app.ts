@@ -1,7 +1,8 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditRow, type Initiator } from "@newhorse/core"
 import { join } from "node:path"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry } from "@newhorse/plugin"
+import { createButlerTools } from "./butler"
 
 /**
  * Runtime assembly. This is the domain wiring shared by every transport
@@ -23,6 +24,8 @@ export interface AppConfig {
   readonly dataDir?: string
   /** Injectable fetch for tests; defaults to globalThis.fetch. */
   readonly fetch?: Fetcher
+  /** Enable the butler toolset (list/send/spawn/interrupt) for this session. */
+  readonly asButler?: boolean
 }
 
 /** A live session event a shell may observe (streamed model output, etc.). */
@@ -39,6 +42,8 @@ export interface App {
   readonly resume: () => Promise<Session>
   /** Query the session registry (observational control surface). */
   readonly listSessions: (query?: RegistryQuery) => Promise<SessionRow[]>
+  /** Fold butler audit actions into a readable list. */
+  readonly audit: (actorSessionId?: string) => Promise<AuditRow[]>
   /** Interrupt the running session (single-process cancel). */
   readonly interrupt: () => void
 }
@@ -64,9 +69,26 @@ export async function createApp(config: AppConfig): Promise<App> {
     await events.append(sessionId, "Session.Created", { id: sessionId, location: config.workspace ?? "", createdAt: Date.now() })
   }
 
+  const registry = new SessionRegistry(events)
   const tools: Tool[] = config.tools ? [...config.tools] : config.plugins?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute })) ?? []
-  const toolMap = new Map(tools.map((t) => [t.name, t]))
 
+  // Butler toolset (M2b): a signed set of privileged tools whose execute reads
+  // ctx.caller + ctx.registry to authorize and audit each action.
+  const appendAudit = async (entry: { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }): Promise<void> => {
+    await events.append(`audit:${config.sessionId ?? "butler"}`, "Session.ButlerAction", {
+      sessionId: config.sessionId ?? "butler",
+      actorKind: entry.actorKind,
+      actorId: entry.actorId,
+      op: entry.op,
+      targetSessionId: entry.targetSessionId,
+      outcome: entry.outcome,
+      reason: entry.reason,
+      ts: Date.now(),
+    })
+  }
+  if (config.asButler) tools.push(...createButlerTools({ registry, appendAudit }))
+
+  const toolMap = new Map(tools.map((t) => [t.name, t]))
   const agent: Agent = { id: "primary", model: config.model, tools }
 
   // Live event fan-out. The prompt run emits streamed model/tool events through
@@ -90,7 +112,6 @@ export async function createApp(config: AppConfig): Promise<App> {
     }
   }
 
-  const registry = new SessionRegistry(events)
   let current: AbortController | undefined
 
   const app: App = {
@@ -118,6 +139,7 @@ export async function createApp(config: AppConfig): Promise<App> {
       // run and a later prompt is unaffected (an AbortSignal cannot be reset).
       const ctrl = new AbortController()
       current = ctrl
+      const caller: Initiator = config.asButler ? { kind: "butler", sessionId } : { kind: "parent", sessionId }
       try {
         const result = await runSession(runtime, {
           agent,
@@ -125,6 +147,8 @@ export async function createApp(config: AppConfig): Promise<App> {
           resolveTool: (name) => toolMap.get(name),
           onEvent: emit,
           signal: ctrl.signal,
+          caller,
+          toolCtx: { registry, appendAudit },
         })
         return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
       } finally {
@@ -137,6 +161,9 @@ export async function createApp(config: AppConfig): Promise<App> {
     async listSessions(query) {
       await registry.refresh()
       return registry.list(query)
+    },
+    async audit(actorSessionId) {
+      return registry.audit(actorSessionId)
     },
     interrupt() {
       current?.abort()

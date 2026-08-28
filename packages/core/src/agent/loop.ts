@@ -1,5 +1,5 @@
 import type { LLMEvent, LLMRequest, SessionMessage, ContentPart, ToolCallPart } from "@newhorse/schema"
-import type { TurnRuntime, Agent, Tool, ToolCall, ToolResult } from "./runner"
+import type { TurnRuntime, Agent, Tool, ToolCall, ToolResult, ToolCtx, Initiator } from "./runner"
 import { Session } from "../session/session"
 import { toLlmMessages } from "../session/messages"
 
@@ -31,6 +31,10 @@ export interface RunOptions {
   readonly onEvent?: (event: LoopEvent) => void
   /** Optional cancellation: when aborted, the drain stops between steps. */
   readonly signal?: AbortSignal
+  /** Trusted caller injected into tool ctx (M2b). Defaults to parent of sessionId. */
+  readonly caller?: Initiator
+  /** Extra tool-ctx fields to merge (e.g. registry/appendAudit for butler tools). */
+  readonly toolCtx?: Omit<ToolCtx, "caller">
 }
 
 /**
@@ -197,7 +201,8 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
 
   if (toolCalls.length > 0) {
     // Run tools concurrently; archive results in call order so pairing is stable.
-    const settled = await Promise.allSettled(toolCalls.map((call) => invokeTool(opts.resolveTool, call)))
+    const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, ...opts.toolCtx }
+    const settled = await Promise.allSettled(toolCalls.map((call) => invokeTool(opts.resolveTool, call, ctx)))
     for (let i = 0; i < settled.length; i++) {
       const call = toolCalls[i]!
       const outcome = settled[i]!
@@ -232,10 +237,10 @@ function toSpec(tool: Tool) {
   return { name: tool.name, description: tool.description, inputSchema: tool.inputSchema }
 }
 
-async function invokeTool(resolveTool: (name: string) => Tool | undefined, call: ToolCallPart): Promise<unknown> {
+async function invokeTool(resolveTool: (name: string) => Tool | undefined, call: ToolCallPart, ctx: ToolCtx): Promise<unknown> {
   const tool = resolveTool(call.name)
   if (!tool) throw new Error(`unknown tool: ${call.name}`)
-  return tool.execute(call.input)
+  return tool.execute(call.input, ctx)
 }
 
 /**

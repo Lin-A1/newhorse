@@ -25,7 +25,26 @@ export interface Tool {
   readonly name: string
   readonly description?: string
   readonly inputSchema?: Record<string, unknown>
-  readonly execute: (input: unknown) => Promise<unknown>
+  readonly execute: (input: unknown, ctx?: ToolCtx) => Promise<unknown>
+}
+
+/**
+ * Trusted call context injected by the loop (M2b). The `caller` is derived by
+ * the runtime from the running session + admission principal, never from the
+ * model's tool input — so a tool sees who is really invoking it and cannot be
+ * forged by the LLM. Ordinary tools ignore `ctx`; butler tools read it.
+ */
+export type Initiator =
+  | { readonly kind: "user" }
+  | { readonly kind: "butler"; readonly sessionId: string }
+  | { readonly kind: "parent"; readonly sessionId: string }
+
+export interface ToolCtx {
+  readonly caller: Initiator
+  /** Optional registry a privileged/butler tool uses to resolve target + audit. */
+  readonly registry?: import("../session/registry").SessionRegistry
+  /** Append a butler audit action to the durable audit aggregate. */
+  readonly appendAudit?: (entry: { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }) => Promise<void>
 }
 
 export interface Agent {

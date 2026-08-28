@@ -17,8 +17,8 @@ import type { SessionMessage } from "./session"
 
 export type UnknownRecord = Record<string, unknown>
 
-/** Discriminates which aggregate owns an event (session, agent, task, ...). */
-export type AggregateType = "session"
+/** Discriminates which aggregate owns an event (session, audit, ...). */
+export type AggregateType = "session" | "audit"
 
 export interface StoredEvent<T = UnknownRecord> {
   readonly aggregate: AggregateType
@@ -47,6 +47,8 @@ export type SessionEvent =
   | SessionEventBase<"Session.ToolSettled", { readonly sessionId: string; readonly assistantMessageId: string; readonly callId: string; readonly name: string; readonly isError?: boolean }>
   | SessionEventBase<"Session.StepEnded", { readonly sessionId: string; readonly step: number; readonly finish: string }>
   | SessionEventBase<"Session.Interrupted", { readonly sessionId: string }>
+  | SessionEventBase<"Session.Spawned", { readonly sessionId: string; readonly parentId: string }>
+  | SessionEventBase<"Session.ButlerAction", { readonly sessionId: string; readonly actorKind: "user" | "butler" | "parent"; readonly actorId: string; readonly op: string; readonly targetSessionId?: string; readonly outcome: "allowed" | "denied"; readonly reason?: string; readonly ts: number }>
 
 /** Convenience: type guard narrowing one live event by its `type` tag. */
 export function isSessionEvent<E extends SessionEvent["type"]>(

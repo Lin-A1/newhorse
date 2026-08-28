@@ -1,0 +1,81 @@
+import { describe, expect, it } from "bun:test"
+import { MemoryEventStore, SessionRegistry } from "@newhorse/core"
+import { createButlerTools } from "./butler"
+import type { Initiator, ToolCtx } from "@newhorse/core"
+
+type AuditedEntry = { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }
+
+async function setup(butlerSession = "b1"): Promise<{ tools: ReturnType<typeof createButlerTools>; registry: SessionRegistry; audits: AuditedEntry[] }> {
+  const events = new MemoryEventStore()
+  const registry = new SessionRegistry(events)
+
+  // seed a session s1 owned by parent p1, so parent scoping is testable.
+  await events.append("s1", "Session.Created", { id: "s1", location: "/w", createdAt: 1 })
+  await events.append("s1", "Session.Spawned", { sessionId: "s1", parentId: "p1" })
+
+  const audits: AuditedEntry[] = []
+  const appendAudit = async (e: AuditedEntry) => {
+    audits.push(e)
+  }
+  const tools = createButlerTools({ registry, appendAudit })
+  void butlerSession
+  return { tools, registry, audits }
+}
+
+const butlerSession = "b1"
+
+function ctx(caller: Initiator): ToolCtx {
+  return { caller }
+}
+
+describe("butler authority", () => {
+  it("butler without user authorization cannot send_to_session (default deny)", async () => {
+    const { tools, audits } = await setup()
+    const send = tools.find((t) => t.name === "send_to_session")!
+    await expect(send.execute({ target: "s1", content: "hi" }, ctx({ kind: "butler", sessionId: butlerSession }))).rejects.toThrow(/denied|butler requires explicit user authorization/)
+    expect(audits.at(-1)?.outcome).toBe("denied")
+  })
+
+  it("parent can only send to its own direct child", async () => {
+    const { tools, audits } = await setup()
+    const send = tools.find((t) => t.name === "send_to_session")!
+    // p1 is s1's parent -> allowed.
+    await expect(send.execute({ target: "s1", content: "hi" }, ctx({ kind: "parent", sessionId: "p1" }))).resolves.toMatchObject({ sent: true, targetId: "s1" })
+    expect(audits.at(-1)?.outcome).toBe("allowed")
+  })
+
+  it("user has highest authority for send", async () => {
+    const { tools } = await setup()
+    const send = tools.find((t) => t.name === "send_to_session")!
+    await expect(send.execute({ target: "s1", content: "hi" }, ctx({ kind: "user" }))).resolves.toMatchObject({ sent: true })
+  })
+
+  it("a non-child parent is denied send (unknown target scoping)", async () => {
+    const { tools, audits } = await setup()
+    const send = tools.find((t) => t.name === "send_to_session")!
+    // p2 is NOT s1's parent -> denied.
+    await expect(send.execute({ target: "s1", content: "x" }, ctx({ kind: "parent", sessionId: "p2" }))).rejects.toThrow(/denied/)
+    expect(audits.at(-1)?.outcome).toBe("denied")
+  })
+
+  it("interrupt: butler wide, parent scoped to direct child", async () => {
+    const { tools, audits } = await setup()
+    const interrupt = tools.find((t) => t.name === "interrupt")!
+    // butler can interrupt any.
+    await expect(interrupt.execute({ target: "s1" }, ctx({ kind: "butler", sessionId: butlerSession }))).resolves.toMatchObject({ interrupted: true })
+    // parent p1 (s1's parent) may interrupt s1.
+    await expect(interrupt.execute({ target: "s1" }, ctx({ kind: "parent", sessionId: "p1" }))).resolves.toMatchObject({ interrupted: true })
+    // parent p2 (not s1's parent) denied.
+    await expect(interrupt.execute({ target: "s1" }, ctx({ kind: "parent", sessionId: "p2" }))).rejects.toThrow(/denied/)
+    expect(audits.filter((a) => a.op === "interrupt" && a.outcome === "denied").length).toBe(1)
+  })
+
+  it("audit records allowed and denied for send", async () => {
+    const { tools, audits } = await setup()
+    const send = tools.find((t) => t.name === "send_to_session")!
+    await send.execute({ target: "s1", content: "ok" }, ctx({ kind: "parent", sessionId: "p1" })).catch(() => {})
+    await send.execute({ target: "s1", content: "no" }, ctx({ kind: "butler", sessionId: butlerSession })).catch(() => {})
+    expect(audits.some((a) => a.outcome === "allowed")).toBe(true)
+    expect(audits.some((a) => a.outcome === "denied")).toBe(true)
+  })
+})

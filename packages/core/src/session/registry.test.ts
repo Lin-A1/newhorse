@@ -71,4 +71,23 @@ describe("session registry", () => {
     await registry.refresh()
     expect((await registry.get("s1"))?.status).toBe("interrupted")
   })
+
+  it("fold records parentId from Session.Spawned", async () => {
+    const events = new MemoryEventStore()
+    await events.append("s1", "Session.Created", { id: "s1", location: "/a", createdAt: 1 })
+    await events.append("s1", "Session.Spawned", { sessionId: "s1", parentId: "p1" })
+    const registry = new SessionRegistry(events)
+    expect((await registry.get("s1"))?.parentId).toBe("p1")
+  })
+
+  it("audit() folds butler actions from the audit aggregate", async () => {
+    const events = new MemoryEventStore()
+    await events.append("audit:b1", "Session.ButlerAction", { sessionId: "b1", actorKind: "butler", actorId: "b1", op: "send_to_session", targetSessionId: "s1", outcome: "denied", reason: "butler requires explicit user authorization", ts: 100 })
+    await events.append("audit:b1", "Session.ButlerAction", { sessionId: "b1", actorKind: "parent", actorId: "p1", op: "send_to_session", targetSessionId: "s1", outcome: "allowed", ts: 200 })
+    const registry = new SessionRegistry(events)
+    const rows = await registry.audit("b1")
+    expect(rows.length).toBe(2)
+    expect(rows[0]?.outcome).toBe("allowed") // newest first
+    expect(rows[1]?.reason).toContain("butler requires")
+  })
 })
