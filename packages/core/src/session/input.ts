@@ -31,6 +31,8 @@ export interface AdmitInput {
   readonly sessionId: string
   readonly prompt: string
   readonly delivery: Delivery
+  /** Who authored the prompt; drives the caller kind for butler tools (M2b). */
+  readonly principal?: "user" | "butler" | "parent"
 }
 
 export interface Admission {
@@ -38,6 +40,7 @@ export interface Admission {
   readonly sessionId: string
   readonly prompt: string
   readonly delivery: Delivery
+  readonly principal?: "user" | "butler" | "parent"
   readonly admittedSeq: number
 }
 
@@ -54,6 +57,7 @@ interface Row {
   sessionId: string
   prompt: string
   delivery: Delivery
+  principal?: "user" | "butler" | "parent"
   admittedSeq: number
   promotedSeq: number | null
 }
@@ -91,7 +95,7 @@ export class MemorySessionInput implements SessionInputStore {
     const existing = await this.#findDurable(input.id)
     if (existing) {
       if (existing.sessionId === input.sessionId && existing.prompt === input.prompt && existing.delivery === input.delivery) {
-        return { id: existing.id, sessionId: existing.sessionId, prompt: existing.prompt, delivery: existing.delivery, admittedSeq: existing.admittedSeq }
+        return { id: existing.id, sessionId: existing.sessionId, prompt: existing.prompt, delivery: existing.delivery, principal: existing.principal, admittedSeq: existing.admittedSeq }
       }
       throw new SessionInputError(`admission id "${input.id}" reused with differing session/prompt/delivery`)
     }
@@ -101,10 +105,11 @@ export class MemorySessionInput implements SessionInputStore {
       sessionId: input.sessionId,
       prompt: input.prompt,
       delivery: input.delivery,
+      principal: input.principal ?? "butler",
     })
     const admittedSeq = event.seq
-    this.#rows.set(input.id, { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, admittedSeq, promotedSeq: null })
-    return { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, admittedSeq }
+    this.#rows.set(input.id, { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, principal: input.principal ?? "butler", admittedSeq, promotedSeq: null })
+    return { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, principal: input.principal ?? "butler", admittedSeq }
   }
 
   async promoteSteers(sessionId: string, cutoff: number): Promise<number> {
@@ -112,7 +117,7 @@ export class MemorySessionInput implements SessionInputStore {
     let count = 0
     for (const row of rows) {
       row.promotedSeq = row.admittedSeq
-      await this.events.append(sessionId, "Session.Prompted", { id: row.id, sessionId: row.sessionId, prompt: row.prompt, delivery: row.delivery, promotedSeq: row.promotedSeq })
+      await this.events.append(sessionId, "Session.Prompted", { id: row.id, sessionId: row.sessionId, prompt: row.prompt, delivery: row.delivery, principal: row.principal ?? "butler", promotedSeq: row.promotedSeq })
       count++
     }
     return count
@@ -122,7 +127,7 @@ export class MemorySessionInput implements SessionInputStore {
     const next = [...this.#rows.values()].filter((r) => r.sessionId === sessionId && r.promotedSeq === null && r.delivery === "queue").sort((a, b) => a.admittedSeq - b.admittedSeq)[0]
     if (!next) return false
     next.promotedSeq = next.admittedSeq
-    await this.events.append(sessionId, "Session.Prompted", { id: next.id, sessionId: next.sessionId, prompt: next.prompt, delivery: next.delivery, promotedSeq: next.promotedSeq })
+    await this.events.append(sessionId, "Session.Prompted", { id: next.id, sessionId: next.sessionId, prompt: next.prompt, delivery: next.delivery, principal: next.principal ?? "butler", promotedSeq: next.promotedSeq })
     return true
   }
 
@@ -132,9 +137,9 @@ export class MemorySessionInput implements SessionInputStore {
 
   #apply(event: StoredEvent): void {
     if (event.type === "Session.PromptAdmitted") {
-      const data = event.data as { id?: string; sessionId?: string; prompt?: string; delivery?: Delivery }
+      const data = event.data as { id?: string; sessionId?: string; prompt?: string; delivery?: Delivery; principal?: "user" | "butler" | "parent" }
       if (!data.id || !data.sessionId || !data.prompt || !data.delivery) return
-      this.#rows.set(data.id, { id: data.id, sessionId: data.sessionId, prompt: data.prompt, delivery: data.delivery, admittedSeq: event.seq, promotedSeq: null })
+      this.#rows.set(data.id, { id: data.id, sessionId: data.sessionId, prompt: data.prompt, delivery: data.delivery, principal: data.principal ?? "butler", admittedSeq: event.seq, promotedSeq: null })
     } else if (event.type === "Session.Prompted") {
       const data = event.data as { id?: string; delivery?: Delivery }
       const row = data.id ? this.#rows.get(data.id) : undefined

@@ -32,15 +32,17 @@ async function guarded(
   ctx: ToolCtx,
   op: string,
   targetId: string | undefined,
+  needsTarget: boolean,
   authorize: (caller: Initiator, target?: SessionRow) => Decision,
   run: () => Promise<unknown>,
 ): Promise<unknown> {
-  const actorId = ctx.caller.kind === "user" ? "user" : ctx.caller.sessionId
+  const actorId = ctx.sessionId ?? (ctx.caller.kind === "user" ? "user" : ctx.caller.sessionId)
 
   let target: SessionRow | undefined
   if (targetId) target = await deps.registry.get(targetId)
 
-  const decision = targetId && !target ? { allowed: false, reason: "unknown target" } : authorize(ctx.caller, target)
+  // needsTarget tools: a missing/unknown target is denied before authorize.
+  const decision = needsTarget && !target ? { allowed: false, reason: "unknown target" } : authorize(ctx.caller, target)
   await deps.appendAudit({ actorKind: ctx.caller.kind, actorId, op, targetSessionId: targetId, outcome: decision.allowed ? "allowed" : "denied", reason: decision.reason })
   if (!decision.allowed) throw new Error(`denied: ${decision.reason ?? "unknown target"}`)
   return run()
@@ -68,11 +70,14 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
       execute: async (input: unknown, ctx?: ToolCtx) => {
         const c = requireCtx(ctx)
         const targetId = (input as { target?: string }).target
-        return guarded(deps, c, "interrupt", targetId, (caller, target) => {
+        return guarded(deps, c, "interrupt", targetId, true, (caller, target) => {
           if (caller.kind === "user") return { allowed: true }
           if (caller.kind === "butler") return { allowed: true }
           return target && target.parentId === caller.sessionId ? { allowed: true } : { allowed: false, reason: "only your direct child session" }
-        }, async () => ({ interrupted: true, targetId }))
+        }, async () => {
+          await c.interruptTarget?.(targetId!)
+          return { interrupted: true, targetId }
+        })
       },
     },
     {
@@ -82,7 +87,8 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
         const c = requireCtx(ctx)
         const model = (input as { model?: string }).model
         const parentId = c.caller.kind === "user" ? "user" : c.caller.sessionId
-        return { spawned: true, model, parentId }
+        const child = await c.spawnFrom?.(parentId, model)
+        return { spawned: true, model, parentId, childSessionId: child }
       },
     },
     {
@@ -92,11 +98,14 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
         const c = requireCtx(ctx)
         const targetId = (input as { target?: string }).target
         const content = (input as { content?: string }).content
-        return guarded(deps, c, "send_to_session", targetId, (caller, target) => {
+        return guarded(deps, c, "send_to_session", targetId, true, (caller, target) => {
           if (caller.kind === "user") return { allowed: true }
           if (caller.kind === "parent") return target && target.parentId === caller.sessionId ? { allowed: true } : { allowed: false, reason: "only your direct child session" }
           return { allowed: false, reason: "butler requires explicit user authorization" }
-        }, async () => ({ sent: true, targetId, content }))
+        }, async () => {
+          await c.sendToTarget?.(targetId!, content ?? "")
+          return { sent: true, targetId, content }
+        })
       },
     },
   ]

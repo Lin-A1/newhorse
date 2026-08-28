@@ -41,10 +41,16 @@ export type Initiator =
 
 export interface ToolCtx {
   readonly caller: Initiator
+  /** The executing session id (the butler that is running). */
+  readonly sessionId?: string
   /** Optional registry a privileged/butler tool uses to resolve target + audit. */
   readonly registry?: import("../session/registry").SessionRegistry
   /** Append a butler audit action to the durable audit aggregate. */
   readonly appendAudit?: (entry: { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }) => Promise<void>
+  /** Effects injected by the session hub for the butler's privileged tools. */
+  readonly interruptTarget?: (sessionId: string) => Promise<void>
+  readonly sendToTarget?: (sessionId: string, content: string) => Promise<void>
+  readonly spawnFrom?: (parentId: string, model?: string) => Promise<string>
 }
 
 export interface Agent {

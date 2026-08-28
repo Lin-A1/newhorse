@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test"
 import { MemoryEventStore, SessionRegistry } from "@newhorse/core"
 import { createButlerTools } from "./butler"
+import { createApp } from "./app"
 import type { Initiator, ToolCtx } from "@newhorse/core"
+import type { Fetcher } from "@newhorse/llm"
 
 type AuditedEntry = { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }
 
@@ -77,5 +79,39 @@ describe("butler authority", () => {
     await send.execute({ target: "s1", content: "no" }, ctx({ kind: "butler", sessionId: butlerSession })).catch(() => {})
     expect(audits.some((a) => a.outcome === "allowed")).toBe(true)
     expect(audits.some((a) => a.outcome === "denied")).toBe(true)
+  })
+
+  it("A2: app.prompt(principal) derives the caller kind and gates butler send", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises")
+    const { tmpdir } = await import("node:os")
+    const { join } = await import("node:path")
+    const d = await mkdtemp(join(tmpdir(), "nh-b-"))
+    const sse = (payload: string): Response => new Response(payload, { status: 200, headers: { "content-type": "text/event-stream" } })
+
+    try {
+      // Seed a bare target session in the shared store so the butler resolves it.
+      const seedApp = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", sessionId: "s1", dataDir: d, fetch: (async () => sse("data: [DONE]\n\n")) as unknown as Fetcher })
+      await seedApp.resume()
+
+      // LLM stub returns a send_to_session tool call.
+      const toolPayload = [
+        'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c", function: { name: "send_to_session", arguments: JSON.stringify({ target: "s1", content: "hi" }) } }] }, finish_reason: "tool_calls" }] }) + "\n\n",
+        "data: [DONE]\n\n",
+      ].join("")
+      const fetch: Fetcher = async () => sse(toolPayload)
+      const butler = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", sessionId: "butler", asButler: true, dataDir: d, fetch: fetch as never })
+
+      // default (butler) principal -> send denied; should not crash.
+      await butler.prompt("tell s1 hi")
+      const audits = await butler.audit("butler")
+      expect(audits.some((a) => a.op === "send_to_session" && a.outcome === "denied")).toBe(true)
+
+      // user principal -> caller.kind user -> send allowed.
+      await butler.prompt("tell s1 hi", "user")
+      const audits2 = await butler.audit("butler")
+      expect(audits2.some((a) => a.op === "send_to_session" && a.outcome === "allowed")).toBe(true)
+    } finally {
+      await rm(d, { recursive: true, force: true }).catch(() => {})
+    }
   })
 })

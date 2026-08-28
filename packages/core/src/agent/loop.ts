@@ -201,7 +201,7 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
 
   if (toolCalls.length > 0) {
     // Run tools concurrently; archive results in call order so pairing is stable.
-    const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, ...opts.toolCtx }
+    const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, sessionId: opts.sessionId, ...opts.toolCtx }
     const settled = await Promise.allSettled(toolCalls.map((call) => invokeTool(opts.resolveTool, call, ctx)))
     for (let i = 0; i < settled.length; i++) {
       const call = toolCalls[i]!

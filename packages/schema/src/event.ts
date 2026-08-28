@@ -30,6 +30,9 @@ export interface StoredEvent<T = UnknownRecord> {
 
 export type Delivery = "steer" | "queue"
 
+/** Who authored a prompt: a human (user), the butler, or a spawned agent. */
+export type Principal = "user" | "butler" | "parent"
+
 /**
  * Live subscription event. The union is open-ended and grows with features;
  * treat it as a namespace of string-tagged payloads, not an exhaustive set.
@@ -41,8 +44,8 @@ export interface SessionEventBase<T extends string, P extends UnknownRecord> {
 
 export type SessionEvent =
   | SessionEventBase<"Session.Created", { readonly id: string; readonly location: string; readonly createdAt: number }>
-  | SessionEventBase<"Session.PromptAdmitted", { readonly id: string; readonly sessionId: string; readonly prompt: string; readonly delivery: Delivery; readonly admittedSeq: number }>
-  | SessionEventBase<"Session.Prompted", { readonly id: string; readonly sessionId: string; readonly prompt: string; readonly delivery: Delivery; readonly promotedSeq: number }>
+  | SessionEventBase<"Session.PromptAdmitted", { readonly id: string; readonly sessionId: string; readonly prompt: string; readonly delivery: Delivery; readonly principal: Principal; readonly admittedSeq: number }>
+  | SessionEventBase<"Session.Prompted", { readonly id: string; readonly sessionId: string; readonly prompt: string; readonly delivery: Delivery; readonly principal: Principal; readonly promotedSeq: number }>
   | SessionEventBase<"Session.MessageAppended", { readonly sessionId: string; readonly message: SessionMessage }>
   | SessionEventBase<"Session.ToolSettled", { readonly sessionId: string; readonly assistantMessageId: string; readonly callId: string; readonly name: string; readonly isError?: boolean }>
   | SessionEventBase<"Session.StepEnded", { readonly sessionId: string; readonly step: number; readonly finish: string }>

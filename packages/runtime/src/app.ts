@@ -3,6 +3,7 @@ import { join } from "node:path"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry } from "@newhorse/plugin"
 import { createButlerTools } from "./butler"
+import { createSessionHub } from "./hub"
 
 /**
  * Runtime assembly. This is the domain wiring shared by every transport
@@ -36,8 +37,12 @@ export interface App {
   readonly events: EventStore
   /** Subscribe to live session events; returns an unsubscribe function. */
   readonly onEvent: (listener: (event: AppEvent) => void) => () => void
-  /** Run one prompt through admission → turn → settlement. */
-  readonly prompt: (text: string) => Promise<PromptResult>
+  /**
+   * Run one prompt through admission → turn → settlement.
+   * `principal` marks who authored the prompt (user from a human TTY, else
+   * butler/parent); it drives the caller kind for butler tools (M2b).
+   */
+  readonly prompt: (text: string, principal?: "user" | "butler" | "parent") => Promise<PromptResult>
   /** Reconstruct the current session projection from the log. */
   readonly resume: () => Promise<Session>
   /** Query the session registry (observational control surface). */
@@ -75,8 +80,8 @@ export async function createApp(config: AppConfig): Promise<App> {
   // Butler toolset (M2b): a signed set of privileged tools whose execute reads
   // ctx.caller + ctx.registry to authorize and audit each action.
   const appendAudit = async (entry: { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }): Promise<void> => {
-    await events.append(`audit:${config.sessionId ?? "butler"}`, "Session.ButlerAction", {
-      sessionId: config.sessionId ?? "butler",
+    await events.append(`audit:${sessionId}`, "Session.ButlerAction", {
+      sessionId,
       actorKind: entry.actorKind,
       actorId: entry.actorId,
       op: entry.op,
@@ -87,6 +92,7 @@ export async function createApp(config: AppConfig): Promise<App> {
     })
   }
   if (config.asButler) tools.push(...createButlerTools({ registry, appendAudit }))
+  const hub = config.asButler ? createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" })) : undefined
 
   const toolMap = new Map(tools.map((t) => [t.name, t]))
   const agent: Agent = { id: "primary", model: config.model, tools }
@@ -118,7 +124,7 @@ export async function createApp(config: AppConfig): Promise<App> {
     sessionId,
     events,
     onEvent,
-    async prompt(text: string): Promise<PromptResult> {
+    async prompt(text: string, principal?: "user" | "butler" | "parent"): Promise<PromptResult> {
       // Ambient workspace AGENTS.md is a Context Source: discovered from the
       // session location and admitted as model-visible context BEFORE the prompt,
       // per the "model-visible ⟺ logged" rule. It is appended only once: once a
@@ -133,13 +139,14 @@ export async function createApp(config: AppConfig): Promise<App> {
           await events.append(sessionId, systemMessage.type, systemMessage.data as Record<string, unknown>)
         }
       }
-      await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer" })
+      const effPrincipal = principal ?? (config.asButler ? "butler" : "parent")
+      await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: effPrincipal })
 
       // A fresh abort controller per prompt, so interrupt() cancels only this
       // run and a later prompt is unaffected (an AbortSignal cannot be reset).
       const ctrl = new AbortController()
       current = ctrl
-      const caller: Initiator = config.asButler ? { kind: "butler", sessionId } : { kind: "parent", sessionId }
+      const caller: Initiator = effPrincipal === "user" ? { kind: "user" } : config.asButler ? { kind: "butler", sessionId } : { kind: "parent", sessionId }
       try {
         const result = await runSession(runtime, {
           agent,
@@ -148,7 +155,7 @@ export async function createApp(config: AppConfig): Promise<App> {
           onEvent: emit,
           signal: ctrl.signal,
           caller,
-          toolCtx: { registry, appendAudit },
+          toolCtx: hub ? { registry, appendAudit, interruptTarget: hub.interrupt, sendToTarget: hub.send, spawnFrom: hub.spawn } : { registry, appendAudit },
         })
         return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
       } finally {
