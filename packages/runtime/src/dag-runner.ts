@@ -16,20 +16,20 @@ import { runSession, type Agent, type EventStore, type MemorySessionInput, type 
  * graph is an execution spec, ready-queue + event wakeup, no join blocking.
  */
 export interface SlotStore {
-  readonly set: (dagId: string, nodeId: string, slotId: string, outputRef: string) => void
-  readonly get: (dagId: string, slotId: string) => { nodeId: string; outputRef: string; status: "succeeded" } | undefined
+  readonly set: (dagId: string, nodeId: string, slotId: string, value: { output: string; outputRef: string }) => void
+  readonly get: (dagId: string, slotId: string) => { nodeId: string; output: string; outputRef: string; status: "succeeded" } | undefined
 }
 
 export function createSlotStore(): SlotStore {
-  const slots = new Map<string, Map<string, { nodeId: string; outputRef: string; status: "succeeded" }>>()
+  const slots = new Map<string, Map<string, { nodeId: string; output: string; outputRef: string; status: "succeeded" }>>()
   return {
-    set(dagId, nodeId, slotId, outputRef) {
+    set(dagId, nodeId, slotId, value) {
       let s = slots.get(dagId)
       if (!s) {
         s = new Map()
         slots.set(dagId, s)
       }
-      s.set(slotId, { nodeId, outputRef, status: "succeeded" })
+      s.set(slotId, { nodeId, output: value.output, outputRef: value.outputRef, status: "succeeded" })
     },
     get(dagId, slotId) {
       return slots.get(dagId)?.get(slotId)
@@ -152,8 +152,11 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       }
 
       const slotId = node.produces ?? node.id
+      // Capture the node's actual assistant output (not just the session ref), so
+      // a downstream `consumes` can see real content, not an opaque session id.
+      const output = await readAssistantText(deps.events, childSessionId)
       const outputRef = `session:${childSessionId}`
-      slotStore.set(dagId, id, slotId, outputRef)
+      slotStore.set(dagId, id, slotId, { output, outputRef })
       await emit("DAG.NodeResolved", { nodeId: id, slotId, sessionId: childSessionId, outputRef })
     } catch (e) {
       // An aborted control flow surfaces as a cancellation (NodeAborted), not a
@@ -237,7 +240,9 @@ function buildInput(node: DAGNode, slotStore: SlotStore, dagId: string): string 
   for (const slotId of node.consumes ?? []) {
     const slot = slotStore.get(dagId, slotId)
     if (!slot) throw new DAGError(`node ${node.id} consumes missing slot "${slotId}"`)
-    input += `\n<slot:${slotId}>${slot.outputRef}</slot:${slotId}>`
+    // Splice the upstream node's actual output (not an opaque session ref) so the
+    // downstream model sees real content.
+    input += `\n<slot:${slotId}>${slot.output}</slot:${slotId}>`
   }
   return input
 }
@@ -247,6 +252,21 @@ function isCancelledSignal(e: unknown): boolean {
   const err = e as { name?: string; code?: number } | null
   if (!err) return false
   return err.name === "AbortError" || err.name === "SessionCancelled" || (typeof err.code === "number" && err.code === 20)
+}
+
+/** Read a subagent session's assistant text output (its settled answer). */
+async function readAssistantText(events: EventStore, sessionId: string): Promise<string> {
+  const stored = await events.read(sessionId)
+  const parts: string[] = []
+  for (const e of stored) {
+    if (e.type !== "Session.MessageAppended") continue
+    const m = (e.data as { message?: { kind?: string; content?: unknown[] } }).message
+    if (m?.kind !== "assistant") continue
+    for (const p of (m.content ?? []) as { type?: string; text?: string }[]) {
+      if (p.type === "text" && p.text) parts.push(p.text)
+    }
+  }
+  return parts.join("\n")
 }
 
 /**

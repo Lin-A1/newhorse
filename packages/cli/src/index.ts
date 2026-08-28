@@ -24,7 +24,8 @@ export async function main(argv: string[]): Promise<void> {
     return
   }
 
-  // Render streamed model output live, then print the finalized history.
+  // Render streamed model output live; then only print user prompts from history
+  // (assistant text was already streamed — avoid double-printing it).
   app.onEvent((event) => {
     if (event.type === "text") process.stdout.write(event.text)
     else if (event.type === "reasoning") process.stdout.write(`\u001b[2m${event.text}\u001b[0m`)
@@ -32,8 +33,9 @@ export async function main(argv: string[]): Promise<void> {
   })
   await app.prompt(promptText, "user")
   const history = await app.resume()
+  console.log()
   for (const message of history.messages) {
-    printMessage(message)
+    if (message.kind === "user") printMessage(message)
   }
 }
 

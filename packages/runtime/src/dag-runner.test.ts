@@ -177,9 +177,10 @@ describe("dag runner", () => {
 })
 
 describe("slot store", () => {
-  it("stores and reads a node result by dagId+slotId", () => {
+  it("stores and reads a node result by dagId+slotId (with real output)", () => {
     const s = createSlotStore()
-    s.set("g1", "A", "A", "session:1")
+    s.set("g1", "A", "A", { output: "hello", outputRef: "session:1" })
+    expect(s.get("g1", "A")?.output).toBe("hello")
     expect(s.get("g1", "A")?.outputRef).toBe("session:1")
     expect(s.get("g1", "B")).toBeUndefined()
   })
