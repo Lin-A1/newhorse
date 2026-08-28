@@ -136,6 +136,24 @@ describe("anthropic protocol", () => {
     expect(content[0]!.tool_use_id).toBe("c1")
     expect(content[1]!.tool_use_id).toBe("c2")
   })
+
+  it("merges usage from message_start (input/cache) with message_delta (output)", () => {
+    // Real Anthropic placement: input/cache in message_start, output in message_delta.
+    let state = anthropicProtocol.init() as unknown
+    let r = anthropicProtocol.step(state, { type: "message_start", message: { usage: { input_tokens: 100, cache_read_input_tokens: 40, cache_creation_input_tokens: 12 } } })
+    expect(r.events).toEqual([])
+    state = r.state
+    r = anthropicProtocol.step(state, { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 7 } })
+    const finish = r.events.find((e) => e.type === "step-finish")
+    expect(finish).toMatchObject({ finish: "stop", usage: { inputTokens: 100, outputTokens: 7, cacheReadTokens: 40, cacheWriteTokens: 12 } })
+  })
+
+  it("still reads usage when the gateway puts everything in message_delta (MiniMax shape)", () => {
+    const state = anthropicProtocol.init() as unknown
+    const r = anthropicProtocol.step(state, { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 5, output_tokens: 3, cache_read_input_tokens: 2 } })
+    const finish = r.events.find((e) => e.type === "step-finish")
+    expect(finish).toMatchObject({ usage: { inputTokens: 5, outputTokens: 3, cacheReadTokens: 2 } })
+  })
 })
 
 describe("openai responses protocol", () => {

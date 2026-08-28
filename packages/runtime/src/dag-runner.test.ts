@@ -174,6 +174,33 @@ describe("dag runner", () => {
     // A was running at death -> reconciled to aborted, never left 'running'.
     expect(outcome.status["A"]).toBe("aborted")
   })
+
+  it("failure path: retries then fails, cascades downstream skip, replay rebuilds it", async () => {
+    // B's stream always throws a non-cancellation error; C succeeds; D (depends
+    // on B) must cascade-skip, and the durable log must rebuild all of it.
+    const failingLlm: TurnRuntime["llm"] = {
+      id: "t",
+      stream: async (req) => {
+        const text = (req.messages.find((m) => m.role === "user")?.content[0] as { text?: string } | undefined)?.text ?? ""
+        if (text.startsWith("fromB")) throw new Error("provider exploded")
+        return eventsOf([{ type: "text.delta", text: "ok" }, { type: "step-finish", finish: "stop" }])
+      },
+    }
+    const deps = makeDeps(failingLlm, [], 2)
+    const outcome = await runDag(diamond, deps)
+
+    // B retried maxRetries times then failed.
+    expect(outcome.status["B"]).toBe("failed")
+    // C succeeded; D cascade-skipped (never dispatched with missing slot).
+    expect(outcome.status["C"]).toBe("succeeded")
+    expect(outcome.status["D"]).toBe("skipped")
+
+    // Replay rebuilds the whole picture from the durable log.
+    const replayed = await replayDag(deps.events, outcome.dagId)
+    expect(replayed.status["B"]).toBe("failed")
+    expect(replayed.status["D"]).toBe("skipped")
+    expect(replayed.status["C"]).toBe("succeeded")
+  })
 })
 
 describe("slot store", () => {

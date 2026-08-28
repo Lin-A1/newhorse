@@ -204,7 +204,7 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
   if (toolCalls.length > 0) {
     // Run tools concurrently; archive results in call order so pairing is stable.
     const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, sessionId: opts.sessionId, ...opts.toolCtx }
-    const settled = await Promise.allSettled(toolCalls.map((call) => invokeTool(opts.resolveTool, call, ctx)))
+    const settled = await Promise.allSettled(toolCalls.map((call) => invokeTool(opts.resolveTool, call, ctx, opts.signal)))
     for (let i = 0; i < settled.length; i++) {
       const call = toolCalls[i]!
       const outcome = settled[i]!
@@ -239,10 +239,24 @@ function toSpec(tool: Tool) {
   return { name: tool.name, description: tool.description, inputSchema: tool.inputSchema }
 }
 
-async function invokeTool(resolveTool: (name: string) => Tool | undefined, call: ToolCallPart, ctx: ToolCtx): Promise<unknown> {
+/** Race a tool's execution against an abort signal so a long-running tool can
+ * be cancelled mid-execution (previously tools ran to completion regardless). */
+async function invokeTool(resolveTool: (name: string) => Tool | undefined, call: ToolCallPart, ctx: ToolCtx, signal?: AbortSignal): Promise<unknown> {
   const tool = resolveTool(call.name)
   if (!tool) throw new Error(`unknown tool: ${call.name}`)
-  return tool.execute(call.input, ctx)
+  const exec = tool.execute(call.input, ctx)
+  if (!signal) return exec
+
+  const abort = new Promise<never>((_, reject) => {
+    const onAbort = () => {
+      const err = new Error("tool execution aborted") as Error & { name: string }
+      err.name = "AbortError"
+      reject(err)
+    }
+    if (signal.aborted) onAbort()
+    else signal.addEventListener("abort", onAbort, { once: true })
+  })
+  return Promise.race([exec, abort])
 }
 
 /**

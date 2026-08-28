@@ -81,13 +81,21 @@ export const anthropicProtocol: Protocol = {
   init(): State {
     return { currentToolId: "", currentToolName: "", currentInput: "", inThinking: false, thinkingText: "" }
   },
-
   step(state: unknown, message: unknown): { state: State; events: LLMEvent[] } {
     const s = state as State
     const ev = message as AnthropicEvent
     const events: LLMEvent[] = []
 
     switch (ev.type) {
+      case "message_start": {
+        // The real Anthropic API reports input/cache tokens here (message_delta
+        // only carries output tokens). Accumulate so both placements work.
+        const u = ev.message?.usage
+        if (u) {
+          s.usage = { inputTokens: u.input_tokens, cacheReadTokens: u.cache_read_input_tokens, cacheWriteTokens: u.cache_creation_input_tokens }
+        }
+        break
+      }
       case "content_block_start":
         if (ev.content_block?.type === "thinking") {
           s.inThinking = true
@@ -145,10 +153,18 @@ export const anthropicProtocol: Protocol = {
         }
         if (semantic) {
           const usage = ev.usage ?? ev.message?.usage
+          // Merge: message_start carried input/cache tokens; delta carries output.
+          const merged = {
+            inputTokens: usage?.input_tokens ?? s.usage?.inputTokens,
+            outputTokens: usage?.output_tokens ?? s.usage?.outputTokens,
+            cacheReadTokens: usage?.cache_read_input_tokens ?? s.usage?.cacheReadTokens,
+            cacheWriteTokens: usage?.cache_creation_input_tokens ?? s.usage?.cacheWriteTokens,
+          }
+          const hasAny = merged.inputTokens !== undefined || merged.outputTokens !== undefined || merged.cacheReadTokens !== undefined || merged.cacheWriteTokens !== undefined
           events.push({
             type: "step-finish",
             finish: semantic,
-            ...(usage ? { usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, cacheReadTokens: usage.cache_read_input_tokens, cacheWriteTokens: usage.cache_creation_input_tokens } } : {}),
+            ...(hasAny ? { usage: merged } : {}),
           })
         }
         break
@@ -182,6 +198,8 @@ interface State {
   inThinking: boolean
   thinkingText: string
   thinkingSignature?: string
+  /** Usage accumulated across message_start (input/cache) + message_delta (output). */
+  usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number }
 }
 
 function mapToolChoice(toolChoice: LLMRequest["toolChoice"]): unknown {

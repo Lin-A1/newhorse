@@ -51,6 +51,9 @@ export interface App {
   readonly audit: (actorSessionId?: string) => Promise<AuditRow[]>
   /** Interrupt the running session (single-process cancel). */
   readonly interrupt: () => void
+  /** Steer the running drain: admit a prompt that is promoted at the next safe
+   * boundary of the in-flight run (no-op if the session is idle). */
+  readonly steer: (text: string) => Promise<void>
 }
 
 /** Structured outcome of a prompt run (a shell renders this, not a string). */
@@ -174,6 +177,11 @@ export async function createApp(config: AppConfig): Promise<App> {
     },
     interrupt() {
       current?.abort()
+    },
+    async steer(text) {
+      // Admitted as a steer: the running drain promotes it at the next safe
+      // provider-turn boundary (admission inbox semantics, see specs §2.2).
+      await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: "user" })
     },
   }
 

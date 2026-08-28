@@ -213,4 +213,36 @@ describe("runtime app", () => {
     const rows = await app.listSessions()
     expect(rows.some((r) => r.sessionId === "fixed")).toBe(true)
   })
+
+  it("steer() mid-run lands in the same session and is promoted by the drain", async () => {
+    // First stream chunk holds the drain open; steer mid-run; both prompts end
+    // up in the same session and the drain promotes the steer (two user turns).
+    let call = 0
+    const fetch: Fetcher = async () => {
+      call += 1
+      if (call === 1) {
+        return new Response(new ReadableStream({
+          start(controller) {
+            const enc = new TextEncoder()
+            controller.enqueue(enc.encode('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "wait", arguments: "{}" } }] }, finish_reason: "tool_calls" }] }) + "\n\n"))
+            // keep stream open briefly so the steer lands mid-drain
+            setTimeout(() => controller.enqueue(enc.encode("data: [DONE]\n\n")), 120)
+          },
+        }), { status: 200, headers: { "content-type": "text/event-stream" } })
+      }
+      return sse(['data: ' + JSON.stringify({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join(""))
+    }
+    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", tools: [{ name: "wait", execute: async () => ({ waited: true }) }], fetch: fetch as never })
+
+    const run = app.prompt("start long task", "user")
+    await Bun.sleep(30)
+    await app.steer("also do this extra thing")
+    await run
+
+    const history = await app.resume()
+    const userTexts = history.messages.filter((m) => m.kind === "user").map((m) => (m as { text: string }).text)
+    // Both the original prompt and the mid-run steer are in the same session.
+    expect(userTexts).toContain("start long task")
+    expect(userTexts).toContain("also do this extra thing")
+  })
 })

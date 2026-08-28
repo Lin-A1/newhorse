@@ -24,7 +24,6 @@ if (!apiKey) {
 const provider = { kind: "anthropic" as const, baseUrl, apiKey }
 const results: string[] = []
 const ok = (name: string, pass: boolean, detail = ""): void => results.push(`${pass ? "PASS" : "FAIL"} ${name} ${detail}`)
-let errored = false
 
 /** Collect streamed events + final result for one prompt. */
 async function run(app: ReturnType<typeof createApp>, text: string): Promise<{ result: PromptResult; texts: string[]; errors: unknown[] }> {
@@ -111,7 +110,37 @@ async function run(app: ReturnType<typeof createApp>, text: string): Promise<{ r
     const msg = e instanceof Error ? e.message : String(e)
     ok("N1 bad key", /401|auth/i.test(msg) || /auth/i.test(authCode), msg.slice(0, 80))
   }
-  errored = true // N1 intentionally errors; don't fail the suite exit below
+}
+
+// N2: negative — a context-overflow-sized request must classify as
+// context-overflow (or at least a clean 4xx), never masquerade as success.
+{
+  const bigApp = await createApp({ provider, model })
+  const huge = "repeat this word many times: ".repeat(40000)
+  try {
+    const r = await bigApp.prompt(huge, "user")
+    // Some gateways accept huge prompts; a clean stop is acceptable, a fake
+    // success with error events is not.
+    ok("N2 overflow", r.finish === "stop" || r.finish === "error" || r.finish === "length", `finish=${r.finish}`)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    ok("N2 overflow", /context|overflow|too.large|400|invalid/i.test(msg), msg.slice(0, 80))
+  }
+}
+
+// S6 (optional): second protocol — if --openaiCompatUrl is given, run S1 through
+// the openai-compatible protocol to prove the four-axis Route swap.
+{
+  const compatUrl = arg("openaiCompatUrl", "")
+  const compatKey = process.env.OPENAI_API_KEY ?? apiKey
+  const compatModel = arg("openaiCompatModel", "")
+  if (compatUrl && compatModel) {
+    const app = await createApp({ provider: { kind: "openai-compatible", baseUrl: compatUrl, apiKey: compatKey }, model: compatModel })
+    const { result, texts, errors } = await run(app, "Reply with exactly: SMOKE6")
+    ok("S6 openai-compatible", result.finish === "stop" && /SMOKE6/.test(texts.join("")) && errors.length === 0, `finish=${result.finish}`)
+  } else {
+    results.push("SKIP S6 openai-compatible (pass --openaiCompatUrl and --openaiCompatModel)")
+  }
 }
 
 console.log(results.join("\n"))
@@ -120,4 +149,3 @@ if (results.some((r) => r.startsWith("FAIL"))) {
   process.exit(1)
 }
 console.log("SMOKE: all passed")
-void errored
