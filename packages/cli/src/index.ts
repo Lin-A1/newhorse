@@ -1,6 +1,7 @@
 import { createApp } from "@newhorse/runtime"
 import type { AdapterConfig } from "@newhorse/llm"
-import type { SessionMessage } from "@newhorse/schema"
+import type { SessionMessage, ApprovalRequest } from "@newhorse/schema"
+import { createInterface } from "node:readline"
 
 /**
  * CLI entrypoint. Reads a single prompt from argv or stdin, runs one session,
@@ -16,6 +17,13 @@ export async function main(argv: string[]): Promise<void> {
     model: args.model ?? "gpt-4o-mini",
     workspace: process.cwd(),
     asButler: args.butler ? true : false,
+    // M4 execpolicy: the transport owns the interactive approve gate. A prompt-
+    // level tool decision (command/path) is surfaced to the user as a y/n
+    // question; declining (or a non-TTY) fails closed to deny.
+    onApprove: async (req: ApprovalRequest): Promise<boolean> => {
+      const label = req.kind === "command" ? "command" : "path write"
+      return askUser(`\u001b[33m[execpolicy] ${label}: ${req.target}\u001b[0m allow? (y/N) `)
+    },
   })
 
   const promptText = args.prompt ?? (await readStdin())
@@ -77,6 +85,22 @@ async function readStdin(): Promise<string> {
   let text = ""
   for await (const chunk of process.stdin) text += chunk
   return text.trim()
+}
+
+/** Ask the user a yes/no question on a TTY; a non-TTY (piped input) fails
+ * closed (returns false) rather than hanging waiting for a human that never
+ * answers. */
+async function askUser(prompt: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return false
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    const answer = await new Promise<string>((resolvePromise) => {
+      rl.question(prompt, (a) => resolvePromise(a.trim()))
+    })
+    return answer === "y" || answer === "Y"
+  } finally {
+    rl.close()
+  }
 }
 
 function printMessage(message: SessionMessage): void {

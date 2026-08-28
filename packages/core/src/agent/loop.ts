@@ -2,6 +2,7 @@ import type { LLMEvent, LLMRequest, SessionMessage, ContentPart, ToolCallPart } 
 import type { TurnRuntime, Agent, Tool, ToolCall, ToolResult, ToolCtx, Initiator } from "./runner"
 import { Session } from "../session/session"
 import { toLlmMessages } from "../session/messages"
+import { denyAllExecPolicy } from "./execpolicy"
 
 /** Hard cap on steps per drain to guarantee termination. */
 const MAX_STEPS = 50
@@ -203,7 +204,8 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
 
   if (toolCalls.length > 0) {
     // Run tools concurrently; archive results in call order so pairing is stable.
-    const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, sessionId: opts.sessionId, signal: opts.signal, ...opts.toolCtx }
+    // execpolicy defaults to deny-all so an unaudited tool never runs bare (M4).
+    const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, sessionId: opts.sessionId, signal: opts.signal, ...opts.toolCtx, execPolicy: opts.toolCtx?.execPolicy ?? denyAllExecPolicy }
     const settled = await Promise.allSettled(toolCalls.map((call) => invokeTool(opts.resolveTool, call, ctx, opts.signal)))
     for (let i = 0; i < settled.length; i++) {
       const call = toolCalls[i]!

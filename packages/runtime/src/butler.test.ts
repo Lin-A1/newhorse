@@ -104,12 +104,14 @@ describe("butler authority", () => {
       // default (butler) principal -> send denied; should not crash.
       await butler.prompt("tell s1 hi")
       const audits = await butler.audit("butler")
-      expect(audits.some((a) => a.op === "send_to_session" && a.outcome === "denied")).toBe(true)
+      const butlerRows = audits.filter((a): a is (typeof audits)[number] & { readonly op: string } => "op" in a)
+      expect(butlerRows.some((a) => a.op === "send_to_session" && a.outcome === "denied")).toBe(true)
 
       // user principal -> caller.kind user -> send allowed.
       await butler.prompt("tell s1 hi", "user")
       const audits2 = await butler.audit("butler")
-      expect(audits2.some((a) => a.op === "send_to_session" && a.outcome === "allowed")).toBe(true)
+      const butlerRows2 = audits2.filter((a): a is (typeof audits2)[number] & { readonly op: string } => "op" in a)
+      expect(butlerRows2.some((a) => a.op === "send_to_session" && a.outcome === "allowed")).toBe(true)
     } finally {
       await rm(d, { recursive: true, force: true }).catch(() => {})
     }

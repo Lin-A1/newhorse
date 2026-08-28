@@ -52,6 +52,7 @@ export type SessionEvent =
   | SessionEventBase<"Session.Interrupted", { readonly sessionId: string }>
   | SessionEventBase<"Session.Spawned", { readonly sessionId: string; readonly parentId: string }>
   | SessionEventBase<"Session.ButlerAction", { readonly sessionId: string; readonly actorKind: "user" | "butler" | "parent"; readonly actorId: string; readonly op: string; readonly targetSessionId?: string; readonly outcome: "allowed" | "denied"; readonly reason?: string; readonly ts: number }>
+  | SessionEventBase<"Session.ExecDecision", { readonly sessionId: string; readonly kind: "command" | "path"; readonly action: string; readonly decision: "prompt" | "forbid"; readonly reason?: string; readonly requestId?: string; readonly ts: number }>
 
 /** Convenience: type guard narrowing one live event by its `type` tag. */
 export function isSessionEvent<E extends SessionEvent["type"]>(

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process"
 import { resolve } from "node:path"
-import { fail } from "./common"
+import { randomUUID } from "node:crypto"
+import { approve, denied, fail } from "./common"
 import type { Tool, ToolCtx } from "@newhorse/core"
 
 const MAX_TIMEOUT = 60_000
@@ -34,6 +35,17 @@ export function createBashTool(workspace: string): Tool {
     execute: async (input: unknown, ctx?: ToolCtx) => {
       const { command, timeoutMs } = (input ?? {}) as { command?: string; timeoutMs?: number }
       if (!command) return fail("command is required")
+      // M4 execpolicy: an unaudited shell command must fail closed. With no
+      // injected policy (or a deny-all fallback) this refuses to run rather than
+      // executing bare — the model was not authorized to run arbitrary commands.
+      const policy = ctx?.execPolicy
+      if (!policy) return denied("denied by execpolicy: no policy available")
+      const decision = policy.decide(command)
+      if (decision === "forbid") return denied(`denied by execpolicy: ${command}`)
+      if (decision === "prompt") {
+        const ok = await approve(policy, { id: randomUUID(), kind: "command", target: command, decision: "prompt", reason: "shell command" })
+        if (!ok) return denied(`denied by execpolicy (prompt not approved): ${command}`)
+      }
       // Default to the hard cap when the model omits timeoutMs; clamp any
       // supplied value into [1, MAX_TIMEOUT] so a 0/negative/NaN never becomes a
       // 1ms kill-all default.

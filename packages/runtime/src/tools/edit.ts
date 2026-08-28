@@ -1,7 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises"
+import { randomUUID } from "node:crypto"
 import { resolveInWorkspace } from "./path"
-import { fail, isLikelyBinary } from "./common"
-import type { Tool } from "@newhorse/core"
+import { approve, denied, fail, isLikelyBinary } from "./common"
+import type { Tool, ToolCtx } from "@newhorse/core"
 
 /**
  * Exact string replace: the `old` substring is required to match exactly once
@@ -29,12 +30,21 @@ export function createEditTool(workspace: string): Tool {
       },
       required: ["path", "old", "new"],
     },
-    execute: async (input: unknown) => {
+    execute: async (input: unknown, ctx?: ToolCtx) => {
       const { path, old, new: replacement, replaceAll } = (input ?? {}) as { path?: string; old?: string; new?: string; replaceAll?: boolean }
       if (!path) return fail("path is required")
       if (typeof old !== "string" || old.length === 0) return fail("`old` must be a non-empty string")
       if (typeof replacement !== "string") return fail("`new` must be a string")
       if (old === replacement) return fail("`old` and `new` are identical — nothing to change")
+      // M4 execpolicy: editing is a sensitive-path write; gate it like write.
+      const policy = ctx?.execPolicy
+      if (!policy) return denied("denied by execpolicy: no policy available")
+      const decision = policy.decidePath(path)
+      if (decision === "forbid") return denied(`denied by execpolicy: ${path}`)
+      if (decision === "prompt") {
+        const ok = await approve(policy, { id: randomUUID(), kind: "path", target: path, decision: "prompt", reason: "path edit" })
+        if (!ok) return denied(`denied by execpolicy (prompt not approved): ${path}`)
+      }
       try {
         const abs = await resolveInWorkspace(workspace, path)
         if (isLikelyBinary(abs)) return fail("refusing to edit a binary file")

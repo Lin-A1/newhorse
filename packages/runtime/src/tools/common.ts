@@ -1,5 +1,6 @@
 import { lstat, readdir, stat } from "node:fs/promises"
 import { basename, join, relative } from "node:path"
+import type { ExecPolicy, ApprovalRequest } from "@newhorse/schema"
 
 /** Default directories excluded from list/search because they are either huge
  * or contain binary/noise. Keeps real-repo search fast and clean (M3.5 §2.4). */
@@ -21,6 +22,31 @@ export interface ToolFailure {
  * missing, permission denied, etc. Returned as data, never thrown as a crash. */
 export function fail(message: string): ToolFailure & { readonly isError?: never } {
   return { error: message }
+}
+
+/** A denied-by-execpolicy failure is structurally the same as a read-only
+ * `fail` — the model sees a reason and can change course. */
+export function denied(reason: string): ToolFailure & { readonly isError?: never } {
+  return { error: reason }
+}
+
+/**
+ * Run the interactive approve gate for a single command/path, fail-closed.
+ * Absent gate → false (forbid). Timeout (30s) → false (forbid) so a waiting
+ * user never blocks a long-horizon turn (M4 #2); one approval is scoped to one
+ * request id (concurrent tool calls don't cross-approve).
+ */
+export function approve(policy: ExecPolicy, req: ApprovalRequest): Promise<boolean> {
+  const gate = policy.approve
+  if (!gate) return Promise.resolve(false)
+  return new Promise<boolean>((resolvePromise) => {
+    let settled = false
+    const t = setTimeout(() => { if (!settled) { settled = true; resolvePromise(false) } }, 30_000)
+    gate(req).then(
+      (v) => { if (!settled) { settled = true; clearTimeout(t); resolvePromise(v) } },
+      () => { if (!settled) { settled = true; clearTimeout(t); resolvePromise(false) } },
+    )
+  })
 }
 
 /** Whether a path is likely binary based on its extension. */

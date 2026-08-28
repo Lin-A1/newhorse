@@ -39,6 +39,19 @@ export interface AuditRow {
   readonly ts: number
 }
 
+/** A tool-layer execpolicy decision row (folded from Session.ExecDecision). */
+export interface ExecDecisionRow {
+  readonly kind: "command" | "path"
+  readonly action: string
+  readonly outcome: "prompt" | "forbid"
+  readonly reason?: string
+  readonly requestId?: string
+  readonly ts: number
+}
+
+/** An audit row: a butler action or a tool-layer execpolicy decision. */
+export type AuditEventRow = AuditRow | ExecDecisionRow
+
 export interface RegistryQuery {
   readonly workspace?: string
   readonly status?: SessionStatus
@@ -82,10 +95,11 @@ export class SessionRegistry {
     this.#hydrated = true
   }
 
-  /** Fold butler audit actions for an actor (or all) into a readable list. */
-  async audit(actorSessionId?: string): Promise<AuditRow[]> {
+  /** Fold butler audit actions + tool-layer execpolicy decisions for an actor
+   * (or all) into a readable list. */
+  async audit(actorSessionId?: string): Promise<AuditEventRow[]> {
     const rows = await this.#events.aggregateIds()
-    const out: AuditRow[] = []
+    const out: AuditEventRow[] = []
     for (const aggregateId of rows) {
       if (!aggregateId.startsWith("audit:")) continue
       if (actorSessionId && aggregateId !== `audit:${actorSessionId}`) continue
@@ -177,14 +191,19 @@ function excerpt(content: readonly unknown[]): string {
   return text.length > 80 ? text.slice(0, 80) + "…" : text
 }
 
-/** Fold a butler-audit aggregate's events into audit rows. */
-export function foldAudit(stored: StoredEvent[]): AuditRow[] {
-  const out: AuditRow[] = []
+/** Fold a butler-audit (or tool-layer execpolicy) aggregate's events into rows. */
+export function foldAudit(stored: StoredEvent[]): AuditEventRow[] {
+  const out: AuditEventRow[] = []
   for (const event of stored) {
-    if (event.type !== "Session.ButlerAction") continue
-    const d = event.data as { actorKind?: "user" | "butler" | "parent"; actorId?: string; op?: string; targetSessionId?: string; outcome?: "allowed" | "denied"; reason?: string; ts?: number }
-    if (!d.actorKind || !d.actorId || !d.op || !d.outcome) continue
-    out.push({ actorKind: d.actorKind, actorId: d.actorId, op: d.op, targetSessionId: d.targetSessionId, outcome: d.outcome, reason: d.reason, ts: d.ts ?? 0 })
+    if (event.type === "Session.ButlerAction") {
+      const d = event.data as { actorKind?: "user" | "butler" | "parent"; actorId?: string; op?: string; targetSessionId?: string; outcome?: "allowed" | "denied"; reason?: string; ts?: number }
+      if (!d.actorKind || !d.actorId || !d.op || !d.outcome) continue
+      out.push({ actorKind: d.actorKind, actorId: d.actorId, op: d.op, targetSessionId: d.targetSessionId, outcome: d.outcome, reason: d.reason, ts: d.ts ?? 0 })
+    } else if (event.type === "Session.ExecDecision") {
+      const d = event.data as { kind?: "command" | "path"; action?: string; decision?: "prompt" | "forbid"; reason?: string; requestId?: string; ts?: number }
+      if (!d.kind || !d.action || !d.decision) continue
+      out.push({ kind: d.kind, action: d.action, outcome: d.decision, reason: d.reason, requestId: d.requestId, ts: d.ts ?? 0 })
+    }
   }
   return out
 }

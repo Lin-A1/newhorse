@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createBuiltinTools } from "./index"
-import type { Tool } from "@newhorse/core"
+import type { Tool, ToolCtx } from "@newhorse/core"
+import type { ExecPolicy } from "@newhorse/schema"
+import type { Decision } from "@newhorse/schema"
+
+/** An allow-all execpolicy so fs/bash tests exercise the happy path without
+ * being denied (M4): read/write/edit/bash now require an injected policy. */
+const allowAll: ExecPolicy = { decide: (): Decision => "allow", decidePath: (): Decision => "allow" }
+const allowCtx: ToolCtx = { caller: { kind: "user" }, execPolicy: allowAll }
 
 async function ws(): Promise<{ root: string; cleanup: () => Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), "nh-tools-"))
@@ -35,7 +42,7 @@ describe("builtin tools", () => {
       const tools = createBuiltinTools({ workspace: root })
       const write = byName(tools, "write")
       const read = byName(tools, "read")
-      await write.execute({ path: "a/b.txt", content: "line1\nline2\nline3" })
+      await write.execute({ path: "a/b.txt", content: "line1\nline2\nline3" }, allowCtx)
       const out = await read.execute({ path: "a/b.txt" }) as { lines: string[]; truncated: boolean; totalLines: number }
       expect(out.totalLines).toBe(3)
       expect(out.truncated).toBe(false)
@@ -66,7 +73,7 @@ describe("builtin tools", () => {
     try {
       await writeFile(join(root, "f.txt"), "hello\r\nworld\r\nhello")
       const edit = byName(createBuiltinTools({ workspace: root }), "edit")
-      const out = await edit.execute({ path: "f.txt", old: "world", new: "there" }) as { replaced: number }
+      const out = await edit.execute({ path: "f.txt", old: "world", new: "there" }, allowCtx) as { replaced: number }
       expect(out.replaced).toBe(1)
       const text = await readFile(join(root, "f.txt"), "utf8")
       expect(text).toBe("hello\r\nthere\r\nhello")
@@ -80,8 +87,8 @@ describe("builtin tools", () => {
     try {
       await writeFile(join(root, "f.txt"), "abc")
       const edit = byName(createBuiltinTools({ workspace: root }), "edit")
-      await expect(edit.execute({ path: "f.txt", old: "abc", new: "abc" })).resolves.toMatchObject({ error: expect.stringContaining("identical") })
-      await expect(edit.execute({ path: "f.txt", old: "", new: "x" })).resolves.toMatchObject({ error: expect.stringContaining("non-empty") })
+      await expect(edit.execute({ path: "f.txt", old: "abc", new: "abc" }, allowCtx)).resolves.toMatchObject({ error: expect.stringContaining("identical") })
+      await expect(edit.execute({ path: "f.txt", old: "", new: "x" }, allowCtx)).resolves.toMatchObject({ error: expect.stringContaining("non-empty") })
     } finally {
       await cleanup()
     }
@@ -92,7 +99,7 @@ describe("builtin tools", () => {
     try {
       await writeFile(join(root, "f.txt"), "one\ntwo one\none")
       const edit = byName(createBuiltinTools({ workspace: root }), "edit")
-      const out = await edit.execute({ path: "f.txt", old: "one", new: "X" }) as { matches: number; hits: { line: number }[] }
+      const out = await edit.execute({ path: "f.txt", old: "one", new: "X" }, allowCtx) as { matches: number; hits: { line: number }[] }
       expect(out.matches).toBe(3)
       expect(out.hits.length).toBeGreaterThan(0)
     } finally {
@@ -137,10 +144,10 @@ describe("builtin tools", () => {
     const { root, cleanup } = await ws()
     try {
       const bash = byName(createBuiltinTools({ workspace: root, enableBash: true }), "bash")
-      const ok = await bash.execute({ command: "echo hi" }) as { stdout: string; exitCode: number }
+      const ok = await bash.execute({ command: "echo hi" }, allowCtx) as { stdout: string; exitCode: number }
       expect(ok.stdout.trim()).toBe("hi")
       expect(ok.exitCode).toBe(0)
-      const bad = await bash.execute({ command: "exit 3" }) as { exitCode: number }
+      const bad = await bash.execute({ command: "exit 3" }, allowCtx) as { exitCode: number }
       expect(bad.exitCode).toBe(3)
     } finally {
       await cleanup()
@@ -152,7 +159,7 @@ describe("builtin tools", () => {
     try {
       const bash = byName(createBuiltinTools({ workspace: root, enableBash: true }), "bash")
       // A fast, harmless command validates that the clamp path still runs.
-      const out = await bash.execute({ command: process.platform === "win32" ? "echo ok" : "true", timeoutMs: 200 }) as { exitCode: number }
+      const out = await bash.execute({ command: process.platform === "win32" ? "echo ok" : "true", timeoutMs: 200 }, allowCtx) as { exitCode: number }
       expect(out.exitCode).toBe(0)
     } finally {
       await cleanup()
@@ -165,7 +172,7 @@ describe("builtin tools", () => {
       const bash = byName(createBuiltinTools({ workspace: root, enableBash: true }), "bash")
       // A command that takes ~300ms must survive the default timeout (which must
       // be the hard cap, not clamopy a missing value to 1ms).
-      const out = await bash.execute({ command: process.platform === "win32" ? "ping -n 2 127.0.0.1 >nul" : "sleep 0.3" }) as { exitCode: number; timedOut: boolean }
+      const out = await bash.execute({ command: process.platform === "win32" ? "ping -n 2 127.0.0.1 >nul" : "sleep 0.3" }, allowCtx) as { exitCode: number; timedOut: boolean }
       expect(out.timedOut).toBe(false)
       expect(out.exitCode).toBe(0)
     } finally {
@@ -178,7 +185,7 @@ describe("builtin tools", () => {
     try {
       await writeFile(join(root, "marker.txt"), "here")
       const bash = byName(createBuiltinTools({ workspace: root, enableBash: true }), "bash")
-      const out = await bash.execute({ command: process.platform === "win32" ? "dir /b marker.txt" : "ls marker.txt" }) as { stdout: string }
+      const out = await bash.execute({ command: process.platform === "win32" ? "dir /b marker.txt" : "ls marker.txt" }, allowCtx) as { stdout: string }
       expect(out.stdout).toContain("marker.txt")
     } finally {
       await cleanup()
@@ -189,7 +196,7 @@ describe("builtin tools", () => {
     const { root, cleanup } = await ws()
     try {
       const write = byName(createBuiltinTools({ workspace: root }), "write")
-      await write.execute({ path: "deep/nested/x.txt", content: "content" })
+      await write.execute({ path: "deep/nested/x.txt", content: "content" }, allowCtx)
       await expect(readFile(join(root, "deep/nested/x.txt"), "utf8")).resolves.toBe("content")
     } finally {
       await cleanup()

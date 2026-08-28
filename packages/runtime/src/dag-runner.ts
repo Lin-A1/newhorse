@@ -1,5 +1,5 @@
 import { validate, foldDAG, cascadeTerminal, readyNodes, reconcile, DAGError, type DAGSpec, type DAGNode, type Topology, type NodeState } from "@newhorse/core"
-import { runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime } from "@newhorse/core"
+import { runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime, type ToolCtx } from "@newhorse/core"
 import { createBuiltinTools } from "./tools"
 
 /**
@@ -56,6 +56,10 @@ export interface DagDeps {
   readonly concurrency?: number
   /** Optional external abort: aborts the whole graph, stops claiming, aborts in-flight. */
   readonly signal?: AbortSignal
+  /** Tool-ctx to pass to each node session (caller is derived per node). M4
+   * execpolicy must be provided by the runDag caller so DAG subagents are
+   * audited like the parent — absent, they deny-all (fail-closed). */
+  readonly toolCtx?: Omit<ToolCtx, "caller">
 }
 
 export interface DagOutcome {
@@ -150,6 +154,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
         agent,
         resolveTool: (name) => tools.find((t) => t.name === name),
         signal: ctrl.signal,
+        toolCtx: deps.toolCtx,
       })
 
       // A cancelled run settles with finish="interrupted" (loop returns it, does

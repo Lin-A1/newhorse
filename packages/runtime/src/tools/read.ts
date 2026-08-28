@@ -28,6 +28,10 @@ export function createReadTool(workspace: string): Tool {
     execute: async (input: unknown) => {
       const { path, offset, limit } = (input ?? {}) as { path?: string; offset?: number; limit?: number }
       if (!path) return fail("path is required")
+      // M4: the model must not read the rules-file boundary (it could read the
+      // consented prefix set and construct a precise bypass). `.newhorse/**` is
+      // host-owned config. Case-folded to match win32 fs casing.
+      if (/\/?\.newhorse(\/|$)/i.test(path.replace(/\\/g, "/"))) return fail("refusing to read a protected path")
       try {
         const abs = await resolveInWorkspace(workspace, path)
         if (isLikelyBinary(abs)) return fail("refusing to read a binary file")

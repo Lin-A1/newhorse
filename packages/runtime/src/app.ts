@@ -1,10 +1,11 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditRow, type Initiator } from "@newhorse/core"
-import { join } from "node:path"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator } from "@newhorse/core"
+import { join, dirname } from "node:path"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry } from "@newhorse/plugin"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
-import { createBuiltinTools } from "./tools"
+import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
+import type { ExecPolicy, ExecRule, ApprovalRequest } from "@newhorse/schema"
 
 /**
  * Runtime assembly. This is the domain wiring shared by every transport
@@ -32,6 +33,12 @@ export interface AppConfig {
    * to the workspace (M3.5 §2.2): enabling it authorizes the session to
    * read/write/execute any reachable path with the process user's permissions. */
   readonly enableBash?: boolean
+  /** M4 execpolicy: user-declared rules (allow/prompt/forbid). Optional; empty
+   * rules + the built-in dangerous floor still apply (fail-closed). */
+  readonly execRules?: readonly ExecRule[]
+  /** M4 execpolicy: interactive approval gate injected by the transport. When
+   * absent, a `prompt` resolves to `forbid` (fail-closed). */
+  readonly onApprove?: (req: ApprovalRequest) => Promise<boolean>
 }
 
 /** A live session event a shell may observe (streamed model output, etc.). */
@@ -53,7 +60,7 @@ export interface App {
   /** Query the session registry (observational control surface). */
   readonly listSessions: (query?: RegistryQuery) => Promise<SessionRow[]>
   /** Fold butler audit actions into a readable list. */
-  readonly audit: (actorSessionId?: string) => Promise<AuditRow[]>
+  readonly audit: (actorSessionId?: string) => Promise<AuditEventRow[]>
   /** Interrupt the running session (single-process cancel). */
   readonly interrupt: () => void
   /** Steer the running drain: admit a prompt that is promoted at the next safe
@@ -115,6 +122,29 @@ export async function createApp(config: AppConfig): Promise<App> {
 
   const toolMap = new Map(tools.map((t) => [t.name, t]))
   const agent: Agent = { id: "primary", model: config.model, tools }
+
+  // M4 execpolicy: the tool-layer authorization axis. For a session with no
+  // onApprove gate (DAG child / non-interactive SDK), a `prompt` resolves to
+  // forbid (fail-closed). The rules engine loads/reboots from dataDir; without a
+  // dataDir the policy still applies the built-in danger floor.
+  const execAudit = async (entry: { kind: "command" | "path"; action: string; decision: "prompt" | "forbid"; reason?: string; requestId?: string }): Promise<void> => {
+    await events.append(`audit:${sessionId}`, "Session.ExecDecision", {
+      sessionId,
+      kind: entry.kind,
+      action: entry.action,
+      decision: entry.decision,
+      reason: entry.reason,
+      requestId: entry.requestId,
+      ts: Date.now(),
+    })
+  }
+  const execPolicy: ExecPolicy = createExecPolicy({
+    rulesFile: config.dataDir ? rulesFilePath(config.dataDir, workspace) : join(process.cwd(), "..", "..", ".execpolicy-rules.json"),
+    rules: config.execRules,
+    rulesDir: config.dataDir ? dirname(rulesFilePath(config.dataDir, workspace)) : workspace,
+    onApprove: config.onApprove,
+    audit: execAudit,
+  })
 
   // Live event fan-out. The prompt run emits streamed model/tool events through
   // a small hook so a shell can render incrementally without polling the log.
@@ -180,7 +210,7 @@ export async function createApp(config: AppConfig): Promise<App> {
           onEvent: emit,
           signal: ctrl.signal,
           caller,
-          toolCtx: hub ? { registry, appendAudit, interruptTarget: hub.interrupt, sendToTarget: hub.send, spawnFrom: hub.spawn } : { registry, appendAudit },
+          toolCtx: hub ? { registry, appendAudit, interruptTarget: hub.interrupt, sendToTarget: hub.send, spawnFrom: hub.spawn, execPolicy } : { registry, appendAudit, execPolicy },
         })
         return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
       } finally {

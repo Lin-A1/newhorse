@@ -1,4 +1,4 @@
-import type { LLMEvent, LLMRequest, SessionMessage } from "@newhorse/schema"
+import type { LLMEvent, LLMRequest, SessionMessage, ExecPolicy } from "@newhorse/schema"
 import type { SessionInputStore } from "../session/input"
 import type { EventStore } from "../session/store"
 import { Session } from "../session/session"
@@ -57,6 +57,9 @@ export interface ToolCtx {
   readonly interruptTarget?: (sessionId: string) => Promise<{ implemented: boolean; pending?: boolean; sessionId?: string }>
   readonly sendToTarget?: (sessionId: string, content: string) => Promise<{ implemented: boolean; pending?: boolean; sessionId?: string }>
   readonly spawnFrom?: (parentId: string, model?: string) => Promise<string>
+  /** M4 execpolicy: the tool-layer authorization axis. Optional here (injected);
+   * loop fills a deny-all fallback so a tool never runs unaudited. */
+  readonly execPolicy?: ExecPolicy
 }
 
 export interface Agent {
