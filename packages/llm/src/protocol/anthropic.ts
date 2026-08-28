@@ -137,7 +137,12 @@ export const anthropicProtocol: Protocol = {
         let semantic: "tool" | "length" | "stop" | "content-filter" | undefined
         if (finish === "tool_use") semantic = "tool"
         else if (finish === "max_tokens") semantic = "length"
-        else if (finish === "end_turn") semantic = "stop"
+        else if (finish === "end_turn" || finish === "stop_sequence") semantic = "stop"
+        else if (finish === "refusal") semantic = "content-filter"
+        // Unknown/unmapped stop reasons must NOT silently become a normal stop.
+        if (!semantic && finish) {
+          events.push({ type: "provider-error", code: `stop-reason:${finish}`, message: `unmapped stop_reason "${finish}"`, retryable: false })
+        }
         if (semantic) {
           const usage = ev.usage ?? ev.message?.usage
           events.push({

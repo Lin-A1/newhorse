@@ -9,7 +9,7 @@ const MAX_STEPS = 50
 export interface TurnResult {
   readonly needsContinuation: boolean
   readonly step: number
-  readonly finish: "tool" | "stop" | "length" | "content-filter" | "interrupted"
+  readonly finish: "tool" | "stop" | "length" | "content-filter" | "interrupted" | "error"
 }
 
 /** A live loop event a transport can render incrementally. */
@@ -49,7 +49,7 @@ export interface RunOptions {
 export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promise<TurnResult> {
   let turns = 0
   let needsContinuation = true
-  let lastStepEnded: "tool" | "stop" | "length" | "content-filter" = "tool"
+  let lastStepEnded: "tool" | "stop" | "length" | "content-filter" | "error" = "tool"
 
   while (needsContinuation && turns < MAX_STEPS) {
     if (opts.signal?.aborted) {
@@ -87,7 +87,7 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
       tools: opts.agent.tools?.map(toSpec),
     }
 
-    let turn: { needsContinuation: boolean; step: number; finish: "tool" | "stop" | "length" | "content-filter" }
+    let turn: { needsContinuation: boolean; step: number; finish: "tool" | "stop" | "length" | "content-filter" | "error" }
     try {
       turn = await runTurn(runtime, opts, request, turns)
     } catch (e) {
@@ -133,12 +133,12 @@ function isCancelled(e: unknown): boolean {
  * One provider turn: stream the request, archive assistant text + tool calls,
  * execute tools, and settle. Returns whether another turn is required.
  */
-async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMRequest, step: number): Promise<{ needsContinuation: boolean; step: number; finish: "tool" | "stop" | "length" | "content-filter" }> {
+async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMRequest, step: number): Promise<{ needsContinuation: boolean; step: number; finish: "tool" | "stop" | "length" | "content-filter" | "error" }> {
   const assistantId = crypto.randomUUID()
   const assistantParts: ContentPart[] = []
 
   let needsContinuation = false
-  let finish: "tool" | "stop" | "length" | "content-filter" = "stop"
+  let finish: "tool" | "stop" | "length" | "content-filter" | "error" = "stop"
 
   const stream = await runtime.llm.stream(request, opts.signal)
   for await (const event of stream) {
@@ -183,7 +183,9 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
         opts.onEvent?.({ type: "step", step })
         break
       case "provider-error":
-        finish = "stop"
+        // A provider failure must never masquerade as a normal stop — shells and
+        // smoke tests key off finish to decide success.
+        finish = "error"
         needsContinuation = false
         opts.onEvent?.({ type: "error", code: event.code, message: event.message })
         break

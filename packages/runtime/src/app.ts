@@ -57,7 +57,7 @@ export interface App {
 export interface PromptResult {
   readonly step: number
   readonly needsContinuation: boolean
-  readonly finish: "tool" | "stop" | "length" | "content-filter" | "interrupted"
+  readonly finish: "tool" | "stop" | "length" | "content-filter" | "interrupted" | "error"
 }
 
 export async function createApp(config: AppConfig): Promise<App> {
