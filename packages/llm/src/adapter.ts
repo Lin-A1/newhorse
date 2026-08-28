@@ -19,7 +19,7 @@ export interface AdapterConfig {
 
 export interface LlmClient {
   readonly id: string
-  readonly stream: (request: LLMRequest) => Promise<AsyncIterable<LLMEvent>>
+  readonly stream: (request: LLMRequest, signal?: AbortSignal) => Promise<AsyncIterable<LLMEvent>>
 }
 
 /**
@@ -69,9 +69,9 @@ export function makeLlmClient(config: AdapterConfig, fetch: Fetcher = globalThis
   const maxRetries = config.maxRetries ?? 3
   return {
     id: `${config.kind}:${route.endpoint.baseUrl}`,
-    async stream(request: LLMRequest): Promise<AsyncIterable<LLMEvent>> {
+    async stream(request: LLMRequest, signal?: AbortSignal): Promise<AsyncIterable<LLMEvent>> {
       const body = route.protocol.encode(request)
-      return streamWithRetry(() => streamRequest(route, body, { fetch }), maxRetries)
+      return streamWithRetry(() => streamRequest(route, body, { fetch, signal }), maxRetries)
     },
   }
 }

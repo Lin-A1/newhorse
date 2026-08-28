@@ -40,7 +40,7 @@ export interface Agent {
  */
 export interface LlmClient {
   readonly id: string
-  readonly stream: (request: LLMRequest) => Promise<AsyncIterable<LLMEvent>>
+  readonly stream: (request: LLMRequest, signal?: AbortSignal) => Promise<AsyncIterable<LLMEvent>>
 }
 
 export interface TurnRuntime {

@@ -3,6 +3,8 @@ import type { Fetcher, Route } from "./route"
 
 export interface StreamOptions {
   readonly fetch: Fetcher
+  /** Optional abort signal so a blocked stream read can be cancelled. */
+  readonly signal?: AbortSignal
 }
 
 /**
@@ -17,6 +19,7 @@ export async function streamRequest(route: Route, body: unknown, options: Stream
     method: "POST",
     headers: buildHeaders(route),
     body: JSON.stringify(body),
+    signal: options.signal,
   })
 
   if (!response.ok) {
@@ -25,7 +28,7 @@ export async function streamRequest(route: Route, body: unknown, options: Stream
   }
 
   if (route.framing.kind === "sse") {
-    return sseEvents(route, response)
+    return sseEvents(route, response, options.signal)
   }
 
   return jsonEvents(route, response)
@@ -48,7 +51,7 @@ async function safeText(response: Response): Promise<string> {
   }
 }
 
-async function* sseEvents(route: Route, response: Response): AsyncIterable<LLMEvent> {
+async function* sseEvents(route: Route, response: Response, signal?: AbortSignal): AsyncIterable<LLMEvent> {
   const reader = response.body?.getReader()
   if (!reader) return
 
@@ -57,7 +60,9 @@ async function* sseEvents(route: Route, response: Response): AsyncIterable<LLMEv
   const decoder = new TextDecoder()
 
   while (true) {
-    const { done, value } = await reader.read()
+    if (signal?.aborted) return
+    const { done, value } = await readWithAbort(reader, signal)
+    if (signal?.aborted) return
     if (done) break
     buffer += decoder.decode(value, { stream: true })
 
@@ -75,6 +80,32 @@ async function* sseEvents(route: Route, response: Response): AsyncIterable<LLMEv
       for (const event of next.events) yield event
     }
   }
+}
+
+/** Wait for either a read chunk or an abort signal, whichever comes first. */
+async function readWithAbort(
+  reader: { read(): Promise<{ done: boolean; value?: Uint8Array }>; cancel(): Promise<void> },
+  signal?: AbortSignal,
+): Promise<{ done: boolean; value?: Uint8Array }> {
+  if (!signal) return reader.read()
+  if (signal.aborted) return { done: true, value: undefined }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      reader.cancel().catch(() => {})
+      resolve({ done: true, value: undefined })
+    }
+    signal.addEventListener("abort", onAbort, { once: true })
+    reader.read().then(
+      (result) => {
+        signal.removeEventListener("abort", onAbort)
+        resolve(result)
+      },
+      (err) => {
+        signal.removeEventListener("abort", onAbort)
+        reject(err)
+      },
+    )
+  })
 }
 
 async function* jsonEvents(route: Route, response: Response): AsyncIterable<LLMEvent> {

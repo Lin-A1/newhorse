@@ -9,7 +9,7 @@ const MAX_STEPS = 50
 export interface TurnResult {
   readonly needsContinuation: boolean
   readonly step: number
-  readonly finish: "tool" | "stop" | "length" | "content-filter"
+  readonly finish: "tool" | "stop" | "length" | "content-filter" | "interrupted"
 }
 
 /** A live loop event a transport can render incrementally. */
@@ -29,6 +29,8 @@ export interface RunOptions {
   readonly resolveTool: (name: string) => Tool | undefined
   /** Optional live-event sink for a shell to render streaming output. */
   readonly onEvent?: (event: LoopEvent) => void
+  /** Optional cancellation: when aborted, the drain stops between steps. */
+  readonly signal?: AbortSignal
 }
 
 /**
@@ -46,6 +48,10 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
   let lastStepEnded: "tool" | "stop" | "length" | "content-filter" = "tool"
 
   while (needsContinuation && turns < MAX_STEPS) {
+    if (opts.signal?.aborted) {
+      // Cancelled between steps: settle as interrupted rather than continuing.
+      return cancelledResult(runtime, opts, turns)
+    }
     turns += 1
     const session = await loadSession(runtime.events, opts.sessionId)
     const cutoff = await runtime.events.latestSeq(opts.sessionId)
@@ -77,7 +83,13 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
       tools: opts.agent.tools?.map(toSpec),
     }
 
-    const turn = await runTurn(runtime, opts, request, turns)
+    let turn: { needsContinuation: boolean; step: number; finish: "tool" | "stop" | "length" | "content-filter" }
+    try {
+      turn = await runTurn(runtime, opts, request, turns)
+    } catch (e) {
+      if (e instanceof SessionCancelled) return cancelledResult(runtime, opts, turns)
+      throw e
+    }
     needsContinuation = turn.needsContinuation
     lastStepEnded = turn.finish
   }
@@ -85,6 +97,23 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
   const result: TurnResult = { needsContinuation: needsContinuation && lastStepEnded === "tool", step: turns, finish: lastStepEnded }
   opts.onEvent?.({ type: "done", step: result.step, needsContinuation: result.needsContinuation, finish: lastStepEnded })
   return result
+}
+
+/** Build an interrupted result and emit the live done event for a cancellation. */
+async function cancelledResult(runtime: TurnRuntime, opts: RunOptions, turns: number): Promise<TurnResult> {
+  await runtime.events.append(opts.sessionId, "Session.Interrupted", { sessionId: opts.sessionId })
+  const result: TurnResult = { needsContinuation: false, step: turns, finish: "interrupted" }
+  opts.onEvent?.({ type: "done", step: result.step, needsContinuation: false, finish: "interrupted" })
+  return result
+}
+
+/** Internal marker for a turn cancelled by an AbortSignal mid-stream. */
+export class SessionCancelled extends Error {
+  readonly _tag = "SessionCancelled"
+  constructor() {
+    super("session interrupted")
+    this.name = "SessionCancelled"
+  }
 }
 
 /**
@@ -98,8 +127,14 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
   let needsContinuation = false
   let finish: "tool" | "stop" | "length" | "content-filter" = "stop"
 
-  const stream = await runtime.llm.stream(request)
+  const stream = await runtime.llm.stream(request, opts.signal)
   for await (const event of stream) {
+    if (opts.signal?.aborted) {
+      // Cancelled mid-stream: stop consuming and settle as interrupted so a
+      // long-running response can be stopped, not only between whole turns.
+      await runtime.events.append(opts.sessionId, "Session.Interrupted", { sessionId: opts.sessionId })
+      throw new SessionCancelled()
+    }
     switch (event.type) {
       case "text.delta": {
         opts.onEvent?.({ type: "text", text: event.text })

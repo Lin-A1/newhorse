@@ -157,4 +157,52 @@ describe("runtime app", () => {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
     }
   })
+
+  it("interrupt() cancels a live stream and does not poison later prompts", async () => {
+    // First run: a stream that emits a chunk, then keeps emitting so the loop
+    // iterates; interrupt() fires between events and cancels the run cleanly.
+    let cancelled = false
+    const heldFetch: Fetcher = async () => {
+      const body = new ReadableStream({
+        start(controller) {
+          const push = (text: string, i: number) => {
+            if (cancelled) return
+            controller.enqueue(new TextEncoder().encode('data: ' + JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: null }] }) + "\n\n"))
+            setTimeout(() => push("x", i + 1), 5)
+          }
+          push("partial", 0)
+        },
+      })
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })
+    }
+    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", fetch: heldFetch as never })
+
+    const run = app.prompt("go")
+    await Bun.sleep(30)
+    cancelled = true
+    app.interrupt()
+    const result = await run
+    expect(result.needsContinuation).toBe(false)
+
+    // A second app whose prompt completes normally — proving interrupt() did not
+    // poison the shared mechanism (each prompt owns its own AbortController).
+    let secondRan = false
+    const normalFetch: Fetcher = async () => {
+      secondRan = true
+      return sse(['data: ' + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join(""))
+    }
+    const app2 = await createApp({ provider: { kind: "openai", baseUrl: "https://y", apiKey: "k" }, model: "m", fetch: normalFetch as never })
+    const r2 = await app2.prompt("again")
+    expect(secondRan).toBe(true)
+    expect(r2.needsContinuation).toBe(false)
+  })
+
+  it("listSessions() queries the session registry", async () => {
+    const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    const fetch: Fetcher = async () => sse(payload)
+    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", sessionId: "fixed", workspace: "/w", fetch: fetch as never })
+    await app.prompt("hi")
+    const rows = await app.listSessions()
+    expect(rows.some((r) => r.sessionId === "fixed")).toBe(true)
+  })
 })

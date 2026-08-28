@@ -101,6 +101,14 @@ Ambient `AGENTS.md` is a Context Source. `discoverWorkspaceContext` walks upward
 
 Dependency direction: `cli` depends on `runtime` (and `schema`/`llm` for its own transport types), not on `core`/`plugin` directly. `runtime` depends on `core`/`llm`/`plugin`/`schema`. `core` never imports upper layers.
 
+## 10. Session registry + cancel (M2a)
+
+- `SessionRegistry` (core) is a **derived read model** of the event log: single-writer event log + materialized projection. It lazily queries the EventStore (`aggregateIds()` + `read()` + fold) into an in-memory index — it does **not** hook the store's append path, does not broadcast, and does not write its own durable table in M2a (small single-process scale).
+- `list`/`get`/`refresh` are observational: they return projections and never mutate a session. `refresh()` rebuilds the index so late events (e.g. an interrupt appended after hydration) are visible — avoiding a dead index.
+- It gives a future butler (M2b) the list/locate/parent-chain surface for auditing send/spawn.
+- **Cancel**: `runSession`/`runTurn` accept an `AbortSignal`. The drain stops between steps and **mid-stream** (the LLM transport races a blocked `reader.read()` against the signal). A cancelled run appends `Session.Interrupted` and settles with `finish:"interrupted"` (not `"stop"`).
+- **Per-run controller**: each `prompt()` creates its own `AbortController`, so `interrupt()` cancels only the current run and cannot poison a later prompt (an `AbortSignal` is not resettable).
+
 Known follow-ups (outside M1): a `runId` associating events with a specific `prompt()` call for re-used apps; a shared `resolveProvider` per shell; wiring `createApp` through the seam `Container` for provider injection.
 
 ## Usage

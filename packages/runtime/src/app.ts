@@ -1,4 +1,4 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery } from "@newhorse/core"
 import { join } from "node:path"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry } from "@newhorse/plugin"
@@ -37,13 +37,17 @@ export interface App {
   readonly prompt: (text: string) => Promise<PromptResult>
   /** Reconstruct the current session projection from the log. */
   readonly resume: () => Promise<Session>
+  /** Query the session registry (observational control surface). */
+  readonly listSessions: (query?: RegistryQuery) => Promise<SessionRow[]>
+  /** Interrupt the running session (single-process cancel). */
+  readonly interrupt: () => void
 }
 
 /** Structured outcome of a prompt run (a shell renders this, not a string). */
 export interface PromptResult {
   readonly step: number
   readonly needsContinuation: boolean
-  readonly finish: "tool" | "stop" | "length" | "content-filter"
+  readonly finish: "tool" | "stop" | "length" | "content-filter" | "interrupted"
 }
 
 export async function createApp(config: AppConfig): Promise<App> {
@@ -86,6 +90,9 @@ export async function createApp(config: AppConfig): Promise<App> {
     }
   }
 
+  const registry = new SessionRegistry(events)
+  let current: AbortController | undefined
+
   const app: App = {
     sessionId,
     events,
@@ -106,16 +113,33 @@ export async function createApp(config: AppConfig): Promise<App> {
         }
       }
       await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer" })
-      const result = await runSession(runtime, {
-        agent,
-        sessionId,
-        resolveTool: (name) => toolMap.get(name),
-        onEvent: emit,
-      })
-      return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
+
+      // A fresh abort controller per prompt, so interrupt() cancels only this
+      // run and a later prompt is unaffected (an AbortSignal cannot be reset).
+      const ctrl = new AbortController()
+      current = ctrl
+      try {
+        const result = await runSession(runtime, {
+          agent,
+          sessionId,
+          resolveTool: (name) => toolMap.get(name),
+          onEvent: emit,
+          signal: ctrl.signal,
+        })
+        return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
+      } finally {
+        if (current === ctrl) current = undefined
+      }
     },
     async resume(): Promise<Session> {
       return Session.replay(await events.read(sessionId))
+    },
+    async listSessions(query) {
+      await registry.refresh()
+      return registry.list(query)
+    },
+    interrupt() {
+      current?.abort()
     },
   }
 
