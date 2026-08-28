@@ -86,9 +86,10 @@ export class Container {
    * Create an isolated child scope that inherits this container's services for
    * lookup. A child can register its own providers (which shadow the parent
    * within the child's lookup) and disposing the child tears down only its own
-   * registrations, leaving the parent intact. This is how per-Location and per-
-   * DAG-node injection is isolated (each node gets a scope and picks its own
-   * model/tools) without polluting the global registry.
+   * registrations, leaving the parent intact. This is the isolation primitive
+   * for per-Location / per-invocation injection (a child picks its own local
+   * providers without polluting the global registry). Whether a given use case
+   * (e.g. DAG nodes) uses it is a caller decision, not a seam requirement.
    *
    * Disposing a parent cascades to its live children, so a child never keeps
    * resolving against a torn-down parent. A disposed container refuses further

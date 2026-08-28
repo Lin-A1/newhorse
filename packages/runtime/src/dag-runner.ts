@@ -1,0 +1,263 @@
+import { validate, foldDAG, cascadeTerminal, readyNodes, reconcile, DAGError, type DAGSpec, type DAGNode, type Topology, type NodeState } from "@newhorse/core"
+import { runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime } from "@newhorse/core"
+
+/**
+ * Declarative DAG dispatcher (runtime half — drives concurrency).
+ *
+ * Consumes the core topology/fold primitives and actually runs each DAG node
+ * as a subagent session: spawn (persist), admit the node input, run the child
+ * via the shared turn loop, write the node's result to a slot store, and wake
+ * dependents. Honors per-node models and per-node AbortControllers. Node
+ * isolation comes from each node being its own subagent session (its own id,
+ * agent, and model) — not a runtime DI scope, which this dispatcher does not
+ * need.
+ *
+ * This is the "declarative, not background-task list" story in action: the
+ * graph is an execution spec, ready-queue + event wakeup, no join blocking.
+ */
+export interface SlotStore {
+  readonly set: (dagId: string, nodeId: string, slotId: string, outputRef: string) => void
+  readonly get: (dagId: string, slotId: string) => { nodeId: string; outputRef: string; status: "succeeded" } | undefined
+}
+
+export function createSlotStore(): SlotStore {
+  const slots = new Map<string, Map<string, { nodeId: string; outputRef: string; status: "succeeded" }>>()
+  return {
+    set(dagId, nodeId, slotId, outputRef) {
+      let s = slots.get(dagId)
+      if (!s) {
+        s = new Map()
+        slots.set(dagId, s)
+      }
+      s.set(slotId, { nodeId, outputRef, status: "succeeded" })
+    },
+    get(dagId, slotId) {
+      return slots.get(dagId)?.get(slotId)
+    },
+  }
+}
+
+export interface DagDeps {
+  readonly events: EventStore
+  readonly inbox: MemorySessionInput
+  readonly runtime: TurnRuntime
+  readonly tools: readonly Tool[]
+  /** Parent model a node inherits when it does not declare its own (cost-down). */
+  readonly defaultModel?: string
+  /** Max retry attempts per node on failure. Default 2. */
+  readonly maxRetries?: number
+  /** Max concurrent nodes. Default 2. */
+  readonly concurrency?: number
+  /** Optional external abort: aborts the whole graph, stops claiming, aborts in-flight. */
+  readonly signal?: AbortSignal
+}
+
+export interface DagOutcome {
+  readonly dagId: string
+  readonly status: Record<string, NodeState>
+  readonly aborted: boolean
+}
+
+/** Run a declarative DAG. Returns after all nodes reach a terminal state. */
+export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> {
+  const topo = validate(spec)
+  const dagId = crypto.randomUUID()
+  const concurrency = deps.concurrency ?? 2
+  const slotStore = createSlotStore()
+
+  // Persist the declaration (event-sourced aggregate).
+  await deps.events.append(dagId, "DAG.Declared", { dagId, spec }, "dag")
+
+  // Node state kept in memory for the run; durable mirror via append.
+  const status: Record<string, NodeState> = {}
+  const running = new Map<string, AbortController>()
+  const attempts = new Map<string, number>()
+  const maxRetries = deps.maxRetries ?? 2
+  const pendingSkips: { nodeId: string; reason: string }[] = []
+  const abortEmitted = new Set<string>()
+  for (const id of Object.keys(topo.nodes)) status[id] = "pending"
+
+  let aborted = false
+  let stopped = false
+
+  /** Abort the whole graph: stop claiming new nodes, abort in-flight, mark the
+   * graph aborted. Mirrors spec §3.3 (abort-graph). */
+  const abortGraph = async (): Promise<void> => {
+    if (stopped) return
+    stopped = true
+    await deps.events.append(dagId, "DAG.Aborted", { dagId }, "dag")
+    for (const ctrl of running.values()) ctrl.abort()
+    // In-flight nodes become aborted (persisted) — they must not settle as
+    // succeeded after an abort. runNode also guards, but this is the durable
+    // terminal marker.
+    for (const id of running.keys()) {
+      if (status[id] !== "running") continue
+      await emitAbort(id)
+    }
+    // Pending nodes become skipped (persisted) so a replay rebuilds them.
+    const pendingIds = Object.keys(status).filter((id) => status[id] === "pending")
+    for (const id of pendingIds) {
+      status[id] = "skipped"
+      await emit("DAG.NodeSkipped", { nodeId: id, reason: "abort" })
+    }
+  }
+
+  if (deps.signal) {
+    if (deps.signal.aborted) void abortGraph()
+    else deps.signal.addEventListener("abort", () => void abortGraph(), { once: true })
+  }
+
+  /** Emit a DAG event and apply it to the in-memory status. */
+  const emit = async (type: string, data: Record<string, unknown>): Promise<void> => {
+    await deps.events.append(dagId, type, data, "dag")
+    const d = foldDAG(await deps.events.read(dagId))
+    Object.assign(status, d.status)
+    aborted = d.aborted || aborted
+  }
+
+  /** Emit NodeAborted at most once per node (dedupe abortGraph + runNode). */
+  const emitAbort = async (id: string): Promise<void> => {
+    if (abortEmitted.has(id)) return
+    abortEmitted.add(id)
+    await emit("DAG.NodeAborted", { nodeId: id })
+  }
+
+  /** Resolve a node's subagent, write its slot, wake dependents. */
+  const runNode = async (id: string): Promise<void> => {
+    const node = topo.nodes[id]!
+    const ctrl = new AbortController()
+    running.set(id, ctrl)
+    await emit("DAG.NodeStarted", { nodeId: id, sessionId: id })
+
+    try {
+      const childSessionId = crypto.randomUUID()
+      await deps.events.append(childSessionId, "Session.Created", { id: childSessionId, location: "", createdAt: Date.now() }, "session")
+      await deps.inbox.admit({ id: crypto.randomUUID(), sessionId: childSessionId, prompt: buildInput(node, slotStore, dagId), delivery: "steer" })
+
+      const agent: Agent = { id: node.agent.name, model: node.agent.model ?? deps.defaultModel ?? "model", tools: [...deps.tools] }
+      const result = await runSession(deps.runtime, {
+        agent,
+        sessionId: childSessionId,
+        resolveTool: (name) => deps.tools.find((t) => t.name === name),
+        signal: ctrl.signal,
+      })
+
+      // A cancelled run settles with finish="interrupted" (loop returns it, does
+      // NOT throw). It must NOT be recorded as succeeded/NodeResolved nor write a
+      // slot — it becomes NodeAborted. Same for an abort that fired between the
+      // runSession return and this write.
+      if (result.finish === "interrupted" || stopped) {
+        await emitAbort(id)
+        return
+      }
+
+      const slotId = node.produces ?? node.id
+      const outputRef = `session:${childSessionId}`
+      slotStore.set(dagId, id, slotId, outputRef)
+      await emit("DAG.NodeResolved", { nodeId: id, slotId, sessionId: childSessionId, outputRef })
+    } catch (e) {
+      // An aborted control flow surfaces as a cancellation (NodeAborted), not a
+      // failure; a genuine failure retries up to maxRetries then NodeFailed.
+      if (isCancelledSignal(e)) {
+        await emitAbort(id)
+        return
+      }
+      const reason = e instanceof Error ? e.message : String(e)
+      const attempt = (attempts.get(id) ?? 0) + 1
+      if (attempt <= maxRetries) {
+        attempts.set(id, attempt)
+        status[id] = "pending" // allow pump to re-dispatch
+        await emit("DAG.NodeRetried", { nodeId: id, attempt })
+      } else {
+        await emit("DAG.NodeFailed", { nodeId: id, reason })
+      }
+    } finally {
+      running.delete(id)
+      ctrl.abort()
+    }
+  }
+
+  // Event-driven worker pool (true no-join): whenever a node settles, pump()
+  // recomputes ready and starts new nodes up to concurrency. A slow leaf never
+  // blocks an unrelated branch that is already ready.
+  const settle = (id: string) => status[id] === "succeeded"
+  const pump = (): void => {
+    if (stopped) return
+    // Cascade terminal state (scheme B): a dep non-succeeded makes its dependents skipped.
+    const before = { ...status }
+    Object.assign(status, cascadeTerminal(topo, status))
+    // Queue cascade-skipped persists (flushed before runDag returns) so a replay
+    // rebuilds them. Not fire-and-forget.
+    for (const id of Object.keys(status)) {
+      if (status[id] === "skipped" && before[id] !== "skipped") {
+        pendingSkips.push({ nodeId: id, reason: "cascade" })
+      }
+    }
+    const ready = readyNodes(topo, status, settle)
+    let inFlight = 0
+    for (const id of ready) {
+      if (inFlight >= concurrency) break
+      const nodeState = status[id]
+      if (nodeState !== "pending") continue
+      status[id] = "running" // claim before dispatch
+      inFlight++
+      runNode(id)
+        .catch(() => {})
+        .finally(() => {
+          pump() // a node settled -> recompute ready; may start more
+        })
+    }
+  }
+
+  pump()
+  await waitForTerminal(topo, status)
+  // Flush cascade-skipped persists before returning so a replay rebuilds them.
+  for (const skip of pendingSkips) {
+    await emit("DAG.NodeSkipped", skip)
+  }
+  pendingSkips.length = 0
+
+  return { dagId, status, aborted }
+}
+
+/** Poll status until every node is terminal (succeeded/failed/skipped/aborted). */
+async function waitForTerminal(topology: Topology, status: Record<string, NodeState>): Promise<void> {
+  const terminal = (id: string) => status[id] === "succeeded" || status[id] === "failed" || status[id] === "skipped" || status[id] === "aborted"
+  while (!Object.keys(topology.nodes).every(terminal)) {
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+/** Deterministic slot→input assembly: the node's input may reference consumed
+ * slots from the slot store, spliced deterministically (never LLM-organized).
+ * R3: a consumed slot that is missing fails (missing-slot), never silently empty.
+ * Throws DAGError so the node is marked NodeFailed, not run with empty context. */
+function buildInput(node: DAGNode, slotStore: SlotStore, dagId: string): string {
+  let input = node.input ?? ""
+  for (const slotId of node.consumes ?? []) {
+    const slot = slotStore.get(dagId, slotId)
+    if (!slot) throw new DAGError(`node ${node.id} consumes missing slot "${slotId}"`)
+    input += `\n<slot:${slotId}>${slot.outputRef}</slot:${slotId}>`
+  }
+  return input
+}
+
+/** Detect an AbortSignal-driven cancellation (AbortError / DOMException ABORT_ERR). */
+function isCancelledSignal(e: unknown): boolean {
+  const err = e as { name?: string; code?: number } | null
+  if (!err) return false
+  return err.name === "AbortError" || err.name === "SessionCancelled" || (typeof err.code === "number" && err.code === 20)
+}
+
+/**
+ * Replay a DAG's state from its durable event log (post-crash/restart). Folds
+ * the DAG aggregate and then reconciles any node left "running" — a process died
+ * mid-node — to aborted, so the restored picture never shows a running node
+ * that has no live process. This is the R1 "replayable DAG" entry point.
+ */
+export async function replayDag(events: EventStore, dagId: string): Promise<DagOutcome> {
+  const stored = await events.read(dagId)
+  const folded = foldDAG(stored)
+  const status = reconcile(folded)
+  return { dagId, status, aborted: folded.aborted }
+}

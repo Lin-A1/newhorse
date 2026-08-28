@@ -17,8 +17,8 @@ import type { SessionMessage } from "./session"
 
 export type UnknownRecord = Record<string, unknown>
 
-/** Discriminates which aggregate owns an event (session, audit, ...). */
-export type AggregateType = "session" | "audit"
+/** Discriminates which aggregate owns an event (session, audit, dag, ...). */
+export type AggregateType = "session" | "audit" | "dag"
 
 export interface StoredEvent<T = UnknownRecord> {
   readonly aggregate: AggregateType

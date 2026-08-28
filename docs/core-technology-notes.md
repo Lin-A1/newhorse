@@ -123,6 +123,17 @@ The butler is a privileged LLM session with extra tools. Its agency must be boun
 - Audits record `actorKind` (authority source) and `actorId` (executing session) separately.
 - **Scope**: M2b is single-process single-app (a session tree). Cross-app/proc parent chains and a full `SessionManager` for cross-session effect delivery (interrupt/send of another live session) are M4. The hub provides a seam; spawn persists, interrupt/send are no-op stubs until the manager exists.
 
+## 12. Declarative DAG scheduling (M3)
+
+A node is one subagent delegation; edges are declared deps; execution is ready-queue + event wakeup with no join blocking; each node picks its own model (cost balance). The graph is drawn forward and is the execution spec, not a background-task list or a post-hoc lineage (see `specs/v2/m3-dag-scheduling.md`).
+
+- **Load-bearing pillars** (what makes it "declarative", not a re-skin):
+  1. `DAGRun` is an event-sourced aggregate — `DAG.Declared`/`NodeStarted`/`NodeResolved`/`NodeFailed`/`NodeSkipped`/`NodeAborted`/`NodeRetried`/`Aborted` folded by `foldDAG`; a `replayDag(events, dagId)` entry rebuilds the whole graph from the log, reconciling any node still `running` (process died mid-node) to `aborted`.
+  2. A runtime-enforced data contract: each node `produces` a slot (`produces ?? id`), `validate()` rejects a node whose `consumes` references a slot no ancestor produces, and `buildInput` fails on a missing slot (never silently empty).
+- **Concurrency**: `validate` first (edge de-dup, cycle/unknown/self dep detection); event-driven worker pool via `pump()` (a settled node re-pumps, never a serial or per-layer `Promise.all` join); per-node `AbortController`; per-node subagent session isolation (each node is its own `runSession` with its own id/agent/model — **not** a runtime DI scope).
+- **Failure/termination**: state machine includes `aborted`; `abortGraph` stops claiming new nodes, aborts in-flight, and marks running nodes `NodeAborted` / pending `NodeSkipped` (deduped via `emitAbort`); scheme-B cascade turns a dep-on-`non-succeeded` node into `skipped` without spawning it (persisted via `pendingSkips`, flushed before return).
+- **Honest scope**: cross-session effect delivery and a full `SessionManager` stay M4; DAG events use `aggregate:"dag"`.
+
 ## Usage
 
 Design docs live in `docs/`. Plans live in `specs/v2/`. When a core mechanism is implemented, record the decision here; when a design materially changes, update this file.

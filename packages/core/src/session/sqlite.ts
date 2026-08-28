@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite"
-import type { StoredEvent, UnknownRecord } from "@newhorse/schema"
+import type { StoredEvent, UnknownRecord, AggregateType } from "@newhorse/schema"
 import type { EventStore } from "./store"
 
 /**
@@ -44,10 +44,10 @@ export class SqliteEventStore implements EventStore {
     `)
   }
 
-  async append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T): Promise<StoredEvent> {
+  async append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T, aggregate: AggregateType = "session"): Promise<StoredEvent> {
     const seq = this.#nextSeq(aggregate_id)
     this.#db.run("INSERT INTO event (aggregate_id, seq, type, data) VALUES (?, ?, ?, ?)", [aggregate_id, seq, type, JSON.stringify(data)])
-    return { aggregate: "session", aggregate_id, seq, type, data }
+    return { aggregate, aggregate_id, seq, type, data }
   }
 
   async read(aggregate_id: string): Promise<StoredEvent[]> {

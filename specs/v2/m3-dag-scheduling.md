@@ -157,7 +157,7 @@ runDAG(spec, deps):
 ```
 
 - **无 join 阻塞**：ready 队列可并行，worker 池调度；完成回调泵依赖（单进程无需 pub/sub 总线，R6 术语澄清）。
-- **每节点用 `Container.scope()`**：继承共享态（EventStore/registry/SlotStore）+ shadow 节点局部态（model/tools）。
+- **每节点隔离**：节点各自是一个独立 subagent 会话（各自 sessionId/agent/model），经独立 `runSession` 运行，天然隔离 model/tools；共享经 `runDag` 内的 SlotStore。**不依赖运行时 DI scope**（Container.scope 在此不需要——节点隔离已由独立会话达成）。
 
 ### 3.3 节点状态机（R2.3 补 aborted）
 
@@ -223,10 +223,7 @@ interface NodeResult {
   - worker 池并发调度（非"复用 runSession 的串行循环"）。
 - **registry**：复用 M2a 的 SessionRegistry 观察子会话树。
 - **审计**：DAG run 注册进 registry，节点 settle 记审计（可观察/可干预）。
-- **scoped container**（R5 边界纠正）：scope **不是全隔离**，是"**继承共享态 + shadow 节点局部态**"：
-  - 共享走继承：EventStore / registry / `SlotStore` 由父 scope 提供，节点子 scope `get` 到同一实例 → 数据天然可见。
-  - 隔离走 shadow：节点子 scope `register(LlmClient, cheapModel)` / `register(toolRegistry, nodeTools)` shadow 父的 → model/tools 不污染。
-  - **`SlotStore` 必须列为共享 service**（否则实现会顺手 scope 进节点导致看不见槽）。
+- **节点隔离**：每个节点是一个**独立 subagent 会话**（各自 sessionId/agent/model），经独立 `runSession` 运行——model/tools 天然隔离（无需运行时 DI scope）。共享（EventStore/registry/SlotStore）经 `runDag` 闭包或共享 service。**本实现不经 `Container.scope()`（独立会话已达成隔离）；此决策录入 docs。**
 - **依赖方向**：DAG 类型放 core（纯拓扑/状态机），**调度器放 runtime**（要挂 hub/SessionHub）——防止 `hub` 依赖倒灌进 core（no-reverse-dependency）。
 
 ---
@@ -248,7 +245,7 @@ interface NodeResult {
 - [ ] 节点最小数据契约（`NodeResult` + `consumes` 校验 + missing-slot 策略）。
 - [ ] 节点独立模型 spawn（costDown 默认策略 + 确定性槽装配）。
 - [ ] 部分失败隔离（retry 上限/skip 传播/abort-graph 协调 running 节点）。
-- [ ] 每节点 `Container.scope()`（继承共享态 + shadow 局部态）+ SlotStore 共享。
+- [ ] 节点隔离（每节点独立 subagent 会话：各自 id/agent/model）+ SlotStore 共享。
 - [ ] DAG run 可观察（registry + 审计）+ 可中断单节点。
 - [ ] 独立锐评（重点是：非字面/非事后/非后台任务的区分是否成立、数据契约是否防污染、拓扑+就绪队列正确）。
 

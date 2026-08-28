@@ -1,4 +1,4 @@
-import type { StoredEvent, SessionEvent, UnknownRecord } from "@newhorse/schema"
+import type { StoredEvent, SessionEvent, UnknownRecord, AggregateType } from "@newhorse/schema"
 
 /**
  * Durable event store. Everything the model can see must live here first.
@@ -9,7 +9,7 @@ import type { StoredEvent, SessionEvent, UnknownRecord } from "@newhorse/schema"
  */
 export interface EventStore {
   /** Append an event for an aggregate; returns its assigned sequence. */
-  append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T): Promise<StoredEvent>
+  append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T, aggregate?: AggregateType): Promise<StoredEvent>
   /** Read the full ordered event stream for an aggregate. */
   read(aggregate_id: string): Promise<StoredEvent[]>
   /** Latest sequence for an aggregate, or -1 when none. */
@@ -22,10 +22,10 @@ export interface EventStore {
 export class MemoryEventStore implements EventStore {
   #events = new Map<string, StoredEvent[]>()
 
-  async append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T): Promise<StoredEvent> {
+  async append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T, aggregate: AggregateType = "session"): Promise<StoredEvent> {
     const log = this.#events.get(aggregate_id) ?? []
     const seq = log.length
-    const event: StoredEvent = { aggregate: "session", aggregate_id, seq, type, data }
+    const event: StoredEvent = { aggregate, aggregate_id, seq, type, data }
     log.push(event)
     this.#events.set(aggregate_id, log)
     return event
