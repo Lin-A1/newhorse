@@ -110,20 +110,19 @@ async function cancelledResult(runtime: TurnRuntime, opts: RunOptions, turns: nu
   return result
 }
 
-/** Internal marker for a turn cancelled by an AbortSignal mid-stream. */
-export class SessionCancelled extends Error {
-  readonly _tag = "SessionCancelled"
-  constructor() {
-    super("session interrupted")
-    this.name = "SessionCancelled"
-  }
-}
-
-/** Detect a cancellation from either core's marker or the llm transport. */
+/** Detect a cancellation from the llm transport or a fetch abort
+ * (AbortError/DOMException). Core cannot import the llm package, so the llm
+ * transport's LlmCancelled is matched structurally by name/tag. */
 function isCancelled(e: unknown): boolean {
-  if (e instanceof SessionCancelled) return true
-  // LlmCancelled (llm package) is detected structurally: core must not import it.
-  return (e as { name?: string; _tag?: string } | null)?.name === "LlmCancelled" || (e as { _tag?: string } | null)?._tag === "LlmCancelled"
+  const err = e as { name?: string; _tag?: string; code?: number } | null
+  if (!err) return false
+  // llm transport's LlmCancelled.
+  if (err.name === "LlmCancelled" || err._tag === "LlmCancelled") return true
+  // A fetch that aborted before/at the request phase surfaces as AbortError.
+  if (err.name === "AbortError") return true
+  // DOM abort (some runtimes) surfaces as DOMException with code 20 (ABORT_ERR).
+  if (typeof err.code === "number" && err.code === 20) return true
+  return false
 }
 
 /**
