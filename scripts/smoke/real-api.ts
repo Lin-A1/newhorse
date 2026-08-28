@@ -128,6 +128,30 @@ async function run(app: ReturnType<typeof createApp>, text: string): Promise<{ r
   }
 }
 
+// S7 (M3.5): model autonomously uses a builtin tool to answer from a file.
+// Create a workspace with a file, let the model discover + read it, and verify
+// it reports the answer the file contains (proves tools give the agent hands).
+{
+  const { mkdtemp, rm, writeFile, mkdir } = await import("node:fs/promises")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const dir = await mkdtemp(join(tmpdir(), "nh-smoke7-"))
+  try {
+    await mkdir(join(dir, "src"), { recursive: true })
+    await writeFile(join(dir, "src/config.json"), "{\"answer\":\"GOLDEN_VALUE\"}")
+    // No explicit tools — the app's builtin toolset should be wired automatically.
+    const app = await createApp({ provider, model, workspace: dir })
+    const { result, texts, errors } = await run(app, "List the files under src/, read config.json, and reply with exactly the value of the answer field.")
+    const joined = texts.join("")
+    const history = await app.resume()
+    const toolMsgs = history.messages.filter((m) => m.kind === "tool")
+    const usedTool = toolMsgs.length > 0
+    ok("S7 builtin tool use", result.finish === "stop" && usedTool && /GOLDEN_VALUE/.test(joined) && errors.length === 0, `finish=${result.finish} toolMsgs=${toolMsgs.length} got=${joined.slice(0, 60)}`)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+}
+
 // S6 (optional): second protocol — if --openaiCompatUrl is given, run S1 through
 // the openai-compatible protocol to prove the four-axis Route swap.
 {

@@ -43,6 +43,10 @@ export interface ToolCtx {
   readonly caller: Initiator
   /** The executing session id (the butler that is running). */
   readonly sessionId?: string
+  /** Cancellation: a cooperative tool should stop and honor this signal so its
+   * side effects (e.g. a bash subprocess) are terminated rather than leaking
+   * past the session interrupt. A tool may ignore it for quick ops. */
+  readonly signal?: AbortSignal
   /** Optional registry a privileged/butler tool uses to resolve target + audit. */
   readonly registry?: import("../session/registry").SessionRegistry
   /** Append a butler audit action to the durable audit aggregate. */

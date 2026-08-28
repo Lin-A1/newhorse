@@ -4,6 +4,7 @@ import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry } from "@newhorse/plugin"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
+import { createBuiltinTools } from "./tools"
 
 /**
  * Runtime assembly. This is the domain wiring shared by every transport
@@ -27,6 +28,10 @@ export interface AppConfig {
   readonly fetch?: Fetcher
   /** Enable the butler toolset (list/send/spawn/interrupt) for this session. */
   readonly asButler?: boolean
+  /** Expose the shell `bash` tool. Off by default because it is not sandboxed
+   * to the workspace (M3.5 §2.2): enabling it authorizes the session to
+   * read/write/execute any reachable path with the process user's permissions. */
+  readonly enableBash?: boolean
 }
 
 /** A live session event a shell may observe (streamed model output, etc.). */
@@ -78,7 +83,18 @@ export async function createApp(config: AppConfig): Promise<App> {
   }
 
   const registry = new SessionRegistry(events)
-  const tools: Tool[] = config.tools ? [...config.tools] : config.plugins?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute })) ?? []
+  // Priority (M3.5 §2.3): explicit `tools` > plugins > builtin. An explicit
+  // empty array is a deliberate "no tools"; only an absent field falls through
+  // to plugins/builtin. bash is only added when enableBash is set.
+  const workspace = config.workspace ?? process.cwd()
+  const explicitTools = config.tools
+  let tools: Tool[]
+  if (explicitTools !== undefined) {
+    tools = [...explicitTools]
+  } else {
+    const pluginTools = config.plugins?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute }))
+    tools = pluginTools && pluginTools.length > 0 ? pluginTools : createBuiltinTools({ workspace, enableBash: config.enableBash ?? false })
+  }
 
   // Butler toolset (M2b): a signed set of privileged tools whose execute reads
   // ctx.caller + ctx.registry to authorize and audit each action.
@@ -135,8 +151,14 @@ export async function createApp(config: AppConfig): Promise<App> {
       // a session do not keep re-inserting the same context.
       const session = Session.replay(await events.read(sessionId))
       if (!session.messages.some((m) => m.kind === "system")) {
-        const docs = await discoverWorkspaceContext(config.workspace ?? process.cwd())
-        const system = composeSystemContext(docs)
+        const docs = await discoverWorkspaceContext(workspace)
+        const docsCtx = composeSystemContext(docs)
+        // Make the workspace root model-visible so the first-turn model can
+        // address files by path instead of guessing (M3.5 §2.4). This leaks the
+        // session's working directory, which is the same as every fs tool's
+        // scope, so it is not a new disclosure.
+        const rootLine = `Workdir: ${workspace}` + (docsCtx ? "\n\n" : "")
+        const system = docsCtx ? rootLine + docsCtx : rootLine
         if (system) {
           const systemMessage = session.projectMessage({ kind: "system", id: crypto.randomUUID(), seq: 0, text: system })
           await events.append(sessionId, systemMessage.type, systemMessage.data as Record<string, unknown>)

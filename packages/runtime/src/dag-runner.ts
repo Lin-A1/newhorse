@@ -1,5 +1,6 @@
 import { validate, foldDAG, cascadeTerminal, readyNodes, reconcile, DAGError, type DAGSpec, type DAGNode, type Topology, type NodeState } from "@newhorse/core"
 import { runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime } from "@newhorse/core"
+import { createBuiltinTools } from "./tools"
 
 /**
  * Declarative DAG dispatcher (runtime half — drives concurrency).
@@ -41,7 +42,12 @@ export interface DagDeps {
   readonly events: EventStore
   readonly inbox: MemorySessionInput
   readonly runtime: TurnRuntime
+  /** Tools available to every DAG node. When empty, the builtin toolset (read/
+   * write/edit/list/search) is injected so subagent nodes keep their "hands"
+   * (M3.5 §2.5). */
   readonly tools: readonly Tool[]
+  /** Workspace for builtin tools + child sessions. Defaults to cwd. */
+  readonly workspace?: string
   /** Parent model a node inherits when it does not declare its own (cost-down). */
   readonly defaultModel?: string
   /** Max retry attempts per node on failure. Default 2. */
@@ -64,6 +70,10 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   const dagId = crypto.randomUUID()
   const concurrency = deps.concurrency ?? 2
   const slotStore = createSlotStore()
+  // Subagent nodes need hands: when the caller injects no tools, we default to
+  // the builtin toolset so a research/explore node is not limited to bare model
+  // answers (M3.5 §2.5 — cost-down is only meaningful if nodes can actually act).
+  const tools = deps.tools.length > 0 ? deps.tools : createBuiltinTools({ workspace: deps.workspace ?? process.cwd() })
 
   // Persist the declaration (event-sourced aggregate).
   await deps.events.append(dagId, "DAG.Declared", { dagId, spec }, "dag")
@@ -134,11 +144,11 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       await deps.events.append(childSessionId, "Session.Created", { id: childSessionId, location: "", createdAt: Date.now() }, "session")
       await deps.inbox.admit({ id: crypto.randomUUID(), sessionId: childSessionId, prompt: buildInput(node, slotStore, dagId), delivery: "steer" })
 
-      const agent: Agent = { id: node.agent.name, model: node.agent.model ?? deps.defaultModel ?? "model", tools: [...deps.tools] }
+      const agent: Agent = { id: node.agent.name, model: node.agent.model ?? deps.defaultModel ?? "model", tools: [...tools] }
       const result = await runSession(deps.runtime, {
-        agent,
         sessionId: childSessionId,
-        resolveTool: (name) => deps.tools.find((t) => t.name === name),
+        agent,
+        resolveTool: (name) => tools.find((t) => t.name === name),
         signal: ctrl.signal,
       })
 

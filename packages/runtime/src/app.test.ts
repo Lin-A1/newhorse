@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { createApp } from "./app"
 import type { Fetcher } from "@newhorse/llm"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -244,5 +244,32 @@ describe("runtime app", () => {
     // Both the original prompt and the mid-run steer are in the same session.
     expect(userTexts).toContain("start long task")
     expect(userTexts).toContain("also do this extra thing")
+  })
+
+  it("wires the builtin toolset automatically when no tools are provided", async () => {
+    // First turn: the model calls the builtin `write` tool. Second turn: stop.
+    const turn1 = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "write", arguments: '{"path":"x.txt","content":"hi"}' } }] }, finish_reason: "tool_calls" }] }) + "\n\n",
+      "data: [DONE]\n\n",
+    ].join("")
+    const turn2 = ["data: " + JSON.stringify({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    let call = 0
+    const fetch: Fetcher = async () => sse(call++ === 0 ? turn1 : turn2)
+    // No explicit tools and no plugins → the builtin set must be wired, and the
+    // tool must resolve + write inside the workspace (validating the sandbox).
+    const dir = await mkdtemp(join(tmpdir(), "nh-builtin-"))
+    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", workspace: dir, fetch: fetch as never })
+
+    const result = await app.prompt("write the file", "user")
+    expect(result.finish).toBe("stop")
+    expect(result.step).toBe(2)
+
+    const history = await app.resume()
+    const tool = history.messages.find((m) => m.kind === "tool")
+    expect(tool).toBeDefined()
+    // The builtin write actually created the file in the workspace.
+    const text = await readFile(join(dir, "x.txt"), "utf8")
+    expect(text).toBe("hi")
+    await rm(dir, { recursive: true, force: true })
   })
 })

@@ -203,7 +203,7 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
 
   if (toolCalls.length > 0) {
     // Run tools concurrently; archive results in call order so pairing is stable.
-    const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, sessionId: opts.sessionId, ...opts.toolCtx }
+    const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, sessionId: opts.sessionId, signal: opts.signal, ...opts.toolCtx }
     const settled = await Promise.allSettled(toolCalls.map((call) => invokeTool(opts.resolveTool, call, ctx, opts.signal)))
     for (let i = 0; i < settled.length; i++) {
       const call = toolCalls[i]!
@@ -247,16 +247,24 @@ async function invokeTool(resolveTool: (name: string) => Tool | undefined, call:
   const exec = tool.execute(call.input, ctx)
   if (!signal) return exec
 
+  let rejectRef: ((reason: unknown) => void) | undefined
+  const onAbort = () => {
+    const err = new Error("tool execution aborted") as Error & { name: string }
+    err.name = "AbortError"
+    rejectRef?.(err)
+  }
   const abort = new Promise<never>((_, reject) => {
-    const onAbort = () => {
-      const err = new Error("tool execution aborted") as Error & { name: string }
-      err.name = "AbortError"
-      reject(err)
-    }
-    if (signal.aborted) onAbort()
-    else signal.addEventListener("abort", onAbort, { once: true })
+    rejectRef = reject
+    if (signal!.aborted) onAbort()
+    else signal!.addEventListener("abort", onAbort, { once: true })
   })
-  return Promise.race([exec, abort])
+  try {
+    return await Promise.race([exec, abort])
+  } finally {
+    // Drop the listener so repeated tool calls do not accumulate a dangling
+    // listener on a live session signal.
+    signal!.removeEventListener("abort", onAbort)
+  }
 }
 
 /**
