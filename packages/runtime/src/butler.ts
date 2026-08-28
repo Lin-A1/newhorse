@@ -39,7 +39,11 @@ async function guarded(
   const actorId = ctx.sessionId ?? (ctx.caller.kind === "user" ? "user" : ctx.caller.sessionId)
 
   let target: SessionRow | undefined
-  if (targetId) target = await deps.registry.get(targetId)
+  if (targetId) {
+    // Refresh so a just-spawned child is visible (registry is a lazy projection).
+    await deps.registry.refresh()
+    target = await deps.registry.get(targetId)
+  }
 
   // needsTarget tools: a missing/unknown target is denied before authorize.
   const decision = needsTarget && !target ? { allowed: false, reason: "unknown target" } : authorize(ctx.caller, target)
@@ -87,7 +91,9 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
         const c = requireCtx(ctx)
         const model = (input as { model?: string }).model
         const parentId = c.caller.kind === "user" ? "user" : c.caller.sessionId
+        // spawn has no target; always allowed, but MUST be audited.
         const child = await c.spawnFrom?.(parentId, model)
+        await c.appendAudit?.({ actorKind: c.caller.kind, actorId: c.sessionId ?? parentId, op: "spawn_agent", targetSessionId: child, outcome: "allowed", reason: undefined })
         return { spawned: true, model, parentId, childSessionId: child }
       },
     },

@@ -26,8 +26,8 @@ async function setup(butlerSession = "b1"): Promise<{ tools: ReturnType<typeof c
 
 const butlerSession = "b1"
 
-function ctx(caller: Initiator): ToolCtx {
-  return { caller }
+function ctx(caller: Initiator, hooks?: Partial<ToolCtx>): ToolCtx {
+  return { caller, ...hooks }
 }
 
 describe("butler authority", () => {
@@ -113,5 +113,29 @@ describe("butler authority", () => {
     } finally {
       await rm(d, { recursive: true, force: true }).catch(() => {})
     }
+  })
+
+  it("spawn_agent is audited and unknown target is denied", async () => {
+    const { tools, audits } = await setup()
+    const spawn = tools.find((t) => t.name === "spawn_agent")!
+    const child = await spawn.execute(
+      { model: "m" },
+      ctx({ kind: "butler", sessionId: butlerSession }, {
+        sessionId: butlerSession,
+        spawnFrom: async () => "child-1",
+        appendAudit: async (e) => {
+          audits.push(e)
+        },
+      }),
+    )
+    const childId = (child as { childSessionId?: string }).childSessionId
+    expect(childId).toBe("child-1")
+    // spawn must be audited.
+    expect(audits.some((a) => a.op === "spawn_agent" && a.outcome === "allowed")).toBe(true)
+
+    // send to an unknown target -> denied (needsTarget short-circuit).
+    const send = tools.find((t) => t.name === "send_to_session")!
+    await expect(send.execute({ target: "ghost", content: "x" }, ctx({ kind: "parent", sessionId: "p1" }))).rejects.toThrow(/denied/)
+    expect(audits.at(-1)?.outcome).toBe("denied")
   })
 })

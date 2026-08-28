@@ -111,6 +111,18 @@ Dependency direction: `cli` depends on `runtime` (and `schema`/`llm` for its own
 
 Known follow-ups (outside M1): a `runId` associating events with a specific `prompt()` call for re-used apps; a shared `resolveProvider` per shell; wiring `createApp` through the seam `Container` for provider injection.
 
+## 11. Butler authority model (M2b)
+
+The butler is a privileged LLM session with extra tools. Its agency must be bound by a trust boundary before any code is trusted (see `specs/v2/m2b-butler-authority.md`).
+
+- `Initiator` is **runtime-injected** into `ToolCtx` by the loop, never self-reported by the model: `butler`/`parent` from the running session, `user` only from a transport-level principal on the prompt. A model cannot forge `{kind:"user"}`.
+- **user authority** comes from `app.prompt(text, principal)` where the transport stamps a prompt (human TTY) as `user`; the derived caller kind gates butler tools for that one round. It is one-shot, never inferred from prompt text.
+- Butler tools (`list_sessions`/`interrupt`/`spawn_agent`/`send_to_session`) enforce their own `authorize` gate reading `ctx.caller` + registry, and append an audit entry (`Session.ButlerAction`) to a **separate audit aggregate** (`audit:<sessionId>`) for both allowed and denied.
+- Authorization rules: `list` any; `interrupt` butler-wide/parent-scoped; `spawn` any (spawner is the parent, persists `Session.Created` + `Session.Spawned`); `send_to_session` **default-deny** (user, or parent to its direct child).
+- `targetRequired` tools short-circuit an unknown/missing target to denied **before** authorize.
+- Audits record `actorKind` (authority source) and `actorId` (executing session) separately.
+- **Scope**: M2b is single-process single-app (a session tree). Cross-app/proc parent chains and a full `SessionManager` for cross-session effect delivery (interrupt/send of another live session) are M4. The hub provides a seam; spawn persists, interrupt/send are no-op stubs until the manager exists.
+
 ## Usage
 
 Design docs live in `docs/`. Plans live in `specs/v2/`. When a core mechanism is implemented, record the decision here; when a design materially changes, update this file.

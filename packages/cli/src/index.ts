@@ -15,11 +15,12 @@ export async function main(argv: string[]): Promise<void> {
     provider: config,
     model: args.model ?? "gpt-4o-mini",
     workspace: process.cwd(),
+    asButler: args.butler ? true : false,
   })
 
   const promptText = args.prompt ?? (await readStdin())
   if (!promptText) {
-    console.error("usage: newhorse [--provider openai|openai-responses|anthropic] [--model NAME] [--prompt TEXT]")
+    console.error("usage: newhorse [--provider openai|openai-responses|anthropic] [--model NAME] [--prompt TEXT] [--butler]")
     return
   }
 
@@ -29,7 +30,7 @@ export async function main(argv: string[]): Promise<void> {
     else if (event.type === "reasoning") process.stdout.write(`\u001b[2m${event.text}\u001b[0m`)
     else if (event.type === "error") process.stderr.write(`\u001b[31m${event.message}\u001b[0m\n`)
   })
-  await app.prompt(promptText)
+  await app.prompt(promptText, "user")
   const history = await app.resume()
   for (const message of history.messages) {
     printMessage(message)
