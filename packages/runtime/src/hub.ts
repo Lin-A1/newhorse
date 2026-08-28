@@ -7,11 +7,20 @@ import type { EventStore } from "@newhorse/core"
  * "same-app session tree" the authority model scopes to (see
  * specs/v2/m2b-butler-authority.md §3.3).
  */
+/** Result of a hub effect — distinguishes "authorized & scheduled" from "actually
+ * applied". In the single-app boundary only spawn is applied; interrupt/send are
+ * stubs until a full SessionManager exists (M4). */
+export interface HubResult {
+  readonly implemented: boolean
+  readonly pending?: boolean
+  readonly sessionId?: string
+}
+
 export interface SessionHub {
-  /** Interrupt a target session's running prompt (no-op if idle/absent). */
-  interrupt(sessionId: string): Promise<void>
+  /** Interrupt a target session's running prompt. */
+  interrupt(sessionId: string): Promise<HubResult>
   /** Send a prompt into a target session's inbox. */
-  send(sessionId: string, content: string): Promise<void>
+  send(sessionId: string, content: string): Promise<HubResult>
   /** Spawn a child session; returns the new session id. */
   spawn(parentId: string, model?: string): Promise<string>
 }
@@ -24,14 +33,14 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
       sessions.delete(sessionId)
       void sessionId
       void events
-      // A real hub would hold a live app per session and call its interrupt().
-      // In the single-app boundary the butler runs in-process; this is the seam
-      // a full SessionManager (later) populates. For now no-op (self-interrupt
-      // is handled by app.interrupt()).
+      // Stub until a full SessionManager (M4): reports "not implemented" rather
+      // than pretending the target was cancelled.
+      return { implemented: false, pending: true, sessionId }
     },
-    async send(_sessionId: string, _content: string) {
+    async send(sessionId: string, _content: string) {
       void open
-      // In-process: a real hub would route to the target app's inbox.
+      // Stub until a full SessionManager (M4).
+      return { implemented: false, pending: true, sessionId }
     },
     async spawn(parentId: string, model?: string) {
       const id = crypto.randomUUID()

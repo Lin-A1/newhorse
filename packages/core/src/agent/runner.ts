@@ -47,9 +47,11 @@ export interface ToolCtx {
   readonly registry?: import("../session/registry").SessionRegistry
   /** Append a butler audit action to the durable audit aggregate. */
   readonly appendAudit?: (entry: { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }) => Promise<void>
-  /** Effects injected by the session hub for the butler's privileged tools. */
-  readonly interruptTarget?: (sessionId: string) => Promise<void>
-  readonly sendToTarget?: (sessionId: string, content: string) => Promise<void>
+  /** Effects injected by the session hub for the butler's privileged tools.
+   * `interrupt`/`send` return { implemented } so a tool never claims an effect
+   * that a stub did not actually apply (M4 SessionManager populates them). */
+  readonly interruptTarget?: (sessionId: string) => Promise<{ implemented: boolean; pending?: boolean; sessionId?: string }>
+  readonly sendToTarget?: (sessionId: string, content: string) => Promise<{ implemented: boolean; pending?: boolean; sessionId?: string }>
   readonly spawnFrom?: (parentId: string, model?: string) => Promise<string>
 }
 

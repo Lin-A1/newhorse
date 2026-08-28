@@ -7,7 +7,7 @@ import type { Fetcher } from "@newhorse/llm"
 
 type AuditedEntry = { actorKind: "user" | "butler" | "parent"; actorId: string; op: string; targetSessionId?: string; outcome: "allowed" | "denied"; reason?: string }
 
-async function setup(butlerSession = "b1"): Promise<{ tools: ReturnType<typeof createButlerTools>; registry: SessionRegistry; audits: AuditedEntry[] }> {
+async function setup(butlerSession = "b1"): Promise<{ tools: ReturnType<typeof createButlerTools>; registry: SessionRegistry; audits: AuditedEntry[]; events: MemoryEventStore }> {
   const events = new MemoryEventStore()
   const registry = new SessionRegistry(events)
 
@@ -21,7 +21,7 @@ async function setup(butlerSession = "b1"): Promise<{ tools: ReturnType<typeof c
   }
   const tools = createButlerTools({ registry, appendAudit })
   void butlerSession
-  return { tools, registry, audits }
+  return { tools, registry, audits, events }
 }
 
 const butlerSession = "b1"
@@ -42,14 +42,14 @@ describe("butler authority", () => {
     const { tools, audits } = await setup()
     const send = tools.find((t) => t.name === "send_to_session")!
     // p1 is s1's parent -> allowed.
-    await expect(send.execute({ target: "s1", content: "hi" }, ctx({ kind: "parent", sessionId: "p1" }))).resolves.toMatchObject({ sent: true, targetId: "s1" })
+    await expect(send.execute({ target: "s1", content: "hi" }, ctx({ kind: "parent", sessionId: "p1" }))).resolves.toMatchObject({ authorization: "allowed", targetId: "s1" })
     expect(audits.at(-1)?.outcome).toBe("allowed")
   })
 
   it("user has highest authority for send", async () => {
     const { tools } = await setup()
     const send = tools.find((t) => t.name === "send_to_session")!
-    await expect(send.execute({ target: "s1", content: "hi" }, ctx({ kind: "user" }))).resolves.toMatchObject({ sent: true })
+    await expect(send.execute({ target: "s1", content: "hi" }, ctx({ kind: "user" }))).resolves.toMatchObject({ authorization: "allowed" })
   })
 
   it("a non-child parent is denied send (unknown target scoping)", async () => {
@@ -63,10 +63,10 @@ describe("butler authority", () => {
   it("interrupt: butler wide, parent scoped to direct child", async () => {
     const { tools, audits } = await setup()
     const interrupt = tools.find((t) => t.name === "interrupt")!
-    // butler can interrupt any.
-    await expect(interrupt.execute({ target: "s1" }, ctx({ kind: "butler", sessionId: butlerSession }))).resolves.toMatchObject({ interrupted: true })
+    // butler can interrupt any (authorization allowed; effect pending w/o hub).
+    await expect(interrupt.execute({ target: "s1" }, ctx({ kind: "butler", sessionId: butlerSession }))).resolves.toMatchObject({ authorization: "allowed" })
     // parent p1 (s1's parent) may interrupt s1.
-    await expect(interrupt.execute({ target: "s1" }, ctx({ kind: "parent", sessionId: "p1" }))).resolves.toMatchObject({ interrupted: true })
+    await expect(interrupt.execute({ target: "s1" }, ctx({ kind: "parent", sessionId: "p1" }))).resolves.toMatchObject({ authorization: "allowed" })
     // parent p2 (not s1's parent) denied.
     await expect(interrupt.execute({ target: "s1" }, ctx({ kind: "parent", sessionId: "p2" }))).rejects.toThrow(/denied/)
     expect(audits.filter((a) => a.op === "interrupt" && a.outcome === "denied").length).toBe(1)
@@ -137,5 +137,24 @@ describe("butler authority", () => {
     const send = tools.find((t) => t.name === "send_to_session")!
     await expect(send.execute({ target: "ghost", content: "x" }, ctx({ kind: "parent", sessionId: "p1" }))).rejects.toThrow(/denied/)
     expect(audits.at(-1)?.outcome).toBe("denied")
+  })
+
+  it("a real spawn makes its child resolvable to the butler (no dead-index false deny)", async () => {
+    const { tools, registry, events } = await setup()
+
+    // Warm the registry index (hydrate) BEFORE the child exists, so a later
+    // get of the child would hit the dead-index path if refresh() did not run.
+    await registry.get("s1")
+
+    // Persist a real child after the index was warmed (as hub.spawn does).
+    const childId = "child-1"
+    await events.append(childId, "Session.Created", { id: childId, location: "/c", createdAt: Date.now() })
+    await events.append(childId, "Session.Spawned", { sessionId: childId, parentId: "b1" })
+
+    const send = tools.find((t) => t.name === "send_to_session")!
+    // A parent (b1) sending to its real child must be allowed — the guarded
+    // helper refreshes the registry so the just-spawned child is resolvable.
+    const res = await send.execute({ target: childId, content: "hi" }, ctx({ kind: "parent", sessionId: "b1" }, { registry }))
+    expect((res as { authorization?: string }).authorization).toBe("allowed")
   })
 })
