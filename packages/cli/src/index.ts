@@ -2,7 +2,7 @@ import { createApp } from "@newhorse/runtime"
 import type { AdapterConfig } from "@newhorse/llm"
 import type { SessionMessage, ApprovalRequest } from "@newhorse/schema"
 import { createInterface } from "node:readline"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 
 /**
  * CLI entrypoint. Reads a single prompt from argv or stdin, runs one session,
@@ -24,6 +24,7 @@ export async function main(argv: string[]): Promise<void> {
     workspace: process.cwd(),
     sessionId: resolveSessionId(args),
     dataDir: resolveDataDir(args),
+    pluginsDir: args["plugins-dir"] ? resolve(args["plugins-dir"]) : undefined,
     asButler: args.butler ? true : false,
     // M4 execpolicy: the transport owns the interactive approve gate. A prompt-
     // level tool decision (command/path) is surfaced to the user as a y/n
@@ -36,7 +37,7 @@ export async function main(argv: string[]): Promise<void> {
 
   const promptText = args.prompt ?? (await readStdin())
   if (!promptText) {
-    console.error("usage: newhorse [--provider openai|openai-responses|anthropic] [--model NAME] [--prompt TEXT] [--butler] [--data-dir DIR] [--session ID]")
+    console.error("usage: newhorse [--provider openai|openai-responses|anthropic] [--model NAME] [--prompt TEXT] [--butler] [--data-dir DIR] [--session ID] [--plugins-dir DIR]")
     return
   }
 

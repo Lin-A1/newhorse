@@ -2,7 +2,7 @@ import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, Sessio
 import { join, dirname } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
-import { PluginRegistry } from "@newhorse/plugin"
+import { PluginRegistry, discoverPlugin } from "@newhorse/plugin"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
 import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
@@ -22,6 +22,10 @@ export interface AppConfig {
   readonly workspace?: string
   /** A plugin registry whose tools back the agent. Optional. */
   readonly plugins?: PluginRegistry
+  /** A plugin directory to discover by convention (tools/agents/commands/
+   * hooks). Discovered capabilities are registered into `plugins` (or a fresh
+   * registry) and their tools are added to the build. Optional. */
+  readonly pluginsDir?: string
   /** Direct tool list override (for tests or embedding). Optional. */
   readonly tools?: readonly Tool[]
   /** Data dir to persist the event store across restarts. */
@@ -91,18 +95,27 @@ export async function createApp(config: AppConfig): Promise<App> {
   }
 
   const registry = new SessionRegistry(events)
-  // Priority (M3.5 §2.3): explicit `tools` > plugins > builtin. An explicit
-  // empty array is a deliberate "no tools"; only an absent field falls through
-  // to plugins/builtin. bash is only added when enableBash is set.
+  // Priority (M3.5 §2.3): builtin is the baseline; plugin tools and an explicit
+  // `tools` override are ADDITIVE, never a replacement that silently drops
+  // read/write/edit. An explicit empty array is a deliberate "no extra tools",
+  // not a request to lose the fs hands.
   const workspace = config.workspace ?? process.cwd()
-  const explicitTools = config.tools
-  let tools: Tool[]
-  if (explicitTools !== undefined) {
-    tools = [...explicitTools]
-  } else {
-    const pluginTools = config.plugins?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute }))
-    tools = pluginTools && pluginTools.length > 0 ? pluginTools : createBuiltinTools({ workspace, enableBash: config.enableBash ?? false })
+  const builtin = createBuiltinTools({ workspace, enableBash: config.enableBash ?? false })
+  // Discover a plugin directory (directory-as-registration-surface) and register
+  // its capabilities into a PluginRegistry, so a pluginsDir yields tools (and
+  // agents/commands/hooks) by convention rather than requiring the caller to
+  // assemble a registry by hand.
+  let pluginRegistry = config.plugins
+  if (config.pluginsDir) {
+    pluginRegistry ??= new PluginRegistry()
+    const caps = await discoverPlugin(config.pluginsDir)
+    if (caps.length > 0) pluginRegistry.registerAll(caps)
   }
+  const pluginTools = pluginRegistry?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute })) ?? []
+  const explicitTools = config.tools ?? []
+  // Order: explicit (highest priority, first in the map so resolve prefers it),
+  // then plugin, then builtin baseline.
+  const tools: Tool[] = [...explicitTools, ...pluginTools, ...builtin]
 
   // Butler toolset (M2b): a signed set of privileged tools whose execute reads
   // ctx.caller + ctx.registry to authorize and audit each action.
@@ -121,7 +134,12 @@ export async function createApp(config: AppConfig): Promise<App> {
   if (config.asButler) tools.push(...createButlerTools({ registry, appendAudit }))
   const hub = config.asButler ? createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" })) : undefined
 
-  const toolMap = new Map(tools.map((t) => [t.name, t]))
+  // First occurrence wins so precedence (explicit > plugin > builtin) is
+  // preserved: a later duplicate with the same name never shadows a higher-
+  // priority tool. `new Map` alone would make the LAST entry win, inverting
+  // the order we built `tools` in.
+  const toolMap = new Map()
+  for (const t of tools) if (!toolMap.has(t.name)) toolMap.set(t.name, t)
   const agent: Agent = { id: "primary", model: config.model, tools }
 
   // M4 execpolicy: the tool-layer authorization axis. For a session with no

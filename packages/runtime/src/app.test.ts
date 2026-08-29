@@ -272,4 +272,52 @@ describe("runtime app", () => {
     expect(text).toBe("hi")
     await rm(dir, { recursive: true, force: true })
   })
+
+  it("discovers a pluginsDir and wires its tools additively beside builtin", async () => {
+    // The model calls a plugin tool `search` AND the builtin `write` in the same
+    // session — both must resolve (discovery is additive, not a replacement).
+    const turn1 = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "search", arguments: "{}" } }] }, finish_reason: "tool_calls" }] }) + "\n\n",
+      "data: [DONE]\n\n",
+    ].join("")
+    const turn2 = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c2", function: { name: "write", arguments: '{"path":"p.txt","content":"hi"}' } }] }, finish_reason: "tool_calls" }] }) + "\n\n",
+      "data: [DONE]\n\n",
+    ].join("")
+    const turn3 = ["data: " + JSON.stringify({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    let call = 0
+    const fetch: Fetcher = async () => {
+      const n = call++
+      return sse(n === 0 ? turn1 : n === 1 ? turn2 : turn3)
+    }
+
+    const dir = await mkdtemp(join(tmpdir(), "nh-plugin-"))
+    const ws = await mkdtemp(join(tmpdir(), "nh-plugin-ws-"))
+    const { writeFile, mkdir } = await import("node:fs/promises")
+    await mkdir(join(dir, "tools"), { recursive: true })
+    await writeFile(join(dir, "tools", "search.json"), JSON.stringify({ name: "search", description: "search" }))
+
+    const app = await createApp({
+      provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" },
+      model: "m",
+      workspace: ws,
+      pluginsDir: dir,
+      fetch: fetch as never,
+    })
+
+    const result = await app.prompt("run", "user")
+    expect(result.finish).toBe("stop")
+    expect(result.step).toBe(3)
+
+    const history = await app.resume()
+    // Plugin `search` resolved (a discovered JSON stub throws at execution — a
+    // declared-but-unimplemented tool fails loudly, never silently) and builtin
+    // `write` ran and created the file.
+    const writeTool = history.messages.find((m) => m.kind === "tool")
+    expect(writeTool).toBeDefined()
+    const text = await readFile(join(ws, "p.txt"), "utf8")
+    expect(text).toBe("hi")
+    await rm(dir, { recursive: true, force: true })
+    await rm(ws, { recursive: true, force: true })
+  })
 })
