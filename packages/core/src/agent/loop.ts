@@ -142,55 +142,66 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
   let finish: "tool" | "stop" | "length" | "content-filter" | "error" = "stop"
 
   const stream = await runtime.llm.stream(request, opts.signal)
-  for await (const event of stream) {
-    switch (event.type) {
-      case "text.delta": {
-        opts.onEvent?.({ type: "text", text: event.text })
-        const last = assistantParts[assistantParts.length - 1]
-        if (last?.type === "text") assistantParts[assistantParts.length - 1] = { type: "text", text: last.text + event.text }
-        else assistantParts.push({ type: "text", text: event.text })
-        break
-      }
-      case "reasoning.delta": {
-        opts.onEvent?.({ type: "reasoning", text: event.text })
-        const last = assistantParts[assistantParts.length - 1]
-        if (last?.type === "reasoning") assistantParts[assistantParts.length - 1] = { type: "reasoning", text: last.text + event.text }
-        else assistantParts.push({ type: "reasoning", text: event.text })
-        break
-      }
-      case "reasoning.ended": {
-        // Merge the opaque provider payload (e.g. Anthropic signature) onto the
-        // last reasoning part so a same-model continuation can round-trip it.
-        const last = assistantParts[assistantParts.length - 1]
-        if (last?.type === "reasoning") {
-          assistantParts[assistantParts.length - 1] = { type: "reasoning", text: last.text, ...(event.payload ? { payload: event.payload } : {}) }
-        } else {
-          assistantParts.push({ type: "reasoning", text: event.text, ...(event.payload ? { payload: event.payload } : {}) })
+  try {
+    for await (const event of stream) {
+      switch (event.type) {
+        case "text.delta": {
+          opts.onEvent?.({ type: "text", text: event.text })
+          const last = assistantParts[assistantParts.length - 1]
+          if (last?.type === "text") assistantParts[assistantParts.length - 1] = { type: "text", text: last.text + event.text }
+          else assistantParts.push({ type: "text", text: event.text })
+          break
         }
-        break
+        case "reasoning.delta": {
+          opts.onEvent?.({ type: "reasoning", text: event.text })
+          const last = assistantParts[assistantParts.length - 1]
+          if (last?.type === "reasoning") assistantParts[assistantParts.length - 1] = { type: "reasoning", text: last.text + event.text }
+          else assistantParts.push({ type: "reasoning", text: event.text })
+          break
+        }
+        case "reasoning.ended": {
+          // Merge the opaque provider payload (e.g. Anthropic signature) onto the
+          // last reasoning part so a same-model continuation can round-trip it.
+          const last = assistantParts[assistantParts.length - 1]
+          if (last?.type === "reasoning") {
+            assistantParts[assistantParts.length - 1] = { type: "reasoning", text: last.text, ...(event.payload ? { payload: event.payload } : {}) }
+          } else {
+            assistantParts.push({ type: "reasoning", text: event.text, ...(event.payload ? { payload: event.payload } : {}) })
+          }
+          break
+        }
+        case "tool-call": {
+          // Normalize provider-encoded input (a JSON string from any protocol) into
+          // a JS object at the single boundary — a tool always receives an object,
+          // never an opaque string, so tools don't need to defensively parse. This
+          // is the canonical contract upstream of tool.execute.
+          const input = normalizeToolInput(event.input)
+          opts.onEvent?.({ type: "tool", name: event.name, input })
+          assistantParts.push({ type: "tool-call", id: event.id, name: event.name, input })
+          break
+        }
+        case "step-finish":
+          finish = event.finish
+          opts.onEvent?.({ type: "step", step })
+          break
+        case "provider-error":
+          // A provider failure must never masquerade as a normal stop — shells and
+          // smoke tests key off finish to decide success.
+          finish = "error"
+          needsContinuation = false
+          opts.onEvent?.({ type: "error", code: event.code, message: event.message })
+          break
       }
-      case "tool-call": {
-        // Normalize provider-encoded input (a JSON string from any protocol) into
-        // a JS object at the single boundary — a tool always receives an object,
-        // never an opaque string, so tools don't need to defensively parse. This
-        // is the canonical contract upstream of tool.execute.
-        const input = normalizeToolInput(event.input)
-        opts.onEvent?.({ type: "tool", name: event.name, input })
-        assistantParts.push({ type: "tool-call", id: event.id, name: event.name, input })
-        break
-      }
-      case "step-finish":
-        finish = event.finish
-        opts.onEvent?.({ type: "step", step })
-        break
-      case "provider-error":
-        // A provider failure must never masquerade as a normal stop — shells and
-        // smoke tests key off finish to decide success.
-        finish = "error"
-        needsContinuation = false
-        opts.onEvent?.({ type: "error", code: event.code, message: event.message })
-        break
     }
+  } catch (e) {
+    // If the stream is aborted before completing, the parts we already buffered
+    // were emitted live but not yet logged. Flush them so "model-visible ⟺
+    // logged" holds even on a cancellation — the next resume must see the same
+    // partial assistant message the shell already rendered, not lose it.
+    if (assistantParts.length > 0) {
+      await appendMessage(runtime, opts.sessionId, { kind: "assistant", id: assistantId, seq: 0, content: assistantParts, model: opts.agent.model })
+    }
+    throw e
   }
 
   // Archive the assistant message (text + tool calls) to the log.
@@ -214,8 +225,14 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
         await appendMessage(runtime, opts.sessionId, { kind: "tool", id: crypto.randomUUID(), seq: 0, callId: call.id, name: call.name, output: outcome.value })
         opts.onEvent?.({ type: "tool-result", name: call.name, output: outcome.value })
       } else {
-        await appendMessage(runtime, opts.sessionId, { kind: "tool", id: crypto.randomUUID(), seq: 0, callId: call.id, name: call.name, output: `tool error: ${outcome.reason}`, isError: true })
-        opts.onEvent?.({ type: "tool-result", name: call.name, output: `tool error: ${outcome.reason}`, isError: true })
+        // A cancelled tool must be marked "Tool execution interrupted", matching
+        // the cross-process convention in failInterruptedTools, so a resumed
+        // session treats it as a durable interruption rather than a replayable
+        // side effect. Any other rejection is a genuine tool error.
+        const interrupted = isCancelled(outcome.reason)
+        const text = interrupted ? "Tool execution interrupted" : `tool error: ${outcome.reason}`
+        await appendMessage(runtime, opts.sessionId, { kind: "tool", id: crypto.randomUUID(), seq: 0, callId: call.id, name: call.name, output: text, isError: true })
+        opts.onEvent?.({ type: "tool-result", name: call.name, output: text, isError: true })
       }
     }
   }
