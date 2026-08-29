@@ -1,0 +1,16 @@
+{
+  "name": "@newhorse/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@newhorse/runtime": "workspace:*",
+    "@newhorse/schema": "workspace:*",
+    "@newhorse/llm": "workspace:*"
+  }
+}
