@@ -46,6 +46,34 @@ describe("dag topology", () => {
     const ok: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a" } }, B: { id: "B", agent: { name: "b" }, dependsOn: ["A"] } } }
     expect(validate(ok)).toBeDefined()
   })
+
+  it("rejects an entry id that does not exist", () => {
+    expect(() => validate({ nodes: { A: { id: "A", agent: { name: "a" } } }, entry: ["ghost"] })).toThrow(DAGError)
+  })
+
+  it("rejects an entry that has dependencies (it would never be dispatched)", () => {
+    const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a" } }, B: { id: "B", agent: { name: "b" }, dependsOn: ["A"] } }, entry: ["B"] }
+    expect(() => validate(spec)).toThrow(DAGError)
+  })
+
+  it("with no entry, every in-degree-0 root and its dependents are active", () => {
+    const topo = validate(diamond)
+    expect([...topo.active].sort()).toEqual(["A", "B", "C", "D"])
+  })
+
+  it("honors entry: only the entry root and its transitive dependents are active", () => {
+    const spec: DAGSpec = {
+      nodes: {
+        A: { id: "A", agent: { name: "a" } },
+        B: { id: "B", agent: { name: "b" }, dependsOn: ["A"] },
+        C: { id: "C", agent: { name: "c" } },
+      },
+      entry: ["A"],
+    }
+    const topo = validate(spec)
+    // C is an in-degree-0 root but sits on no path from A, so it is inert.
+    expect([...topo.active].sort()).toEqual(["A", "B"])
+  })
 })
 
 describe("foldDAG", () => {

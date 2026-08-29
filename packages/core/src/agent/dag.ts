@@ -74,6 +74,9 @@ export interface Topology {
   readonly inDegree: Readonly<Record<string, number>>
   /** nodeId -> nodeIds that depend on it. */
   readonly dependents: Readonly<Record<string, string[]>>
+  /** nodeIds reachable from `entry` (or from every in-degree-0 root when entry
+   * is absent). Nodes outside `active` are never dispatched. */
+  readonly active: ReadonlySet<string>
 }
 
 export class DAGError extends Error {
@@ -108,6 +111,16 @@ export function validate(spec: DAGSpec): Topology {
         dependents[raw]!.push(id)
       }
     }
+  }
+
+  // An `entry` id must exist. A private/dangling entry would otherwise silently
+  // narrow the graph to nothing (or, worse, be ignored entirely).
+  for (const id of spec.entry ?? []) {
+    if (!nodes[id]) throw new DAGError(`unknown entry ${id}`)
+    // An entry is a scheduling root, so it must already be ready when the graph
+    // starts. If it had deps, those deps would sit OUTSIDE the forward-reachable
+    // `active` set and the entry would never become ready (permanent stranding).
+    if ((deps[id] ?? []).length > 0) throw new DAGError(`entry ${id} has dependencies and would never be dispatched`)
   }
 
   // Cycle detection (Kahn): nodes with in-degree 0 seeded; count processed.
@@ -163,7 +176,26 @@ export function validate(spec: DAGSpec): Topology {
     producedSlots.set(slot, id)
   }
 
-  return { nodes, deps, inDegree: settledDegree, dependents }
+  return { nodes, deps, inDegree: settledDegree, dependents, active: activeSet(spec, dependents, settledDegree, nodeIds) }
+}
+
+/** The nodes reachable FORWARD from the scheduled roots. Roots are the declared
+ * `entry` nodes (default: every in-degree-0 node). Node X is active iff it is an
+ * entry root or transitively depends on one — i.e. it sits on a path that an
+ * entry can actually reach. Nodes outside `active` are never dispatched. */
+function activeSet(spec: DAGSpec, dependents: Record<string, string[]>, inDegree: Record<string, number>, nodeIds: string[]): Set<string> {
+  const roots = spec.entry && spec.entry.length > 0
+    ? spec.entry
+    : nodeIds.filter((id) => inDegree[id] === 0)
+  const scope = new Set<string>()
+  const stack = [...roots]
+  while (stack.length > 0) {
+    const id = stack.pop()!
+    if (scope.has(id)) continue
+    scope.add(id)
+    for (const depId of dependents[id] ?? []) stack.push(depId)
+  }
+  return scope
 }
 
 /** The DAG aggregate fold: reconstruct status / results / aborted from events. */
@@ -243,6 +275,7 @@ export function cascadeTerminal(topology: Topology, status: Record<string, NodeS
     changed = false
     for (const id of Object.keys(topology.nodes)) {
       if (next[id] !== "pending") continue
+      if (!topology.active.has(id)) continue
       const deps = topology.deps[id]!
       const hasNonSucceeded = deps.some((d) => {
         const st = next[d]
@@ -257,9 +290,11 @@ export function cascadeTerminal(topology: Topology, status: Record<string, NodeS
   return next
 }
 
-/** Ready queue for the dispatcher: pending nodes whose in-degree is satisfied. */
+/** Ready queue for the dispatcher: pending ACTIVE nodes whose in-degree is
+ * satisfied. Inactive nodes are never dispatched even if they look ready. */
 export function readyNodes(topology: Topology, status: Record<string, NodeState>, settled: (id: string) => boolean): string[] {
   return Object.keys(topology.nodes).filter((id) => {
+    if (!topology.active.has(id)) return false
     if (status[id] !== "pending") return false
     const deps = topology.deps[id]!
     return deps.every((d) => settled(d))

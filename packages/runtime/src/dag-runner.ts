@@ -109,6 +109,12 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   const pendingSkips: { nodeId: string; reason: string }[] = []
   const abortEmitted = new Set<string>()
   for (const id of Object.keys(topo.nodes)) status[id] = "pending"
+  // Nodes outside the `entry`-derived active set are never dispatched. Mark them
+  // skipped up front so `waitForTerminal` can settle (and a consumer replay sees
+  // them terminal, not pending-forever).
+  for (const id of Object.keys(topo.nodes)) {
+    if (!topo.active.has(id)) status[id] = "skipped"
+  }
 
   let aborted = false
   let stopped = false
@@ -203,6 +209,10 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       const attempt = (attempts.get(id) ?? 0) + 1
       if (attempt <= maxRetries) {
         attempts.set(id, attempt)
+        // Free the concurrency slot BEFORE flipping back to pending, so a settle-
+        // triggered pump() in the next microtask cannot see the node as both
+        // pending (ready) and in-flight (running) and double-dispatch it.
+        running.delete(id)
         status[id] = "pending" // allow pump to re-dispatch
         await emit("DAG.NodeRetried", { nodeId: id, attempt })
       } else {
@@ -241,6 +251,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       if (inFlight >= concurrency) break
       const nodeState = status[id]
       if (nodeState !== "pending") continue
+      if (running.has(id)) continue // retry window: still considered in-flight
       status[id] = "running" // claim before dispatch
       inFlight++
       runNode(id)
@@ -353,8 +364,13 @@ export async function replayDag(events: EventStore, dagId: string): Promise<DagO
   // (never dispatched) is present and can be marked skipped when its dep is
   // non-succeeded — foldDAG only records nodes that have durable events.
   if (spec) {
+    const topo = validate(spec)
     for (const id of Object.keys(spec.nodes)) if (status[id] === undefined) status[id] = "pending"
-    return { dagId, status: cascadeTerminal(validate(spec), status), aborted: folded.aborted, models: folded.models }
+    // Reconcile inactive nodes to skipped (a live run marks them so at dispatch).
+    for (const id of Object.keys(spec.nodes)) {
+      if (!topo.active.has(id)) status[id] = "skipped"
+    }
+    return { dagId, status: cascadeTerminal(topo, status), aborted: folded.aborted, models: folded.models }
   }
   return { dagId, status, aborted: folded.aborted, models: folded.models }
 }

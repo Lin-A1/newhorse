@@ -60,6 +60,31 @@ describe("dag runner", () => {
     expect(idxD).toBeGreaterThan(idxC)
   })
 
+  it("honors entry: nodes off the entry subgraph are skipped, never dispatched", async () => {
+    const spec: DAGSpec = {
+      nodes: {
+        A: { id: "A", agent: { name: "a", model: "m" }, input: "root" },
+        B: { id: "B", agent: { name: "b", model: "m" }, dependsOn: ["A"], consumes: ["A"], input: "fromB" },
+        // C is an in-degree-0 root NOT on a path from A — it must be inert.
+        C: { id: "C", agent: { name: "c", model: "m" }, input: "fromC" },
+      },
+      entry: ["A"],
+    }
+    const dispatched: string[] = []
+    const llm = stubLlm((req) => {
+      const text = (req.messages.find((m) => m.role === "user")?.content[0] as { text?: string } | undefined)?.text ?? ""
+      dispatched.push(text)
+      return `res:${text}`
+    })
+    const outcome = await runDag(spec, makeDeps(llm))
+
+    expect(outcome.status["A"]).toBe("succeeded")
+    expect(outcome.status["B"]).toBe("succeeded")
+    expect(outcome.status["C"]).toBe("skipped")
+    expect(outcome.aborted).toBe(false)
+    expect(dispatched).not.toContain("fromC")
+  })
+
   it("cascades a failed node so downstream is skipped, never dispatched", async () => {
     // A completes, B fails, C completes, D depends on B -> cascade skipped.
     let attempts = { B: 0, C: 0, D: 0 }
