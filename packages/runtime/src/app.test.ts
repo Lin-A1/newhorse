@@ -128,17 +128,23 @@ describe("runtime app", () => {
   })
 
   it("does not silently succeed on a provider-error (emits error)", async () => {
-    const payload = ["data: " + JSON.stringify({ type: "provider-error" }) + "\n\n", "data: [DONE]\n\n"].join("")
+    // Real wire: openai-responses `response.failed` maps to a canonical
+    // `provider-error` (loop.ts sets finish="error", never "stop").
+    const payload = [
+      "data: " + JSON.stringify({ type: "response.failed", response: { error: { code: "server_error", message: "boom" } } }) + "\n\n",
+      "data: [DONE]\n\n",
+    ].join("")
     const fetch: Fetcher = async () => sse(payload)
-    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", fetch: fetch as never })
+    const app = await createApp({ provider: { kind: "openai-responses", baseUrl: "https://x", apiKey: "k" }, model: "m", fetch: fetch as never })
     const errors: unknown[] = []
     app.onEvent((e) => {
       if (e.type === "error") errors.push(e)
     })
     const result = await app.prompt("hi")
-    // provider-error sets finish to stop and emits an error event; the run
-    // still settles (not a crash) but the error is surfaced to the shell.
-    expect(errors.length).toBeGreaterThanOrEqual(0)
+    // provider-error sets finish="error" (not "stop") and emits an error event;
+    // the run still settles (not a crash) but the failure is surfaced to the shell.
+    expect(errors.length).toBe(1)
+    expect(result.finish).toBe("error")
     expect(result.needsContinuation).toBe(false)
   })
 

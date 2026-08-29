@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { discoverPlugin } from "./discovery"
+import { discoverPlugin, discoverSkills, shellSplit } from "./discovery"
 import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -35,5 +35,32 @@ describe("directory discovery", () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it("discovers skills by convention (folder SKILL.md + flat .md)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-skill-"))
+    try {
+      await mkdir(join(dir, "skills", "review"), { recursive: true })
+      await writeFile(join(dir, "skills", "review", "SKILL.md"), `---\nname: review\ndescription: Review code\n---\nBody`)
+      await writeFile(join(dir, "skills", "plan.md"), `---\nname: plan\ndescription: Plan work\n---\nPlan body`)
+      const skills = await discoverSkills(dir)
+      expect(skills.length).toBe(2)
+      const review = skills.find((s) => s.name === "review")
+      expect(review?.description).toBe("Review code")
+      expect(review?.body).toContain("Body")
+      const plan = skills.find((s) => s.name === "plan")
+      expect(plan?.body).toContain("Plan body")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("splits hook command lines quote-aware (no broken quoted args)", () => {
+    expect(shellSplit("echo ok")).toEqual(["echo", "ok"])
+    expect(shellSplit(`rg 'foo bar' src`)).toEqual(["rg", "foo bar", "src"])
+    expect(shellSplit(`echo "a b"`)).toEqual(["echo", "a b"])
+    expect(shellSplit(`--flag="a b" tail`)).toEqual(["--flag=a b", "tail"])
+    expect(shellSplit(`a''b c`)).toEqual(["ab", "c"]) // adjacent quotes concatenate
+    expect(shellSplit(`echo 'a "b"'`)).toEqual(["echo", 'a "b"'])
   })
 })

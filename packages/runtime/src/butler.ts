@@ -4,8 +4,8 @@ import type { SessionRegistry } from "@newhorse/core"
 /**
  * Butler tools (M2b). These are ordinary `Tool`s whose `execute` receives a
  * `ToolCtx` carrying the trusted `caller` (injected by the loop). Each tool
- * enforces its own authorization inside `execute` �?reading `ctx.caller` (never
- * the model's payload) and `ctx.registry` �?and appends an audit entry for both
+ * enforces its own authorization inside `execute` — reading `ctx.caller` (never
+ * the model's payload) and `ctx.registry` — and appends an audit entry for both
  * allowed and denied decisions.
  *
  * The authority model (see specs/v2/m2b-butler-authority.md):
@@ -98,7 +98,7 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
         const c = requireCtx(ctx)
         const model = (input as { model?: string }).model
         const parentId = c.caller.kind === "user" ? "user" : c.caller.sessionId
-        // spawn has no target; always allowed, but MUST be audited �?appendAudit
+        // spawn has no target; always allowed, but MUST be audited — appendAudit
         // is required (audit is not optional for butler actions).
         if (!c.appendAudit) throw new Error("butler tool missing appendAudit")
         const child = await c.spawnFrom?.(parentId, model)

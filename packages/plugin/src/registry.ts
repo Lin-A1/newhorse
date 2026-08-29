@@ -4,11 +4,17 @@ import type { Tool } from "@newhorse/core"
 /**
  * Plugin registration surface.
  *
- * Five capabilities register through one seam, so the consumer pulls from the
- * registry rather than branching on types inline (AGENTS.md "no scattered type
- * branches"). Each registration returns a disposer, so a plugin can be torn
- * down cleanly. Directory-as-registration-surface is layered on top: a plugin
- * folder exposes these capabilities and gets discovered by convention.
+ * Five capabilities register through one seam (tool / agent / command / hook /
+ * provider), so the consumer pulls from the registry rather than branching on
+ * types inline (AGENTS.md "no scattered type branches"). Each registration
+ * returns a disposer, so a plugin can be torn down cleanly.
+ * Directory-as-registration-surface is layered on top: a plugin folder exposes
+ * these capabilities and gets discovered by convention.
+ *
+ * Skills are handled separately (see discovery.ts): AGENTS.md's three-level
+ * skill disclosure (metadata → SKILL.md → references/scripts) is a content
+ * convention, not a registry kind — a skill is discovered by convention and
+ * consumed as model-visible context, so it does not get a Capability slot here.
  */
 
 /** A tool capability IS the core Tool shape, plus the registration kind. */

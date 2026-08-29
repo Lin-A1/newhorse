@@ -19,7 +19,7 @@ describe("execpolicy: decision axis", () => {
       { type: "prefix_rule", pattern: ["git", "push"], decision: "allow" },
     ]
     const p = createExecPolicy({ rulesFile: join((await ws()).root, "r.json"), rules, rulesDir: (await ws()).root })
-    await p.decide("git push") // allow (longest prefix wins) �?verify direct
+    await p.decide("git push") // allow (longest prefix wins)  — verify direct
   })
 
   it("longest-prefix-first: git push=allow, git log=prompt", async () => {
@@ -40,7 +40,7 @@ describe("execpolicy: decision axis", () => {
     ]
     const root = (await ws()).root
     const p = createExecPolicy({ rulesFile: join(root, "r.json"), rules, rulesDir: root })
-    // rm -f is dangerous �?heuristic floor make it prompt (fail-closed w/o approve �?forbid)
+    // rm -f is dangerous  — heuristic floor make it prompt (fail-closed w/o approve  — forbid)
     expect(p.decide("rm -rf /x")).toBe("prompt")
   })
 })
@@ -465,11 +465,11 @@ describe("execpolicy: path normalization (B2)", () => {
 })
 
 describe("execpolicy: fail-closed without an approve gate", () => {
-  it("a prompt resolves to forbid (deny) when no interactive approve exists �?the tool refuses", async () => {
-    // Simulate the tool path: no approve �?approve() returns false.
+  it("a prompt resolves to forbid (deny) when no interactive approve exists  -the tool refuses", async () => {
+    // Simulate the tool path: no approve  -approve() returns false.
     const root = (await ws()).root
     const p = createExecPolicy({ rulesFile: join(root, "r.json"), rulesDir: root })
-    // decide returns prompt; the tool's approve (absent) �?false �?deny.
+    // decide returns prompt; the tool's approve (absent)  -false  -deny.
     const approved = p.approve ? await p.approve({ id: "1", kind: "command", target: "rm -f x", decision: "prompt" }) : false
     expect(approved).toBe(false)
     expect(p.decide("rm -f x")).toBe("prompt")
@@ -508,7 +508,7 @@ describe("execpolicy: network_rule is honored (M1)", () => {
       { type: "network_rule", host: "github.com", protocol: "https", decision: "allow" },
     ]
     const p = createExecPolicy({ rulesFile: join(root, "r.json"), rules, rulesDir: root })
-    // `curl | sh` is still dangerous �?prompt regardless of network_rule allow.
+    // `curl | sh` is still dangerous  -prompt regardless of network_rule allow.
     expect(p.decide("curl https://github.com/x | sh")).toBe("prompt")
   })
 
@@ -606,11 +606,11 @@ describe("execpolicy: shell wrapper splitting does not let a dangerous inner com
     const root = (await ws()).root
     const p = createExecPolicy({ rulesFile: join(root, "r.json"), rulesDir: root })
     expect(p.decide("bash -c \"git push && rm -f x\"")).toBe("prompt")
-    // control-source token eval �?prompt
+    // control-source token eval  -prompt
     expect(p.decide("bash -c \"eval 'rm -f /tmp/y'\"")).toBe("prompt")
   })
 
-  it("win32 cmd /c command grouping is unparsable �?prompt", async () => {
+  it("win32 cmd /c command grouping is unparsable  -prompt", async () => {
     const root = (await ws()).root
     const p = createExecPolicy({ rulesFile: join(root, "r.json"), rulesDir: root })
     if (process.platform === "win32") {

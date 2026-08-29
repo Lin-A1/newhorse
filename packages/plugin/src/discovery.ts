@@ -10,6 +10,7 @@ import { HOOK_EVENTS } from "./registry"
  *   agents/          — *.md agent definitions (frontmatter + body)
  *   commands/        — *.md slash commands
  *   hooks/           — hooks.json event handlers
+ *   skills/          — *.md skill definitions (metadata → SKILL.md disclosure)
  *
  * Discovery reads these folders and registers each capability into a
  * PluginRegistry. Targeted at M1: it runs registry wiring only, not a full
@@ -46,18 +47,82 @@ export async function discoverPlugin(dir: string): Promise<Capability[]> {
   return caps
 }
 
+/**
+ * Three-level skill disclosure (AGENTS.md): metadata → SKILL.md →
+ * references/scripts. Discovery reads the two discoverable levels of a skill
+ * file and exposes them as model-visible content, not as a Capability (a skill
+ * is context, not an executable hook).
+ *
+ * Level 1 (metadata) is the frontmatter name/description — the trigger surface.
+ * Level 2 (SKILL.md) is the full instruction body the model reads when the
+ * skill matches. Level 3 (references/scripts) is requested on demand by the
+ * skill body, not eagerly loaded.
+ *
+ * A skill folder is convention-shaped:
+ *   skills/<name>/SKILL.md        — level 2 (body)
+ *   skills/<name>.md              — flat single-file skill (alternative shape)
+ *   skills/<name>/references/     — level 3 (on-demand, not loaded here)
+ *   skills/<name>/scripts/        — level 3 (on-demand, not loaded here)
+ */
+export interface SkillDisclosure {
+  readonly name: string
+  readonly description?: string
+  /** Level 2: the skill instruction body — full SKILL.md (folder) or the whole
+   * flat `<name>.md` file. Always present; a skill with no readable body is not
+   * returned. */
+  readonly body: string
+  readonly path: string
+}
+
+/** Discover skills by convention under a plugin dir. */
+export async function discoverSkills(dir: string): Promise<SkillDisclosure[]> {
+  const skillsDir = `${dir}/skills`
+  if (!(await exists(skillsDir))) return []
+  const fs = await import("node:fs/promises")
+  let names: string[] = []
+  try {
+    names = (await fs.readdir(skillsDir)).sort()
+  } catch {
+    return []
+  }
+  const out: SkillDisclosure[] = []
+  for (const name of names) {
+    // skills/<name>/SKILL.md (folder) or skills/<name>.md (flat).
+    const folder = `${skillsDir}/${name}`
+    if (await exists(`${folder}/SKILL.md`)) {
+      const body = await readTextFile(`${folder}/SKILL.md`)
+      if (body) out.push({ name, description: parseFrontmatter(body).description, body, path: `${folder}/SKILL.md` })
+      continue
+    }
+    if (name.endsWith(".md")) {
+      const base = name.slice(0, -3)
+      const body = await readTextFile(`${skillsDir}/${name}`)
+      if (body) out.push({ name: base, description: parseFrontmatter(body).description, body, path: `${skillsDir}/${name}` })
+    }
+  }
+  return out
+}
+
 function baseSlug(name: string): string {
   return name.replace(/\.(md|ts|json)$/, "")
 }
 
+/**
+ * Read a single tool definition file.
+ *
+ * JSON tool declarations only declare the schema; execution is provided by
+ * registered code by name (M1) — a JSON tool is a declared-but-unimplemented
+ * stub that fails loudly at execution rather than silently no-oping.
+ *
+ * A `.ts` tool definition exports a `Tool` (or a function returning one) via
+ * `export const tool` / `export function tool()`. Loading plugin TS code is a
+ * later concern; until then a `.ts` declaration is skipped the same way a
+ * non-JSON file is, so discovery never registers a tool it cannot execute.
+ */
 async function readTool(dir: string, file: string): Promise<Capability | undefined> {
   if (!file.endsWith(".json")) return undefined
   const def = await readJsonFile(`${dir}/tools/${file}`)
   if (!def || typeof def.name !== "string") return undefined
-  const execute = def.execute as undefined // JSON declarations cannot carry a function.
-  void execute
-  // JSON tool declarations only declare the schema; execution is provided by
-  // registered code by name (M1). Mark as a stub that resolves via the registry.
   return { kind: "tool", name: def.name, description: typeof def.description === "string" ? def.description : undefined, execute: async () => { throw new Error(`tool "${def.name}" has no registered implementation`) } }
 }
 
@@ -96,9 +161,59 @@ async function readHooks(dir: string): Promise<Capability[]> {
   return hooks
 }
 
+/**
+ * Execute a hook command line through a shell-aware argv split.
+ *
+ * A naive `command.split(" ")` breaks any hook whose command carries a quoted
+ * argument (`rg 'foo bar'`, `echo "a b"`). We tokenize like a shell: a quoted
+ * section is one arg, adjacent quotes concatenate, and backslash escapes the
+ * next character in double quotes. Unparsable CLI is a documentation/health
+ * issue for the hook author, not a security boundary — this only needs to be
+ * good enough to not corrupt the command.
+ */
 async function executeCommand(command: string): Promise<unknown> {
-  const proc = Bun.spawn(command.split(" "), { stdout: "pipe", stderr: "pipe" })
+  const argv = shellSplit(command)
+  const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", cwd: process.cwd() })
   const out = await new Response(proc.stdout).text()
+  return out
+}
+
+/** Shell-word tokenizer for hook commands. Splits on unquoted whitespace,
+ * removes quote chars (single quotes literal; double quotes process `\"` and
+ * `\\`), and keeps a quoted section with no preceding whitespace attached to
+ * the current token (so `--flag="a b"` is one arg: `--flag=a b`). */
+export function shellSplit(cmd: string): string[] {
+  const out: string[] = []
+  let cur = ""
+  let inSingle = false
+  let inDouble = false
+  let tokenStarted = false
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i]!
+    if (inSingle) {
+      if (ch === "'") inSingle = false
+      else cur += ch
+      continue
+    }
+    if (inDouble) {
+      if (ch === '"') inDouble = false
+      else if (ch === "\\") {
+        // Only `\"` and `\\` are escapes inside double quotes.
+        const next = cmd[i + 1]
+        if (next === '"' || next === "\\") { cur += next; i++ } else cur += ch
+      } else cur += ch
+      continue
+    }
+    if (ch === "'") { inSingle = true; tokenStarted = true; continue }
+    if (ch === '"') { inDouble = true; tokenStarted = true; continue }
+    if (ch === " " || ch === "\t" || ch === "\n") {
+      if (tokenStarted) { out.push(cur); cur = ""; tokenStarted = false }
+      continue
+    }
+    cur += ch
+    tokenStarted = true
+  }
+  if (tokenStarted) out.push(cur)
   return out
 }
 
@@ -130,6 +245,16 @@ async function readText(base: string, name: string, file: string): Promise<strin
   const path = `${base}/${name}/${file}`
   if (!(await exists(path))) return undefined
   return Bun.file(path).text()
+}
+
+/** Read a bare path (already fully formed) as text, or undefined. */
+async function readTextFile(path: string): Promise<string | undefined> {
+  if (!(await exists(path))) return undefined
+  try {
+    return await Bun.file(path).text()
+  } catch {
+    return undefined
+  }
 }
 
 async function readJsonFile(path: string): Promise<Record<string, unknown> | undefined> {
