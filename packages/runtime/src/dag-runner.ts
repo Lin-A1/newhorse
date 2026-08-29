@@ -160,9 +160,9 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
     const node = topo.nodes[id]!
     const ctrl = new AbortController()
     running.set(id, ctrl)
-    await emit("DAG.NodeStarted", { nodeId: id, sessionId: id, model: resolvedModel[id] })
-
     try {
+      await emit("DAG.NodeStarted", { nodeId: id, sessionId: id, model: resolvedModel[id] })
+
       const childSessionId = crypto.randomUUID()
       await deps.events.append(childSessionId, "Session.Created", { id: childSessionId, location: "", createdAt: Date.now() }, "session")
       await deps.inbox.admit({ id: crypto.randomUUID(), sessionId: childSessionId, prompt: buildInput(node, slotStore, dagId), delivery: "steer" })
@@ -231,7 +231,12 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       }
     }
     const ready = readyNodes(topo, status, settle)
-    let inFlight = 0
+    // Count nodes already RUNNING (claimed by a prior pump but not yet settled)
+    // toward the concurrency cap. Previously `inFlight` only counted nodes
+    // claimed THIS pump call and reset to 0 each time, so a slow node still in
+    // flight from an earlier pump did not count — a graph could exceed its
+    // declared concurrency by as many nodes as there were pump invocations.
+    let inFlight = running.size
     for (const id of ready) {
       if (inFlight >= concurrency) break
       const nodeState = status[id]
@@ -331,11 +336,25 @@ async function readAssistantText(events: EventStore, sessionId: string): Promise
  * Replay a DAG's state from its durable event log (post-crash/restart). Folds
  * the DAG aggregate and then reconciles any node left "running" — a process died
  * mid-node — to aborted, so the restored picture never shows a running node
- * that has no live process. This is the R1 "replayable DAG" entry point.
+ * that has no live process. Then applies cascadeTerminal so a node whose dep is
+ * non-succeeded is skipped on replay too, not left pending-forever. This is the
+ * R1 "replayable DAG" entry point.
  */
 export async function replayDag(events: EventStore, dagId: string): Promise<DagOutcome> {
   const stored = await events.read(dagId)
   const folded = foldDAG(stored)
   const status = reconcile(folded)
+  // Rebuild topology from the persisted declaration so cascadeTerminal can mark
+  // a dep-non-succeeded node skipped (a live run does this; the replay path
+  // previously did not, so a cascade-skipped node replayed as pending forever).
+  const decl = stored.find((e) => e.type === "DAG.Declared")
+  const spec = (decl?.data as { spec?: DAGSpec } | undefined)?.spec
+  // Seed every declared node to pending before cascade so a node with no events
+  // (never dispatched) is present and can be marked skipped when its dep is
+  // non-succeeded — foldDAG only records nodes that have durable events.
+  if (spec) {
+    for (const id of Object.keys(spec.nodes)) if (status[id] === undefined) status[id] = "pending"
+    return { dagId, status: cascadeTerminal(validate(spec), status), aborted: folded.aborted, models: folded.models }
+  }
   return { dagId, status, aborted: folded.aborted, models: folded.models }
 }

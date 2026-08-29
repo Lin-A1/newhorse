@@ -104,6 +104,32 @@ describe("dag runner", () => {
     expect(peak).toBeGreaterThan(1)
   })
 
+  it("strictly caps concurrent nodes at the declared concurrency (no over-claim)", async () => {
+    // Six independent leaves, all slow enough to overlap, cap at 3. The pump
+    // must never start more than 3 at once — a prior pump's still-running nodes
+    // count toward the cap. A wide fan-out (many ready nodes) is the worst case
+    // for over-claiming.
+    let running = 0
+    let peak = 0
+    const llm: TurnRuntime["llm"] = {
+      id: "t",
+      stream: async () => {
+        running++
+        peak = Math.max(peak, running)
+        await new Promise((r) => setTimeout(r, 20))
+        const out = eventsOf([{ type: "text.delta", text: "ok" }, { type: "step-finish", finish: "stop" }])
+        running--
+        return out
+      },
+    }
+    const nodes: Record<string, DAGSpec["nodes"][string]> = {}
+    for (let i = 0; i < 6; i++) nodes["n" + i] = { id: "n" + i, agent: { name: "a", model: "m" } }
+    const spec: DAGSpec = { nodes }
+    await runDag(spec, makeDeps(llm, [], 3))
+    // The peak never exceeds the declared cap of 3, even with 6 ready leaves.
+    expect(peak).toBe(3)
+  })
+
   it("rejects a node whose consumes references a slot no ancestor produces (R3)", async () => {
     const bad: DAGSpec = {
       nodes: {
@@ -172,6 +198,21 @@ describe("dag runner", () => {
     const outcome = await replayDag(events, "g-dead")
     // A was running at death -> reconciled to aborted, never left 'running'.
     expect(outcome.status["A"]).toBe("aborted")
+  })
+
+  it("replayDag cascades a dep-non-succeeded node to skipped (not left pending)", async () => {
+    const events = new MemoryEventStore()
+    // A fails; B/C depend on A and were never dispatched (no NodeStarted); D
+    // depends on B/C. A live run would skip them; the replay path must too,
+    // instead of leaving B/C/D as pending-forever.
+    await events.append("g-cascade", "DAG.Declared", { dagId: "g-cascade", spec: diamond }, "dag")
+    await events.append("g-cascade", "DAG.NodeStarted", { nodeId: "A", sessionId: "sA", model: "m" }, "dag")
+    await events.append("g-cascade", "DAG.NodeFailed", { nodeId: "A", reason: "boom" }, "dag")
+    const outcome = await replayDag(events, "g-cascade")
+    expect(outcome.status["A"]).toBe("failed")
+    expect(outcome.status["B"]).toBe("skipped")
+    expect(outcome.status["C"]).toBe("skipped")
+    expect(outcome.status["D"]).toBe("skipped")
   })
 
   it("failure path: retries then fails, cascades downstream skip, replay rebuilds it", async () => {

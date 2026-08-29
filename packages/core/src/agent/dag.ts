@@ -149,6 +149,20 @@ export function validate(spec: DAGSpec): Topology {
     }
   }
 
+  // R4: two nodes must not declare the same `produces` slot id. The slot store
+  // is keyed by slot id, so a duplicate would let a later node silently
+  // overwrite an earlier node's output (last-writer-wins) with no way for a
+  // consumer to see the loss. Each produced slot must be unique across the graph.
+  const producedSlots = new Map<string, string>()
+  for (const id of nodeIds) {
+    const slot = nodes[id]!.produces ?? id
+    const prior = producedSlots.get(slot)
+    if (prior !== undefined && prior !== id) {
+      throw new DAGError(`duplicate produces slot "${slot}" from nodes ${prior} and ${id}`)
+    }
+    producedSlots.set(slot, id)
+  }
+
   return { nodes, deps, inDegree: settledDegree, dependents }
 }
 

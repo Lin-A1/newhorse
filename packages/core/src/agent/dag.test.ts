@@ -32,6 +32,20 @@ describe("dag topology", () => {
     expect(() => validate({ nodes: { A: { id: "A", agent: { name: "a" }, dependsOn: ["ghost"] } } })).toThrow(DAGError)
     expect(() => validate({ nodes: { A: { id: "A", agent: { name: "a" }, dependsOn: ["A"] } } })).toThrow(DAGError)
   })
+
+  it("rejects duplicate produces slot ids (no silent last-writer-wins)", () => {
+    const spec: DAGSpec = {
+      nodes: {
+        A: { id: "A", agent: { name: "a" }, produces: "shared" },
+        B: { id: "B", agent: { name: "b" }, produces: "shared" },
+      },
+    }
+    expect(() => validate(spec)).toThrow(DAGError)
+    // Two nodes may NOT declare the same slot, but a node may default its slot
+    // to its own id (produces undefined) — that is always unique.
+    const ok: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a" } }, B: { id: "B", agent: { name: "b" }, dependsOn: ["A"] } } }
+    expect(validate(ok)).toBeDefined()
+  })
 })
 
 describe("foldDAG", () => {
