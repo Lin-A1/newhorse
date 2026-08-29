@@ -6,7 +6,7 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "typecheck": "bun typecheck"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@newhorse/core": "workspace:*"

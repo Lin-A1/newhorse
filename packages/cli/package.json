@@ -9,7 +9,7 @@
     "newhorse": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "bun typecheck"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@newhorse/runtime": "workspace:*",

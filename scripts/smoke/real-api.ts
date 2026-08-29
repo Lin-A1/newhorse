@@ -5,7 +5,7 @@
  * Assertions key off CONTENT and events (not just finish), because a provider
  * failure used to be able to masquerade as finish="stop".
  */
-import { createApp, type PromptResult } from "../../packages/runtime/src/index.ts"
+import { createApp, type App, type PromptResult } from "../../packages/runtime/src/index.ts"
 
 const args = process.argv.slice(2)
 function arg(name: string, fallback: string): string {
@@ -23,10 +23,10 @@ if (!apiKey) {
 
 const provider = { kind: "anthropic" as const, baseUrl, apiKey }
 const results: string[] = []
-const ok = (name: string, pass: boolean, detail = ""): void => results.push(`${pass ? "PASS" : "FAIL"} ${name} ${detail}`)
+const ok = (name: string, pass: boolean, detail = ""): void => { results.push(`${pass ? "PASS" : "FAIL"} ${name} ${detail}`) }
 
 /** Collect streamed events + final result for one prompt. */
-async function run(app: ReturnType<typeof createApp>, text: string): Promise<{ result: PromptResult; texts: string[]; errors: unknown[] }> {
+async function run(app: App, text: string): Promise<{ result: PromptResult; texts: string[]; errors: unknown[] }> {
   const texts: string[] = []
   const errors: unknown[] = []
   app.onEvent((e) => {

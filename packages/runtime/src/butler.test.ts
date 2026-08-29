@@ -98,7 +98,20 @@ describe("butler authority", () => {
         'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c", function: { name: "send_to_session", arguments: JSON.stringify({ target: "s1", content: "hi" }) } }] }, finish_reason: "tool_calls" }] }) + "\n\n",
         "data: [DONE]\n\n",
       ].join("")
-      const fetch: Fetcher = async () => sse(toolPayload)
+      // A stateful LLM stub: the FIRST call returns a send_to_session tool call
+      // (so the butler actually invokes it and the gate is exercised); every
+      // call after returns a plain stop delta so the turn loop converges instead
+      // of spinning to MAX_STEPS (the old always-tool-call stub looped 50x and
+      // made the test 3-10s / race the full suite).
+      let calls = 0
+      const textPayload = [
+        "data: " + JSON.stringify({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }) + "\n\n",
+        "data: [DONE]\n\n",
+      ].join("")
+      const fetch: Fetcher = async () => {
+        calls += 1
+        return sse(calls === 1 ? toolPayload : textPayload)
+      }
       const butler = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", sessionId: "butler", asButler: true, dataDir: d, fetch: fetch as never })
 
       // default (butler) principal -> send denied; should not crash.
@@ -108,6 +121,7 @@ describe("butler authority", () => {
       expect(butlerRows.some((a) => a.op === "send_to_session" && a.outcome === "denied")).toBe(true)
 
       // user principal -> caller.kind user -> send allowed.
+      calls = 0
       await butler.prompt("tell s1 hi", "user")
       const audits2 = await butler.audit("butler")
       const butlerRows2 = audits2.filter((a): a is (typeof audits2)[number] & { readonly op: string } => "op" in a)
