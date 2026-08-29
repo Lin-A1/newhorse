@@ -173,4 +173,24 @@ describe("butler authority", () => {
     const res = await send.execute({ target: childId, content: "hi" }, ctx({ kind: "parent", sessionId: "b1" }, { registry }))
     expect((res as { authorization?: string }).authorization).toBe("allowed")
   })
+
+  it("list_sessions sees a freshly spawned child without manual refresh", async () => {
+    const { tools, registry, events } = await setup()
+
+    // Warm the index before the child exists (simulates a butler that has been
+    // running for a while), so list_sessions would miss the child if it only
+    // used the lazily-hydrated index.
+    await registry.get("s1")
+    const list = tools.find((t) => t.name === "list_sessions")!
+    const before = (await list.execute({}, ctx({ kind: "butler", sessionId: butlerSession }, { registry }))) as { sessionId: string }[]
+    expect(before.map((r) => r.sessionId)).toContain("s1")
+    expect(before.map((r) => r.sessionId)).not.toContain("child-1")
+
+    // A child is spawned durably after the index warmed.
+    await events.append("child-1", "Session.Created", { id: "child-1", location: "/c", createdAt: Date.now() })
+    await events.append("child-1", "Session.Spawned", { sessionId: "child-1", parentId: "b1" })
+
+    const after = (await list.execute({}, ctx({ kind: "butler", sessionId: butlerSession }, { registry }))) as { sessionId: string }[]
+    expect(after.map((r) => r.sessionId)).toContain("child-1")
+  })
 })

@@ -377,4 +377,34 @@ describe("runtime app", () => {
     expect(app).toBeDefined()
     await rm(dir, { recursive: true, force: true })
   })
+
+  it("records Session.Created.location from the derived workspace (not empty)", async () => {
+    // When a transport omits workspace, the id is derived from cwd and the
+    // Created.location must match that same value — otherwise listSessions by
+    // cwd returns 0 rows and the session collapses into workspace:"".
+    const { PluginRegistry } = await import("@newhorse/plugin")
+    const app = await createApp({
+      provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" },
+      model: "m",
+      plugins: new PluginRegistry(),
+      fetch: (async () => sse("data: [DONE]\n\n")) as unknown as Fetcher,
+    })
+    const rows = await app.listSessions()
+    expect(rows.length).toBe(1)
+    // The recorded location is the cwd-derived workspace (non-empty), so a
+    // query by that path finds it.
+    const row = rows[0]!
+    expect(row.workspace.length).toBeGreaterThan(0)
+  })
+
+  it("rejects an empty sessionId at createApp", async () => {
+    const { PluginRegistry } = await import("@newhorse/plugin")
+    await expect(createApp({
+      provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" },
+      model: "m",
+      sessionId: "",
+      plugins: new PluginRegistry(),
+      fetch: (async () => sse("data: [DONE]\n\n")) as unknown as Fetcher,
+    })).rejects.toThrow(/sessionId/)
+  })
 })

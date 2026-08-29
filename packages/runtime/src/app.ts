@@ -83,6 +83,9 @@ export interface PromptResult {
 }
 
 export async function createApp(config: AppConfig): Promise<App> {
+  if (config.sessionId !== undefined && config.sessionId.trim() === "") {
+    throw new Error("sessionId must be a non-empty string")
+  }
   const events = await createStore(config.dataDir)
   const inbox = new MemorySessionInput(events)
   await inbox.hydrate()
@@ -93,7 +96,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   const sessionId = config.sessionId ?? stableSessionId(config.workspace ?? process.cwd())
   const existing = await events.read(sessionId)
   if (existing.length === 0) {
-    await events.append(sessionId, "Session.Created", { id: sessionId, location: config.workspace ?? "", createdAt: Date.now() })
+    await events.append(sessionId, "Session.Created", { id: sessionId, location: config.workspace ?? process.cwd(), createdAt: Date.now() })
   }
 
   const registry = new SessionRegistry(events)
