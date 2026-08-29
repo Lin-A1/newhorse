@@ -18,14 +18,28 @@ export const openaiProtocol: Protocol = {
   id: "openai-chat",
 
   encode(request: LLMRequest): Body {
-    const messages = request.messages.map((m) => {
+    const messages: Record<string, unknown>[] = []
+    for (const m of request.messages) {
+      // A canonical message may hold multiple tool-results (e.g. several settled
+      // tool calls folded into one row). OpenAI requires ONE tool message per
+      // tool_call_id, so emit each result as its own message rather than taking
+      // the first (which silently dropped the rest — a data-loss bug).
+      const toolResults = m.content.filter((p) => p.type === "tool-result")
+      if (m.role === "tool") {
+        for (const tr of toolResults) {
+          messages.push({ role: "tool", content: JSON.stringify(toJson(tr.output)), tool_call_id: tr.id })
+        }
+        continue
+      }
+
       const text = textOfContent(m.content)
       const toolCalls = m.content.filter((p) => p.type === "tool-call")
-      const toolResult = m.content.find((p) => p.type === "tool-result")
-
       const message: Record<string, unknown> = {
         role: m.role,
-        content: text.length > 0 ? text : toolCalls.length > 0 ? null : JSON.stringify(toJson(toolResult?.output)),
+        // Never emit `content: undefined` (a reasoning-only assistant message):
+        // encode the reasoning text as plain content or, if absent, null for an
+        // assistant that only produced tool calls.
+        content: text.length > 0 ? text : toolCalls.length > 0 ? null : m.role === "assistant" ? "" : null,
       }
 
       if (m.role === "assistant" && toolCalls.length > 0) {
@@ -34,11 +48,9 @@ export const openaiProtocol: Protocol = {
           type: "function",
           function: { name: (p as { name: string }).name, arguments: JSON.stringify(toJson((p as { input: unknown }).input)) },
         }))
-      } else if (toolResult) {
-        message.tool_call_id = toolResult.id
       }
-      return message
-    })
+      messages.push(message)
+    }
 
     const body: Body = { model: request.model, messages, stream: true }
     // OpenAI caches automatically; ask for usage so cache_read tokens surface.

@@ -57,10 +57,15 @@ export class Session {
         break
       }
       case "Session.Prompted": {
-        // A promoted admission becomes a visible user message.
-        const data = event.data as { id?: string; prompt?: string; promotedSeq?: number }
+        // A promoted admission becomes a visible user message. Its durable seq
+        // is the Prompted event's OWN seq (the position in the log where the
+        // promotion happened), not the earlier admission seq — otherwise a
+        // steer promoted mid-turn would project a seq lower than a prior
+        // assistant message, breaking monotonicity for any consumer filtering
+        // by seq.
+        const data = event.data as { id?: string; prompt?: string }
         if (data.id && typeof data.prompt === "string") {
-          this.#messages.push({ kind: "user", id: data.id, seq: data.promotedSeq ?? event.seq, text: data.prompt })
+          this.#messages.push({ kind: "user", id: data.id, seq: event.seq, text: data.prompt })
         }
         break
       }

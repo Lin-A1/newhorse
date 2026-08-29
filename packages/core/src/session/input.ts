@@ -91,11 +91,21 @@ export class MemorySessionInput implements SessionInputStore {
 
   async admit(input: AdmitInput): Promise<Admission> {
     // Check the durable log first (source of truth), not a memory map, so a
-    // concurrent admit of the same new id can't double-insert.
+    // concurrent admit of the same new id can't double-insert. The awaited
+    // #findDurable is the interleave point; re-check the map synchronously just
+    // before the append (no await between) so two interleaved admits of the
+    // same id collapse to one durable PromptAdmitted.
     const existing = await this.#findDurable(input.id)
     if (existing) {
       if (existing.sessionId === input.sessionId && existing.prompt === input.prompt && existing.delivery === input.delivery) {
         return { id: existing.id, sessionId: existing.sessionId, prompt: existing.prompt, delivery: existing.delivery, principal: existing.principal, admittedSeq: existing.admittedSeq }
+      }
+      throw new SessionInputError(`admission id "${input.id}" reused with differing session/prompt/delivery`)
+    }
+    const raced = this.#rows.get(input.id)
+    if (raced) {
+      if (raced.sessionId === input.sessionId && raced.prompt === input.prompt && raced.delivery === input.delivery) {
+        return { id: raced.id, sessionId: raced.sessionId, prompt: raced.prompt, delivery: raced.delivery, principal: raced.principal, admittedSeq: raced.admittedSeq }
       }
       throw new SessionInputError(`admission id "${input.id}" reused with differing session/prompt/delivery`)
     }

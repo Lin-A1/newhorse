@@ -33,6 +33,7 @@ export class SqliteEventStore implements EventStore {
         seq INTEGER NOT NULL,
         type TEXT NOT NULL,
         data TEXT NOT NULL,
+        aggregate TEXT NOT NULL DEFAULT 'session',
         PRIMARY KEY (aggregate_id, seq)
       )
     `)
@@ -46,13 +47,13 @@ export class SqliteEventStore implements EventStore {
 
   async append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T, aggregate: AggregateType = "session"): Promise<StoredEvent> {
     const seq = this.#nextSeq(aggregate_id)
-    this.#db.run("INSERT INTO event (aggregate_id, seq, type, data) VALUES (?, ?, ?, ?)", [aggregate_id, seq, type, JSON.stringify(data)])
+    this.#db.run("INSERT INTO event (aggregate_id, seq, type, data, aggregate) VALUES (?, ?, ?, ?, ?)", [aggregate_id, seq, type, JSON.stringify(data), aggregate])
     return { aggregate, aggregate_id, seq, type, data }
   }
 
   async read(aggregate_id: string): Promise<StoredEvent[]> {
-    const rows = this.#db.query("SELECT seq, type, data FROM event WHERE aggregate_id = ? ORDER BY seq ASC").all(aggregate_id) as { seq: number; type: string; data: string }[]
-    return rows.map((r) => ({ aggregate: "session" as const, aggregate_id, seq: r.seq, type: r.type, data: JSON.parse(r.data) as UnknownRecord }))
+    const rows = this.#db.query("SELECT seq, type, data, aggregate FROM event WHERE aggregate_id = ? ORDER BY seq ASC").all(aggregate_id) as { seq: number; type: string; data: string; aggregate: AggregateType }[]
+    return rows.map((r) => ({ aggregate: r.aggregate, aggregate_id, seq: r.seq, type: r.type, data: JSON.parse(r.data) as UnknownRecord }))
   }
 
   async latestSeq(aggregate_id: string): Promise<number> {
@@ -66,11 +67,14 @@ export class SqliteEventStore implements EventStore {
   }
 
   #nextSeq(aggregate_id: string): number {
-    // Atomic per-aggregate increment so concurrent appends cannot collide.
-    const existing = this.#db.query("SELECT seq FROM event_sequence WHERE aggregate_id = ?").get(aggregate_id) as { seq: number } | null
-    const next = existing ? existing.seq + 1 : 0
-    this.#db.run("INSERT INTO event_sequence (aggregate_id, seq) VALUES (?, ?) ON CONFLICT(aggregate_id) DO UPDATE SET seq = excluded.seq", [aggregate_id, next])
-    return next
+    // Atomic per-aggregate increment: a single INSERT ... ON CONFLICT that bumps
+    // `seq` and returns it, so the read + write never interleave and two different
+    // connections/processes appending to the same aggregate cannot collide (a
+    // prior SELECT-then-UPSERT was TOCTOU and could assign the same seq twice).
+    const row = this.#db
+      .query("INSERT INTO event_sequence (aggregate_id, seq) VALUES (?, 0) ON CONFLICT(aggregate_id) DO UPDATE SET seq = seq + 1 RETURNING seq")
+      .get(aggregate_id) as { seq: number } | null
+    return row ? row.seq : 0
   }
 
   close(): void {

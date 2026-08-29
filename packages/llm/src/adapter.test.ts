@@ -64,6 +64,33 @@ describe("openai protocol", () => {
     const r = openaiProtocol.step(state, { usage: { prompt_tokens: 10, completion_tokens: 4 } })
     expect(r.events).toEqual([{ type: "step-finish", finish: "stop", usage: { inputTokens: 10, outputTokens: 4 } }])
   })
+
+  it("folds multiple tool-results in one message into separate tool messages (no data loss)", () => {
+    const body = openaiProtocol.encode(
+      req({
+        messages: [
+          { role: "tool", content: [{ type: "tool-result", id: "c1", name: "a", output: { n: 1 } }, { type: "tool-result", id: "c2", name: "b", output: { n: 2 } }] },
+        ],
+      }),
+    )
+    const messages = body.messages as Record<string, unknown>[]
+    expect(messages).toHaveLength(2)
+    expect(messages[0]).toMatchObject({ role: "tool", tool_call_id: "c1" })
+    expect(messages[1]).toMatchObject({ role: "tool", tool_call_id: "c2" })
+    expect((messages[0]!.content as string).includes("1")).toBe(true)
+    expect((messages[1]!.content as string).includes("2")).toBe(true)
+  })
+
+  it("never emits content undefined for a reasoning-only assistant message", () => {
+    const body = openaiProtocol.encode(
+      req({
+        messages: [{ role: "assistant", content: [{ type: "reasoning", text: "think" }] }],
+      }),
+    )
+    const messages = body.messages as Record<string, unknown>[]
+    expect(messages[0]!.content).toBe("")
+    expect("content" in messages[0]!).toBe(true)
+  })
 })
 
 describe("anthropic protocol", () => {
@@ -224,6 +251,26 @@ describe("openai responses protocol", () => {
     const state = openaiResponsesProtocol.init() as unknown
     const r = openaiResponsesProtocol.step(state, { type: "response.completed", response: { status: "incomplete" } })
     expect(r.events).toEqual([{ type: "step-finish", finish: "length" }])
+  })
+
+  it("reads cached_tokens from responses usage (cost-down visibility)", () => {
+    const state = openaiResponsesProtocol.init() as unknown
+    const r = openaiResponsesProtocol.step(state, { type: "response.completed", response: { status: "completed", usage: { input_tokens: 100, output_tokens: 5, input_tokens_details: { cached_tokens: 80 } } } })
+    expect(r.events.at(-1)).toEqual({ type: "step-finish", finish: "stop", usage: { inputTokens: 100, outputTokens: 5, cacheReadTokens: 80 } })
+  })
+
+  it("emits assistant text before its tool-call items (correct conversation order)", () => {
+    const body = openaiResponsesProtocol.encode(
+      req({
+        messages: [{ role: "assistant", content: [{ type: "text", text: "found it" }, { type: "tool-call", id: "c1", name: "search", input: { q: "a" } }] }],
+      }),
+    )
+    const input = body.input as { type?: string; role?: string }[]
+    const textIdx = input.findIndex((i) => i.type === undefined || i.type === "message")
+    const callIdx = input.findIndex((i) => i.type === "function_call")
+    expect(textIdx).toBeGreaterThanOrEqual(0)
+    expect(callIdx).toBeGreaterThan(textIdx)
+    expect(input[0]!.role).toBe("assistant")
   })
 })
 

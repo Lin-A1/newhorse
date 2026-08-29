@@ -33,15 +33,19 @@ export const openaiResponsesProtocol: Protocol = {
         continue
       }
 
+      // Remaining text (and reasoning lowered to text) becomes a message item.
+      // Emit it BEFORE the tool-call items so the assistant's narration precedes
+      // its own tool calls in the conversation order (the Responses API treats
+      // input as an ordered history; a tool call that precedes the text it
+      // narrates changes model interpretation).
+      const text = textOfContent(m.content)
+      if (text) input.push({ role: m.role, content: [{ type: "input_text", text }] })
+
       // Emit tool-call / tool-result items at the top level.
       const toolCalls = m.content.filter((p) => p.type === "tool-call")
       const toolResults = m.content.filter((p) => p.type === "tool-result")
       for (const tc of toolCalls) input.push({ type: "function_call", call_id: tc.id, name: tc.name, arguments: toJsonString(tc.input) })
       for (const tr of toolResults) input.push({ type: "function_call_output", call_id: tr.id, output: toJsonString(tr.output) })
-
-      // Remaining text (and reasoning lowered to text) becomes a message item.
-      const text = textOfContent(m.content)
-      if (text) input.push({ role: m.role, content: [{ type: "input_text", text }] })
     }
 
     const body: Body = { model: request.model, input, stream: true }
@@ -123,7 +127,7 @@ export const openaiResponsesProtocol: Protocol = {
         const status = ev.response?.status
         // A completed response may still be truncated (status "incomplete").
         const finish = status === "incomplete" ? "length" : "stop"
-        events.push({ type: "step-finish", finish, ...(usage ? { usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens } } : {}) })
+        events.push({ type: "step-finish", finish, ...(usage ? { usage: { inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, cacheReadTokens: usage.input_tokens_details?.cached_tokens } } : {}) })
         s.finish = finish
         break
       }
@@ -168,7 +172,7 @@ type ResponseEvent = {
   delta?: string
   item?: Item
   error?: { code?: string; message?: string }
-  response?: { status?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: { code?: string; message?: string } }
+  response?: { status?: string; usage?: { input_tokens?: number; output_tokens?: number; input_tokens_details?: { cached_tokens?: number } }; error?: { code?: string; message?: string } }
 }
 
 type Item = {
