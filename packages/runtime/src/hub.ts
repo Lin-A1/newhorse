@@ -26,7 +26,7 @@ export interface SessionHub {
 }
 
 /** In-memory hub over a shared event store. Sessions are created lazily. */
-export function createSessionHub(events: EventStore, open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }): SessionHub {
+export function createSessionHub(events: EventStore, open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }, workspace?: string): SessionHub {
   const sessions = new Set<string>()
   return {
     async interrupt(sessionId: string) {
@@ -44,7 +44,12 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
     },
     async spawn(parentId: string, model?: string) {
       const id = crypto.randomUUID()
-      await events.append(id, "Session.Created", { id, location: "", createdAt: Date.now() })
+      // A spawned child inherits the parent's workspace (location is the
+      // session's project root, driving AGENTS.md discovery + tool sandbox).
+      // `workspace` comes from the holder (createSessionHub caller); it must
+      // NEVER be blank — fall back to the process cwd so a child created
+      // without an explicit workspace is not a "no project" orphan.
+      await events.append(id, "Session.Created", { id, location: workspace ?? process.cwd(), createdAt: Date.now() })
       await events.append(id, "Session.Spawned", { sessionId: id, parentId })
       void model
       sessions.add(id)

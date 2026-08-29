@@ -1,4 +1,4 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, discoverWorkspaceContext, composeSystemContext, stableSessionId, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, stableSessionId, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator } from "@newhorse/core"
 import { join, dirname } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
@@ -6,6 +6,7 @@ import { PluginRegistry, discoverPlugin } from "@newhorse/plugin"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
 import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
+import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
 import type { ExecPolicy, ExecRule, ApprovalRequest } from "@newhorse/schema"
 
 /**
@@ -46,6 +47,12 @@ export interface AppConfig {
   /** M4 execpolicy: interactive approval gate injected by the transport. When
    * absent, a `prompt` resolves to `forbid` (fail-closed). */
   readonly onApprove?: (req: ApprovalRequest) => Promise<boolean>
+  /**
+   * Workspace context provider (pluggable seam). Default = AGENTS.md discovery
+   * + compose (with the Workdir line). A caller can inject a custom provider to
+   * override the ambient context (e.g. a narrower scope for a child session).
+   */
+  readonly contextProvider?: SessionContextProvider
 }
 
 /** A live session event a shell may observe (streamed model output, etc.). */
@@ -108,6 +115,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   // signifier "no tools" (the toolset is override-to-zero, not "keep read/write/
   // edit"). Tools are pluggable, so an override can be re-plugged later.
   const workspace = config.workspace ?? process.cwd()
+  const contextProvider: SessionContextProvider = config.contextProvider ?? defaultContextProvider
   const builtin = createBuiltinTools({ workspace, enableBash: config.enableBash ?? false })
   // Discover a plugin directory (directory-as-registration-surface) and register
   // its capabilities into a PluginRegistry, so a pluginsDir yields tools (and
@@ -141,7 +149,7 @@ export async function createApp(config: AppConfig): Promise<App> {
     })
   }
   if (config.asButler) tools.push(...createButlerTools({ registry, appendAudit }))
-  const hub = config.asButler ? createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" })) : undefined
+  const hub = config.asButler ? createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }), workspace) : undefined
 
   // First occurrence wins so precedence (explicit > plugin > builtin) is
   // preserved: a later duplicate with the same name never shadows a higher-
@@ -217,21 +225,7 @@ export async function createApp(config: AppConfig): Promise<App> {
       // per the "model-visible ⟺ logged" rule. It is appended only once: once a
       // system message is already in the log we reuse it, so repeated prompts in
       // a session do not keep re-inserting the same context.
-      const session = Session.replay(await events.read(sessionId))
-      if (!session.messages.some((m) => m.kind === "system")) {
-        const docs = await discoverWorkspaceContext(workspace)
-        const docsCtx = composeSystemContext(docs)
-        // Make the workspace root model-visible so the first-turn model can
-        // address files by path instead of guessing (M3.5 §2.4). This leaks the
-        // session's working directory, which is the same as every fs tool's
-        // scope, so it is not a new disclosure.
-        const rootLine = `Workdir: ${workspace}` + (docsCtx ? "\n\n" : "")
-        const system = docsCtx ? rootLine + docsCtx : rootLine
-        if (system) {
-          const systemMessage = session.projectMessage({ kind: "system", id: crypto.randomUUID(), seq: 0, text: system })
-          await events.append(sessionId, systemMessage.type, systemMessage.data as Record<string, unknown>)
-        }
-      }
+      await ensureSystemContext(events, sessionId, workspace, contextProvider)
       const effPrincipal = principal ?? (config.asButler ? "butler" : "parent")
       await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: effPrincipal })
 

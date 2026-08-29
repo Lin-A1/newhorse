@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { MemoryEventStore, MemorySessionInput, SqliteEventStore, DAGError, foldDAG, type TurnRuntime, type Tool, type DAGSpec } from "@newhorse/core"
 import { runDag, createSlotStore, replayDag, resolveNodeModel, type DagDeps } from "./dag-runner"
 import type { LLMEvent, LLMRequest } from "@newhorse/schema"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -402,5 +402,90 @@ describe("resolveNodeModel (cost-down, goal #3)", () => {
     expect(outcome.status["B"]).toBe("skipped")
     expect(outcome.models["A"]).toBe("m")
     expect(outcome.models["B"]).toBeUndefined()
+  })
+
+  it("child session inherits the workspace location and gets the ambient system context on its first turn", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    const llm = stubLlm()
+    const runtime: TurnRuntime = { events, inbox, llm }
+    const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a", model: "m" }, input: "root" } } }
+    await runDag(spec, { events, inbox, runtime, tools: [], concurrency: 1, workspace: "G:/code/proj" })
+
+    // Locate the DAG aggregate (has DAG.Declared), then its child session.
+    const dags: string[] = []
+    for (const id of await events.aggregateIds()) {
+      if ((await events.read(id)).some((e) => e.type === "DAG.Declared")) dags.push(id)
+    }
+    expect(dags.length).toBe(1)
+    const dagLog = await events.read(dags[0]!)
+    const nodeStarted = dagLog.find((e) => e.type === "DAG.NodeStarted")
+    const childId = (nodeStarted?.data as { sessionId?: string }).sessionId
+    expect(childId).toBeTruthy()
+    const childLog = await events.read(childId!)
+    const created = childLog.find((e) => e.type === "Session.Created")
+    expect((created?.data as { location?: string }).location).toBe("G:/code/proj")
+    // First turn admits Workdir + (here empty) system — a system message exists.
+    const system = childLog.find((e) => e.type === "Session.MessageAppended" && ((e.data as { message?: { kind?: string } }).message?.kind === "system"))
+    const systemText = (system?.data as { message?: { text?: string } }).message?.text ?? ""
+    expect(systemText).toContain("Workdir: G:/code/proj")
+  })
+
+  it("contextProvider is pluggable: a custom provider drives the child system text", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    const llm = stubLlm()
+    const runtime: TurnRuntime = { events, inbox, llm }
+    const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a", model: "m" }, input: "root" } } }
+    await runDag(spec, {
+      events, inbox, runtime, tools: [], concurrency: 1, workspace: "G:/code/proj",
+      contextProvider: async () => "SPECIAL-NODE-CONTEXT",
+    })
+
+    const dags: string[] = []
+    for (const id of await events.aggregateIds()) {
+      if ((await events.read(id)).some((e) => e.type === "DAG.Declared")) dags.push(id)
+    }
+    const dagLog = await events.read(dags[0]!)
+    const started = dagLog.find((e) => e.type === "DAG.NodeStarted")
+    const childId = (started?.data as { sessionId?: string }).sessionId
+    const childLog = await events.read(childId!)
+    const system = childLog.find((e) => e.type === "Session.MessageAppended" && ((e.data as { message?: { kind?: string } }).message?.kind === "system"))
+    const systemText = (system?.data as { message?: { text?: string } }).message?.text ?? ""
+    expect(systemText).toContain("SPECIAL-NODE-CONTEXT")
+  })
+
+  it("child session receives the REAL AGENTS.md discovery via the default provider (Workdir + docs)", async () => {
+    // The default provider contains its walk within process.cwd(); a temp dir
+    // OUTSIDE cwd yields no docs. So build the workspace under cwd (cleaned after).
+    const dir = await mkdtemp(join(process.cwd(), ".tmp-childctx-"))
+    try {
+      await writeFile(join(dir, "AGENTS.md"), "DAG-child agents instructions\n")
+      const events = new MemoryEventStore()
+      const inbox = new MemorySessionInput(events)
+      const seen: LLMRequest[] = []
+      const llm: TurnRuntime["llm"] = {
+        id: "t",
+        stream: async (req) => {
+          seen.push(req)
+          return eventsOf([{ type: "text.delta", text: "ok" }, { type: "step-finish", finish: "stop" }])
+        },
+      }
+      const runtime: TurnRuntime = { events, inbox, llm }
+      const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a", model: "m" }, input: "root" } } }
+      await runDag(spec, { events, inbox, runtime, tools: [], concurrency: 1, workspace: dir })
+
+      // The first LLM request for the child begins with a system-role message
+      // carrying the real AGENTS.md text (from discovery, not a mock).
+      const firstReq = seen[0]!
+      expect(firstReq.messages[0]?.role).toBe("system")
+      const systemText = (firstReq.messages[0]?.content[0] as { text?: string }).text ?? ""
+      expect(systemText).toContain("Workdir:")
+      expect(systemText).toContain("DAG-child agents instructions")
+      // Only ONE system message (the dup-guard held across the run).
+      expect(firstReq.messages.filter((m) => m.role === "system").length).toBe(1)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

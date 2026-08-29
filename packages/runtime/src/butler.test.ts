@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { MemoryEventStore, SessionRegistry } from "@newhorse/core"
 import { createButlerTools } from "./butler"
+import { createSessionHub } from "./hub"
 import { createApp } from "./app"
 import type { Initiator, ToolCtx } from "@newhorse/core"
 import type { Fetcher } from "@newhorse/llm"
@@ -192,5 +193,29 @@ describe("butler authority", () => {
 
     const after = (await list.execute({}, ctx({ kind: "butler", sessionId: butlerSession }, { registry }))) as { sessionId: string }[]
     expect(after.map((r) => r.sessionId)).toContain("child-1")
+  })
+
+  it("hub.spawn persists a child with the inherited workspace location (never blank)", async () => {
+    const events = new MemoryEventStore()
+    const hub = createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }), "G:/code/parent-proj")
+    const childId = await hub.spawn("parent-1", "cheap-model")
+
+    const log = await events.read(childId)
+    const created = log.find((e) => e.type === "Session.Created")
+    expect((created?.data as { location?: string }).location).toBe("G:/code/parent-proj")
+    const spawned = log.find((e) => e.type === "Session.Spawned")
+    expect((spawned?.data as { parentId?: string }).parentId).toBe("parent-1")
+  })
+
+  it("hub.spawn with no workspace falls back to cwd (never a blank orphan location)", async () => {
+    const events = new MemoryEventStore()
+    const hub = createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }))
+    const childId = await hub.spawn("parent-1")
+
+    const log = await events.read(childId)
+    const created = log.find((e) => e.type === "Session.Created")
+    const location = (created?.data as { location?: string }).location
+    expect(location).toBeTruthy()
+    expect(location).not.toBe("")
   })
 })

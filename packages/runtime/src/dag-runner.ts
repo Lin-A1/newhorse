@@ -1,6 +1,7 @@
 import { validate, foldDAG, cascadeTerminal, readyNodes, reconcile, DAGError, type DAGSpec, type DAGNode, type Topology, type NodeState } from "@newhorse/core"
 import { runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime, type ToolCtx } from "@newhorse/core"
 import { createBuiltinTools, createExecPolicy, simpleHash } from "./tools"
+import { ensureSystemContext, defaultContextProvider, type SessionContextProvider } from "./context"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 
@@ -70,6 +71,13 @@ export interface DagDeps {
    * can act (goal #3) — the fs tools are sandboxed to the workspace and protect
    * `.newhorse`/`.git`/credentials. Inject one to audit a node like the parent. */
   readonly toolCtx?: Omit<ToolCtx, "caller">
+  /**
+   * Workspace context provider (pluggable seam). Default = AGENTS.md discovery +
+   * compose, so a DAG node inherits the parent's ambient context (location
+   * + Workdir). A caller can inject a custom provider to scope a node's context
+   * differently — no hardcoded branch.
+   */
+  readonly contextProvider?: SessionContextProvider
 }
 
 export interface DagOutcome {
@@ -86,11 +94,17 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   const topo = validate(spec)
   const dagId = crypto.randomUUID()
   const concurrency = deps.concurrency ?? 2
+  // Workspace is the child's project root. Defaults to cwd for convenience
+  // (a DAG usually runs in the same process/cwd as its parent); a caller that
+  // wants a DIFFERENT workspace must pass it explicitly — never rely on the
+  // default when the parent used a custom workspace.
+  const workspace = deps.workspace ?? process.cwd()
+  const contextProvider: SessionContextProvider = deps.contextProvider ?? defaultContextProvider
   const slotStore = createSlotStore()
   // Subagent nodes need hands: when the caller injects no tools, we default to
   // the builtin toolset so a research/explore node is not limited to bare model
   // answers (M3.5 §2.5 — cost-down is only meaningful if nodes can actually act).
-  const tools = deps.tools.length > 0 ? deps.tools : createBuiltinTools({ workspace: deps.workspace ?? process.cwd() })
+  const tools = deps.tools.length > 0 ? deps.tools : createBuiltinTools({ workspace })
 
   // DAG nodes must actually be able to ACT (goal #3): cost-down is only
   // meaningful if a cheap-model subagent can read/write inside the workspace.
@@ -101,7 +115,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   // /credentials protected) so a node can work without weakening the sandbox.
   // The rules file lives under the OS temp keyed by workspace so the banned-rules
   // path check never points at (and thereby forbids) the workspace itself.
-  const dagRulesBase = join(tmpdir(), "newhorse-dag", simpleHash(deps.workspace ?? process.cwd()))
+  const dagRulesBase = join(tmpdir(), "newhorse-dag", simpleHash(workspace))
   const nodeToolCtx: Omit<ToolCtx, "caller"> = deps.toolCtx?.execPolicy
     ? deps.toolCtx
     : { ...deps.toolCtx, execPolicy: createExecPolicy({ rulesFile: join(dagRulesBase, "rules.json"), rulesDir: dagRulesBase }) }
@@ -184,10 +198,20 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
     const ctrl = new AbortController()
     running.set(id, ctrl)
     try {
-      await emit("DAG.NodeStarted", { nodeId: id, sessionId: id, model: resolvedModel[id] })
-
       const childSessionId = crypto.randomUUID()
-      await deps.events.append(childSessionId, "Session.Created", { id: childSessionId, location: "", createdAt: Date.now() }, "session")
+      // Child inherits the parent workspace (never ""): its location drives
+      // AGENTS.md discovery + tool sandbox, so a node knows what project it's in.
+      await deps.events.append(childSessionId, "Session.Created", { id: childSessionId, location: workspace, createdAt: Date.now() }, "session")
+      // Admit the ambient context (Workdir + AGENTS.md) as a system message on
+      // the child's first turn — the same rule as the primary session
+      // ("model-visible ⟺ logged"). Pluggable via deps.contextProvider.
+      await ensureSystemContext(deps.events, childSessionId, workspace, contextProvider)
+      // DAG.NodeStarted carries the ACTUAL subagent session id (not the node id),
+      // so a replay can locate the child's log (foldDAG keys off nodeId; the
+      // session id lets a consumer resume/attach the child). Emit AFTER the child
+      // session exists, so a replay never sees a DAG.NodeStarted without its
+      // Session.Created.
+      await emit("DAG.NodeStarted", { nodeId: id, sessionId: childSessionId, model: resolvedModel[id] })
       await deps.inbox.admit({ id: crypto.randomUUID(), sessionId: childSessionId, prompt: buildInput(node, slotStore, dagId), delivery: "steer" })
 
       const agent: Agent = { id: node.agent.name, model: resolvedModel[id]!, tools: [...tools] }
