@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { MemoryEventStore, MemorySessionInput, SqliteEventStore, DAGError, foldDAG, type TurnRuntime, type Tool, type DAGSpec } from "@newhorse/core"
 import { runDag, createSlotStore, replayDag, resolveNodeModel, type DagDeps } from "./dag-runner"
 import type { LLMEvent, LLMRequest } from "@newhorse/schema"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -83,6 +83,47 @@ describe("dag runner", () => {
     expect(outcome.status["C"]).toBe("skipped")
     expect(outcome.aborted).toBe(false)
     expect(dispatched).not.toContain("fromC")
+  })
+
+  it("a DAG node with the builtin toolset can act (not deny-all) via the default workspace execpolicy", async () => {
+    // Goal #3: cost-down is only meaningful if a cheap-model subagent can
+    // read/write in the workspace. With no caller-provided execpolicy, runDag
+    // must supply a default workspace policy so the builtin fs tools execute
+    // instead of every action being denied by denyAllExecPolicy. The node calls
+    // the builtin `write` tool (via the tool call), proving a real tool ran.
+    const ws = await mkdtemp(join(tmpdir(), "nh-dag-act-"))
+    const dir = await mkdtemp(join(tmpdir(), "nh-dag-act-store-"))
+    try {
+      const store = new SqliteEventStore(new (await import("bun:sqlite")).Database(join(dir, "dag.db")))
+      const inbox = new MemorySessionInput(store)
+      let call = 0
+      const llm: TurnRuntime["llm"] = {
+        id: "t",
+        stream: async () =>
+          (async function* () {
+            if (call++ === 0) {
+              yield { type: "tool-call", id: "c1", name: "write", input: { path: "out.txt", content: "hi" } } as const
+              yield { type: "step-finish", finish: "tool" } as const
+            } else {
+              yield { type: "text.delta", text: "done" } as const
+              yield { type: "step-finish", finish: "stop" } as const
+            }
+          })(),
+      }
+      const spec: DAGSpec = {
+        nodes: {
+          A: { id: "A", agent: { name: "a", model: "m" }, input: "write a file" },
+        },
+      }
+      const runtime: TurnRuntime = { events: store, inbox, llm }
+      const outcome = await runDag(spec, { events: store, inbox, runtime, tools: [], concurrency: 1, workspace: ws })
+      expect(outcome.status["A"]).toBe("succeeded")
+      const text = await readFile(join(ws, "out.txt"), "utf8")
+      expect(text).toBe("hi")
+    } finally {
+      await rm(ws, { recursive: true, force: true }).catch(() => {})
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
   })
 
   it("cascades a failed node so downstream is skipped, never dispatched", async () => {

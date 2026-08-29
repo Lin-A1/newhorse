@@ -273,6 +273,38 @@ describe("runtime app", () => {
     await rm(dir, { recursive: true, force: true })
   })
 
+  it("an explicit tools: [] overrides the toolset to zero (never the builtin baseline)", async () => {
+    // M3.5 §2.3 discriminates on `!== undefined`: a provided empty array is the
+    // deliberate "override = no tools" signifier, not "keep read/write/edit".
+    const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    let sentTools: unknown
+    const fetch: Fetcher = async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { tools?: unknown }
+      sentTools = body.tools
+      return sse(payload)
+    }
+    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", workspace: "/w", tools: [], fetch: fetch as never })
+    await app.prompt("hi")
+    // An explicit empty array means "no tools": the provider body omits the tools
+    // array entirely (the encoder guards on `tools?.length`), so the model has no
+    // fs hands. This is the override-to-zero signifier, NOT the builtin baseline.
+    expect(sentTools).toBeUndefined()
+  })
+
+  it("the default (no tools key) wires the builtin baseline", async () => {
+    const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    let sentTools: unknown
+    const fetch: Fetcher = async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { tools?: unknown }
+      sentTools = body.tools
+      return sse(payload)
+    }
+    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", workspace: "/w", fetch: fetch as never })
+    await app.prompt("hi")
+    expect(Array.isArray(sentTools)).toBe(true)
+    expect((sentTools as unknown[]).length).toBeGreaterThan(0)
+  })
+
   it("discovers a pluginsDir and wires its tools additively beside builtin", async () => {
     // The model calls a plugin tool `search` AND the builtin `write` in the same
     // session — both must resolve (discovery is additive, not a replacement).

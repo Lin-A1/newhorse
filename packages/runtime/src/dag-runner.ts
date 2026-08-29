@@ -1,6 +1,8 @@
 import { validate, foldDAG, cascadeTerminal, readyNodes, reconcile, DAGError, type DAGSpec, type DAGNode, type Topology, type NodeState } from "@newhorse/core"
 import { runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime, type ToolCtx } from "@newhorse/core"
-import { createBuiltinTools } from "./tools"
+import { createBuiltinTools, createExecPolicy, simpleHash } from "./tools"
+import { join } from "node:path"
+import { tmpdir } from "node:os"
 
 /**
  * Declarative DAG dispatcher (runtime half — drives concurrency).
@@ -63,9 +65,10 @@ export interface DagDeps {
   readonly concurrency?: number
   /** Optional external abort: aborts the whole graph, stops claiming, aborts in-flight. */
   readonly signal?: AbortSignal
-  /** Tool-ctx to pass to each node session (caller is derived per node). M4
-   * execpolicy must be provided by the runDag caller so DAG subagents are
-   * audited like the parent — absent, they deny-all (fail-closed). */
+  /** Tool-ctx to pass to each node session (caller is derived per node). When no
+   * execPolicy is provided, runDag supplies a default workspace policy so a node
+   * can act (goal #3) — the fs tools are sandboxed to the workspace and protect
+   * `.newhorse`/`.git`/credentials. Inject one to audit a node like the parent. */
   readonly toolCtx?: Omit<ToolCtx, "caller">
 }
 
@@ -88,6 +91,20 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   // the builtin toolset so a research/explore node is not limited to bare model
   // answers (M3.5 §2.5 — cost-down is only meaningful if nodes can actually act).
   const tools = deps.tools.length > 0 ? deps.tools : createBuiltinTools({ workspace: deps.workspace ?? process.cwd() })
+
+  // DAG nodes must actually be able to ACT (goal #3): cost-down is only
+  // meaningful if a cheap-model subagent can read/write inside the workspace.
+  // When the caller injects no execpolicy, the turn loop falls back to
+  // denyAllExecPolicy (fail-closed) and every builtin fs tool denies — the nodes
+  // would have schemas but no hands. Supply a default workspace policy (the same
+  // heuristic floor the app applies: workspace fs allowed, `.newhorse`/`.git`
+  // /credentials protected) so a node can work without weakening the sandbox.
+  // The rules file lives under the OS temp keyed by workspace so the banned-rules
+  // path check never points at (and thereby forbids) the workspace itself.
+  const dagRulesBase = join(tmpdir(), "newhorse-dag", simpleHash(deps.workspace ?? process.cwd()))
+  const nodeToolCtx: Omit<ToolCtx, "caller"> = deps.toolCtx?.execPolicy
+    ? deps.toolCtx
+    : { ...deps.toolCtx, execPolicy: createExecPolicy({ rulesFile: join(dagRulesBase, "rules.json"), rulesDir: dagRulesBase }) }
 
   // Resolve every node's effective model up front, so a missing/invalid model is
   // a pre-flight DAGError rather than a bogus model id reaching the provider (or
@@ -179,7 +196,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
         agent,
         resolveTool: (name) => tools.find((t) => t.name === name),
         signal: ctrl.signal,
-        toolCtx: deps.toolCtx,
+        toolCtx: nodeToolCtx,
       })
 
       // A cancelled run settles with finish="interrupted" (loop returns it, does

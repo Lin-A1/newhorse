@@ -254,7 +254,7 @@ export function rulesFilePath(dataDir: string, workspace: string): string {
 }
 
 /** A simple stable hash (FNV-1a) for a workspace → project rules filename. */
-function simpleHash(input: string): string {
+export function simpleHash(input: string): string {
   let h = 0x811c9dc5
   for (let i = 0; i < input.length; i++) {
     h ^= input.charCodeAt(i)

@@ -6,7 +6,7 @@ import { createListTool } from "./list"
 import { createSearchTool } from "./search"
 import { createBashTool } from "./bash"
 
-export { createExecPolicy, createBuiltinExecPolicy, rulesFilePath } from "./execpolicy"
+export { createExecPolicy, createBuiltinExecPolicy, rulesFilePath, simpleHash } from "./execpolicy"
 
 /**
  * Build the builtin toolset (M3.5). These are the agent's "hands": read / write

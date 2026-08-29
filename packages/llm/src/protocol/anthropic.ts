@@ -56,6 +56,10 @@ export const anthropicProtocol: Protocol = {
     }
 
     const body: Body = { model: request.model, messages, stream: true, max_tokens: request.maxTokens ?? 4096 }
+    // `request.system` is folded into the cacheable system prefix. It MUST be
+    // static (the model prefix has a stable cache_control anchor); per-turn
+    // variable content belongs in the user message, never here, or it silently
+    // invalidates the Anthropic cache every turn.
     if (request.system) systemText.push(request.system)
     if (systemText.length > 0) {
       const cache = request.cacheControl !== false

@@ -100,10 +100,13 @@ export async function createApp(config: AppConfig): Promise<App> {
   }
 
   const registry = new SessionRegistry(events)
-  // Priority (M3.5 §2.3): builtin is the baseline; plugin tools and an explicit
-  // `tools` override are ADDITIVE, never a replacement that silently drops
-  // read/write/edit. An explicit empty array is a deliberate "no extra tools",
-  // not a request to lose the fs hands.
+  // Priority (M3.5 §2.3): semantics are discriminated on `!== undefined`, not
+  // truthiness. `config.tools === undefined` -> assemble the default baseline
+  // (plugin + builtin, plugin wins name collisions). A provided array is an
+  // EXPLICIT override: non-empty -> explicit > plugin > builtin (additive, first
+  // occurrence wins a name collision); an explicit empty array is the deliberate
+  // signifier "no tools" (the toolset is override-to-zero, not "keep read/write/
+  // edit"). Tools are pluggable, so an override can be re-plugged later.
   const workspace = config.workspace ?? process.cwd()
   const builtin = createBuiltinTools({ workspace, enableBash: config.enableBash ?? false })
   // Discover a plugin directory (directory-as-registration-surface) and register
@@ -118,9 +121,10 @@ export async function createApp(config: AppConfig): Promise<App> {
   }
   const pluginTools = pluginRegistry?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute })) ?? []
   const explicitTools = config.tools ?? []
-  // Order: explicit (highest priority, first in the map so resolve prefers it),
-  // then plugin, then builtin baseline.
-  const tools: Tool[] = [...explicitTools, ...pluginTools, ...builtin]
+  // An explicitly-provided empty array is the override-to-zero signifier.
+  const tools: Tool[] = config.tools?.length === 0
+    ? []
+    : [...explicitTools, ...pluginTools, ...builtin]
 
   // Butler toolset (M2b): a signed set of privileged tools whose execute reads
   // ctx.caller + ctx.registry to authorize and audit each action.
