@@ -2,11 +2,17 @@ import { createApp } from "@newhorse/runtime"
 import type { AdapterConfig } from "@newhorse/llm"
 import type { SessionMessage, ApprovalRequest } from "@newhorse/schema"
 import { createInterface } from "node:readline"
+import { join } from "node:path"
 
 /**
  * CLI entrypoint. Reads a single prompt from argv or stdin, runs one session,
  * and prints the visible history. Transport only — all domain logic lives in
  * the runtime/core layers.
+ *
+ * Long-horizon (goal #2): sessions persist to a `dataDir` with a stable
+ * `sessionId` (default derived from the workspace) so a restart re-attaches to
+ * the prior log instead of starting a fresh, empty session. Both are
+ * overridable via `--data-dir` / `--session` (and their env vars).
  */
 export async function main(argv: string[]): Promise<void> {
   const args = parseArgs(argv)
@@ -16,6 +22,8 @@ export async function main(argv: string[]): Promise<void> {
     provider: config,
     model: args.model ?? "gpt-4o-mini",
     workspace: process.cwd(),
+    sessionId: resolveSessionId(args),
+    dataDir: resolveDataDir(args),
     asButler: args.butler ? true : false,
     // M4 execpolicy: the transport owns the interactive approve gate. A prompt-
     // level tool decision (command/path) is surfaced to the user as a y/n
@@ -28,7 +36,7 @@ export async function main(argv: string[]): Promise<void> {
 
   const promptText = args.prompt ?? (await readStdin())
   if (!promptText) {
-    console.error("usage: newhorse [--provider openai|openai-responses|anthropic] [--model NAME] [--prompt TEXT] [--butler]")
+    console.error("usage: newhorse [--provider openai|openai-responses|anthropic] [--model NAME] [--prompt TEXT] [--butler] [--data-dir DIR] [--session ID]")
     return
   }
 
@@ -78,6 +86,24 @@ function resolveProvider(args: Record<string, string>): AdapterConfig {
   const baseUrl = args.baseUrl ?? process.env.NEWHORSE_BASE_URL ?? (kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com")
   const apiKey = kind === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY
   return { kind, baseUrl, apiKey }
+}
+
+/** Persist the event store here so a session survives a restart (goal #2). */
+function resolveDataDir(args: Record<string, string>): string {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? "."
+  const platform = process.platform === "win32" ? "newhorse" : ".config/newhorse"
+  return args["data-dir"] ?? process.env.NEWHORSE_DATA_DIR ?? join(home, platform, "data")
+}
+
+/** Deterministic per-workspace session id so restart re-attaches to the log. */
+function resolveSessionId(args: Record<string, string>): string {
+  if (args.session) return args.session
+  if (process.env.NEWHORSE_SESSION) return process.env.NEWHORSE_SESSION
+  // A stable id from the workspace path keeps prior prompts in the same session
+  // without forcing the user to name it.
+  let hash = 0
+  for (const c of process.cwd()) hash = (hash * 31 + c.charCodeAt(0)) | 0
+  return `ws-${(hash >>> 0).toString(16)}`
 }
 
 async function readStdin(): Promise<string> {
