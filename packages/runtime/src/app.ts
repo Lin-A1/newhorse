@@ -1,5 +1,6 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, discoverWorkspaceContext, composeSystemContext, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, discoverWorkspaceContext, composeSystemContext, stableSessionId, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator } from "@newhorse/core"
 import { join, dirname } from "node:path"
+import { mkdir } from "node:fs/promises"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry } from "@newhorse/plugin"
 import { createButlerTools } from "./butler"
@@ -83,7 +84,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   const llm = makeLlmClient(config.provider, config.fetch)
   const runtime: TurnRuntime = { events, inbox, llm }
 
-  const sessionId = config.sessionId ?? crypto.randomUUID()
+  const sessionId = config.sessionId ?? stableSessionId(config.workspace ?? process.cwd())
   const existing = await events.read(sessionId)
   if (existing.length === 0) {
     await events.append(sessionId, "Session.Created", { id: sessionId, location: config.workspace ?? "", createdAt: Date.now() })
@@ -245,7 +246,14 @@ async function createStore(dataDir?: string): Promise<EventStore> {
   // the event log with SQLite so a restart reconstructs the session + pending
   // inbox from disk (see specs §2). Without a dataDir we fall back to memory.
   if (dataDir) {
-    await Bun.write(join(dataDir, ".keep"), "").catch(() => {})
+    // Ensure the dir exists and surface a mkdir failure clearly rather than
+    // letting SqliteEventStore.open crash with an opaque path error.
+    await mkdir(dataDir, { recursive: true })
+    try {
+      await Bun.write(join(dataDir, ".keep"), "")
+    } catch (e) {
+      throw new Error(`cannot persist session state to "${dataDir}": ${e instanceof Error ? e.message : String(e)}`)
+    }
     return SqliteEventStore.open(join(dataDir, "events.db"))
   }
   return new MemoryEventStore()

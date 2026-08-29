@@ -95,15 +95,13 @@ function resolveDataDir(args: Record<string, string>): string {
   return args["data-dir"] ?? process.env.NEWHORSE_DATA_DIR ?? join(home, platform, "data")
 }
 
-/** Deterministic per-workspace session id so restart re-attaches to the log. */
-function resolveSessionId(args: Record<string, string>): string {
+/** Deterministic per-workspace session id so restart re-attaches to the log.
+ * Users may pin one via --session / NEWHORSE_SESSION; otherwise undefined so
+ * createApp derives a stable per-workspace id (the domain rule lives in core). */
+function resolveSessionId(args: Record<string, string>): string | undefined {
   if (args.session) return args.session
   if (process.env.NEWHORSE_SESSION) return process.env.NEWHORSE_SESSION
-  // A stable id from the workspace path keeps prior prompts in the same session
-  // without forcing the user to name it.
-  let hash = 0
-  for (const c of process.cwd()) hash = (hash * 31 + c.charCodeAt(0)) | 0
-  return `ws-${(hash >>> 0).toString(16)}`
+  return undefined
 }
 
 async function readStdin(): Promise<string> {
