@@ -88,8 +88,23 @@ describe("openai protocol", () => {
       }),
     )
     const messages = body.messages as Record<string, unknown>[]
-    expect(messages[0]!.content).toBe("")
+    // Reasoning is lowered to plain text (model-relative lowering), so the
+    // assistant turn stays model-visible and the content field is present.
+    expect(messages[0]!.content).toBe("think")
     expect("content" in messages[0]!).toBe(true)
+  })
+
+  it("never emits a missing content for a tool that resolved to undefined", () => {
+    const body = openaiProtocol.encode(
+      req({
+        messages: [{ role: "tool", content: [{ type: "tool-result", id: "c1", name: "a", output: undefined }] }],
+      }),
+    )
+    const messages = body.messages as Record<string, unknown>[]
+    // JSON.stringify(undefined) is `undefined` as a JS value, which JSON drops
+    // from the body -> a 400. Must be a present string instead.
+    expect("content" in messages[0]!).toBe(true)
+    expect(typeof messages[0]!.content).toBe("string")
   })
 })
 
@@ -271,6 +286,19 @@ describe("openai responses protocol", () => {
     expect(textIdx).toBeGreaterThanOrEqual(0)
     expect(callIdx).toBeGreaterThan(textIdx)
     expect(input[0]!.role).toBe("assistant")
+  })
+
+  it("does not drop a reasoning-only assistant turn (lowered to text)", () => {
+    const body = openaiResponsesProtocol.encode(
+      req({
+        messages: [{ role: "assistant", content: [{ type: "reasoning", text: "let me think" }] }],
+      }),
+    )
+    const input = body.input as { type?: string; role?: string; content?: unknown[] }[]
+    // A reasoning-only assistant must not vanish from the Responses history.
+    expect(input[0]!.role).toBe("assistant")
+    const text = (input[0]!.content as { text?: string }[]).map((c) => c.text ?? "").join("")
+    expect(text).toBe("let me think")
   })
 })
 

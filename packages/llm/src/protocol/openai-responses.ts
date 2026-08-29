@@ -196,8 +196,13 @@ function isRetryable(code: string): boolean {
 }
 
 function textOfContent(content: LLMRequest["messages"][number]["content"]): string {
+  // Model-relative lowering: a reasoning part is degraded to plain text (its
+  // opaque provider payload is dropped). This keeps a reasoning-only assistant
+  // turn MODEL-VISIBLE in the Responses history — otherwise the whole turn
+  // vanishes (a silent history loss when a model reasons then stops or calls a
+  // tool with no narration).
   return content
-    .map((p) => (p.type === "text" ? p.text : ""))
+    .map((p) => (p.type === "text" ? p.text : p.type === "reasoning" ? p.text : ""))
     .filter(Boolean)
     .join("")
 }

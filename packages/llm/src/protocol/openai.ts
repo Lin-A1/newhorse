@@ -27,7 +27,12 @@ export const openaiProtocol: Protocol = {
       const toolResults = m.content.filter((p) => p.type === "tool-result")
       if (m.role === "tool") {
         for (const tr of toolResults) {
-          messages.push({ role: "tool", content: JSON.stringify(toJson(tr.output)), tool_call_id: tr.id })
+          // Never emit `content: undefined` (OpenAI requires tool content, and
+          // JSON.stringify(undefined) yields `undefined` which is dropped from
+          // the JSON body -> a 400). A tool that resolved to `undefined` is
+          // encoded as the string "undefined" so the field is always present.
+          const out = tr.output === undefined ? "undefined" : JSON.stringify(toJson(tr.output))
+          messages.push({ role: "tool", content: out, tool_call_id: tr.id })
         }
         continue
       }
@@ -37,8 +42,9 @@ export const openaiProtocol: Protocol = {
       const message: Record<string, unknown> = {
         role: m.role,
         // Never emit `content: undefined` (a reasoning-only assistant message):
-        // encode the reasoning text as plain content or, if absent, null for an
-        // assistant that only produced tool calls.
+        // lower reasoning text to plain content (model-relative lowering drops
+        // the opaque payload) or, when nothing remains, null for an assistant
+        // that only produced tool calls, else "" so the field never vanishes.
         content: text.length > 0 ? text : toolCalls.length > 0 ? null : m.role === "assistant" ? "" : null,
       }
 
@@ -53,8 +59,12 @@ export const openaiProtocol: Protocol = {
     }
 
     const body: Body = { model: request.model, messages, stream: true }
-    // OpenAI caches automatically; ask for usage so cache_read tokens surface.
-    if (request.cacheControl !== false) body.stream_options = { include_usage: true }
+    // Always ask for usage (stream_options.include_usage) so input/output/cache
+    // tokens surface for cost accounting (goal #3). This is NOT coupled to
+    // cacheControl: OpenAI caches automatically and has no client-side cache
+    // marker, so opts out of "cacheControl" must not silently suppress token
+    // accounting. cacheControl is an Anthropic-only concern (explicit marker).
+    body.stream_options = { include_usage: true }
     if (request.system) body.system = request.system
     if (request.temperature !== undefined) body.temperature = request.temperature
     if (request.maxTokens !== undefined) body.max_tokens = request.maxTokens
@@ -163,8 +173,11 @@ function mapToolChoice(toolChoice: LLMRequest["toolChoice"]): unknown {
 }
 
 function textOfContent(content: LLMRequest["messages"][number]["content"]): string {
+  // Model-relative lowering: a reasoning part degrades to plain text (opaque
+  // provider payload dropped) so a reasoning-only assistant turn stays
+  // model-visible rather than being dropped at the wire.
   return content
-    .map((p) => (p.type === "text" ? p.text : ""))
+    .map((p) => (p.type === "text" ? p.text : p.type === "reasoning" ? p.text : ""))
     .filter(Boolean)
     .join("")
 }
