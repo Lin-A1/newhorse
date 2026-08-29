@@ -63,8 +63,21 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
       sessions.add(id)
       // Pluggable driver: when supplied, the child is actually RUN (not a dead
       // row) with the task prompt. Fire-and-forget — the driver owns
-      // settlement + promotion. `prompt` is the spawner's task instruction.
-      if (driver) void driver(id, parentId, childWorkspace, model, prompt)
+      // settlement + promotion. Never let a driver rejection become an
+      // unhandled rejection (a failed child must still get a durable Settled).
+      if (driver) {
+        void driver(id, parentId, childWorkspace, model, prompt).catch(async (err: unknown) => {
+          void err
+          // A driver that fails BEFORE writing Settled leaves a zombie; the
+          // app-provided driver catches its own errors (and writes Settled),
+          // but a foreign driver may not. Only write the terminal marker when
+          // one is absent — never double-settle an already-failed child.
+          const log = await events.read(id)
+          if (!log.some((e) => e.type === "Session.Settled")) {
+            await events.append(id, "Session.Settled", { sessionId: id, finish: "error", needsContinuation: false })
+          }
+        })
+      }
       return id
     },
   }

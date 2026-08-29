@@ -6,6 +6,11 @@ import { defaultContextProvider, type SessionContextProvider } from "./context"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 
+/** Max length of a node's output stored in the slot/event (see runNode's
+ * agreement comment — the in-memory slot and the persisted event MUST cap at
+ * the same value so a crash/resume never changes a downstream node's input). */
+const MAX_SLOT_OUTPUT = 64_000
+
 /**
  * Declarative DAG dispatcher (runtime half — drives concurrency).
  *
@@ -253,6 +258,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
         agent,
         tools,
         prompt: buildInput(node, slotStore, dagId),
+        parentId: dagId,
         toolCtx: nodeToolCtx,
         signal: ctrl.signal,
         contextProvider,
@@ -270,12 +276,16 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       const slotId = node.produces ?? node.id
       // Capture the node's actual assistant output (not just the session ref), so
       // a downstream `consumes` can see real content, not an opaque session id.
-      const output = driven.text
+      // Cap it to MAX_SLOT_OUTPUT so the in-memory slot and the persisted event
+      // agree EXACTLY — otherwise a crash/resume would silently hand a
+      // downstream node a different (truncated vs full) input. Consistency
+      // beats fidelity here; the full text is still in the child's log.
+      const output = driven.text.slice(0, MAX_SLOT_OUTPUT)
       const outputRef = `session:${childSessionId}`
-      // Persist the output (truncated) INSIDE the event — a restart can rebuild
-      // the slot store from the log (resumeDag) instead of seeing only the ref.
+      // Persist the output INSIDE the event — a restart can rebuild the slot
+      // store from the log (resumeDag) instead of seeing only the ref.
       slotStore.set(dagId, id, slotId, { output, outputRef })
-      await emit("DAG.NodeResolved", { nodeId: id, slotId, sessionId: childSessionId, outputRef, output: output.slice(0, 64_000) })
+      await emit("DAG.NodeResolved", { nodeId: id, slotId, sessionId: childSessionId, outputRef, output })
     } catch (e) {
       // An aborted control flow surfaces as a cancellation (NodeAborted), not a
       // failure; a genuine failure retries up to maxRetries then NodeFailed.

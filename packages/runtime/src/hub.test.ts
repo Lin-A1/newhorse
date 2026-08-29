@@ -27,6 +27,7 @@ describe("hub spawn + driver closure (spawn → live child → settle → promot
       const driven = await driveChildSession({
         runtime, inbox, events, sessionId: childId, workspace: childWorkspace,
         agent: { id: "spawned", model: "m", tools: [] }, tools: [], prompt: prompt ?? "task",
+        parentId,
       })
       await events.append(childId, "Session.Settled", { sessionId: childId, finish: driven.finish, needsContinuation: false })
       if (driven.settled) {
@@ -61,5 +62,51 @@ describe("hub spawn + driver closure (spawn → live child → settle → promot
     const parentLog = await events.read(parentId)
     const promotedMsg = parentLog.find((e) => e.type === "Session.Prompted")
     expect((promotedMsg?.data as { prompt?: string }).prompt).toContain("CHILD-ANSWER")
+  })
+
+  it("a failing child settles as error and the parent receives a failure promotion (no forever-running zombie)", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    const failingLlm: TurnRuntime["llm"] = {
+      id: "t",
+      stream: async () => {
+        throw new Error("provider boom")
+      },
+    }
+    const runtime: TurnRuntime = { events, inbox, llm: failingLlm }
+    // App-style driver that does NOT catch: driveChildSession throws on a
+    // provider failure. Replicate the app's error path (Settled error + parent
+    // promotion) to lock the behavior.
+    const driver = async (childId: string, parentId: string, childWorkspace: string, _model?: string, prompt?: string): Promise<void> => {
+      try {
+        await driveChildSession({
+          runtime, inbox, events, sessionId: childId, workspace: childWorkspace,
+          agent: { id: "spawned", model: "m", tools: [] }, tools: [], prompt: prompt ?? "task",
+          parentId,
+        })
+      } catch (err) {
+        await events.append(childId, "Session.Settled", { sessionId: childId, finish: "error", needsContinuation: false })
+        await inbox.admit({ id: crypto.randomUUID(), sessionId: parentId, prompt: `[child ${childId} failed]\n${err instanceof Error ? err.message : String(err)}`, delivery: "steer", principal: "parent" })
+      }
+    }
+    const hub = createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }), "G:/proj", driver)
+    const parentId = "parent-2"
+    await events.append(parentId, "Session.Created", { id: parentId, location: "G:/proj", createdAt: Date.now() })
+
+    const childId = await hub.spawn(parentId, "m", "run and fail")
+    // driver is fire-and-forget; wait for the durable Settled error.
+    let settledError = false
+    for (let i = 0; i < 50 && !settledError; i++) {
+      await new Promise((r) => setTimeout(r, 10))
+      const log = await events.read(childId)
+      settledError = log.some((e) => e.type === "Session.Settled" && (e.data as { finish?: string }).finish === "error")
+    }
+    expect(settledError).toBe(true)
+    // Parent received the failure promotion.
+    expect(await inbox.hasPending(parentId, "steer")).toBe(true)
+    await inbox.promoteSteers(parentId, await events.latestSeq(parentId))
+    const parentLog = await events.read(parentId)
+    const promoted = parentLog.find((e) => e.type === "Session.Prompted")
+    expect((promoted?.data as { prompt?: string }).prompt).toContain("failed")
   })
 })

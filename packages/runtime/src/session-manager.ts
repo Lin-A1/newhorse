@@ -23,6 +23,10 @@ export interface DriveChildOptions {
   readonly agent: Agent
   readonly tools: readonly Tool[]
   readonly prompt: string
+  /** The real parent session id — threaded into the child's tool ctx caller so
+   *  spawned-child tools resolve the true lineage (a default of "parent" would
+   *  break grandchild spawn + send/interrupt scoping). */
+  readonly parentId: string
   /** Tool-ctx for the child run (e.g. a workspace execpolicy so fs tools can
    *  act — a DAG node must keep its hands). Pass undefined for deny-all. */
   readonly toolCtx?: Omit<ToolCtx, "caller">
@@ -43,7 +47,11 @@ export interface DriveChildResult {
 export async function driveChildSession(opts: DriveChildOptions): Promise<DriveChildResult> {
   const { events, inbox, sessionId, workspace, contextProvider } = opts
   const provider = contextProvider ?? defaultContextProvider
-  await events.append(sessionId, "Session.Created", { id: sessionId, location: workspace, createdAt: Date.now() })
+  // Idempotent creation: hub.spawn may already have written Session.Created +
+  // Session.Spawned; only admit the context/prompt for a genuinely fresh child.
+  if (!(await events.read(sessionId)).some((e) => e.type === "Session.Created")) {
+    await events.append(sessionId, "Session.Created", { id: sessionId, location: workspace, createdAt: Date.now() })
+  }
   await ensureSystemContext(events, sessionId, workspace, provider)
   await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: opts.prompt, delivery: "steer" })
   const result = await runSession(opts.runtime, {
@@ -51,7 +59,7 @@ export async function driveChildSession(opts: DriveChildOptions): Promise<DriveC
     agent: opts.agent,
     resolveTool: (name) => opts.tools.find((t) => t.name === name),
     signal: opts.signal,
-    caller: { kind: "parent", sessionId: "parent" },
+    caller: { kind: "parent", sessionId: opts.parentId },
     toolCtx: opts.toolCtx,
   })
   return {

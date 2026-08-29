@@ -29,6 +29,7 @@ describe("driveChildSession (Phase 3)", () => {
       agent: { id: "a", model: "m", tools: [] },
       tools: [],
       prompt: "do the work",
+      parentId: "parent-1",
       contextProvider: async () => "Workdir: G:/proj",
     })
 

@@ -174,23 +174,37 @@ export async function createApp(config: AppConfig): Promise<App> {
         () => ({ interrupt: () => {}, prompt: async () => "" }),
         workspace,
         async (childId, parentId, childWorkspace, model, prompt) => {
-          const driven = await driveChildSession({
-            runtime,
-            inbox,
-            events,
-            sessionId: childId,
-            workspace: childWorkspace,
-            agent: { id: "spawned", model: model ?? config.model, tools: agentTools },
-            tools: agentTools,
-            prompt: prompt ?? "You are a spawned agent working for your parent. Complete the task.",
-            contextProvider: config.contextProvider,
-          })
-          // Durable settle boundary (followup_task reads it) + promote the
-          // child's text into the parent's inbox as a steer so the parent's
-          // next turn can consume the result (result promotion).
-          await events.append(childId, "Session.Settled", { sessionId: childId, finish: driven.finish, needsContinuation: false })
-          if (driven.settled) {
-            await inbox.admit({ id: crypto.randomUUID(), sessionId: parentId, prompt: `[child ${childId} result]\n${driven.text}`, delivery: "steer", principal: "parent" })
+          try {
+            const driven = await driveChildSession({
+              runtime,
+              inbox,
+              events,
+              sessionId: childId,
+              workspace: childWorkspace,
+              agent: { id: "spawned", model: model ?? config.model, tools: agentTools },
+              tools: agentTools,
+              prompt: prompt ?? "You are a spawned agent working for your parent. Complete the task.",
+              parentId,
+              contextProvider: config.contextProvider,
+            })
+            // Durable settle boundary (followup_task reads it) + promote the
+            // child's text into the parent's inbox as a steer so the parent's
+            // next turn can consume the result (result promotion).
+            await events.append(childId, "Session.Settled", { sessionId: childId, finish: driven.finish, needsContinuation: false })
+            if (driven.settled) {
+              await inbox.admit({ id: crypto.randomUUID(), sessionId: parentId, prompt: `[child ${childId} result]\n${driven.text}`, delivery: "steer", principal: "parent" })
+            } else {
+              // Interrupted: promote the failure marker so followup_task + the
+              // parent see a terminal state, not a forever-"running" zombie.
+              await inbox.admit({ id: crypto.randomUUID(), sessionId: parentId, prompt: `[child ${childId} interrupted]\n${driven.text}`, delivery: "steer", principal: "parent" })
+            }
+          } catch (err) {
+            // A rejected driver would otherwise leave the child un-setled
+            // (followup_task reports "running" forever) and the parent without
+            // any promotion. Surface it as a durable failure on both ends.
+            const message = err instanceof Error ? err.message : String(err)
+            await events.append(childId, "Session.Settled", { sessionId: childId, finish: "error", needsContinuation: false })
+            await inbox.admit({ id: crypto.randomUUID(), sessionId: parentId, prompt: `[child ${childId} failed]\n${message}`, delivery: "steer", principal: "parent" })
           }
         },
       )
