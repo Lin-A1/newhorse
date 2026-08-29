@@ -36,6 +36,13 @@
         "@newhorse/schema": "workspace:*",
       },
     },
+    "packages/memory": {
+      "name": "@newhorse/memory",
+      "version": "0.0.0",
+      "dependencies": {
+        "@newhorse/schema": "workspace:*",
+      },
+    },
     "packages/plugin": {
       "name": "@newhorse/plugin",
       "version": "0.0.0",
@@ -49,6 +56,7 @@
       "dependencies": {
         "@newhorse/core": "workspace:*",
         "@newhorse/llm": "workspace:*",
+        "@newhorse/memory": "workspace:*",
         "@newhorse/plugin": "workspace:*",
         "@newhorse/schema": "workspace:*",
       },
@@ -56,6 +64,15 @@
     "packages/schema": {
       "name": "@newhorse/schema",
       "version": "0.0.0",
+    },
+    "packages/server": {
+      "name": "@newhorse/server",
+      "version": "0.0.0",
+      "dependencies": {
+        "@newhorse/llm": "workspace:*",
+        "@newhorse/runtime": "workspace:*",
+        "@newhorse/schema": "workspace:*",
+      },
     },
   },
   "packages": {
@@ -65,11 +82,15 @@
 
     "@newhorse/llm": ["@newhorse/llm@workspace:packages/llm"],
 
+    "@newhorse/memory": ["@newhorse/memory@workspace:packages/memory"],
+
     "@newhorse/plugin": ["@newhorse/plugin@workspace:packages/plugin"],
 
     "@newhorse/runtime": ["@newhorse/runtime@workspace:packages/runtime"],
 
     "@newhorse/schema": ["@newhorse/schema@workspace:packages/schema"],
+
+    "@newhorse/server": ["@newhorse/server@workspace:packages/server"],
 
     "@tsconfig/bun": ["@tsconfig/bun@1.0.11", "https://registry.npmmirror.com/@tsconfig/bun/-/bun-1.0.11.tgz", {}, "sha512-DQA3HOKFQ+/yPTUa73k5QGcuEM1ExtL6uWQMR0QrfOTitm0oLHqHd1tI74WtEtMqlIu+tvSMELJ6p5uNxVE7lw=="],
 

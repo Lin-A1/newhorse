@@ -134,12 +134,13 @@ function isCancelled(e: unknown): boolean {
  * One provider turn: stream the request, archive assistant text + tool calls,
  * execute tools, and settle. Returns whether another turn is required.
  */
-async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMRequest, step: number): Promise<{ needsContinuation: boolean; step: number; finish: "tool" | "stop" | "length" | "content-filter" | "error" }> {
+async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMRequest, step: number): Promise<{ needsContinuation: boolean; step: number; finish: "tool" | "stop" | "length" | "content-filter" | "error"; usage?: unknown }> {
   const assistantId = crypto.randomUUID()
   const assistantParts: ContentPart[] = []
 
   let needsContinuation = false
   let finish: "tool" | "stop" | "length" | "content-filter" | "error" = "stop"
+  let usage: unknown
 
   const stream = await runtime.llm.stream(request, opts.signal)
   try {
@@ -182,6 +183,7 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
         }
         case "step-finish":
           finish = event.finish
+          usage = event.usage
           opts.onEvent?.({ type: "step", step })
           break
         case "provider-error":
@@ -242,8 +244,8 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
     }
   }
 
-  await runtime.events.append(opts.sessionId, "Session.StepEnded", { sessionId: opts.sessionId, step, finish })
-  return { needsContinuation, step, finish }
+  await runtime.events.append(opts.sessionId, "Session.StepEnded", { sessionId: opts.sessionId, step, finish, usage } as Record<string, unknown>)
+  return { needsContinuation, step, finish, usage }
 }
 
 async function appendMessage(runtime: TurnRuntime, sessionId: string, message: SessionMessage): Promise<void> {

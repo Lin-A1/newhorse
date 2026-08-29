@@ -3,6 +3,7 @@ import { join, dirname } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry, discoverPlugin } from "@newhorse/plugin"
+import type { MemoryStore } from "@newhorse/memory"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
 import { driveChildSession, readChildText } from "./session-manager"
@@ -48,6 +49,12 @@ export interface AppConfig {
   /** M4 execpolicy: interactive approval gate injected by the transport. When
    * absent, a `prompt` resolves to `forbid` (fail-closed). */
   readonly onApprove?: (req: ApprovalRequest) => Promise<boolean>
+  /**
+   * Memory seam (Phase 4 reserve): when supplied, the memory tools
+   * (memory_search / memory_write) are exposed and a memory write also
+   * appends a durable Session.MemoryStored event. Absent = no memory tools.
+   */
+  readonly memoryStore?: MemoryStore
   /**
    * Workspace context provider (pluggable seam). Default = AGENTS.md discovery
    * + compose (with the Workdir line). A caller can inject a custom provider to
@@ -117,7 +124,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   // edit"). Tools are pluggable, so an override can be re-plugged later.
   const workspace = config.workspace ?? process.cwd()
   const contextProvider: SessionContextProvider = config.contextProvider ?? defaultContextProvider
-  const builtin = createBuiltinTools({ workspace, enableBash: config.enableBash ?? false })
+  const builtin = createBuiltinTools({ workspace, enableBash: config.enableBash ?? false, memoryStore: config.memoryStore })
   // Discover a plugin directory (directory-as-registration-surface) and register
   // its capabilities into a PluginRegistry, so a pluginsDir yields tools (and
   // agents/commands/hooks) by convention rather than requiring the caller to

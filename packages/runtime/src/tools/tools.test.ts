@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createBuiltinTools, createBuiltinExecPolicy } from "./index"
+import { MemoryMemoryStore } from "@newhorse/memory"
 import type { Tool, ToolCtx } from "@newhorse/core"
 import type { ExecPolicy } from "@newhorse/schema"
 import type { Decision } from "@newhorse/schema"
@@ -328,5 +329,24 @@ describe("builtin tools", () => {
     } finally {
       await cleanup()
     }
+  })
+
+  it("memory tools are exposed only when a memoryStore is injected; search+write round-trip", async () => {
+    const noMem = createBuiltinTools({ workspace: "G:/proj" })
+    expect(noMem.some((t) => t.name === "memory_search")).toBe(false)
+
+    const store = new MemoryMemoryStore()
+    const tools = createBuiltinTools({ workspace: "G:/proj", memoryStore: store })
+    const search = tools.find((t) => t.name === "memory_search")!
+    const write = tools.find((t) => t.name === "memory_write")!
+    expect(search).toBeTruthy()
+    expect(write).toBeTruthy()
+
+    const writen = await write.execute({ content: "User prefers type-safe code", type: "persona", priority: 80 }, { caller: { kind: "parent", sessionId: "s1" }, sessionId: "s1" })
+    expect((writen as { stored?: boolean }).stored).toBe(true)
+    const found = await search.execute({ query: "type-safe" }, { caller: { kind: "parent", sessionId: "s1" }, sessionId: "s1" })
+    expect((found as { count?: number }).count).toBe(1)
+    const miss = await search.execute({ query: "zzz" }, { caller: { kind: "parent", sessionId: "s1" }, sessionId: "s1" })
+    expect((miss as { count?: number }).count).toBe(0)
   })
 })

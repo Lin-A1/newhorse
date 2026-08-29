@@ -9,7 +9,9 @@
       "packages/llm",
       "packages/plugin",
       "packages/runtime",
-      "packages/cli"
+      "packages/cli",
+      "packages/memory",
+      "packages/server"
     ]
   },
   "scripts": {

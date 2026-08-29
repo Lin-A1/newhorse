@@ -14,6 +14,7 @@
  *     is not a locked contract; do not exhaustively match on it everywhere.
  */
 import type { SessionMessage } from "./session"
+import type { LLMUsage } from "./llm"
 
 export type UnknownRecord = Record<string, unknown>
 
@@ -48,10 +49,11 @@ export type SessionEvent =
   | SessionEventBase<"Session.Prompted", { readonly id: string; readonly sessionId: string; readonly prompt: string; readonly delivery: Delivery; readonly principal: Principal; readonly promotedSeq: number }>
   | SessionEventBase<"Session.MessageAppended", { readonly sessionId: string; readonly message: SessionMessage }>
   | SessionEventBase<"Session.ToolSettled", { readonly sessionId: string; readonly assistantMessageId: string; readonly callId: string; readonly name: string; readonly isError?: boolean }>
-  | SessionEventBase<"Session.StepEnded", { readonly sessionId: string; readonly step: number; readonly finish: string }>
+  | SessionEventBase<"Session.StepEnded", { readonly sessionId: string; readonly step: number; readonly finish: string; readonly usage?: LLMUsage }>
   | SessionEventBase<"Session.Interrupted", { readonly sessionId: string }>
   | SessionEventBase<"Session.Spawned", { readonly sessionId: string; readonly parentId: string }>
   | SessionEventBase<"Session.Settled", { readonly sessionId: string; readonly finish: string; readonly needsContinuation: boolean }>
+  | SessionEventBase<"Session.MemoryStored", { readonly sessionId: string; readonly memoryId: string; readonly content: string; readonly ts: number }>
   | SessionEventBase<"Session.ButlerAction", { readonly sessionId: string; readonly actorKind: "user" | "butler" | "parent"; readonly actorId: string; readonly op: string; readonly targetSessionId?: string; readonly outcome: "allowed" | "denied"; readonly reason?: string; readonly ts: number }>
   | SessionEventBase<"Session.ExecDecision", { readonly sessionId: string; readonly kind: "command" | "path"; readonly action: string; readonly decision: "prompt" | "forbid"; readonly reason?: string; readonly requestId?: string; readonly ts: number }>
 

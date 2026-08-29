@@ -12,6 +12,7 @@
     "@newhorse/core": "workspace:*",
     "@newhorse/schema": "workspace:*",
     "@newhorse/llm": "workspace:*",
-    "@newhorse/plugin": "workspace:*"
+    "@newhorse/plugin": "workspace:*",
+    "@newhorse/memory": "workspace:*"
   }
 }
