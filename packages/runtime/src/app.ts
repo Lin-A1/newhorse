@@ -24,7 +24,9 @@ export interface AppConfig {
   readonly plugins?: PluginRegistry
   /** A plugin directory to discover by convention (tools/agents/commands/
    * hooks). Discovered capabilities are registered into `plugins` (or a fresh
-   * registry) and their tools are added to the build. Optional. */
+   * registry). M1 consumes only `tool` capabilities into the build; the other
+   * kinds register through the same seam so a later milestone can wire them
+   * without rework. Optional. */
   readonly pluginsDir?: string
   /** Direct tool list override (for tests or embedding). Optional. */
   readonly tools?: readonly Tool[]
@@ -109,7 +111,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   if (config.pluginsDir) {
     pluginRegistry ??= new PluginRegistry()
     const caps = await discoverPlugin(config.pluginsDir)
-    if (caps.length > 0) pluginRegistry.registerAll(caps)
+    if (caps.length > 0) pluginRegistry.registerDiscovered(caps)
   }
   const pluginTools = pluginRegistry?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute })) ?? []
   const explicitTools = config.tools ?? []
@@ -140,7 +142,11 @@ export async function createApp(config: AppConfig): Promise<App> {
   // the order we built `tools` in.
   const toolMap = new Map()
   for (const t of tools) if (!toolMap.has(t.name)) toolMap.set(t.name, t)
-  const agent: Agent = { id: "primary", model: config.model, tools }
+  // The model must not see duplicate function names (conflicting schemas across
+  // the explicit/plugin/builtin copies). Resolve the agent's tool list from the
+  // deduped map so execution precedence and the protocol surface agree.
+  const agentTools = [...toolMap.values()]
+  const agent: Agent = { id: "primary", model: config.model, tools: agentTools }
 
   // M4 execpolicy: the tool-layer authorization axis. For a session with no
   // onApprove gate (DAG child / non-interactive SDK), a `prompt` resolves to

@@ -117,6 +117,24 @@ export class PluginRegistry {
     }
   }
 
+  /** Register discovered capabilities, skipping (not throwing) on a name
+   *  collision. Directory-as-registration-surface is convention-based and a
+   *  self-contained plugin folder should never brick an app build over a name
+   *  clash; first-wins keeps the discovered order stable and the dupe silent.
+   *  Explicit `register`/`registerAll` stay strict (fail-fast is right there). */
+  registerDiscovered(capabilities: readonly Capability[]): Disposer {
+    const disposers: Array<() => void> = []
+    for (const c of capabilities) {
+      const bucket = this.#store.get(c.kind) ?? new Map<string, Capability>()
+      const key = this.#key(c)
+      if (bucket.has(key)) continue
+      disposers.push(this.register(c))
+    }
+    return () => {
+      for (let i = disposers.length - 1; i >= 0; i--) disposers[i]!()
+    }
+  }
+
   list<K extends CapabilityKind>(kind: K): Array<Extract<Capability, { kind: K }>> {
     const bucket = this.#store.get(kind)
     if (!bucket) return []

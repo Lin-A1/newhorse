@@ -320,4 +320,61 @@ describe("runtime app", () => {
     await rm(dir, { recursive: true, force: true })
     await rm(ws, { recursive: true, force: true })
   })
+
+  it("resolves an explicit tool over a same-named plugin and builtin tool", async () => {
+    // A plugin tool `read` plus the builtin `read` collide with an explicit tool
+    // `read`. Execution must prefer the explicit one (first-wins), proving the
+    // protocol surface and the tool resolver agree on precedence. Also: the model
+    // must see a single resolved `read`, not three copies with conflicting types.
+    const turn1 = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", function: { name: "read", arguments: '{"path":"a.txt"}' } }] }, finish_reason: "tool_calls" }] }) + "\n\n",
+      "data: [DONE]\n\n",
+    ].join("")
+    const turn2 = ['data: ' + JSON.stringify({ choices: [{ delta: { content: "done" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    let call = 0
+    const fetch: Fetcher = async () => sse(call++ === 0 ? turn1 : turn2)
+
+    const { PluginRegistry } = await import("@newhorse/plugin")
+    const pr = new PluginRegistry()
+    pr.register({ kind: "tool", name: "read", description: "plugin read", execute: async () => "PLUGIN" })
+
+    // Explicit tool carries the highest precedence.
+    const explicit = { name: "read", execute: async () => "EXPLICIT" }
+    const app = await createApp({
+      provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" },
+      model: "m",
+      workspace: await mkdtemp(join(tmpdir(), "nh-collide-")),
+      tools: [explicit],
+      plugins: pr,
+      fetch: fetch as never,
+    })
+
+    await app.prompt("read the file", "user")
+    const history = await app.resume()
+    // The tool-result output is the explicit one (EXPLICIT), not plugin/builtin.
+    const toolResult = history.messages.find((m) => m.kind === "tool")
+    expect(toolResult).toBeDefined()
+    expect((toolResult as { output: string }).output).toBe("EXPLICIT")
+  })
+
+  it("does not crash createApp when a pluginsDir contains colliding tool names", async () => {
+    // Two discovered tools declare the same name in one plugin folder; convention
+    // discovery must skip the duplicate (first-wins, stable) rather than throw.
+    const dir = await mkdtemp(join(tmpdir(), "nh-collide-dir-"))
+    const { mkdir, writeFile } = await import("node:fs/promises")
+    await mkdir(join(dir, "tools"), { recursive: true })
+    await writeFile(join(dir, "tools", "a.json"), JSON.stringify({ name: "dup" }))
+    await writeFile(join(dir, "tools", "b.json"), JSON.stringify({ name: "dup" }))
+
+    const fetch: Fetcher = async () => sse(['data: ' + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join(""))
+    const app = await createApp({
+      provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" },
+      model: "m",
+      pluginsDir: dir,
+      fetch: fetch as never,
+    })
+    // createApp succeeded (no thrown PluginError); it just discarded the dupe.
+    expect(app).toBeDefined()
+    await rm(dir, { recursive: true, force: true })
+  })
 })

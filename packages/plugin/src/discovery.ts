@@ -120,7 +120,10 @@ async function readDir(base: string, name: string): Promise<string[]> {
   if (!(await exists(dir))) return []
   const fs = await import("node:fs/promises")
   const files = await fs.readdir(dir)
-  return files.filter((f) => /\.(md|ts|json)$/.test(f))
+  // Sort so the convention-based discovery order is deterministic regardless of
+  // platform. fs.readdir order is unspecified by Node; plugin tools that collide
+  // by name resolve first-wins downstream, so the discovery order must be stable.
+  return files.filter((f) => /\.(md|ts|json)$/.test(f)).sort()
 }
 
 async function readText(base: string, name: string, file: string): Promise<string | undefined> {
