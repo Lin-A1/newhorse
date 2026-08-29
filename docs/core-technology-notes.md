@@ -228,3 +228,13 @@ Child sessions (DAG node, spawned agent) previously ran with `location: ""` — 
   - `hub.ts` — `createSessionHub(events, open, workspace?)`; `spawn` writes the parent's workspace.
 - **Pluggability**: `AppConfig.contextProvider?` and `DagDeps.contextProvider?` — a caller can inject a custom provider (e.g. a narrower scope for a child) with no branch; default is the AGENTS.md discovery. Test `dag-runner.test.ts` "contextProvider is pluggable" proves a custom provider's text lands as the child system message.
 - **Scope**: this phase delivers the base; **driving a spawned child + result promotion** (the model-orchestration side of "live child") is the next slice (see `specs/v2/child-session.md` §1.4, Phase 3 in `plan.md`).
+
+## 20. Model orchestration base + durable DAG resume (Phase 3)
+
+The "brain" behind model-driven orchestration and the DAG: a shared child driver and a recoverable graph.
+
+- **`driveChildSession`** (`packages/runtime/src/session-manager.ts`): the ONE path that creates and RUNS a child — `Session.Created` (location=workspace) → `ensureSystemContext` (AGENTS.md/Workdir first-turn) → `inbox.admit` (steer) → `runSession` → returns `{ finish, settled, text }`. Used by the DAG dispatcher (runNode) so a node's child is a real session, and (future) by hub.spawn.
+- **Durable slot**: `DAG.NodeResolved` now persists `output` (truncated 64k) so `foldDAG`/`replayDag` can rebuild the slot store from the log — no longer a purely in-memory `Map`.
+- **`resumeDag(dagId, spec, deps)`**: runs `runDag` with `resume:{ dagId }` — reuses the aggregate (no re-declare), seeds `status` from the fold (a node left `running` by a crash → `pending`, re-dispatched), rebuilds the slot store from `NodeResult.output`. A crashed graph is RE-DRIVEN, not just viewed as a corpse.
+- **Hub driver seam**: `createSessionHub(..., driver?: ChildDriver)` — a pluggable optional driver. When supplied, `spawn` actually runs the child; otherwise it's persisted-but-not-driven (honest stub). The driver arrives from the caller (app wiring is the next slice).
+- **Known honest gap**: `Session.Settled` is defined in schema but not emitted by any driver path yet (result promotion / followup_task are the next slices); `spawn_agent`'s prompt-carrying full-loop is not wired (app.ts does not pass a driver today).
