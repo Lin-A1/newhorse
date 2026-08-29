@@ -1,6 +1,6 @@
 # Model Orchestration + DAG Resume (Phase 3) 设计 Spec
 
-> 状态：**部分实现（2026-08-30）** — `specs/v2/plan.md` Phase 3。已完成：`driveChildSession`（共享子会话驱动）、DAG 持久化 slot（NodeResolved.output）、`resumeDag`（崩溃后复活）、hub 可插拔 ChildDriver seam。**未完成**：spawn_agent 工具携带 prompt 的全链路驱动（app.ts 尚未接线 driver）、结果回填（Session.Settled 已定义但驱动路径未 emit）、followup_task/wait、send_message 真投递。实现记录见 `docs/core-technology-notes.md` §20。
+> 状态：**大部分实现（2026-08-30）** — `specs/v2/plan.md` Phase 3。已完成：`driveChildSession`（共享子会话驱动）、DAG 持久化 slot（NodeResolved.output）、`resumeDag`（崩溃后复活）、hub 可插拔 ChildDriver seam、**spawn_agent 真驱动 + 结果回填**（app 接线 driver：child 跑完 → Session.Settled → 父 inbox 收到回填）。**未完成**：`send_message`/`interrupt` 真投递（M4 SessionManager）、`followup_task`/`wait` 工具注册、父会话空闲时主动唤醒（当前只在下一次 drain 看到回填）。实现记录见 `docs/core-technology-notes.md` §20。
 > 建立在 Phase 2 基座上：子会话已有 workspace 继承 + context seam。本阶段喂给它"真实驱动的生命"。
 
 ---
