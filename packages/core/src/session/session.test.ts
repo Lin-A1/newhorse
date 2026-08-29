@@ -13,6 +13,21 @@ describe("admission inbox", () => {
     expect(b.prompt).toBe("hi")
   })
 
+  it("collapses concurrent admits of a brand-new id into one durable event", async () => {
+    const store = new MemoryEventStore()
+    const inbox = new MemorySessionInput(store)
+    // Fire many parallel admits of the same new id; exactly one may win the
+    // durable append, the rest must observe the same receipt.
+    const admits = await Promise.all(
+      Array.from({ length: 20 }, () => inbox.admit({ id: "n1", sessionId: "s1", prompt: "hi", delivery: "steer" })),
+    )
+    const first = admits[0]!
+    expect(admits.every((a) => a.admittedSeq === first.admittedSeq && a.sessionId === "s1")).toBe(true)
+    const emitted = await store.read("s1")
+    const admitted = emitted.filter((e) => e.type === "Session.PromptAdmitted")
+    expect(admitted).toHaveLength(1)
+  })
+
   it("fails when the same id is reused for a different session/prompt/delivery", async () => {
     const inbox = new MemorySessionInput(new MemoryEventStore())
     await inbox.admit({ id: "m1", sessionId: "s1", prompt: "hi", delivery: "steer" })

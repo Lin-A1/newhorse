@@ -74,6 +74,9 @@ interface Row {
 export class MemorySessionInput implements SessionInputStore {
   readonly events: EventStore
   #rows = new Map<string, Row>()
+  /** Admission appends in flight, keyed by input id, so interleaved admits of a
+   *  brand-new id share one Promise and one receipt instead of double-inserting. */
+  #inFlight = new Map<string, Promise<Admission>>()
 
   constructor(events: EventStore) {
     this.events = events
@@ -91,10 +94,7 @@ export class MemorySessionInput implements SessionInputStore {
 
   async admit(input: AdmitInput): Promise<Admission> {
     // Check the durable log first (source of truth), not a memory map, so a
-    // concurrent admit of the same new id can't double-insert. The awaited
-    // #findDurable is the interleave point; re-check the map synchronously just
-    // before the append (no await between) so two interleaved admits of the
-    // same id collapse to one durable PromptAdmitted.
+    // concurrent admit of the same new id can't double-insert.
     const existing = await this.#findDurable(input.id)
     if (existing) {
       if (existing.sessionId === input.sessionId && existing.prompt === input.prompt && existing.delivery === input.delivery) {
@@ -102,14 +102,30 @@ export class MemorySessionInput implements SessionInputStore {
       }
       throw new SessionInputError(`admission id "${input.id}" reused with differing session/prompt/delivery`)
     }
-    const raced = this.#rows.get(input.id)
-    if (raced) {
-      if (raced.sessionId === input.sessionId && raced.prompt === input.prompt && raced.delivery === input.delivery) {
-        return { id: raced.id, sessionId: raced.sessionId, prompt: raced.prompt, delivery: raced.delivery, principal: raced.principal, admittedSeq: raced.admittedSeq }
+    // Reserve the id in an in-flight map BEFORE the awaited append (the interleave
+    // point), so a second concurrent admit of the same brand-new id awaits the
+    // first's append rather than appending again. Admission ids are minted by the
+    // caller and expected unique; a genuine id reuse surfacing here is a conflict.
+    const pending = this.#inFlight.get(input.id)
+    if (pending) {
+      const admission = await pending
+      if (admission.sessionId === input.sessionId && admission.prompt === input.prompt && admission.delivery === input.delivery) {
+        return admission
       }
       throw new SessionInputError(`admission id "${input.id}" reused with differing session/prompt/delivery`)
     }
+    const inflight = this.#doAdmit(input)
+    this.#inFlight.set(input.id, inflight)
+    try {
+      return await inflight
+    } finally {
+      if (this.#inFlight.get(input.id) === inflight) this.#inFlight.delete(input.id)
+    }
+  }
 
+  /** Performs the durable append and materializes the row. Must be idempotent
+   *  and never mutate shared state until the append has resolved. */
+  async #doAdmit(input: AdmitInput): Promise<Admission> {
     const event = await this.events.append(input.sessionId, "Session.PromptAdmitted", {
       id: input.id,
       sessionId: input.sessionId,

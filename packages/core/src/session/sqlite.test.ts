@@ -67,4 +67,35 @@ describe("sqlite event store", () => {
       await rm(path, { force: true }).catch(() => {})
     }
   })
+
+  it("migrates a legacy event table that predates the aggregate column", async () => {
+    const path = tmpDb()
+    try {
+      // Build a DB using the legacy 4-column schema (no aggregate column).
+      const legacy = new Database(path)
+      legacy.run(`
+        CREATE TABLE event (
+          aggregate_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          type TEXT NOT NULL,
+          data TEXT NOT NULL,
+          PRIMARY KEY (aggregate_id, seq)
+        )
+      `)
+      legacy.run("INSERT INTO event (aggregate_id, seq, type, data) VALUES ('old', 0, 'Session.Created', '{\"id\":\"old\"}')")
+      legacy.close()
+
+      // Opening it through the store must migrate (ADD COLUMN) and stay usable.
+      const db = new Database(path)
+      const store = new SqliteEventStore(db)
+      const events = await store.read("old")
+      expect(events.length).toBe(1)
+      expect(events[0]!.aggregate).toBe("session")
+      await store.append("old", "E", { i: 1 })
+      expect((await store.read("old")).length).toBe(2)
+      db.close()
+    } finally {
+      await rm(path, { force: true }).catch(() => {})
+    }
+  })
 })

@@ -43,6 +43,26 @@ export class SqliteEventStore implements EventStore {
         seq INTEGER NOT NULL
       )
     `)
+    // A DB created by a build predating the `aggregate` column has an `event`
+    // table WITHOUT it; CREATE TABLE IF NOT EXISTS does not alter an existing
+    // table, so read/append would throw `no such column: aggregate`. Add the
+    // column (and backfill a default) only when it is absent.
+    const cols = this.#db.query("PRAGMA table_info(event)").all() as { name: string }[]
+    if (!cols.some((c) => c.name === "aggregate")) {
+      this.#db.run("ALTER TABLE event ADD COLUMN aggregate TEXT NOT NULL DEFAULT 'session'")
+    }
+    // A legacy DB may also have events without a corresponding `event_sequence`
+    // row (the allocator predates the sequence table, or the DB was created by an
+    // even older build). When the sequence table is empty but events exist, the
+    // next incremental seq would collide with an existing event seq. Seed the
+    // allocator from each aggregate's current max seq so appends continue past it.
+    const seqCount = this.#db.query("SELECT COUNT(*) AS n FROM event_sequence").get() as { n: number } | null
+    if ((seqCount?.n ?? 0) === 0) {
+      const maxes = this.#db.query("SELECT aggregate_id, MAX(seq) AS max_seq FROM event GROUP BY aggregate_id").all() as { aggregate_id: string; max_seq: number }[]
+      for (const m of maxes) {
+        this.#db.run("INSERT INTO event_sequence (aggregate_id, seq) VALUES (?, ?) ON CONFLICT(aggregate_id) DO UPDATE SET seq = excluded.seq", [m.aggregate_id, m.max_seq])
+      }
+    }
   }
 
   async append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T, aggregate: AggregateType = "session"): Promise<StoredEvent> {
