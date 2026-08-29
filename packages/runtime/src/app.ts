@@ -192,6 +192,11 @@ export async function createApp(config: AppConfig): Promise<App> {
         async (childId, parentId, childWorkspace, model, prompt, agentName) => {
           // Role overlay (Phase 4): a named agent from the plugin registry
           // narrows tools + supplies a system body; else bare spawned agent.
+          // An UNKNOWN agent name fails loudly (a typo must not silently spawn
+          // a full-authority child with no body).
+          if (agentName && !agentDefinitions[agentName]) {
+            throw new Error(`unknown agent "${agentName}" (not registered in the plugin registry)`)
+          }
           const agentDef = agentName ? agentDefinitions[agentName] : undefined
           const resolved = resolveAgent(agentDef, { tools: agentTools, model: config.model }, model)
           try {
@@ -205,7 +210,7 @@ export async function createApp(config: AppConfig): Promise<App> {
               tools: [...resolved.tools],
               prompt: prompt ?? "You are a spawned agent working for your parent. Complete the task.",
               parentId,
-              systemExtra: resolved.body ? `# Agent role: ${resolved.id}\n\n${resolved.body}` : undefined,
+              systemExtra: resolved.body,
               contextProvider: config.contextProvider,
             })
             // Durable settle boundary (followup_task reads it) + promote the

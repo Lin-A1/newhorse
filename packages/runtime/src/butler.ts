@@ -105,7 +105,7 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
     },
     {
       name: "spawn_agent",
-      description: "Spawn a new agent session; the spawner becomes its parent.",
+      description: "Spawn a new agent session; the spawner becomes its parent. Args: { prompt: task instruction, model?: model id overrides default, agent?: a named agent role from the plugin registry (identity + tool whitelist + specialism body) }.",
       execute: async (input: unknown, ctx?: ToolCtx) => {
         const c = requireCtx(ctx)
         const model = (input as { model?: string }).model

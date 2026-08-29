@@ -245,6 +245,16 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
     try {
       const childSessionId = crypto.randomUUID()
 
+      // Role overlay resolved BEFORE the durable claim: the effective model
+      // must match what actually runs (an agent def may override), so
+      // NodeStarted records the REAL model — not the pre-overlay one.
+      // Precedence (resolveAgent): explicit node.agent.model > agentDef.model
+      // > costDown/inherit (resolvedModel[id] already folded costDown + inherit
+      // as the baseline — an agent def declares a specific model and wins).
+      const def = deps.agents?.[node.agent.name]
+      const parentModel: string = resolvedModel[id]!
+      const resolved = resolveAgent(def, { tools, model: parentModel }, node.agent.model)
+
       // DAG.NodeStarted marks the node as RUNNING (pump sees it claimed; a
       // replay of a half-finished graph infers "running" from it). It carries
       // the ACTUAL subagent session id so a consumer can locate the child log.
@@ -252,15 +262,10 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       // create is slow; the child aggregate is created inside driveChildSession
       // (a crash between these two writes replays as a claimed-but-no-terminal
       // node → reconciled to aborted — the honest outcome).
-      await emit("DAG.NodeStarted", { nodeId: id, sessionId: childSessionId, model: resolvedModel[id] })
-
+      await emit("DAG.NodeStarted", { nodeId: id, sessionId: childSessionId, model: resolved.model! })
       // driveChildSession: Created (location=workspace) → system context →
       // admit → runSession. toolCtx carries the node execpolicy so the child
-      // keeps its hands (no deny-all fallback). Role overlay (Phase 4): a node
-      // naming a registered agent gets its body + tool whitelist + model
-      // applied — a RESTRICTIVE overlay (child ≤ parent tools).
-      const def = deps.agents?.[node.agent.name]
-      const resolved = resolveAgent(def, { tools, model: resolvedModel[id] ?? deps.defaultModel ?? "model" })
+      // keeps its hands (no deny-all fallback).
       const agent: Agent = { id: node.agent.name, model: resolved.model, tools: [...resolved.tools] }
       const driven = await driveChildSession({
         runtime: deps.runtime,
@@ -272,7 +277,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
         tools: [...resolved.tools],
         prompt: buildInput(node, slotStore, dagId),
         parentId: dagId,
-        systemExtra: resolved.body ? `# Agent role: ${node.agent.name}\n\n${resolved.body}` : undefined,
+        systemExtra: resolved.body,
         toolCtx: nodeToolCtx,
         signal: ctrl.signal,
         contextProvider,

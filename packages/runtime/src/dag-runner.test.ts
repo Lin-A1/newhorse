@@ -12,6 +12,10 @@ function eventsOf(events: LLMEvent[]): AsyncIterable<LLMEvent> {
   })()
 }
 
+function tool(name: string): Tool {
+  return { name, execute: async () => "ok" }
+}
+
 function stubLlm(resolver?: (req: LLMRequest) => string): TurnRuntime["llm"] {
   return {
     id: "t",
@@ -487,6 +491,46 @@ describe("resolveNodeModel (cost-down, goal #3)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it("role overlay: a node naming a registered agent gets narrowed tools, body and the NodeStarted model matches the run", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    const seen: LLMRequest[] = []
+    const llm: TurnRuntime["llm"] = {
+      id: "t",
+      stream: async (req) => {
+        seen.push(req)
+        return eventsOf([{ type: "text.delta", text: "ok" }, { type: "step-finish", finish: "stop" }])
+      },
+    }
+    const runtime: TurnRuntime = { events, inbox, llm }
+    // NO explicit node.model — the agent def's model wins (agent.model > inherited).
+    const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "researcher" }, input: "root" } } }
+    const agents = {
+      researcher: { name: "researcher", body: "You are a code researcher. Prefer read/search.", allowedTools: ["read"], model: "cheap-model" },
+    }
+    const outcome = await runDag(spec, { events, inbox, runtime, tools: [tool("read"), tool("write")], concurrency: 1, workspace: "G:/proj", agents, defaultModel: "m" })
+
+    expect(outcome.models["A"]).toBe("cheap-model") // NodeStarted recorded the OVERLAY model (agent def wins over inherited)
+    const req = seen[0]!
+    // The run actually used the overlay model — not the pre-overlay "m".
+    // (the loop sends request.model = agent.model; assert it via the LLMRequest)
+    expect((req as { model?: string }).model).toBe("cheap-model")
+    // Narrowed tools: the child tool schema surface is only ["read"].
+    const toolNames = (req as { tools?: { name: string }[] }).tools?.map((t) => t.name) ?? []
+    expect(toolNames).toEqual(["read"])
+    // Body injected as a second system message (durable).
+    const dags: string[] = []
+    for (const id of await events.aggregateIds()) {
+      if ((await events.read(id)).some((e) => e.type === "DAG.Declared")) dags.push(id)
+    }
+    const started = (await events.read(dags[0]!)).find((e) => e.type === "DAG.NodeStarted")
+    const childId = (started?.data as { sessionId?: string }).sessionId
+    const childLog = await events.read(childId!)
+    const roleSys = childLog.find((e) => e.type === "Session.MessageAppended" && ((e.data as { message?: { text?: string } }).message?.text?.startsWith("@newhorse-agent-role")))
+    expect(roleSys).toBeTruthy()
+    expect((roleSys?.data as { message?: { text?: string } }).message?.text).toContain("code researcher")
   })
 
   it("resumeDag re-drives a crash-interrupted graph (not just replays the corpse)", async () => {

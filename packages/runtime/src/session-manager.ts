@@ -1,6 +1,10 @@
 import { Session, runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type ToolCtx, type TurnRuntime } from "@newhorse/core"
 import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
 
+/** Idempotency marker owned by the role-body injection (see driveChildSession
+ *  — the marker is written by THIS module, never trusted from the caller). */
+const ROLE_MARKER = "@newhorse-agent-role"
+
 /**
  * Shared child-session driver (Phase 3): the ONE code path that creates and
  * RUNS a child aggregate — used by the DAG dispatcher and (via the hub) by
@@ -58,13 +62,14 @@ export async function driveChildSession(opts: DriveChildOptions): Promise<DriveC
   await ensureSystemContext(events, sessionId, workspace, provider)
   // Role overlay body: a second system message carrying the agent's specialist
   // instructions, appended once (durable, never overwrites the workspace
-  // context). The idempotency key is a distinctive marker prefix.
+  // context). The idempotency marker is OWNED here (not the caller's prefix),
+  // so a future caller passing a bare body cannot double-append on re-drive.
   if (opts.systemExtra) {
     const log = await events.read(sessionId)
-    const already = log.some((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { text?: string } }).message?.text?.startsWith("# Agent role:"))
+    const already = log.some((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { text?: string } }).message?.text?.startsWith(ROLE_MARKER))
     if (!already) {
       const session = Session.replay(log)
-      const sysMsg = session.projectMessage({ kind: "system", id: crypto.randomUUID(), seq: 0, text: opts.systemExtra })
+      const sysMsg = session.projectMessage({ kind: "system", id: crypto.randomUUID(), seq: 0, text: `${ROLE_MARKER}\n${opts.systemExtra}` })
       await events.append(sessionId, sysMsg.type, sysMsg.data as Record<string, unknown>)
     }
   }

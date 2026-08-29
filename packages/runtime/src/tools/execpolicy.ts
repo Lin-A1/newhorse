@@ -817,12 +817,32 @@ export async function bootstrapAppend(
 ): Promise<void> {
   // Never bootstrap a BANNED / credential / protected rule.
   if (!isTrustedRule(opts.rule)) return
-  const next = [...opts.rules, opts.rule]
-  // Atomic write: tmp + rename.
+  // Read-modify-write: merge the EXISTING file rules + the caller's config
+  // rules + the new rule, deduping (a rewrite of only [...opts.rules, rule]
+  // would silently DROP any pre-existing file rules — data loss on the host
+  // rules file). Atomic: tmp + rename.
+  const existing = await readRulesFile(opts.rulesFile)
+  const merged: ExecRule[] = []
+  const seen = new Set<string>()
+  for (const r of [...existing, ...opts.rules, opts.rule]) {
+    const key = JSON.stringify(r)
+    if (!seen.has(key)) { seen.add(key); merged.push(r) }
+  }
   const tmp = `${opts.rulesFile}.tmp`
   await mkdir(dirname(opts.rulesFile), { recursive: true })
-  await writeFile(tmp, JSON.stringify({ rules: next }, null, 2), "utf8")
+  await writeFile(tmp, JSON.stringify({ rules: merged }, null, 2), "utf8")
   await rename(tmp, opts.rulesFile)
+}
+
+/** Best-effort read of a rules file (empty on any failure). */
+async function readRulesFile(path: string): Promise<ExecRule[]> {
+  try {
+    const raw = await readFile(path, "utf8")
+    const parsed = JSON.parse(raw) as { rules?: ExecRule[] }
+    return Array.isArray(parsed.rules) ? parsed.rules : []
+  } catch {
+    return []
+  }
 }
 
 /** A rule is "trusted" for bootstrap if it doesn't name a BANNED/credential/
