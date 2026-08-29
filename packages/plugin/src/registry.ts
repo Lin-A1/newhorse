@@ -24,6 +24,12 @@ export interface AgentCapability {
   readonly kind: "agent"
   readonly name: string
   readonly description?: string
+  /** System body (specialist instructions). Injected into a child's context. */
+  readonly body?: string
+  /** Tool whitelist: the agent may use ONLY these (restrictive overlay). */
+  readonly allowedTools?: readonly string[]
+  /** Role key (costDown / scheduling reference). */
+  readonly role?: string
   readonly model?: string
 }
 

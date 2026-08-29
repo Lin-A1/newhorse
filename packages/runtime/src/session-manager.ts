@@ -1,4 +1,4 @@
-import { runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type ToolCtx, type TurnRuntime } from "@newhorse/core"
+import { Session, runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type ToolCtx, type TurnRuntime } from "@newhorse/core"
 import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
 
 /**
@@ -27,6 +27,9 @@ export interface DriveChildOptions {
    *  spawned-child tools resolve the true lineage (a default of "parent" would
    *  break grandchild spawn + send/interrupt scoping). */
   readonly parentId: string
+  /** Role-overlay body (agent definition) appended after the workspace system
+   *  context in the child's first-turn system message. Optional. */
+  readonly systemExtra?: string
   /** Tool-ctx for the child run (e.g. a workspace execpolicy so fs tools can
    *  act — a DAG node must keep its hands). Pass undefined for deny-all. */
   readonly toolCtx?: Omit<ToolCtx, "caller">
@@ -53,6 +56,18 @@ export async function driveChildSession(opts: DriveChildOptions): Promise<DriveC
     await events.append(sessionId, "Session.Created", { id: sessionId, location: workspace, createdAt: Date.now() })
   }
   await ensureSystemContext(events, sessionId, workspace, provider)
+  // Role overlay body: a second system message carrying the agent's specialist
+  // instructions, appended once (durable, never overwrites the workspace
+  // context). The idempotency key is a distinctive marker prefix.
+  if (opts.systemExtra) {
+    const log = await events.read(sessionId)
+    const already = log.some((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { text?: string } }).message?.text?.startsWith("# Agent role:"))
+    if (!already) {
+      const session = Session.replay(log)
+      const sysMsg = session.projectMessage({ kind: "system", id: crypto.randomUUID(), seq: 0, text: opts.systemExtra })
+      await events.append(sessionId, sysMsg.type, sysMsg.data as Record<string, unknown>)
+    }
+  }
   await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: opts.prompt, delivery: "steer" })
   const result = await runSession(opts.runtime, {
     sessionId,

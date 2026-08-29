@@ -7,6 +7,7 @@ import type { MemoryStore } from "@newhorse/memory"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
 import { driveChildSession, readChildText } from "./session-manager"
+import { resolveAgent, type AgentDefinition } from "./agent-resolver"
 import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
 import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
 import type { ExecPolicy, ExecRule, ApprovalRequest } from "@newhorse/schema"
@@ -171,6 +172,13 @@ export async function createApp(config: AppConfig): Promise<App> {
   const agentTools = [...toolMap.values()]
   const agent: Agent = { id: "primary", model: config.model, tools: agentTools }
 
+  // Agent definitions (Phase 4): pulled from the plugin seam (list("agent")) —
+  // name -> definition, consumed by DAG nodes and butler spawn via resolveAgent.
+  const agentDefinitions: Record<string, AgentDefinition> = {}
+  for (const cap of pluginRegistry?.list("agent") ?? []) {
+    agentDefinitions[cap.name] = { name: cap.name, description: cap.description, body: cap.body, allowedTools: cap.allowedTools, role: cap.role, model: cap.model }
+  }
+
   // Butler hub (M2b) with a LIVE child driver (Phase 3). spawn now actually
   // RUNS the child (Created → system context → admit → runSession) and, on
   // settle, promotes the child's final text into the PARENT's inbox as a
@@ -181,7 +189,11 @@ export async function createApp(config: AppConfig): Promise<App> {
         events,
         () => ({ interrupt: () => {}, prompt: async () => "" }),
         workspace,
-        async (childId, parentId, childWorkspace, model, prompt) => {
+        async (childId, parentId, childWorkspace, model, prompt, agentName) => {
+          // Role overlay (Phase 4): a named agent from the plugin registry
+          // narrows tools + supplies a system body; else bare spawned agent.
+          const agentDef = agentName ? agentDefinitions[agentName] : undefined
+          const resolved = resolveAgent(agentDef, { tools: agentTools, model: config.model }, model)
           try {
             const driven = await driveChildSession({
               runtime,
@@ -189,10 +201,11 @@ export async function createApp(config: AppConfig): Promise<App> {
               events,
               sessionId: childId,
               workspace: childWorkspace,
-              agent: { id: "spawned", model: model ?? config.model, tools: agentTools },
-              tools: agentTools,
+              agent: { id: resolved.id, model: resolved.model, tools: [...resolved.tools] },
+              tools: [...resolved.tools],
               prompt: prompt ?? "You are a spawned agent working for your parent. Complete the task.",
               parentId,
+              systemExtra: resolved.body ? `# Agent role: ${resolved.id}\n\n${resolved.body}` : undefined,
               contextProvider: config.contextProvider,
             })
             // Durable settle boundary (followup_task reads it) + promote the

@@ -2,6 +2,8 @@ import { validate, foldDAG, cascadeTerminal, readyNodes, reconcile, DAGError, ty
 import { type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime, type ToolCtx } from "@newhorse/core"
 import { createBuiltinTools, createExecPolicy, simpleHash } from "./tools"
 import { driveChildSession } from "./session-manager"
+import { resolveAgent } from "./agent-resolver"
+import type { AgentDefinition } from "./agent-resolver"
 import { defaultContextProvider, type SessionContextProvider } from "./context"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
@@ -77,6 +79,13 @@ export interface DagDeps {
    * can act (goal #3) — the fs tools are sandboxed to the workspace and protect
    * `.newhorse`/`.git`/credentials. Inject one to audit a node like the parent. */
   readonly toolCtx?: Omit<ToolCtx, "caller">
+  /**
+   * Agent definitions (role overlay, Phase 4): name -> definition. A node whose
+   * `agent.name` is in this table gets its identity (body), tool whitelist, and
+   * model applied — a restrictive overlay over the parent's tools. Absent = the
+   * node is a bare agent (back-compat). Consumed via the seam, not if/switch.
+   */
+  readonly agents?: Readonly<Record<string, AgentDefinition>>
   /**
    * Workspace context provider (pluggable seam). Default = AGENTS.md discovery +
    * compose, so a DAG node inherits the parent's ambient context (location
@@ -247,8 +256,12 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
 
       // driveChildSession: Created (location=workspace) → system context →
       // admit → runSession. toolCtx carries the node execpolicy so the child
-      // keeps its hands (no deny-all fallback).
-      const agent: Agent = { id: node.agent.name, model: resolvedModel[id]!, tools: [...tools] }
+      // keeps its hands (no deny-all fallback). Role overlay (Phase 4): a node
+      // naming a registered agent gets its body + tool whitelist + model
+      // applied — a RESTRICTIVE overlay (child ≤ parent tools).
+      const def = deps.agents?.[node.agent.name]
+      const resolved = resolveAgent(def, { tools, model: resolvedModel[id] ?? deps.defaultModel ?? "model" })
+      const agent: Agent = { id: node.agent.name, model: resolved.model, tools: [...resolved.tools] }
       const driven = await driveChildSession({
         runtime: deps.runtime,
         inbox: deps.inbox,
@@ -256,9 +269,10 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
         sessionId: childSessionId,
         workspace,
         agent,
-        tools,
+        tools: [...resolved.tools],
         prompt: buildInput(node, slotStore, dagId),
         parentId: dagId,
+        systemExtra: resolved.body ? `# Agent role: ${node.agent.name}\n\n${resolved.body}` : undefined,
         toolCtx: nodeToolCtx,
         signal: ctrl.signal,
         contextProvider,

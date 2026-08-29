@@ -399,14 +399,37 @@ export function createBuiltinExecPolicy(opts: {
   readonly audit?: (entry: { kind: "command" | "path"; action: string; decision: "prompt" | "forbid"; reason?: string; requestId?: string }) => Promise<void>
 }): ExecPolicy {
   const rulesFile = rulesFilePath(opts.dataDir, opts.workspace)
+  // Persist an approved command/path as a consented rule so the next identical
+  // request is auto-allowed (bootstrap write-back, spec m4 §自举). The rule is
+  // appended atomically to the host rules file; the engine's in-memory set
+  // picks it up on the next load (write-back is durable, not process-live).
+  const bootstrapOnApprove: ((req: ApprovalRequest) => Promise<boolean>) | undefined = opts.onApprove
+    ? async (req) => {
+        const ok = await opts.onApprove!(req)
+        if (ok) {
+          const rule: ExecRule = req.kind === "command"
+            ? { type: "prefix_rule", pattern: splitPrefix(req.target), decision: "allow", reason: "user-approved" }
+            : { type: "path_rule", prefix: req.target.replace(/\\/g, "/"), decision: "allow", reason: "user-approved" }
+          await bootstrapAppend({ rulesFile, rule, rules: opts.rules ?? [] })
+        }
+        return ok
+      }
+    : undefined
   const engine = createExecPolicy({
     rulesFile,
     rules: opts.rules,
     rulesDir: dirname(rulesFile),
-    onApprove: opts.onApprove,
+    onApprove: bootstrapOnApprove,
     audit: opts.audit,
   })
   return engine
+}
+
+/** Best-effort prefix extraction: the first 1-2 argv tokens (a command prefix
+ *  broad enough to cover `npm install x` variants, narrow enough to be useful). */
+function splitPrefix(cmd: string): string[] {
+  const argv = tokenize(cmd)
+  return argv.slice(0, 2).length > 0 ? argv.slice(0, 2) : [cmd]
 }
 
 /* ---------------------------------------------------------------------------

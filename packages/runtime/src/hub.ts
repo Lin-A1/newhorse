@@ -22,7 +22,7 @@ export interface SessionHub {
   /** Send a prompt into a target session's inbox. */
   send(sessionId: string, content: string): Promise<HubResult>
   /** Spawn a child session; returns the new session id. */
-  spawn(parentId: string, model?: string, prompt?: string): Promise<string>
+  spawn(parentId: string, model?: string, prompt?: string, agentName?: string): Promise<string>
 }
 
 /**
@@ -31,7 +31,7 @@ export interface SessionHub {
  * the runtime/tools; this keeps the hub a thin surface and the seam open for a
  * future cross-process SessionManager.
  */
-export type ChildDriver = (childId: string, parentId: string, parentWorkspace: string, model?: string, prompt?: string) => Promise<void>
+export type ChildDriver = (childId: string, parentId: string, parentWorkspace: string, model?: string, prompt?: string, agentName?: string) => Promise<void>
 
 /** In-memory hub over a shared event store. Sessions are created lazily. */
 export function createSessionHub(events: EventStore, open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }, workspace?: string, driver?: ChildDriver): SessionHub {
@@ -50,7 +50,7 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
       // Stub until a full SessionManager (M4).
       return { implemented: false, pending: true, sessionId }
     },
-    async spawn(parentId: string, model?: string, prompt?: string) {
+    async spawn(parentId: string, model?: string, prompt?: string, agentName?: string) {
       const id = crypto.randomUUID()
       // A spawned child inherits the parent's workspace (location is the
       // session's project root, driving AGENTS.md discovery + tool sandbox).
@@ -66,7 +66,7 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
       // settlement + promotion. Never let a driver rejection become an
       // unhandled rejection (a failed child must still get a durable Settled).
       if (driver) {
-        void driver(id, parentId, childWorkspace, model, prompt).catch(async (err: unknown) => {
+        void driver(id, parentId, childWorkspace, model, prompt, agentName).catch(async (err: unknown) => {
           void err
           // A driver that fails BEFORE writing Settled leaves a zombie; the
           // app-provided driver catches its own errors (and writes Settled),

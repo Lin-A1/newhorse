@@ -131,7 +131,17 @@ async function readAgent(dir: string, file: string): Promise<Capability | undefi
   if (!text) return undefined
   const fm = parseFrontmatter(text)
   const name = fm.name ?? baseSlug(file)
-  return { kind: "agent", name, description: fm.description, model: fm.model }
+  // Body = the markdown after the frontmatter. When the file has no frontmatter
+  // (doesn't start with "---"), the whole text is the body.
+  let body: string | undefined
+  if (text.startsWith("---")) {
+    const end = text.indexOf("---", 3)
+    body = end >= 0 ? text.slice(end + 3).trim() : undefined
+  } else {
+    body = text.trim()
+  }
+  const allowedTools = fm["allowed-tools"]?.split(",").map((s) => s.trim()).filter(Boolean)
+  return { kind: "agent", name, description: fm.description, body: body || undefined, allowedTools: allowedTools?.length ? allowedTools : undefined, role: fm.role, model: fm.model }
 }
 
 async function readCommand(dir: string, file: string): Promise<Capability | undefined> {
@@ -224,7 +234,8 @@ function parseFrontmatter(text: string): Record<string, string> {
   const body = text.slice(3, end).trim()
   const out: Record<string, string> = {}
   for (const line of body.split("\n")) {
-    const m = line.match(/^(\w+):\s*(.*)$/)
+    // Keys may include hyphens (e.g. allowed-tools), so match [\w-]+ not \w+.
+    const m = line.match(/^([\w-]+):\s*(.*)$/)
     if (m) out[m[1]!] = m[2]!.trim()
   }
   return out

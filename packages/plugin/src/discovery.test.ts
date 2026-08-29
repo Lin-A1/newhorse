@@ -10,7 +10,7 @@ async function fixture(): Promise<string> {
   await mkdir(join(dir, "commands"), { recursive: true })
   await mkdir(join(dir, "hooks"), { recursive: true })
   await mkdir(join(dir, "tools"), { recursive: true })
-  await writeFile(join(dir, "agents", "explore.md"), `---\nname: explore\ndescription: A code explorer\n---\nBody`)
+  await writeFile(join(dir, "agents", "explore.md"), `---\nname: explore\ndescription: A code explorer\nallowed-tools: read, search\nrole: researcher\n---\nYou are a code explorer. Use read and search only.`)
   await writeFile(join(dir, "commands", "plan.md"), `---\nname: plan\ndescription: Make a plan\n---\nDo it`)
   await writeFile(join(dir, "hooks", "hooks.json"), JSON.stringify({ hooks: [{ name: "validator", event: "pre-tool-use", mode: "command", command: "echo ok" }, { name: "bogus", event: "NotARealEvent" }] }))
   await writeFile(join(dir, "tools", "search.json"), JSON.stringify({ name: "search", description: "search" }))
@@ -27,6 +27,11 @@ describe("directory discovery", () => {
       const tool = caps.find((c) => c.kind === "tool")
       const hooks = caps.filter((c) => c.kind === "hook")
       expect(agent?.name).toBe("explore")
+      // Phase 4 agent role fields: body + allowed-tools + role parsed from frontmatter.
+      const explore = agent as { body?: string; allowedTools?: string[]; role?: string }
+      expect(explore.body).toContain("You are a code explorer")
+      expect(explore.allowedTools).toEqual(["read", "search"])
+      expect(explore.role).toBe("researcher")
       expect(command?.name).toBe("plan")
       expect(tool?.name).toBe("search")
       // only the whitelisted hook event survives; the bogus one is filtered

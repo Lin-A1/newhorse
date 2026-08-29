@@ -56,7 +56,7 @@ export interface ToolCtx {
    * that a stub did not actually apply (M4 SessionManager populates them). */
   readonly interruptTarget?: (sessionId: string) => Promise<{ implemented: boolean; pending?: boolean; sessionId?: string }>
   readonly sendToTarget?: (sessionId: string, content: string) => Promise<{ implemented: boolean; pending?: boolean; sessionId?: string }>
-  readonly spawnFrom?: (parentId: string, model?: string, prompt?: string) => Promise<string>
+  readonly spawnFrom?: (parentId: string, model?: string, prompt?: string, agentName?: string) => Promise<string>
   /** Query a child's durable state (followup_task): running vs settled vs unknown. */
   readonly queryTask?: (taskId: string) => Promise<{ state: "running" | "settled" | "unknown"; text?: string; finish?: string }>
   /** M4 execpolicy: the tool-layer authorization axis. Optional here (injected);
