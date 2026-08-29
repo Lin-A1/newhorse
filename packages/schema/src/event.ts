@@ -51,6 +51,7 @@ export type SessionEvent =
   | SessionEventBase<"Session.StepEnded", { readonly sessionId: string; readonly step: number; readonly finish: string }>
   | SessionEventBase<"Session.Interrupted", { readonly sessionId: string }>
   | SessionEventBase<"Session.Spawned", { readonly sessionId: string; readonly parentId: string }>
+  | SessionEventBase<"Session.Settled", { readonly sessionId: string; readonly finish: string; readonly needsContinuation: boolean }>
   | SessionEventBase<"Session.ButlerAction", { readonly sessionId: string; readonly actorKind: "user" | "butler" | "parent"; readonly actorId: string; readonly op: string; readonly targetSessionId?: string; readonly outcome: "allowed" | "denied"; readonly reason?: string; readonly ts: number }>
   | SessionEventBase<"Session.ExecDecision", { readonly sessionId: string; readonly kind: "command" | "path"; readonly action: string; readonly decision: "prompt" | "forbid"; readonly reason?: string; readonly requestId?: string; readonly ts: number }>
 

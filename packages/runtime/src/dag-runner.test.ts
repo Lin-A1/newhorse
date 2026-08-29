@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { MemoryEventStore, MemorySessionInput, SqliteEventStore, DAGError, foldDAG, type TurnRuntime, type Tool, type DAGSpec } from "@newhorse/core"
-import { runDag, createSlotStore, replayDag, resolveNodeModel, type DagDeps } from "./dag-runner"
+import { runDag, createSlotStore, replayDag, resumeDag, resolveNodeModel, type DagDeps } from "./dag-runner"
 import type { LLMEvent, LLMRequest } from "@newhorse/schema"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -487,5 +487,37 @@ describe("resolveNodeModel (cost-down, goal #3)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it("resumeDag re-drives a crash-interrupted graph (not just replays the corpse)", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    // First "run": A is declared + started (NodeStarted, then the process died
+    // before NodeResolved — a crashed half-started node).
+    const dagId = "g-resume"
+    await events.append(dagId, "DAG.Declared", { dagId, spec: diamond }, "dag")
+    await events.append(dagId, "DAG.NodeStarted", { nodeId: "A", sessionId: "sA", model: "m" }, "dag")
+
+    // Resume drives A to success; B/C/D (depend on A) are ready and dispatch.
+    const llm = stubLlm((req) => {
+      const text = (req.messages.find((m) => m.role === "user")?.content[0] as { text?: string } | undefined)?.text ?? ""
+      return `res:${text.startsWith("root") ? "root" : text.startsWith("fromB") ? "fromB" : "ok"}`
+    })
+    const runtime: TurnRuntime = { events, inbox, llm }
+    const outcome = await resumeDag(dagId, diamond, { events, inbox, runtime, tools: [], concurrency: 2, workspace: "G:/proj" })
+
+    // The graph is now terminal and complete — A no longer "running".
+    expect(outcome.status["A"]).toBe("succeeded")
+    expect(outcome.status["B"]).toBe("succeeded")
+    expect(outcome.status["C"]).toBe("succeeded")
+    expect(outcome.status["D"]).toBe("succeeded")
+    expect(outcome.dagId).toBe(dagId)
+  })
+
+  it("resumeDag throws for an unknown dagId (no declared spec)", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    const runtime: TurnRuntime = { events, inbox, llm: stubLlm() }
+    await expect(resumeDag("nope", diamond, { events, inbox, runtime, tools: [], workspace: "G:/proj" })).rejects.toThrow(DAGError)
   })
 })

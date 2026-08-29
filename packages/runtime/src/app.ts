@@ -149,7 +149,6 @@ export async function createApp(config: AppConfig): Promise<App> {
     })
   }
   if (config.asButler) tools.push(...createButlerTools({ registry, appendAudit }))
-  const hub = config.asButler ? createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }), workspace) : undefined
 
   // First occurrence wins so precedence (explicit > plugin > builtin) is
   // preserved: a later duplicate with the same name never shadows a higher-
@@ -162,6 +161,12 @@ export async function createApp(config: AppConfig): Promise<App> {
   // deduped map so execution precedence and the protocol surface agree.
   const agentTools = [...toolMap.values()]
   const agent: Agent = { id: "primary", model: config.model, tools: agentTools }
+
+  // Butler hub (M2b). spawn is a LIVE child only when a driver is wired
+  // (Phase 3 increment — see specs/v2/model-orchestration.md); without one the
+  // child is persisted but not driven (honest stub until the driver lands).
+  // The hub itself is the stable seam; the driver arrives as the next slice.
+  const hub = config.asButler ? createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }), workspace) : undefined
 
   // M4 execpolicy: the tool-layer authorization axis. For a session with no
   // onApprove gate (DAG child / non-interactive SDK), a `prompt` resolves to

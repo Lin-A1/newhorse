@@ -49,6 +49,9 @@ export interface NodeResult {
   readonly slotId: string
   readonly sessionId?: string
   readonly outputRef?: string
+  /** The node's actual assistant output (persisted in the event so a replay
+   *  can rebuild the slot store without the in-memory Map). */
+  readonly output?: string
   readonly status: "succeeded" | "failed" | "skipped"
 }
 
@@ -217,10 +220,10 @@ export function foldDAG(events: StoredEvent[]): { status: Record<string, NodeSta
         break
       }
       case "DAG.NodeResolved": {
-        const d = e.data as { nodeId?: string; slotId?: string; sessionId?: string; outputRef?: string }
+        const d = e.data as { nodeId?: string; slotId?: string; sessionId?: string; outputRef?: string; output?: string }
         if (d.nodeId) {
           status[d.nodeId] = "succeeded"
-          results[d.slotId ?? d.nodeId] = { nodeId: d.nodeId, slotId: d.slotId ?? d.nodeId, sessionId: d.sessionId, outputRef: d.outputRef, status: "succeeded" }
+          results[d.slotId ?? d.nodeId] = { nodeId: d.nodeId, slotId: d.slotId ?? d.nodeId, sessionId: d.sessionId, outputRef: d.outputRef, output: d.output, status: "succeeded" }
         }
         break
       }

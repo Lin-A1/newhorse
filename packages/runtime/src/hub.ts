@@ -25,8 +25,16 @@ export interface SessionHub {
   spawn(parentId: string, model?: string): Promise<string>
 }
 
+/**
+ * A pluggable child driver: when provided, spawn actually RUNS the child
+ * (created → driven → settles) instead of leaving a dead row. The caller owns
+ * the runtime/tools; this keeps the hub a thin surface and the seam open for a
+ * future cross-process SessionManager.
+ */
+export type ChildDriver = (childId: string, parentId: string, parentWorkspace: string, model?: string) => Promise<void>
+
 /** In-memory hub over a shared event store. Sessions are created lazily. */
-export function createSessionHub(events: EventStore, open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }, workspace?: string): SessionHub {
+export function createSessionHub(events: EventStore, open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }, workspace?: string, driver?: ChildDriver): SessionHub {
   const sessions = new Set<string>()
   return {
     async interrupt(sessionId: string) {
@@ -49,10 +57,14 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
       // `workspace` comes from the holder (createSessionHub caller); it must
       // NEVER be blank — fall back to the process cwd so a child created
       // without an explicit workspace is not a "no project" orphan.
-      await events.append(id, "Session.Created", { id, location: workspace ?? process.cwd(), createdAt: Date.now() })
+      const childWorkspace = workspace ?? process.cwd()
+      await events.append(id, "Session.Created", { id, location: childWorkspace, createdAt: Date.now() })
       await events.append(id, "Session.Spawned", { sessionId: id, parentId })
-      void model
       sessions.add(id)
+      void model
+      // Pluggable driver: when supplied, the child is actually RUN (not a dead
+      // row). Fire-and-forget — the driver owns settlement/promotion.
+      if (driver) void driver(id, parentId, childWorkspace, model)
       return id
     },
   }

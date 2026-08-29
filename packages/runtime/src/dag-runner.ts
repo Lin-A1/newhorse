@@ -1,7 +1,8 @@
 import { validate, foldDAG, cascadeTerminal, readyNodes, reconcile, DAGError, type DAGSpec, type DAGNode, type Topology, type NodeState } from "@newhorse/core"
-import { runSession, type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime, type ToolCtx } from "@newhorse/core"
+import { type Agent, type EventStore, type MemorySessionInput, type Tool, type TurnRuntime, type ToolCtx } from "@newhorse/core"
 import { createBuiltinTools, createExecPolicy, simpleHash } from "./tools"
-import { ensureSystemContext, defaultContextProvider, type SessionContextProvider } from "./context"
+import { driveChildSession } from "./session-manager"
+import { defaultContextProvider, type SessionContextProvider } from "./context"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 
@@ -78,6 +79,13 @@ export interface DagDeps {
    * differently — no hardcoded branch.
    */
   readonly contextProvider?: SessionContextProvider
+  /**
+   * Resume seed (R1): when present, this is not a fresh run — the DAG aggregate
+   * already exists. status is initialized from the fold (non-terminal nodes stay
+   * running/pending for the pump, terminal ones are respected) and the slot
+   * store is rebuilt from NodeResolved outputs. `dagId` is REQUIRED here.
+   */
+  readonly resume?: { readonly dagId: string }
 }
 
 export interface DagOutcome {
@@ -92,7 +100,10 @@ export interface DagOutcome {
 /** Run a declarative DAG. Returns after all nodes reach a terminal state. */
 export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> {
   const topo = validate(spec)
-  const dagId = crypto.randomUUID()
+  // Resume mode: reuse the existing aggregate id (do NOT re-declare); fresh
+  // run generates one.
+  const dagId = deps.resume?.dagId ?? crypto.randomUUID()
+  const isResume = !!deps.resume
   const concurrency = deps.concurrency ?? 2
   // Workspace is the child's project root. Defaults to cwd for convenience
   // (a DAG usually runs in the same process/cwd as its parent); a caller that
@@ -129,8 +140,10 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
     resolvedModel[id] = resolveNodeModel(topo.nodes[id]!, deps)
   }
 
-  // Persist the declaration (event-sourced aggregate).
-  await deps.events.append(dagId, "DAG.Declared", { dagId, spec }, "dag")
+  // Persist the declaration (event-sourced aggregate) — only on a FRESH run.
+  if (!isResume) {
+    await deps.events.append(dagId, "DAG.Declared", { dagId, spec }, "dag")
+  }
 
   // Node state kept in memory for the run; durable mirror via append.
   const status: Record<string, NodeState> = {}
@@ -145,6 +158,24 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   // them terminal, not pending-forever).
   for (const id of Object.keys(topo.nodes)) {
     if (!topo.active.has(id)) status[id] = "skipped"
+  }
+
+  if (isResume) {
+    // R1 resume: fold the EXISTING log so terminal nodes stay terminal and the
+    // slot store is rebuilt from persisted NodeResolved outputs — a crash
+    // between writes does not lose what already settled.
+    const prior = foldDAG(await deps.events.read(dagId))
+    for (const id of Object.keys(prior.status)) status[id] = prior.status[id]!
+    // Rebuild slots (consumes may reference a node from the PRIOR run).
+    for (const res of Object.values(prior.results)) {
+      slotStore.set(dagId, res.nodeId, res.slotId, { output: res.output ?? "", outputRef: res.outputRef ?? `session:${res.sessionId ?? res.nodeId}` })
+    }
+    // A node the prior run left 'running' is dead now (process died mid-node);
+    // the loop guards cancelled runs, but mark it pending so pump re-dispatches
+    // it (the durable NodeAborted/NodeFailed paths were never reached).
+    for (const id of Object.keys(prior.status)) {
+      if (status[id] === "running") status[id] = "pending"
+    }
   }
 
   let aborted = false
@@ -199,35 +230,39 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
     running.set(id, ctrl)
     try {
       const childSessionId = crypto.randomUUID()
-      // Child inherits the parent workspace (never ""): its location drives
-      // AGENTS.md discovery + tool sandbox, so a node knows what project it's in.
-      await deps.events.append(childSessionId, "Session.Created", { id: childSessionId, location: workspace, createdAt: Date.now() }, "session")
-      // Admit the ambient context (Workdir + AGENTS.md) as a system message on
-      // the child's first turn — the same rule as the primary session
-      // ("model-visible ⟺ logged"). Pluggable via deps.contextProvider.
-      await ensureSystemContext(deps.events, childSessionId, workspace, contextProvider)
-      // DAG.NodeStarted carries the ACTUAL subagent session id (not the node id),
-      // so a replay can locate the child's log (foldDAG keys off nodeId; the
-      // session id lets a consumer resume/attach the child). Emit AFTER the child
-      // session exists, so a replay never sees a DAG.NodeStarted without its
-      // Session.Created.
-      await emit("DAG.NodeStarted", { nodeId: id, sessionId: childSessionId, model: resolvedModel[id] })
-      await deps.inbox.admit({ id: crypto.randomUUID(), sessionId: childSessionId, prompt: buildInput(node, slotStore, dagId), delivery: "steer" })
 
+      // DAG.NodeStarted marks the node as RUNNING (pump sees it claimed; a
+      // replay of a half-finished graph infers "running" from it). It carries
+      // the ACTUAL subagent session id so a consumer can locate the child log.
+      // Emitted BEFORE the run so the node is durably claimed even if the child
+      // create is slow; the child aggregate is created inside driveChildSession
+      // (a crash between these two writes replays as a claimed-but-no-terminal
+      // node → reconciled to aborted — the honest outcome).
+      await emit("DAG.NodeStarted", { nodeId: id, sessionId: childSessionId, model: resolvedModel[id] })
+
+      // driveChildSession: Created (location=workspace) → system context →
+      // admit → runSession. toolCtx carries the node execpolicy so the child
+      // keeps its hands (no deny-all fallback).
       const agent: Agent = { id: node.agent.name, model: resolvedModel[id]!, tools: [...tools] }
-      const result = await runSession(deps.runtime, {
+      const driven = await driveChildSession({
+        runtime: deps.runtime,
+        inbox: deps.inbox,
+        events: deps.events,
         sessionId: childSessionId,
+        workspace,
         agent,
-        resolveTool: (name) => tools.find((t) => t.name === name),
-        signal: ctrl.signal,
+        tools,
+        prompt: buildInput(node, slotStore, dagId),
         toolCtx: nodeToolCtx,
+        signal: ctrl.signal,
+        contextProvider,
       })
 
       // A cancelled run settles with finish="interrupted" (loop returns it, does
       // NOT throw). It must NOT be recorded as succeeded/NodeResolved nor write a
       // slot — it becomes NodeAborted. Same for an abort that fired between the
       // runSession return and this write.
-      if (result.finish === "interrupted" || stopped) {
+      if (!driven.settled || stopped) {
         await emitAbort(id)
         return
       }
@@ -235,10 +270,12 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       const slotId = node.produces ?? node.id
       // Capture the node's actual assistant output (not just the session ref), so
       // a downstream `consumes` can see real content, not an opaque session id.
-      const output = await readAssistantText(deps.events, childSessionId)
+      const output = driven.text
       const outputRef = `session:${childSessionId}`
+      // Persist the output (truncated) INSIDE the event — a restart can rebuild
+      // the slot store from the log (resumeDag) instead of seeing only the ref.
       slotStore.set(dagId, id, slotId, { output, outputRef })
-      await emit("DAG.NodeResolved", { nodeId: id, slotId, sessionId: childSessionId, outputRef })
+      await emit("DAG.NodeResolved", { nodeId: id, slotId, sessionId: childSessionId, outputRef, output: output.slice(0, 64_000) })
     } catch (e) {
       // An aborted control flow surfaces as a cancellation (NodeAborted), not a
       // failure; a genuine failure retries up to maxRetries then NodeFailed.
@@ -369,21 +406,6 @@ function isCancelledSignal(e: unknown): boolean {
   return err.name === "AbortError" || err.name === "SessionCancelled" || (typeof err.code === "number" && err.code === 20)
 }
 
-/** Read a subagent session's assistant text output (its settled answer). */
-async function readAssistantText(events: EventStore, sessionId: string): Promise<string> {
-  const stored = await events.read(sessionId)
-  const parts: string[] = []
-  for (const e of stored) {
-    if (e.type !== "Session.MessageAppended") continue
-    const m = (e.data as { message?: { kind?: string; content?: unknown[] } }).message
-    if (m?.kind !== "assistant") continue
-    for (const p of (m.content ?? []) as { type?: string; text?: string }[]) {
-      if (p.type === "text" && p.text) parts.push(p.text)
-    }
-  }
-  return parts.join("\n")
-}
-
 /**
  * Replay a DAG's state from its durable event log (post-crash/restart). Folds
  * the DAG aggregate and then reconciles any node left "running" — a process died
@@ -414,4 +436,16 @@ export async function replayDag(events: EventStore, dagId: string): Promise<DagO
     return { dagId, status: cascadeTerminal(topo, status), aborted: folded.aborted, models: folded.models }
   }
   return { dagId, status, aborted: folded.aborted, models: folded.models }
+}
+
+/**
+ * Resume a crashed DAG (R1): rebuild the slot store from the persisted log and
+ * re-drive the nodes that never reached a terminal state. Uses the same runDag
+ * pump (seeded via `resume`), so a half-finished graph continues rather than
+ * being viewed as a corpse. Throws if the dagId has no declared spec.
+ */
+export async function resumeDag(dagId: string, spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> {
+  const stored = await deps.events.read(dagId)
+  if (!stored.some((e) => e.type === "DAG.Declared")) throw new DAGError(`no declared DAG with id ${dagId}`)
+  return runDag(spec, { ...deps, resume: { dagId } })
 }
