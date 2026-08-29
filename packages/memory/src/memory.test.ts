@@ -16,6 +16,18 @@ describe("MemoryMemoryStore (in-memory seam)", () => {
     const none = await store.search("whatever", 5)
     expect(none.length).toBe(0)
   })
+
+  it("honors session isolation (same semantics as the SQLite backend)", async () => {
+    const store: MemoryStore = new MemoryMemoryStore()
+    await store.write({ content: "secret A", type: "fact", priority: 40, sessionId: "sA" })
+    await store.write({ content: "public B", type: "fact", priority: 40, sessionId: "sB" })
+
+    const forA = await store.search("", 5, { sessionId: "sA" })
+    expect(forA.length).toBe(1)
+    expect(forA[0]!.content).toContain("secret A")
+    const forB = await store.search("", 5, { sessionId: "sB" })
+    expect(forB[0]!.content).toContain("public B")
+  })
 })
 
 describe("SqliteMemoryStore", () => {

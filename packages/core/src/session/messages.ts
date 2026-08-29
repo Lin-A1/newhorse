@@ -35,6 +35,10 @@ export function toLlmMessages(projected: readonly SessionMessage[], selectedMode
       }
 
       case "compaction":
+      case "memory":
+        // A memory record is model-visible fact text (like a compaction
+        // summary) — surfaced as a user message so the model sees what was
+        // recalled/stored, without pretending it wrote it.
         out.push({ role: "user", id: m.id, content: [{ type: "text", text: m.text }] })
         break
 

@@ -51,8 +51,9 @@ export interface AppConfig {
   readonly onApprove?: (req: ApprovalRequest) => Promise<boolean>
   /**
    * Memory seam (Phase 4 reserve): when supplied, the memory tools
-   * (memory_search / memory_write) are exposed and a memory write also
-   * appends a durable Session.MemoryStored event. Absent = no memory tools.
+   * (memory_search / memory_write) are exposed. Absent = no memory tools.
+   * (Session.MemoryStored is reserved in schema but NOT emitted yet — the
+   * write path currently archives tool results as ordinary tool messages.)
    */
   readonly memoryStore?: MemoryStore
   /**

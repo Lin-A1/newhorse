@@ -20,7 +20,7 @@ export type MemoryType = "persona" | "episodic" | "instruction" | "fact"
 
 export interface MemoryEntry {
   readonly content: string
-  /** 0-100. -1 = strict global instruction (never auto-updated). */
+  /** 0-100 importance (higher = more important; ranked first on search). */
   readonly type: MemoryType
   readonly priority: number
   /** The session/agent this memory came from (isolation key). */
@@ -52,10 +52,17 @@ export class MemoryMemoryStore implements MemoryStore {
     this.#rows.push(rec)
     return rec
   }
-  async search(query: string, limit = 5, _isolation?: { sessionId?: string; agentId?: string; userId?: string }): Promise<MemoryRecord[]> {
+  async search(query: string, limit = 5, isolation?: { sessionId?: string; agentId?: string; userId?: string }): Promise<MemoryRecord[]> {
     const q = query.toLowerCase()
-    const hits = this.#rows.filter((r) => r.content.toLowerCase().includes(q))
-    return hits.slice(0, limit)
+    const hits = this.#rows.filter((r) => {
+      if (!r.content.toLowerCase().includes(q)) return false
+      if (isolation?.sessionId && r.sessionId !== isolation.sessionId) return false
+      if (isolation?.agentId && r.agentId !== isolation.agentId) return false
+      if (isolation?.userId && r.userId !== isolation.userId) return false
+      return true
+    })
+    // Same ordering as SqliteMemoryStore: priority DESC, then newest first.
+    return hits.sort((a, b) => b.priority - a.priority || b.createdAt - a.createdAt).slice(0, limit)
   }
 }
 

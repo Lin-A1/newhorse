@@ -23,6 +23,11 @@ export function createMemorySearchTool(store: MemoryStore): Tool {
     execute: async (input: unknown, ctx?: ToolCtx) => {
       const { query, limit } = (input ?? {}) as { query?: string; limit?: number }
       if (!query) return { error: "query is required" }
+      // Isolation axis: sessionId = the executing session (a DAG node's child
+      // session, a butler's own id); agentId = the CALLER's session id (the
+      // parent thread that spawned the writer) so children of one parent
+      // share a lineage. This is an execution-thread axis, not a "real"
+      // agent-identity axis — acceptable for now, documented.
       const isolation = { sessionId: ctx?.sessionId, agentId: ctx?.caller.kind === "parent" ? ctx.caller.sessionId : undefined }
       const hits = await store.search(query, Math.max(1, Math.min(limit ?? 5, 20)), isolation)
       return { query, count: hits.length, memories: hits.map((m: { id: string; content: string; type: string; priority: number; createdAt: number }) => ({ id: m.id, content: m.content, type: m.type, priority: m.priority, createdAt: m.createdAt })) }

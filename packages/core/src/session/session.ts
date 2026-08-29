@@ -162,6 +162,8 @@ export function asSessionMessage(value: unknown): SessionMessage | undefined {
     case "system":
     case "compaction":
       return typeof (v as { text?: unknown }).text === "string" ? (v as SessionMessage) : undefined
+    case "memory":
+      return typeof (v as { text?: unknown }).text === "string" ? (v as SessionMessage) : undefined
     default:
       return undefined
   }
