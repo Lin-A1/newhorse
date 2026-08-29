@@ -597,6 +597,15 @@ function interpreterSpecial(argv: string[]): Decision {
     const isShell = isShellClass(token)
     const isRun = INTERPRETERS.has(token) || isShell
     if (token === "busybox") continue
+    // A quoted sub-command collapses to ONE token (`ssh host 'sh -c id'` →
+    // ["ssh","host","sh -c id"]): the shell + code flag are hidden inside it and
+    // the whole-argv scan never sees them — a remote/shell-host escape (the
+    // unquoted `ssh host bash -c id` IS caught). If the token holds whitespace
+    // it is a command string, so re-run the scan on its split sublist.
+    if (!isRun && /\s/.test(raw)) {
+      const nested = interpreterSpecial(raw.split(/\s+/))
+      if (nested !== "allow") return nested
+    }
     if (!isRun) continue
     // A filename/path arg (`cat x.py`, `grep foo.sh`) is NOT an exec head — skip
     // it — UNLESS the token is an interpreter or a shell family name. A

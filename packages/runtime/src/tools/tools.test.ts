@@ -43,7 +43,7 @@ describe("builtin tools", () => {
       const write = byName(tools, "write")
       const read = byName(tools, "read")
       await write.execute({ path: "a/b.txt", content: "line1\nline2\nline3" }, allowCtx)
-      const out = await read.execute({ path: "a/b.txt" }) as { lines: string[]; truncated: boolean; totalLines: number }
+      const out = await read.execute({ path: "a/b.txt" }, allowCtx) as { lines: string[]; truncated: boolean; totalLines: number }
       expect(out.totalLines).toBe(3)
       expect(out.truncated).toBe(false)
       expect(out.lines[0]).toContain("line1")
@@ -60,7 +60,7 @@ describe("builtin tools", () => {
     await writeFile(outside, "secret")
     try {
       const read = byName(createBuiltinTools({ workspace: root }), "read")
-      const out = await read.execute({ path: "../" + join("..", "nh-secret.txt") }) as { error: string }
+      const out = await read.execute({ path: "../" + join("..", "nh-secret.txt") }, allowCtx) as { error: string }
       expect(out.error).toBeDefined()
     } finally {
       await cleanup()
@@ -228,7 +228,7 @@ describe("builtin tools", () => {
       const lines = Array.from({ length: 2000 }, (_, i) => `line ${i}`).join("\n")
       await writeFile(join(root, "big.txt"), lines)
       const read = byName(createBuiltinTools({ workspace: root }), "read")
-      const out = await read.execute({ path: "big.txt" }) as { truncated: boolean }
+      const out = await read.execute({ path: "big.txt" }, allowCtx) as { truncated: boolean }
       expect(out.truncated).toBe(true)
     } finally {
       await cleanup()
@@ -269,9 +269,29 @@ describe("builtin tools", () => {
     try {
       await writeFile(join(root, "f.txt"), "line1\nline2\nline3")
       const read = byName(createBuiltinTools({ workspace: root }), "read")
-      const out = await read.execute({ path: "f.txt", offset: 999 }) as { lines: string[]; totalLines: number }
+      const out = await read.execute({ path: "f.txt", offset: 999 }, allowCtx) as { lines: string[]; totalLines: number }
       expect(out.totalLines).toBe(3)
       expect(out.lines.length).toBe(0)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it("read fails closed without an execpolicy and honors a path decision", async () => {
+    const { root, cleanup } = await ws()
+    try {
+      await writeFile(join(root, "f.txt"), "hello")
+      const read = byName(createBuiltinTools({ workspace: root }), "read")
+      // No ctx -> no policy -> deny (read is now gated like write/bash).
+      const bare = await read.execute({ path: "f.txt" }) as { error: string }
+      expect(bare.error).toContain("denied")
+      // A forbid decision is honored without touching the filesystem.
+      const forbidCtx: ToolCtx = {
+        caller: { kind: "user" },
+        execPolicy: { decide: () => "allow", decidePath: () => "forbid" },
+      }
+      const blocked = await read.execute({ path: "f.txt" }, forbidCtx) as { error: string }
+      expect(blocked.error).toContain("denied")
     } finally {
       await cleanup()
     }

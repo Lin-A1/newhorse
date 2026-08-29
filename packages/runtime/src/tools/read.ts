@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises"
 import { resolveInWorkspace } from "./path"
-import { fail, isLikelyBinary } from "./common"
-import type { Tool } from "@newhorse/core"
+import { approve, denied, fail, isLikelyBinary } from "./common"
+import { randomUUID } from "node:crypto"
+import type { Tool, ToolCtx } from "@newhorse/core"
 
 const DEFAULT_LIMIT = 1000
 const LINE_WIDTH_LIMIT = 2000
@@ -25,13 +26,20 @@ export function createReadTool(workspace: string): Tool {
       },
       required: ["path"],
     },
-    execute: async (input: unknown) => {
+    execute: async (input: unknown, ctx?: ToolCtx) => {
       const { path, offset, limit } = (input ?? {}) as { path?: string; offset?: number; limit?: number }
       if (!path) return fail("path is required")
-      // M4: the model must not read the rules-file boundary (it could read the
-      // consented prefix set and construct a precise bypass). `.newhorse/**` is
-      // host-owned config. Case-folded to match win32 fs casing.
-      if (/\/?\.newhorse(\/|$)/i.test(path.replace(/\\/g, "/"))) return fail("refusing to read a protected path")
+      // M4 execpolicy: reading rules-file boundaries / credentials / protected
+      // paths must go through decidePath like every other path-touching tool,
+      // not a hardcoded `.newhorse` regex. fail-closed when no policy exists.
+      const policy = ctx?.execPolicy
+      if (!policy) return denied("denied by execpolicy: no policy available")
+      const decision = policy.decidePath(path)
+      if (decision === "forbid") return denied(`denied by execpolicy: ${path}`)
+      if (decision === "prompt") {
+        const ok = await approve(policy, { id: randomUUID(), kind: "path", target: path, decision: "prompt", reason: "path read" })
+        if (!ok) return denied(`denied by execpolicy (prompt not approved): ${path}`)
+      }
       try {
         const abs = await resolveInWorkspace(workspace, path)
         if (isLikelyBinary(abs)) return fail("refusing to read a binary file")

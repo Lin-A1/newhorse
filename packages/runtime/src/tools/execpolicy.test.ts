@@ -184,6 +184,15 @@ describe("execpolicy: dangerous heuristics are the floor", () => {
       "start-stop-daemon -S -- sh -c id",
       "runuser -u root -- bash -c id",
       "ssh host bash -c id",
+      // A QUOTED remote/shell-host sub-command collapses to one token whose
+      // shell+code-flag is invisible to the whole-argv scan (the unquoted form
+      // above IS caught): `ssh host 'sh -c id'`, `ssh host "python -c x"`. The
+      // tokenizer must recurse into whitespace-containing tokens to see the
+      // interpreter, not let a quoted sub-command rise to allow.
+      "ssh host 'sh -c id'",
+      'ssh host "bash -c id"',
+      "ssh host 'python -c \"x\"'",
+      "ssh host \"sh -s -c id\"",
       "script -c 'bash -c id' /dev/null",
       // Versioned / hyphen-versioned shells must NOT fall through normalization.
       "bash5.2 -c id",
@@ -281,6 +290,12 @@ describe("execpolicy: dangerous heuristics are the floor", () => {
     expect(p.decide("read < x")).toBe("allow")
     expect(p.decide("sed < file.txt")).toBe("allow")
     expect(p.decide("git push < /dev/null")).toBe("allow")
+    // A quoted single-token string that is not itself a shell/command-with-code
+    // vector must not be over-blocked by the whitespace-recursion (it splits to
+    // ["echo","hi"] → no interpreter) — and a `--` after it is still harmless.
+    expect(p.decide("echo 'echo hi'")).toBe("allow")
+    expect(p.decide("ssh host ls")).toBe("allow")
+    expect(p.decide("ssh host 'echo hi'")).toBe("allow")
   })
 
   it("win32: del / format / reg delete / icacls / powershell -enc fail-closed", async () => {
