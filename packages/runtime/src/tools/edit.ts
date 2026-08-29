@@ -37,16 +37,18 @@ export function createEditTool(workspace: string): Tool {
       if (typeof replacement !== "string") return fail("`new` must be a string")
       if (old === replacement) return fail("`old` and `new` are identical — nothing to change")
       // M4 execpolicy: editing is a sensitive-path write; gate it like write.
+      // Decide on the RESOLVED real path so a junction spelling cannot hide a
+      // `.newhorse`/`.git` target (same protection as write).
       const policy = ctx?.execPolicy
       if (!policy) return denied("denied by execpolicy: no policy available")
-      const decision = policy.decidePath(path)
-      if (decision === "forbid") return denied(`denied by execpolicy: ${path}`)
-      if (decision === "prompt") {
-        const ok = await approve(policy, { id: randomUUID(), kind: "path", target: path, decision: "prompt", reason: "path edit" })
-        if (!ok) return denied(`denied by execpolicy (prompt not approved): ${path}`)
-      }
       try {
         const abs = await resolveInWorkspace(workspace, path)
+        const decision = policy.decidePath(abs)
+        if (decision === "forbid") return denied(`denied by execpolicy: ${abs}`)
+        if (decision === "prompt") {
+          const ok = await approve(policy, { id: randomUUID(), kind: "path", target: abs, decision: "prompt", reason: "path edit" })
+          if (!ok) return denied(`denied by execpolicy (prompt not approved): ${abs}`)
+        }
         if (isLikelyBinary(abs)) return fail("refusing to edit a binary file")
         const { text, eol } = await readNormalized(abs)
         // Compare on normalized (LF) content; preserve the file's EOL on write.

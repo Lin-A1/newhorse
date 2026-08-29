@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { createBuiltinTools } from "./index"
+import { createBuiltinTools, createBuiltinExecPolicy } from "./index"
 import type { Tool, ToolCtx } from "@newhorse/core"
 import type { ExecPolicy } from "@newhorse/schema"
 import type { Decision } from "@newhorse/schema"
@@ -292,6 +292,39 @@ describe("builtin tools", () => {
       }
       const blocked = await read.execute({ path: "f.txt" }, forbidCtx) as { error: string }
       expect(blocked.error).toContain("denied")
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it("write cannot reach a protected dir through a workspace-internal junction", async () => {
+    const { root, cleanup } = await ws()
+    try {
+      await mkdir(join(root, ".newhorse"), { recursive: true })
+      // A junction named `link` resolves INTO `.newhorse` — the policy must catch
+      // it via the real path (decidePath on the raw `link/...` would miss it).
+      await symlink(join(root, ".newhorse"), join(root, "link"), "junction").catch(() => {})
+      const write = byName(createBuiltinTools({ workspace: root }), "write")
+      const realPolicy = createBuiltinExecPolicy({ dataDir: join(root, ".data"), workspace: root })
+      const out = await write.execute({ path: "link/rules.json", content: "evil" }, { caller: { kind: "user" }, execPolicy: realPolicy }) as { error?: string }
+      expect(out.error ?? "").toMatch(/denied|forbid/)
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it("list/search refuse a base rooted inside a protected dir", async () => {
+    const { root, cleanup } = await ws()
+    try {
+      await mkdir(join(root, ".git"), { recursive: true })
+      await writeFile(join(root, ".git", "config"), "secret")
+      const tools = createBuiltinTools({ workspace: root })
+      const list = byName(tools, "list")
+      const search = byName(tools, "search")
+      const l = await list.execute({ pattern: "**/*", path: ".git" }) as { error?: string }
+      expect(l.error ?? "").toMatch(/protected|disallowed/)
+      const s = await search.execute({ pattern: "secret", path: ".git" }) as { error?: string }
+      expect(s.error ?? "").toMatch(/protected|disallowed/)
     } finally {
       await cleanup()
     }

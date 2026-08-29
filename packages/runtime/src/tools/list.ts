@@ -1,5 +1,5 @@
 import { resolveInWorkspace } from "./path"
-import { fail, collectFiles, toRel, globMatch } from "./common"
+import { fail, collectFiles, toRel, globMatch, isProtectedBase } from "./common"
 import type { Tool } from "@newhorse/core"
 
 const DEFAULT_LIMIT = 200
@@ -28,6 +28,10 @@ export function createListTool(workspace: string): Tool {
       if (!pattern) return fail("pattern is required")
       try {
         const base = path ? await resolveInWorkspace(workspace, path) : workspace
+        // The walk excludes protected dirs only by entry-name; rooting the walk
+        // AT a protected dir (or a junction into one) would enumerate it. Refuse
+        // a base inside a security-sensitive dir so list stays read-only-free.
+        if (isProtectedBase(workspace, base)) return fail("list is disallowed inside protected directories (.git/.newhorse/.opencode)")
         const cap = Math.max(1, Math.min(limit ?? DEFAULT_LIMIT, 1000))
         const glob = new Bun.Glob(pattern)
         // Collect relative to `base` so the pattern and the returned paths use a

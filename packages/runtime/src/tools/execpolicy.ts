@@ -132,6 +132,19 @@ const EXEC_PREFIX_WORDS: ReadonlySet<string> = new Set([
   "nsenter", "unshare", "chroot", "proot", "bwrap", "firejail",
 ])
 
+/** Verbs that execute their FOLLOWING argument as a shell command string (so a
+ *  whitespace-bearing quoted token after them IS a nested command to scan):
+ *  `ssh host 'sh -c id'`, `docker exec c 'sh -c id'`, `env -S 'sh -c id'`,
+ *  `xargs sh -c id`, `find -exec bash -c`, `su -c`, `timeout sh -c id`. All of
+ *  these run a command string — their quoted argument is an execution, not inert
+ *  text. A literal-printing verb (`echo 'sh -c id'`) is NOT in this set. */
+const COMMAND_STRING_HOSTS: ReadonlySet<string> = new Set([
+  "ssh", "scp", "rsync", "docker", "podman", "env", "xargs", "find", "exec",
+  "su", "sudo", "doas", "pkexec", "timeout", "watch", "stdbuf", "nohup",
+  "nice", "setarch", "chroot", "nsenter", "unshare", "proot", "bwrap",
+  "firejail", "script", "setsid", "taskset", "runuser", "go", "make", "npm",
+])
+
 const COMMON_DANGEROUS: ReadonlyArray<{ match: RegExp; reason: string }> = [
   // Recursive/force delete via `rm`, in ANY flag order/combination (`rm -rf`,
   // `rm -fr`, `rm -r -f`, `rm -rRf`, `rm --recursive --force`, `rm /x -f`).
@@ -430,29 +443,59 @@ function tokenize(cmd: string): string[] {
  * True if the command contains constructs that make faithfully parsing which
  * sub-commands run unreliable → treat as unparsable (fail-closed prompt).
  * This is the win32 + posix aware guard.
+ *
+ * Quote-aware: the separator / control-source checks run on the STRIPPED string
+ * (quoted literals removed) because quoted content is literal to the shell and
+ * never executes — `echo 'rm -rf'` is a print, not a delete. This keeps benign
+ * quoted text (`echo 'a | b'`, `echo 'sh -c id'`) allowed while still flagging
+ * an unquoted real pipeline.
  */
 function isUnparsable(cmd: string): boolean {
+  const s = stripQuotedSections(cmd)
   // Process substitution / command substitution / variable expansion that
   // changes which commands actually run (posix). A bare `$` (e.g. `echo $HOME`)
   // is ordinary expansion, NOT a control-source — leave it alone (SHOULD-FIX S2).
-  if (cmd.includes("$(") || cmd.includes("`") || cmd.includes("${")) return true
+  if (s.includes("$(") || s.includes("`") || s.includes("${")) return true
   // Backslash escaping a space/`;` changes token boundaries → unparsable (posix).
   // On win32 `\` is a plain path separator (`dir C:\Users`) — NOT an escape
   // (cmd escapes with `^`), so it must not demote win32 path commands.
-  if (process.platform !== "win32" && cmd.includes("\\")) return true
+  if (process.platform !== "win32" && s.includes("\\")) return true
   // Shell separators: `|`, `;`, `&&`, `||`, `&` mean MORE THAN ONE command runs
   // (in both posix and cmd). The RHS / a later command can be an interpreter or
   // shell (`echo 'id' | sh`, `cat x | python -c ...`) that argv[0]-only scans
   // never see → arbitrary code, fail-closed.
-  if (cmd.includes("|") || cmd.includes(";") || cmd.includes("&")) return true
+  if (s.includes("|") || s.includes(";") || s.includes("&")) return true
   // Windows cmd: delayed expansion, caret continuation, %VAR%.
   if (process.platform === "win32") {
-    if (cmd.includes("%") || cmd.includes("^")) return true
+    if (s.includes("%") || s.includes("^")) return true
   }
   // Control-source tokens (all platforms) — `eval`/`source`/`.`-source/`xargs`
   // can run arbitrary sub-commands and are hard to parse faithfully.
-  if (/\beval\b|\bsource\b|\bxargs\b/.test(cmd)) return true
+  if (/\beval\b|\bsource\b|\bxargs\b/.test(s)) return true
   return false
+}
+
+/** Remove quoted (`'...'` / `"..."`) sections from a shell string, keeping the
+ *  unquoted remainder. Single quotes are literal in most shells (no escaping);
+ *  double quotes can contain `$`/backtick expansions, so we keep those as
+ *  potential control sources. Used so the raw-string danger heuristics never
+ *  judge literal quoted text as an executing command. */
+function stripQuotedSections(cmd: string): string {
+  let out = ""
+  let inSingle = false
+  let inDouble = false
+  for (const ch of cmd) {
+    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue }
+    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue }
+    if (inSingle) { out += " "; continue }
+    if (inDouble) {
+      // `$` / backtick inside double quotes CAN expand to a command — keep them.
+      out += ch === "$" || ch === "`" || ch === "\\" ? ch : " "
+      continue
+    }
+    out += ch
+  }
+  return out
 }
 
 /** The rule match for a command argv, LONGEST-prefix-first. */
@@ -552,10 +595,17 @@ function heuristicCommand(cmd: string, argv: string[]): { decision: Decision; re
   if (interpDecision !== "allow") { d = max(d, interpDecision); reason = "interpreter special" }
   // 2. Unparsable shell control → prompt (fail-closed).
   if (isUnparsable(cmd)) { d = max(d, UNPARSABLE); reason = "unparsable shell control" }
-  // 3. Data-driven danger patterns (platform table).
+  // 3. Data-driven danger patterns (platform table). Run on the quote-stripped
+  //    string so a quoted literal (`echo 'rm -rf'`, `echo 'sudo'`, `grep 'rm'`)
+  //    is judged as inert text, not an executing dangerous command. EXCEPTION:
+  //    the dot-source pattern (` . "$HOME/x"`, ` . "./evil.sh"`) — its quoted
+  //    target IS the executed payload, so it must run on the RAW command.
+  const probe = stripQuotedSections(cmd)
   const table = DANGEROUS_COMMANDS[process.platform === "win32" ? "win32" : "posix"]
+  const dotSource = /^\s*\.\s+(?!\.{1,2}(?:\s|$))(\S+)/
   for (const { match, reason: r } of table) {
-    if (match.test(cmd)) { d = max(d, "prompt"); reason = r; break }
+    const target = match.source === dotSource.source ? cmd : probe
+    if (match.test(target)) { d = max(d, "prompt"); reason = r; break }
   }
   return { decision: d, reason }
 }
@@ -573,9 +623,24 @@ function heuristicCommand(cmd: string, argv: string[]): { decision: Decision; re
  * arbitrary code. */
 function interpreterSpecial(argv: string[]): Decision {
   if (argv.length === 0) return "allow"
+  // `command -v bash` / `command -V bash` / `command --version bash` / `which
+  // bash` merely query the PATH for a name — they never execute the program,
+  // so the queried name is NOT an exec head and must not be over-blocked as
+  // running bash/sh. `command`/`which` are already plumbing; recognize the
+  // query shape and bail out to allow.
+  if (/^(command|which)$/i.test(String(argv[0] as string))) {
+    const rest = argv.slice(1)
+    // A pure version/`-v`/`--version`-or-`-a`(-all) flag, then the name.
+    const queryLike = rest.some((a) => /^-(?:v|V|a|al|la|all)$|^--version$/i.test(String(a)))
+    if (queryLike) return "allow"
+  }
   // Index of the first BARE command word (the exec head): wrapper words before
   // it (`taskset`/`runuser`/`chroot`/`env`/`nice`/...) are plumbing.
   const headIndex = (() => { let h = 0; while (h < argv.length && isPlumbingToken(String(argv[h] as string))) h++; return h })()
+  // Whether the exec head runs its following argument as a command string — the
+  // only case where a whitespace-bearing quoted token is itself an execution.
+  const headVerb = interpreterBaseName(String(argv[headIndex] as string))
+  const headIsCommandStringHost = COMMAND_STRING_HOSTS.has(headVerb)
   // Direct script-file execution: the exec head IS an executable path
   // (`./run.sh`, `.\\run.bat`, `build/deploy.sh`) — content unvetted, same as
   // "script file execution". Never falls to ordinary command allow. Only the
@@ -601,8 +666,11 @@ function interpreterSpecial(argv: string[]): Decision {
     // ["ssh","host","sh -c id"]): the shell + code flag are hidden inside it and
     // the whole-argv scan never sees them — a remote/shell-host escape (the
     // unquoted `ssh host bash -c id` IS caught). If the token holds whitespace
-    // it is a command string, so re-run the scan on its split sublist.
-    if (!isRun && /\s/.test(raw)) {
+    // it is a command string, so re-run the scan on its split sublist — but ONLY
+    // when the exec head actually executes a command string (ssh/docker/env -
+    // S/xargs/find -exec/...). A literal verb (`echo 'sh -c id'`, `grep 'sh
+    // -c id'`) treats it as inert text, not a nested command.
+    if (!isRun && /\s/.test(raw) && headIsCommandStringHost) {
       const nested = interpreterSpecial(raw.split(/\s+/))
       if (nested !== "allow") return nested
     }

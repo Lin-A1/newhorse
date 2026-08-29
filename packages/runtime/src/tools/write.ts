@@ -27,17 +27,20 @@ export function createWriteTool(workspace: string): Tool {
       if (!path) return fail("path is required")
       if (typeof content !== "string") return fail("content must be a string")
       // M4 execpolicy: gate sensitive paths (e.g. `.newhorse/**`, credentials,
-      // executable scripts) via decidePath before touching the filesystem.
+      // executable scripts) via decidePath before touching the filesystem. The
+      // policy must decide on the RESOLVED real path — decidePath on the raw
+      // spelling would miss a workspace-internal junction named `link` that
+      // resolves into `.newhorse`/`.git` (a protected-target bypass).
       const policy = ctx?.execPolicy
       if (!policy) return denied("denied by execpolicy: no policy available")
-      const decision = policy.decidePath(path)
-      if (decision === "forbid") return denied(`denied by execpolicy: ${path}`)
-      if (decision === "prompt") {
-        const ok = await approve(policy, { id: randomUUID(), kind: "path", target: path, decision: "prompt", reason: "path write" })
-        if (!ok) return denied(`denied by execpolicy (prompt not approved): ${path}`)
-      }
       try {
         const abs = await resolveInWorkspace(workspace, path)
+        const decision = policy.decidePath(abs)
+        if (decision === "forbid") return denied(`denied by execpolicy: ${abs}`)
+        if (decision === "prompt") {
+          const ok = await approve(policy, { id: randomUUID(), kind: "path", target: abs, decision: "prompt", reason: "path write" })
+          if (!ok) return denied(`denied by execpolicy (prompt not approved): ${abs}`)
+        }
         await mkdir(dirname(abs), { recursive: true })
         await writeFile(abs, content, "utf8")
         return { written: abs, bytes: content.length }

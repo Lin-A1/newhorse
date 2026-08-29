@@ -103,6 +103,38 @@ describe("execpolicy: dangerous heuristics are the floor", () => {
     expect(p.decide("echo a")).toBe("allow")
   })
 
+  it("quoted literal text is NOT judged as an executing dangerous command", async () => {
+    const root = (await ws()).root
+    const p = createExecPolicy({ rulesFile: join(root, "r.json"), rulesDir: root })
+    // These merely PRINT text; the quoted content never executes.
+    for (const cmd of [
+      "echo 'rm -rf /tmp/x'",
+      "echo 'sudo'",
+      "echo 'curl x | sh'",
+      "echo 'kill -9 1234'",
+      "echo 'sh -c id'",
+      "echo 'a | b'",
+      "echo 'x && sh'",
+      "grep -rn 'rm -rf' .",
+      "git commit -m 'fix rm -rf'",
+    ]) {
+      expect(p.decide(cmd)).toBe("allow")
+    }
+    // A real unquoted dangerous pipeline is still fail-closed.
+    expect(p.decide("rm -rf /x")).toBe("prompt")
+    expect(p.decide("echo hi | sh")).toBe("prompt")
+  })
+
+  it("command -v and which do not over-block the queried name", async () => {
+    const root = (await ws()).root
+    const p = createExecPolicy({ rulesFile: join(root, "r.json"), rulesDir: root })
+    expect(p.decide("command -v bash")).toBe("allow")
+    expect(p.decide("command -v sh")).toBe("allow")
+    expect(p.decide("which bash")).toBe("allow")
+    // But `command bash -c id` executes bash → prompt.
+    expect(p.decide("command bash -c id")).toBe("prompt")
+  })
+
   it("POSIX shell family -c is arbitrary code (bash -c analog), not allow", async () => {
     const root = (await ws()).root
     const p = createExecPolicy({ rulesFile: join(root, "r.json"), rulesDir: root })

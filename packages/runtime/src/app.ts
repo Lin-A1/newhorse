@@ -166,10 +166,16 @@ export async function createApp(config: AppConfig): Promise<App> {
       ts: Date.now(),
     })
   }
+  const rulesFile = config.dataDir ? rulesFilePath(config.dataDir, workspace) : join(process.cwd(), "..", "..", ".execpolicy-rules.json")
   const execPolicy: ExecPolicy = createExecPolicy({
-    rulesFile: config.dataDir ? rulesFilePath(config.dataDir, workspace) : join(process.cwd(), "..", "..", ".execpolicy-rules.json"),
+    rulesFile,
     rules: config.execRules,
-    rulesDir: config.dataDir ? dirname(rulesFilePath(config.dataDir, workspace)) : workspace,
+    // rulesDir must point at the rules file's own directory (the host-owned
+    // location), never the workspace — otherwise every absolute workspace path
+    // passed to decidePath would trip the banned-rules-path check. With no
+    // dataDir the rules file is a shared sibling location (non-embedded use
+    // always passes dataDir; the no-dataDir branch is a fallback).
+    rulesDir: dirname(rulesFile),
     onApprove: config.onApprove,
     audit: execAudit,
   })

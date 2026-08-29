@@ -1,7 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { resolveInWorkspace } from "./path"
-import { approve, denied, fail, isLikelyBinary } from "./common"
-import { randomUUID } from "node:crypto"
+import { denied, fail, isLikelyBinary } from "./common"
 import type { Tool, ToolCtx } from "@newhorse/core"
 
 const DEFAULT_LIMIT = 1000
@@ -29,19 +28,19 @@ export function createReadTool(workspace: string): Tool {
     execute: async (input: unknown, ctx?: ToolCtx) => {
       const { path, offset, limit } = (input ?? {}) as { path?: string; offset?: number; limit?: number }
       if (!path) return fail("path is required")
-      // M4 execpolicy: reading rules-file boundaries / credentials / protected
-      // paths must go through decidePath like every other path-touching tool,
-      // not a hardcoded `.newhorse` regex. fail-closed when no policy exists.
+      // M4 execpolicy: reading the host rules file / protected dirs must be
+      // forbidden regardless of spelling (a junction cannot hide `.newhorse`/
+      // `.git`, so decide on the RESOLVED real path). Read stays read-only:
+      // a `prompt`-level sensitive suffix (`.env`, `.ps1`) is NOT hard-denied
+      // without a gate — the model legitimately needs to inspect those to edit
+      // them, and denying them deadlocks a DAG/non-interactive child. So read
+      // honors only `forbid` (protected), not `prompt`.
       const policy = ctx?.execPolicy
       if (!policy) return denied("denied by execpolicy: no policy available")
-      const decision = policy.decidePath(path)
-      if (decision === "forbid") return denied(`denied by execpolicy: ${path}`)
-      if (decision === "prompt") {
-        const ok = await approve(policy, { id: randomUUID(), kind: "path", target: path, decision: "prompt", reason: "path read" })
-        if (!ok) return denied(`denied by execpolicy (prompt not approved): ${path}`)
-      }
       try {
         const abs = await resolveInWorkspace(workspace, path)
+        const decision = policy.decidePath(abs)
+        if (decision === "forbid") return denied(`denied by execpolicy: ${abs}`)
         if (isLikelyBinary(abs)) return fail("refusing to read a binary file")
         const text = await readFile(abs, "utf8")
         const lines = text.split(/\r?\n/)

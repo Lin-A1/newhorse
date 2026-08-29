@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises"
 import { resolveInWorkspace } from "./path"
-import { fail, collectFiles, toRel, isLikelyBinary, globMatch } from "./common"
+import { fail, collectFiles, toRel, isLikelyBinary, globMatch, isProtectedBase } from "./common"
 import type { Tool } from "@newhorse/core"
 
 const DEFAULT_LIMIT = 100
@@ -42,6 +42,9 @@ export function createSearchTool(workspace: string): Tool {
       }
       try {
         const base = path ? await resolveInWorkspace(workspace, path) : workspace
+        // Refuse a search rooted inside a protected dir (or a junction into one);
+        // the walk-level exclusion only skips them by name when rooted above.
+        if (isProtectedBase(workspace, base)) return fail("search is disallowed inside protected directories (.git/.newhorse/.opencode)")
         const cap = Math.max(1, Math.min(limit ?? DEFAULT_LIMIT, 1000))
         const includeGlob = include ? new Bun.Glob(include) : undefined
         const { files } = await collectFiles(base, { limit: 5000 })

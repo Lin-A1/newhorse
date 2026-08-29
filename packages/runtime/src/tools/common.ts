@@ -60,6 +60,23 @@ export function isExcluded(base: string): boolean {
   return EXCLUDED_DIRS.has(base)
 }
 
+/** Directories a traversal must never be rooted inside. The walk excludes the
+ *  EXCLUDED_DIRS set only by entry name, so passing one as the `base` (e.g.
+ *  searching `path: ".newhorse"` / `path: ".git"`) would start the walk inside
+ *  a protected dir and enumerate it. Refuse a base that resolves to (or within)
+ *  a security-sensitive dir; the read-only surface stays free of these. */
+export const PROTECTED_BASES = new Set([".git", ".newhorse", ".opencode"])
+
+/** Whether an absolute base path is inside (or is) a protected dir relative to
+ *  the workspace root. Returns false for the root itself, so a normal search
+ *  rooted at the workspace still walks it (exclusions apply per-entry). */
+export function isProtectedBase(workspaceRoot: string, absBase: string): boolean {
+  const rel = relative(workspaceRoot, absBase)
+  if (rel === "") return false
+  const segments = rel.split(/[\\/]+/).filter(Boolean)
+  return segments.some((s) => PROTECTED_BASES.has(s))
+}
+
 export async function isDirectory(p: string): Promise<boolean> {
   try {
     return (await stat(p)).isDirectory()
