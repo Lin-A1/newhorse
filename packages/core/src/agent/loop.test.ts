@@ -75,10 +75,55 @@ describe("turn loop", () => {
     await runSession(runtime, { agent, sessionId: "s1", resolveTool })
     expect(calls).toBeGreaterThanOrEqual(1)
   })
+
+  it("records the interruption boundary once across cancel-then-resume", async () => {
+    // Run 1: the stream emits a tool-call then aborts (cancellation). The partial
+    // assistant that carries the unresolved tool-call is flushed, and one
+    // Session.Interrupted is recorded. Run 2 resumes; the failInterruptedTools
+    // repair finds that same unresolved tool-call and would append its own
+    // Session.Interrupted — it must NOT, so the boundary stays single.
+    let call = 0
+    const llm: TurnRuntime["llm"] = {
+      id: "t",
+      stream: async () => {
+        call += 1
+        if (call === 1) {
+          const abortErr = new Error("aborted")
+          abortErr.name = "AbortError"
+          return eventsThrowAfter([{ type: "tool-call", id: "call_1", name: "search", input: { q: "a" } }], abortErr)
+        }
+        return eventsOf([{ type: "text.delta", text: "done" }, { type: "step-finish", finish: "stop" }])
+      },
+    }
+    const { runtime, resolveTool } = makeRuntime(llm, [])
+    await runtime.events.append("s1", "Session.Created", { id: "s1", location: "/proj", createdAt: 1 })
+    await runtime.inbox.admit({ id: "m1", sessionId: "s1", prompt: "hi", delivery: "steer" })
+
+    // First run: tool-call buffered then stream aborts -> cancelledResult.
+    await runSession(runtime, { agent, sessionId: "s1", resolveTool })
+    const afterCancel = await runtime.events.read("s1")
+    const interrupted1 = afterCancel.filter((e) => e.type === "Session.Interrupted").length
+    expect(interrupted1).toBe(1)
+
+    // Second run: resume. The repair path runs against the flushed partial
+    // assistant that still carries call_1's unresolved tool-call.
+    await runSession(runtime, { agent, sessionId: "s1", resolveTool })
+    const events = await runtime.events.read("s1")
+    const interrupted = events.filter((e) => e.type === "Session.Interrupted").length
+    expect(interrupted).toBe(1)
+  })
 })
 
 function eventsOf(events: LLMEvent[]): AsyncIterable<LLMEvent> {
   return (async function* () {
     for (const e of events) yield e
+  })()
+}
+
+/** A stream that yields `events` then throws `err` — simulates a mid-stream abort. */
+function eventsThrowAfter(events: LLMEvent[], err: Error): AsyncIterable<LLMEvent> {
+  return (async function* () {
+    for (const e of events) yield e
+    throw err
   })()
 }

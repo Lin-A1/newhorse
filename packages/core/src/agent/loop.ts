@@ -197,11 +197,16 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
     // If the stream is aborted before completing, the parts we already buffered
     // were emitted live but not yet logged. Flush them so "model-visible ⟺
     // logged" holds even on a cancellation — the next resume must see the same
-    // partial assistant message the shell already rendered, not lose it.
-    if (assistantParts.length > 0) {
-      await appendMessage(runtime, opts.sessionId, { kind: "assistant", id: assistantId, seq: 0, content: assistantParts, model: opts.agent.model })
+    // partial assistant message the shell already rendered, not lose it. A store
+    // failure while flushing must not mask the original cancellation (a throw in
+    // a catch replaces the in-flight exception), so preserve `e` regardless.
+    try {
+      if (assistantParts.length > 0) {
+        await appendMessage(runtime, opts.sessionId, { kind: "assistant", id: assistantId, seq: 0, content: assistantParts, model: opts.agent.model })
+      }
+    } finally {
+      throw e
     }
-    throw e
   }
 
   // Archive the assistant message (text + tool calls) to the log.
@@ -316,8 +321,29 @@ async function failInterruptedTools(events: TurnRuntime["events"], sessionId: st
     const ev = session2.projectMessage({ kind: "tool", id: crypto.randomUUID(), seq: 0, callId: call.id, name: call.name, output: "Tool execution interrupted", isError: true })
     await events.append(sessionId, ev.type, ev.data as Record<string, unknown>)
   }
-  await events.append(sessionId, "Session.Interrupted", { sessionId })
+  // A prior run may have already recorded the interruption boundary when it was
+  // cancelled (cancelledResult appends Session.Interrupted after flushing the
+  // partial assistant that carries this unresolved tool-call). Re-appending here
+  // would double-record the same interruption, so only emit it when the session
+  // was NOT already marked interrupted after its last completed step (a crash
+  // that skipped the graceful cancellation path has no such event yet).
+  if (!(await interruptedAfterLastStep(events, sessionId))) {
+    await events.append(sessionId, "Session.Interrupted", { sessionId })
+  }
   void assistantId
+}
+
+/** True when a Session.Interrupted was already durably recorded after the most
+ *  recent Session.StepEnded, meaning the interruption boundary is owned by an
+ *  earlier (cancelled) run rather than this repair. */
+async function interruptedAfterLastStep(events: TurnRuntime["events"], sessionId: string): Promise<boolean> {
+  const stored = await events.read(sessionId)
+  let seen = false
+  for (const e of stored) {
+    if (e.type === "Session.StepEnded") seen = false
+    else if (e.type === "Session.Interrupted") seen = true
+  }
+  return seen
 }
 
 /** Normalize a provider-encoded tool input (JSON string or object) to an object. */
