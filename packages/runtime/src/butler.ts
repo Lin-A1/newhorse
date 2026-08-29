@@ -74,6 +74,18 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
       },
     },
     {
+      name: "followup_task",
+      description: "Query a task's durable state by its task id (childSessionId from spawn_agent): running / settled / unknown, plus the result text when settled.",
+      execute: async (input: unknown, ctx?: ToolCtx) => {
+        const c = requireCtx(ctx)
+        const taskId = (input as { taskId?: string }).taskId
+        if (!taskId) throw new Error("taskId is required")
+        const res = await c.queryTask?.(taskId)
+        if (!res) return { authorization: "allowed", state: "unknown", error: "queryTask not available" }
+        return { authorization: "allowed", taskId, state: res.state, finish: res.finish, text: res.text }
+      },
+    },
+    {
       name: "interrupt",
       description: "Interrupt a running session. Butler may interrupt any; a parent only its direct child.",
       execute: async (input: unknown, ctx?: ToolCtx) => {

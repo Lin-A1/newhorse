@@ -5,7 +5,7 @@ import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry, discoverPlugin } from "@newhorse/plugin"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
-import { driveChildSession } from "./session-manager"
+import { driveChildSession, readChildText } from "./session-manager"
 import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
 import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
 import type { ExecPolicy, ExecRule, ApprovalRequest } from "@newhorse/schema"
@@ -275,7 +275,23 @@ export async function createApp(config: AppConfig): Promise<App> {
           onEvent: emit,
           signal: ctrl.signal,
           caller,
-          toolCtx: hub ? { registry, appendAudit, interruptTarget: hub.interrupt, sendToTarget: hub.send, spawnFrom: hub.spawn, execPolicy } : { registry, appendAudit, execPolicy },
+          toolCtx: hub ? {
+            registry,
+            appendAudit,
+            interruptTarget: hub.interrupt,
+            sendToTarget: hub.send,
+            spawnFrom: hub.spawn,
+            queryTask: async (taskId) => {
+              const log = await events.read(taskId)
+              const settled = log.find((e) => e.type === "Session.Settled")
+              if (settled) {
+                const finish = (settled.data as { finish?: string }).finish
+                return { state: "settled", finish, text: await readChildText(events, taskId) }
+              }
+              return { state: log.some((e) => e.type === "Session.Created") ? "running" : "unknown" }
+            },
+            execPolicy,
+          } : { registry, appendAudit, execPolicy },
         })
         return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
       } finally {

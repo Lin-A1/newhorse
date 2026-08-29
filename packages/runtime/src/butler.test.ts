@@ -218,4 +218,31 @@ describe("butler authority", () => {
     expect(location).toBeTruthy()
     expect(location).not.toBe("")
   })
+
+  it("followup_task queries a child's durable state (settled text or running)", async () => {
+    const tools = createButlerTools({
+      registry: new SessionRegistry(new MemoryEventStore()),
+      appendAudit: async () => {},
+    })
+    const followup = tools.find((t) => t.name === "followup_task")!
+
+    // Settled task: queryTask returns state + finish + result text.
+    const settled = await followup.execute(
+      { taskId: "child-9" },
+      ctx({ kind: "parent", sessionId: "p1" }, {
+        queryTask: async () => ({ state: "settled", finish: "stop", text: "the answer" }),
+      }),
+    )
+    expect((settled as { state?: string }).state).toBe("settled")
+    expect((settled as { text?: string }).text).toBe("the answer")
+
+    // Running task: no settled yet.
+    const running = await followup.execute(
+      { taskId: "child-10" },
+      ctx({ kind: "parent", sessionId: "p1" }, {
+        queryTask: async () => ({ state: "running" }),
+      }),
+    )
+    expect((running as { state?: string }).state).toBe("running")
+  })
 })
