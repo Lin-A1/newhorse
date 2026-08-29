@@ -17,6 +17,10 @@ export interface AgentSpec {
   readonly name: string
   readonly model?: string
   readonly tools?: readonly string[]
+  /** Cost-down selection key: a role to map to a cheaper model under costDown. */
+  readonly role?: string
+  /** Cost-down selection key: a preset to map to a cheaper model under costDown. */
+  readonly preset?: string
 }
 
 export interface DAGNode {
@@ -149,17 +153,23 @@ export function validate(spec: DAGSpec): Topology {
 }
 
 /** The DAG aggregate fold: reconstruct status / results / aborted from events. */
-export function foldDAG(events: StoredEvent[]): { status: Record<string, NodeState>; results: Record<string, NodeResult>; aborted: boolean; attempts: Record<string, number> } {
+export function foldDAG(events: StoredEvent[]): { status: Record<string, NodeState>; results: Record<string, NodeResult>; aborted: boolean; attempts: Record<string, number>; models: Record<string, string> } {
   const status: Record<string, NodeState> = {}
   const results: Record<string, NodeResult> = {}
   const attempts: Record<string, number> = {}
+  const models: Record<string, string> = {}
   let aborted = false
 
   for (const e of events) {
     switch (e.type) {
-      case "DAG.NodeStarted":
-        status[e.data.nodeId as string] = "running"
+      case "DAG.NodeStarted": {
+        const d = e.data as { nodeId?: string; model?: string }
+        if (d.nodeId) {
+          status[d.nodeId] = "running"
+          if (d.model) models[d.nodeId] = d.model
+        }
         break
+      }
       case "DAG.NodeResolved": {
         const d = e.data as { nodeId?: string; slotId?: string; sessionId?: string; outputRef?: string }
         if (d.nodeId) {
@@ -191,7 +201,7 @@ export function foldDAG(events: StoredEvent[]): { status: Record<string, NodeSta
     }
   }
 
-  return { status, results, aborted, attempts }
+  return { status, results, aborted, attempts, models }
 }
 
 /**

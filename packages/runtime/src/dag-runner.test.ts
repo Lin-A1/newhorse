@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
-import { MemoryEventStore, MemorySessionInput, SqliteEventStore, type TurnRuntime, type Tool, type DAGSpec } from "@newhorse/core"
-import { runDag, createSlotStore, replayDag, type DagDeps } from "./dag-runner"
+import { MemoryEventStore, MemorySessionInput, SqliteEventStore, DAGError, foldDAG, type TurnRuntime, type Tool, type DAGSpec } from "@newhorse/core"
+import { runDag, createSlotStore, replayDag, resolveNodeModel, type DagDeps } from "./dag-runner"
 import type { LLMEvent, LLMRequest } from "@newhorse/schema"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -19,11 +19,11 @@ function stubLlm(resolver?: (req: LLMRequest) => string): TurnRuntime["llm"] {
   }
 }
 
-function makeDeps(llm: TurnRuntime["llm"], tools: Tool[] = [], concurrency = 2, signal?: AbortSignal): DagDeps {
+function makeDeps(llm: TurnRuntime["llm"], tools: Tool[] = [], concurrency = 2, signal?: AbortSignal, extra?: Partial<DagDeps>): DagDeps {
   const events = new MemoryEventStore()
   const inbox = new MemorySessionInput(events)
   const runtime: TurnRuntime = { events, inbox, llm }
-  return { events, inbox, runtime, tools, concurrency, ...(signal ? { signal } : {}) }
+  return { events, inbox, runtime, tools, concurrency, ...(signal ? { signal } : {}), ...(extra ?? {}) }
 }
 
 const diamond: DAGSpec = {
@@ -135,7 +135,7 @@ describe("dag runner", () => {
     const ctrl = new AbortController()
     setTimeout(() => ctrl.abort(), 20)
     const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a" }, input: "x" } } }
-    const outcome = await runDag(spec, makeDeps(slowLlm, [], 1, ctrl.signal))
+    const outcome = await runDag(spec, makeDeps(slowLlm, [], 1, ctrl.signal, { defaultModel: "m" }))
     expect(outcome.status["A"]).not.toBe("succeeded")
     expect(outcome.status["A"]).toBe("aborted")
   })
@@ -153,7 +153,6 @@ describe("dag runner", () => {
 
       // "Restart": rebuild DAGRun by folding the durable log for that dagId.
       const events = await store.read(dagId)
-      const { foldDAG } = await import("@newhorse/core")
       const replayed = foldDAG(events)
       const allTerminal = Object.values(replayed.status).every((s) => s === "succeeded")
       expect(allTerminal).toBe(true)
@@ -210,5 +209,91 @@ describe("slot store", () => {
     expect(s.get("g1", "A")?.output).toBe("hello")
     expect(s.get("g1", "A")?.outputRef).toBe("session:1")
     expect(s.get("g1", "B")).toBeUndefined()
+  })
+})
+
+describe("resolveNodeModel (cost-down, goal #3)", () => {
+  const baseModel = "parent-model"
+  const deps = (over?: Partial<DagDeps>): DagDeps => ({ ...makeDeps(stubLlm()), defaultModel: baseModel, ...(over ?? {}) })
+
+  it("explicit node.agent.model wins over costDown and cheapModel", () => {
+    const node: DAGSpec["nodes"]["x"] = { id: "x", agent: { name: "x", model: "explicit" } }
+    expect(resolveNodeModel(node, deps({ costDown: true, cheapModel: "cheap" }))).toBe("explicit")
+  })
+
+  it("costDown maps a role/preset to a cheaper model from modelPresets", () => {
+    const node: DAGSpec["nodes"]["x"] = { id: "x", agent: { name: "x", role: "researcher" } }
+    expect(resolveNodeModel(node, deps({ costDown: true, modelPresets: { researcher: "cheap-1" } }))).toBe("cheap-1")
+  })
+
+  it("costDown with no role/preset falls back to cheapModel", () => {
+    const node: DAGSpec["nodes"]["x"] = { id: "x", agent: { name: "x" } }
+    expect(resolveNodeModel(node, deps({ costDown: true, cheapModel: "cheap" }))).toBe("cheap")
+  })
+
+  it("costDown with a role but no preset entry and no cheapModel falls to inherit/error", () => {
+    const node: DAGSpec["nodes"]["x"] = { id: "x", agent: { name: "x", role: "unknown" } }
+    expect(resolveNodeModel(node, deps({ costDown: true }))).toBe(baseModel)
+  })
+
+  it("costDown off + no explicit model inherits the parent model", () => {
+    const node: DAGSpec["nodes"]["x"] = { id: "x", agent: { name: "x" } }
+    expect(resolveNodeModel(node, deps())).toBe(baseModel)
+  })
+
+  it("no explicit model, costDown off, no default → hard DAGError (never the 'model' literal)", () => {
+    const node: DAGSpec["nodes"]["x"] = { id: "x", agent: { name: "x" } }
+    expect(() => resolveNodeModel(node, deps({ defaultModel: undefined }))).toThrow(DAGError)
+  })
+
+  it("is deterministic across calls (a retry resolves to the same model)", () => {
+    const node: DAGSpec["nodes"]["x"] = { id: "x", agent: { name: "x", role: "researcher" } }
+    const d = deps({ costDown: true, modelPresets: { researcher: "cheap-1" } })
+    expect(resolveNodeModel(node, d)).toBe(resolveNodeModel(node, d))
+  })
+
+  it("persists the resolved model on DAG.NodeStarted so replay sees the cost-down model", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    const runtime: TurnRuntime = { events, inbox, llm: stubLlm() }
+    const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a", role: "researcher" } } } }
+    const outcome = await runDag(spec, { events, inbox, runtime, tools: [], concurrency: 1, costDown: true, modelPresets: { researcher: "cheap" } })
+    expect(outcome.status["A"]).toBe("succeeded")
+    expect(outcome.models["A"]).toBe("cheap")
+    const replayed = await replayDag(events, outcome.dagId)
+    expect(replayed.models["A"]).toBe("cheap")
+  })
+
+  it("rejects a graph with an unresolvable model pre-flight, before any event is persisted (never the 'model' literal)", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    const runtime: TurnRuntime = { events, inbox, llm: stubLlm() }
+    const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a" } } } }
+    await expect(runDag(spec, { events, inbox, runtime, tools: [] })).rejects.toThrow(DAGError)
+    // Pre-flight: nothing at all was persisted (no DAG aggregate, no child session).
+    expect(await events.aggregateIds()).toEqual([])
+  })
+
+  it("makes role and preset ambiguous selection a hard DAGError", () => {
+    const node: DAGSpec["nodes"]["x"] = { id: "x", agent: { name: "x", role: "r", preset: "p" } }
+    expect(() => resolveNodeModel(node, deps({ costDown: true }))).toThrow(DAGError)
+  })
+
+  it("exposes models only for nodes that actually started (skipped/aborted absent)", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    // A fails; B depends on A -> skipped; B declares an explicit model but never runs.
+    const llm = stubLlm((req) => {
+      const text = (req.messages.find((m) => m.role === "user")?.content[0] as { text?: string } | undefined)?.text ?? ""
+      if (text === "root") throw new Error("boom")
+      return "ok"
+    })
+    const runtime: TurnRuntime = { events, inbox, llm }
+    const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a", model: "m" }, input: "root" }, B: { id: "B", agent: { name: "b", model: "cheap" }, dependsOn: ["A"] } } }
+    const outcome = await runDag(spec, { events, inbox, runtime, tools: [], concurrency: 1 })
+    expect(outcome.status["A"]).toBe("failed")
+    expect(outcome.status["B"]).toBe("skipped")
+    expect(outcome.models["A"]).toBe("m")
+    expect(outcome.models["B"]).toBeUndefined()
   })
 })

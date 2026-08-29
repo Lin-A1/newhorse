@@ -243,7 +243,7 @@ interface NodeResult {
 - [ ] `DAGRun` 事件溯源可重放（DAG.Declared/NodeStarted/NodeResolved/...、进程 kill 后重建）。
 - [ ] 就绪队列 + worker 池并发调度（多节点并行、无 join 阻塞、节点 AbortController）。
 - [ ] 节点最小数据契约（`NodeResult` + `consumes` 校验 + missing-slot 策略）。
-- [ ] 节点独立模型 spawn（costDown 默认策略 + 确定性槽装配）。
+- [x] 节点独立模型 spawn（costDown 默认策略 + 确定性槽装配）。实现：`resolveNodeModel`（role/preset/explicit 优先级 + `DAG.NodeStarted.model` 持久化），见 `docs/` §12 与 `packages/runtime/src/dag-runner.ts`。
 - [ ] 部分失败隔离（retry 上限/skip 传播/abort-graph 协调 running 节点）。
 - [ ] 节点隔离（每节点独立 subagent 会话：各自 id/agent/model）+ SlotStore 共享。
 - [ ] DAG run 可观察（registry + 审计）+ 可中断单节点。

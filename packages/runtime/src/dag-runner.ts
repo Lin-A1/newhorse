@@ -50,6 +50,13 @@ export interface DagDeps {
   readonly workspace?: string
   /** Parent model a node inherits when it does not declare its own (cost-down). */
   readonly defaultModel?: string
+  /** Cost-down (goal #3): when a node does not declare a model, drop it onto a
+   * cheaper model instead of inheriting the parent's. Enabled by flag. */
+  readonly costDown?: boolean
+  /** Cost-down selection table: role|preset name -> model id. */
+  readonly modelPresets?: Readonly<Record<string, string>>
+  /** Cost-down fallback model when a node has no role/preset key to look up. */
+  readonly cheapModel?: string
   /** Max retry attempts per node on failure. Default 2. */
   readonly maxRetries?: number
   /** Max concurrent nodes. Default 2. */
@@ -66,6 +73,9 @@ export interface DagOutcome {
   readonly dagId: string
   readonly status: Record<string, NodeState>
   readonly aborted: boolean
+  /** Effective model per node that actually started (cost-down visibility
+   * across a restart). Nodes that never reached `running` are absent. */
+  readonly models: Record<string, string>
 }
 
 /** Run a declarative DAG. Returns after all nodes reach a terminal state. */
@@ -78,6 +88,15 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   // the builtin toolset so a research/explore node is not limited to bare model
   // answers (M3.5 §2.5 — cost-down is only meaningful if nodes can actually act).
   const tools = deps.tools.length > 0 ? deps.tools : createBuiltinTools({ workspace: deps.workspace ?? process.cwd() })
+
+  // Resolve every node's effective model up front, so a missing/invalid model is
+  // a pre-flight DAGError rather than a bogus model id reaching the provider (or
+  // a per-node retry+NodeFailed cycle). The resolved model is per-node and
+  // persisted on DAG.NodeStarted so a replay sees which model actually ran.
+  const resolvedModel: Record<string, string> = {}
+  for (const id of Object.keys(topo.nodes)) {
+    resolvedModel[id] = resolveNodeModel(topo.nodes[id]!, deps)
+  }
 
   // Persist the declaration (event-sourced aggregate).
   await deps.events.append(dagId, "DAG.Declared", { dagId, spec }, "dag")
@@ -141,14 +160,14 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
     const node = topo.nodes[id]!
     const ctrl = new AbortController()
     running.set(id, ctrl)
-    await emit("DAG.NodeStarted", { nodeId: id, sessionId: id })
+    await emit("DAG.NodeStarted", { nodeId: id, sessionId: id, model: resolvedModel[id] })
 
     try {
       const childSessionId = crypto.randomUUID()
       await deps.events.append(childSessionId, "Session.Created", { id: childSessionId, location: "", createdAt: Date.now() }, "session")
       await deps.inbox.admit({ id: crypto.randomUUID(), sessionId: childSessionId, prompt: buildInput(node, slotStore, dagId), delivery: "steer" })
 
-      const agent: Agent = { id: node.agent.name, model: node.agent.model ?? deps.defaultModel ?? "model", tools: [...tools] }
+      const agent: Agent = { id: node.agent.name, model: resolvedModel[id]!, tools: [...tools] }
       const result = await runSession(deps.runtime, {
         sessionId: childSessionId,
         agent,
@@ -235,7 +254,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   }
   pendingSkips.length = 0
 
-  return { dagId, status, aborted }
+  return { dagId, status, aborted, models: foldDAG(await deps.events.read(dagId)).models }
 }
 
 /** Poll status until every node is terminal (succeeded/failed/skipped/aborted). */
@@ -244,6 +263,30 @@ async function waitForTerminal(topology: Topology, status: Record<string, NodeSt
   while (!Object.keys(topology.nodes).every(terminal)) {
     await new Promise((r) => setTimeout(r, 5))
   }
+}
+
+/**
+ * Resolve a node's effective model. Pure and deterministic (a retry resolves to
+ * the same model). Precedence (spec §3.2.1):
+ *   1. explicit `node.agent.model` wins;
+ *   2. cost-down enabled → a cheaper model (role/preset from `modelPresets`,
+ *      else `cheapModel`);
+ *   3. else inherit the parent model (`defaultModel`);
+ *   4. else a hard DAGError (never a bogus string like "model" reaching the
+ *      provider — no-model + no-default is a config error, not a silent fallback).
+ */
+export function resolveNodeModel(node: DAGNode, deps: DagDeps): string {
+  if (node.agent.model) return node.agent.model
+  if (node.agent.role && node.agent.preset) {
+    throw new DAGError(`node ${node.id} sets both role and preset for cost-down selection; pick one`)
+  }
+  if (deps.costDown) {
+    const key = node.agent.role ?? node.agent.preset
+    if (key && deps.modelPresets?.[key]) return deps.modelPresets[key]!
+    if (deps.cheapModel) return deps.cheapModel
+  }
+  if (deps.defaultModel) return deps.defaultModel
+  throw new DAGError(`node ${node.id} has no model and no cost-down/inherit default to resolve it`)
 }
 
 /** Deterministic slot→input assembly: the node's input may reference consumed
@@ -294,5 +337,5 @@ export async function replayDag(events: EventStore, dagId: string): Promise<DagO
   const stored = await events.read(dagId)
   const folded = foldDAG(stored)
   const status = reconcile(folded)
-  return { dagId, status, aborted: folded.aborted }
+  return { dagId, status, aborted: folded.aborted, models: folded.models }
 }
