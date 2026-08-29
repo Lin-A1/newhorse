@@ -1,7 +1,7 @@
 # M2 规划：Global Session Registry + 管家
 
 日期：2026-08-28
-状态：设计规划（未实现）—— 先对齐范围，MR 后再落 docs/ 与代码。
+状态：**已实现（M2a registry + M2b 管家权威）** — `SessionRegistry`（core/session/registry.ts）与但管工具集（runtime/butler.ts）+ 审计（`audit:` 聚合）已落地；跨会话效果投递（interrupt/send 非 stub）属 M4。实现决策见 `docs/core-technology-notes.md` §10（registry + cancel）、§11（但管权威）。
 
 ---
 

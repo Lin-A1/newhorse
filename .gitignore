@@ -1,13 +1,39 @@
+# Dependencies
 node_modules/
+
+# Build output (all packages)
 dist/
 out/
 build/
-test-results/
-*.tmp/
-*.log
 *.tsbuildinfo
+
+# Test / coverage
+test-results/
+coverage/
+*.log
+
+# Bun
 .bun/
 
-# v1 build artifacts accidentally present in workspace
+# Runtime data: event store SQLite + execpolicy rules (per-workspace runtime state)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+newhorse-data/
+
+# Smoke test / scratch artifacts
+scripts/smoke/*.log
+scripts/smoke/*.json
+scripts/smoke/tmp/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# v1/legacy build artifacts accidentally present in workspace
 packages/opencode/dist/
 packages/desktop/out/

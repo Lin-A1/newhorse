@@ -1,5 +1,6 @@
 # Agent Runtime (M1) 技术规格
 
+> 状态：**已实现（M1）** — 三 seam + 单会话 CLI 闭环已落地并通过端到端冒烟；实现决策见 `docs/core-technology-notes.md` §1-§9。
 > 范围：M1 骨架 —— session / agent / llm 三个 seam + 单会话 CLI 跑通。
 > 上游参照：`cordis-agent-design.md` §3，偏好 codex/claude agent runtime + opencode 外壳。
 > 目标：先把「一个 prompt 从 admission → turn → 工具 → 结算」的闭环跑通，结构上为 M2 管家 / M3 DAG 留出 seam。

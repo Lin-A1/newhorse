@@ -1,7 +1,7 @@
 # M2b Spec：管家与权威模型
 
 日期：2026-08-28
-状态：设计 spec（未实现）—— 这是"管家能动性"的权威模型，必须先写清、独立锐评通过后再实现管家 LLM 大脑。
+状态：**已实现（M2b 权威模型）** — 完整但管工具集（list_sessions/spawn_agent/interrupt/send_to_session）+ `ToolCtx.caller` 注入 + 审计聚合已落地；跨会话效果（interrupt/send 真投递）与全 SessionManager 属 M4。实现决策见 `docs/core-technology-notes.md` §11。
 
 ---
 

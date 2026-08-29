@@ -1,7 +1,7 @@
 # M3 规划：声明式 DAG 调度
 
 日期：2026-08-28
-状态：设计规划（未实现）—— 先对齐范围，锐评通过后再实现。
+状态：**已实现（M3 核心）** — 声明式 DAG（拓扑验证 + 事件驱动调度 + 重放 + cost-down 模型选择）已落地：core `dag.ts`（纯拓扑/折叠）+ runtime `dag-runner.ts`（并发泵/重放）。仅 API，尚无 CLI 子命令；跨会话效果投递属 M4。实现决策见 `docs/core-technology-notes.md` §12。
 
 ---
 

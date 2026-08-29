@@ -1,8 +1,10 @@
 # M4 Spec：执行权限细化（execpolicy）
 
 日期：2026-08-29
-状态：设计 spec（**已通过四轮独立锐评**；第四轮复评仍须修正（2 项 must-fix））—— 必须复评清零 findings 后才允许实现。
+状态：**已实现（M4 execpolicy 核心）** — 规则引擎（最长前缀/路径归一）+ 危险启发式地板 + 交互 approve 30s fail-closed 闸 + 审计（`Session.ExecDecision`）+ 禁止规则路径自引用已落地（runtime/tools/execpolicy.ts）。自举写回（`bootstrapAppend`）已实现但未接线到 approve 流程（deferred）；"已通过四轮独立锐评"为实现前的评审记录，实现后 docs §14 记录了 14 轮 closed-loop review。
+
 上游借鉴：OpenAI Codex `exec_policy.rs`（规则引擎 + 决策单轴 + 自举写回）；newhorse M3.5 内置工具集；m2b 但管权威（会话层）。
+实现决策见 `docs/core-technology-notes.md` §14。
 
 > 轮次记录：
 > - 首轮：需修正后实施（5 项）。
