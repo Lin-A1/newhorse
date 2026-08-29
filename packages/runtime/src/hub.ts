@@ -22,7 +22,7 @@ export interface SessionHub {
   /** Send a prompt into a target session's inbox. */
   send(sessionId: string, content: string): Promise<HubResult>
   /** Spawn a child session; returns the new session id. */
-  spawn(parentId: string, model?: string): Promise<string>
+  spawn(parentId: string, model?: string, prompt?: string): Promise<string>
 }
 
 /**
@@ -31,7 +31,7 @@ export interface SessionHub {
  * the runtime/tools; this keeps the hub a thin surface and the seam open for a
  * future cross-process SessionManager.
  */
-export type ChildDriver = (childId: string, parentId: string, parentWorkspace: string, model?: string) => Promise<void>
+export type ChildDriver = (childId: string, parentId: string, parentWorkspace: string, model?: string, prompt?: string) => Promise<void>
 
 /** In-memory hub over a shared event store. Sessions are created lazily. */
 export function createSessionHub(events: EventStore, open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }, workspace?: string, driver?: ChildDriver): SessionHub {
@@ -50,7 +50,7 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
       // Stub until a full SessionManager (M4).
       return { implemented: false, pending: true, sessionId }
     },
-    async spawn(parentId: string, model?: string) {
+    async spawn(parentId: string, model?: string, prompt?: string) {
       const id = crypto.randomUUID()
       // A spawned child inherits the parent's workspace (location is the
       // session's project root, driving AGENTS.md discovery + tool sandbox).
@@ -61,10 +61,10 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
       await events.append(id, "Session.Created", { id, location: childWorkspace, createdAt: Date.now() })
       await events.append(id, "Session.Spawned", { sessionId: id, parentId })
       sessions.add(id)
-      void model
       // Pluggable driver: when supplied, the child is actually RUN (not a dead
-      // row). Fire-and-forget — the driver owns settlement/promotion.
-      if (driver) void driver(id, parentId, childWorkspace, model)
+      // row) with the task prompt. Fire-and-forget — the driver owns
+      // settlement + promotion. `prompt` is the spawner's task instruction.
+      if (driver) void driver(id, parentId, childWorkspace, model, prompt)
       return id
     },
   }

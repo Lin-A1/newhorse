@@ -5,6 +5,7 @@ import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry, discoverPlugin } from "@newhorse/plugin"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
+import { driveChildSession } from "./session-manager"
 import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
 import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
 import type { ExecPolicy, ExecRule, ApprovalRequest } from "@newhorse/schema"
@@ -162,11 +163,38 @@ export async function createApp(config: AppConfig): Promise<App> {
   const agentTools = [...toolMap.values()]
   const agent: Agent = { id: "primary", model: config.model, tools: agentTools }
 
-  // Butler hub (M2b). spawn is a LIVE child only when a driver is wired
-  // (Phase 3 increment — see specs/v2/model-orchestration.md); without one the
-  // child is persisted but not driven (honest stub until the driver lands).
-  // The hub itself is the stable seam; the driver arrives as the next slice.
-  const hub = config.asButler ? createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }), workspace) : undefined
+  // Butler hub (M2b) with a LIVE child driver (Phase 3). spawn now actually
+  // RUNS the child (Created → system context → admit → runSession) and, on
+  // settle, promotes the child's final text into the PARENT's inbox as a
+  // synthetic result so the parent's next turn sees it. Without the driver
+  // (non-butler) the hub is undefined.
+  const hub = config.asButler
+    ? createSessionHub(
+        events,
+        () => ({ interrupt: () => {}, prompt: async () => "" }),
+        workspace,
+        async (childId, parentId, childWorkspace, model, prompt) => {
+          const driven = await driveChildSession({
+            runtime,
+            inbox,
+            events,
+            sessionId: childId,
+            workspace: childWorkspace,
+            agent: { id: "spawned", model: model ?? config.model, tools: agentTools },
+            tools: agentTools,
+            prompt: prompt ?? "You are a spawned agent working for your parent. Complete the task.",
+            contextProvider: config.contextProvider,
+          })
+          // Durable settle boundary (followup_task reads it) + promote the
+          // child's text into the parent's inbox as a steer so the parent's
+          // next turn can consume the result (result promotion).
+          await events.append(childId, "Session.Settled", { sessionId: childId, finish: driven.finish, needsContinuation: false })
+          if (driven.settled) {
+            await inbox.admit({ id: crypto.randomUUID(), sessionId: parentId, prompt: `[child ${childId} result]\n${driven.text}`, delivery: "steer", principal: "parent" })
+          }
+        },
+      )
+    : undefined
 
   // M4 execpolicy: the tool-layer authorization axis. For a session with no
   // onApprove gate (DAG child / non-interactive SDK), a `prompt` resolves to

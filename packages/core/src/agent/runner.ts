@@ -56,7 +56,7 @@ export interface ToolCtx {
    * that a stub did not actually apply (M4 SessionManager populates them). */
   readonly interruptTarget?: (sessionId: string) => Promise<{ implemented: boolean; pending?: boolean; sessionId?: string }>
   readonly sendToTarget?: (sessionId: string, content: string) => Promise<{ implemented: boolean; pending?: boolean; sessionId?: string }>
-  readonly spawnFrom?: (parentId: string, model?: string) => Promise<string>
+  readonly spawnFrom?: (parentId: string, model?: string, prompt?: string) => Promise<string>
   /** M4 execpolicy: the tool-layer authorization axis. Optional here (injected);
    * loop fills a deny-all fallback so a tool never runs unaudited. */
   readonly execPolicy?: ExecPolicy

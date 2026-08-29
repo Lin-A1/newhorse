@@ -97,11 +97,12 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
       execute: async (input: unknown, ctx?: ToolCtx) => {
         const c = requireCtx(ctx)
         const model = (input as { model?: string }).model
+        const prompt = (input as { prompt?: string }).prompt
         const parentId = c.caller.kind === "user" ? "user" : c.caller.sessionId
         // spawn has no target; always allowed, but MUST be audited — appendAudit
         // is required (audit is not optional for butler actions).
         if (!c.appendAudit) throw new Error("butler tool missing appendAudit")
-        const child = await c.spawnFrom?.(parentId, model)
+        const child = await c.spawnFrom?.(parentId, model, prompt)
         await c.appendAudit({ actorKind: c.caller.kind, actorId: c.sessionId ?? parentId, op: "spawn_agent", targetSessionId: child, outcome: "allowed", reason: undefined })
         return { authorization: "allowed", model, parentId, childSessionId: child, implemented: child !== undefined }
       },
