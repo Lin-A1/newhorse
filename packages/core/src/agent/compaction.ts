@@ -60,7 +60,10 @@ export async function compactSession(events: EventStore, sessionId: string, opts
       // Race the summarizer against a hard timeout: a hung LLM must not stall
       // the turn; on timeout/failure the cheap local marker stands in.
       const result = await Promise.race([
-        opts.summarize(headText.slice(0, 30_000)).then((s) => `[previous context] ${s}`),
+        // The loser of the race must never surface a late unhandled rejection
+        // (a summarizer failing AFTER the timeout resolved would crash the
+        // process) — swallow it: the local marker already stood in.
+        opts.summarize(headText.slice(0, 30_000)).then((s) => `[previous context] ${s}`).catch(() => ""),
         new Promise<string>((r) => setTimeout(() => r(""), 10_000)),
       ])
       summary = result || localSummary(headCount, head)
