@@ -23,6 +23,15 @@ export type LoopEvent =
   | { readonly type: "error"; readonly code: string; readonly message: string }
   | { readonly type: "done"; readonly step: number; readonly needsContinuation: boolean; readonly finish: string }
 
+/**
+ * Hook seam (deterministic command hooks — claude code's shape, wired via the
+ * plugin registry in runtime; core only declares the contract so it never
+ * imports plugin). A hook returns allow/block; a block carries a human-readable
+ * reason injected back into the turn (e.g. a Stop hook can force another step).
+ */
+export type HookEvent = "stop" | "pre-tool-use"
+export type HookVerdict = { readonly decision: "allow" | "block"; readonly reason?: string }
+
 export interface RunOptions {
   readonly agent: Agent
   readonly sessionId: string
@@ -30,6 +39,8 @@ export interface RunOptions {
   readonly resolveTool: (name: string) => Tool | undefined
   /** Optional live-event sink for a shell to render streaming output. */
   readonly onEvent?: (event: LoopEvent) => void
+  /** Optional hook seam (stop / pre-tool-use). Absent = no hooks. */
+  readonly runHooks?: (event: HookEvent, input: unknown) => Promise<HookVerdict>
   /** Optional cancellation: when aborted, the drain stops between steps. */
   readonly signal?: AbortSignal
   /** Trusted caller injected into tool ctx (M2b). Defaults to parent of sessionId. */
@@ -110,6 +121,18 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     }
     needsContinuation = turn.needsContinuation
     lastStepEnded = turn.finish
+
+    // Stop hook (deterministic, claude code Stop-event shape): a block can
+    // force another step with a reason re-injected as a steer — the "loop until
+    // done" control that does not live in the model.
+    if (!needsContinuation && opts.runHooks) {
+      const verdict = await opts.runHooks("stop", { step: turns, finish: lastStepEnded })
+      if (verdict.decision === "block") {
+        const reason = verdict.reason ?? "continue"
+        await runtime.inbox.admit({ id: crypto.randomUUID(), sessionId: opts.sessionId, prompt: reason, delivery: "steer" })
+        needsContinuation = true
+      }
+    }
   }
 
   const result: TurnResult = { needsContinuation: needsContinuation && lastStepEnded === "tool", step: turns, finish: lastStepEnded }
@@ -233,8 +256,20 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
   if (toolCalls.length > 0) {
     // Run tools concurrently; archive results in call order so pairing is stable.
     // execpolicy defaults to deny-all so an unaudited tool never runs bare (M4).
+    // pre-tool-use hook: a block skips the execution and records the reason as
+    // an error result — the model sees the denial and self-corrects.
     const ctx: ToolCtx = { caller: opts.caller ?? { kind: "parent", sessionId: opts.sessionId }, sessionId: opts.sessionId, signal: opts.signal, ...opts.toolCtx, execPolicy: opts.toolCtx?.execPolicy ?? denyAllExecPolicy }
-    const settled = await Promise.allSettled(toolCalls.map((call) => invokeTool(opts.resolveTool, call, ctx, opts.signal)))
+    const settled = await Promise.allSettled(toolCalls.map(async (call) => {
+      if (opts.runHooks) {
+        const verdict = await opts.runHooks("pre-tool-use", { name: call.name, input: call.input })
+        if (verdict.decision === "block") {
+          // A denied call is an ERROR result (durable, isError:true) — the
+          // model sees the denial and self-corrects; it is NOT a silent skip.
+          throw new Error(`denied by hook: ${verdict.reason ?? "blocked"}`)
+        }
+      }
+      return invokeTool(opts.resolveTool, call, ctx, opts.signal)
+    }))
     for (let i = 0; i < settled.length; i++) {
       const call = toolCalls[i]!
       const outcome = settled[i]!

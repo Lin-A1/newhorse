@@ -1,5 +1,6 @@
 import type { Tool } from "@newhorse/core"
 import type { MemoryStore } from "@newhorse/memory"
+import { discoverSkills } from "@newhorse/plugin"
 import { createReadTool } from "./read"
 import { createWriteTool } from "./write"
 import { createEditTool } from "./edit"
@@ -7,6 +8,7 @@ import { createListTool } from "./list"
 import { createSearchTool } from "./search"
 import { createBashTool } from "./bash"
 import { createMemorySearchTool, createMemoryWriteTool } from "./memory"
+import { createSkillTool } from "./skill"
 
 export { createExecPolicy, createBuiltinExecPolicy, rulesFilePath, simpleHash } from "./execpolicy"
 
@@ -27,6 +29,9 @@ export interface BuiltinToolsOptions {
   readonly enableBash?: boolean
   /** Optional memory seam; when present, memory tools are exposed. */
   readonly memoryStore?: MemoryStore
+  /** Optional plugin/skills directory — a `skill` loader tool is exposed that
+   *  discovers skills/{name}/SKILL.md (or flat {name}.md) lazily. */
+  readonly skillsDir?: string
 }
 
 export function createBuiltinTools(opts: BuiltinToolsOptions): Tool[] {
@@ -41,6 +46,9 @@ export function createBuiltinTools(opts: BuiltinToolsOptions): Tool[] {
   if (opts.memoryStore) {
     tools.push(createMemorySearchTool(opts.memoryStore))
     tools.push(createMemoryWriteTool(opts.memoryStore))
+  }
+  if (opts.skillsDir) {
+    tools.push(createSkillTool(() => discoverSkills(opts.skillsDir!)))
   }
   return tools
 }

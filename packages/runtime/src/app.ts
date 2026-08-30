@@ -1,4 +1,4 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, stableSessionId, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, stableSessionId, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator, type RunOptions } from "@newhorse/core"
 import { join, dirname } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
@@ -97,6 +97,35 @@ export interface PromptResult {
   readonly step: number
   readonly needsContinuation: boolean
   readonly finish: "tool" | "stop" | "length" | "content-filter" | "interrupted" | "error"
+}
+
+/**
+ * Assemble the plugin registry's hook capabilities into the loop's hook seam.
+ * A hook that BLOCKS returns { decision: "block" } (stop can force another
+ * step; pre-tool-use can deny a call). Errors from a hook are isolated: a
+ * broken hook must never corrupt the settlement path — it behaves as "allow".
+ */
+function makeHookRunner(pluginRegistry?: PluginRegistry): RunOptions["runHooks"] {
+  if (!pluginRegistry) return undefined
+  const hooks = pluginRegistry.list("hook")
+  if (hooks.length === 0) return undefined
+  return async (event, input) => {
+    const matching = hooks.filter((h) => h.event === event)
+    if (matching.length === 0) return { decision: "allow" }
+    for (const h of matching) {
+      try {
+        const result = await h.run(input)
+        // A hook returning a truthy "block"-ish result decides the verdict.
+        if (result && typeof result === "object" && (result as { decision?: string }).decision === "block") {
+          return { decision: "block", reason: (result as { reason?: string }).reason }
+        }
+      } catch {
+        // Fail-open to allow: a throwing hook is still observable, but must
+        // not deny the turn.
+      }
+    }
+    return { decision: "allow" }
+  }
 }
 
 export async function createApp(config: AppConfig): Promise<App> {
@@ -315,6 +344,7 @@ export async function createApp(config: AppConfig): Promise<App> {
           onEvent: emit,
           signal: ctrl.signal,
           caller,
+          runHooks: makeHookRunner(pluginRegistry),
           toolCtx: hub ? {
             registry,
             appendAudit,
