@@ -2,6 +2,10 @@
  * Real-API smoke tests. Run with a live key:
  *   ANTHROPIC_API_KEY=... bun run scripts/smoke/real-api.ts --baseUrl https://api.minimaxi.com/anthropic --model MiniMax-M2
  *
+ * Keyless subset (vector mechanism only, no LLM key needed):
+ *   bun run scripts/smoke/real-api.ts --only vector --embeddingUrl http://127.0.0.1:PORT
+ *   (with a key and no --embeddingUrl, S8 uses real MiniMax embo-01)
+ *
  * Assertions key off CONTENT and events (not just finish), because a provider
  * failure used to be able to masquerade as finish="stop".
  */
@@ -13,11 +17,13 @@ function arg(name: string, fallback: string): string {
   return i >= 0 && args[i + 1] ? args[i + 1]! : fallback
 }
 
+const only = arg("only", "all") // "all" (default) | "vector"
+const skipLlm = only === "vector"
 const baseUrl = arg("baseUrl", "https://api.minimaxi.com/anthropic")
 const model = arg("model", "MiniMax-M2")
 const apiKey = process.env.ANTHROPIC_API_KEY
-if (!apiKey) {
-  console.error("ANTHROPIC_API_KEY is required")
+if (!apiKey && !skipLlm) {
+  console.error("ANTHROPIC_API_KEY is required (or pass --only vector for the keyless subset)")
   process.exit(1)
 }
 
@@ -38,16 +44,14 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
 }
 
 // S1: basic turn — assert content + tokens + no error event (not just finish).
-{
-  const app = await createApp({ provider, model })
+if (!skipLlm) {  const app = await createApp({ provider, model })
   const { result, texts, errors } = await run(app, "Reply with exactly: SMOKE1")
   const joined = texts.join("")
   ok("S1 basic turn", result.finish === "stop" && /SMOKE1/.test(joined) && errors.length === 0, `finish=${result.finish} matched=${/SMOKE1/.test(joined)} errors=${errors.length}`)
 }
 
 // S2: multi-turn tool — assert pairing + step>=2 + tool message in log.
-{
-  const app = await createApp({
+if (!skipLlm) {  const app = await createApp({
     provider,
     model,
     tools: [{ name: "get_city", description: "Return a city name.", execute: async () => ({ city: "Shanghai" }) }],
@@ -60,8 +64,7 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
 }
 
 // S3: restart recovery via SQLite — assert projection survived + can continue.
-{
-  const { mkdtemp, rm } = await import("node:fs/promises")
+if (!skipLlm) {  const { mkdtemp, rm } = await import("node:fs/promises")
   const { tmpdir } = await import("node:os")
   const { join } = await import("node:path")
   const dir = await mkdtemp(join(tmpdir(), "nh-smoke-"))
@@ -81,8 +84,7 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
 
 // S5: interrupt mid-run — event-driven (first text event), then assert interrupted
 // and that the session can still continue afterwards.
-{
-  const app = await createApp({ provider, model })
+if (!skipLlm) {  const app = await createApp({ provider, model })
   let interrupted = false
   app.onEvent((e) => {
     if (e.type === "text" && !interrupted) {
@@ -97,8 +99,7 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
 }
 
 // N1: negative — bad API key must classify as auth and NOT hang/retry forever.
-{
-  const badApp = await createApp({ provider: { kind: "anthropic", baseUrl, apiKey: "sk-invalid" }, model })
+if (!skipLlm) {  const badApp = await createApp({ provider: { kind: "anthropic", baseUrl, apiKey: "sk-invalid" }, model })
   let authCode = ""
   badApp.onEvent((e) => {
     if (e.type === "error") authCode = (e as { code?: string }).code ?? ""
@@ -114,8 +115,7 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
 
 // N2: negative — a context-overflow-sized request must classify as
 // context-overflow (or at least a clean 4xx), never masquerade as success.
-{
-  const bigApp = await createApp({ provider, model })
+if (!skipLlm) {  const bigApp = await createApp({ provider, model })
   const huge = "repeat this word many times: ".repeat(40000)
   try {
     const r = await bigApp.prompt(huge, "user")
@@ -131,8 +131,7 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
 // S7 (M3.5): model autonomously uses a builtin tool to answer from a file.
 // Create a workspace with a file, let the model discover + read it, and verify
 // it reports the answer the file contains (proves tools give the agent hands).
-{
-  const { mkdtemp, rm, writeFile, mkdir } = await import("node:fs/promises")
+if (!skipLlm) {  const { mkdtemp, rm, writeFile, mkdir } = await import("node:fs/promises")
   const { tmpdir } = await import("node:os")
   const { join } = await import("node:path")
   const dir = await mkdtemp(join(tmpdir(), "nh-smoke7-"))
@@ -154,8 +153,7 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
 
 // S6 (optional): second protocol — if --openaiCompatUrl is given, run S1 through
 // the openai-compatible protocol to prove the four-axis Route swap.
-{
-  const compatUrl = arg("openaiCompatUrl", "")
+if (!skipLlm) {  const compatUrl = arg("openaiCompatUrl", "")
   const compatKey = process.env.OPENAI_API_KEY ?? apiKey
   const compatModel = arg("openaiCompatModel", "")
   if (compatUrl && compatModel) {
@@ -177,17 +175,27 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
   const { tmpdir } = await import("node:os")
   const { join } = await import("node:path")
   const { SqliteMemoryStore, createEmbeddingProvider } = await import("../../packages/memory/src/index.ts")
-  const embedKey = process.env.MINIMAX_API_KEY ?? apiKey
+  const embedKey = process.env.MINIMAX_API_KEY ?? apiKey ?? ""
+  const embedUrl = arg("embeddingUrl", "")
+  // Real MiniMax embo-01 by default; --embeddingUrl points S8 at any
+  // openai-compatible embeddings endpoint (also the keyless stub path).
+  const embed = embedUrl
+    ? createEmbeddingProvider({ kind: "openai-compatible", baseUrl: embedUrl, apiKey: embedKey, model: "stub-embed" })
+    : createEmbeddingProvider({ kind: "minimax", apiKey: embedKey, model: "embo-01" })
   const dir = await mkdtemp(join(tmpdir(), "nh-smoke8-"))
   try {
     const dbPath = join(dir, "mem.db")
-    const embed = createEmbeddingProvider({ kind: "minimax", apiKey: embedKey, model: "embo-01" })
     const store1 = new SqliteMemoryStore(dbPath)
-    store1.attachEmbedder(embed, "embo-01")
+    store1.attachEmbedder(embed, embedUrl ? "stub-embed" : "embo-01")
     await store1.write({ content: "database credentials are rotated on the first monday of each month", type: "fact", priority: 50, sessionId: "s1" })
     await store1.write({ content: "the office cafeteria is closed on fridays", type: "fact", priority: 50, sessionId: "s1" })
-    const filled = await store1.search("database credentials", 5, { sessionId: "s1" })
-    if (filled.length >= 2) {
+    // Reachability gate: both rows must carry vectors (a dead embedding
+    // endpoint stores metadata-only by design → honest SKIP, not FAIL).
+    const { Database } = await import("bun:sqlite")
+    const probe = new Database(dbPath, { readonly: true })
+    const embedded = (probe.query("SELECT count(*) AS n FROM memory WHERE embedding IS NOT NULL").get() as { n: number }).n
+    probe.close()
+    if (embedded >= 2) {
       // Both rows retrievable — the vector path is populated. Now the
       // paraphrase: zero shared keywords with either row.
       const hits = await store1.search("production db password change cadence", 2, { sessionId: "s1" })
@@ -196,7 +204,7 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
       store1.close()
       // Restart: reopen + re-attach (rebuild) → same winner.
       const store2 = new SqliteMemoryStore(dbPath)
-      store2.attachEmbedder(embed, "embo-01")
+      store2.attachEmbedder(embed, embedUrl ? "stub-embed" : "embo-01")
       const again = await store2.search("production db password change cadence", 2, { sessionId: "s1" })
       ok("S8b vector survives restart", (again[0]?.content ?? "").includes("credentials"), `top=${(again[0]?.content ?? "").slice(0, 50)}`)
       store2.close()
