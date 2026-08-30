@@ -12,5 +12,8 @@
     "@newhorse/runtime": "workspace:*",
     "@newhorse/schema": "workspace:*",
     "@newhorse/llm": "workspace:*"
+  },
+  "bin": {
+    "newhorse-server": "./src/main.ts"
   }
 }
