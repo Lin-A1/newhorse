@@ -57,6 +57,12 @@ function requireCtx(ctx?: ToolCtx): ToolCtx {
   return ctx
 }
 
+/** Clamp a number into [lo, hi]; a non-finite input falls to lo (never NaN). */
+function clamp(n: number, lo: number, hi: number): number {
+  if (!Number.isFinite(n) || n < lo) return lo
+  return n > hi ? hi : n
+}
+
 /** Build the four butler tools as a registry-backed list. */
 export function createButlerTools(deps: ButlerDeps): Tool[] {
   return [
@@ -83,6 +89,27 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
         const res = await c.queryTask?.(taskId)
         if (!res) return { authorization: "allowed", state: "unknown", error: "queryTask not available" }
         return { authorization: "allowed", taskId, state: res.state, finish: res.finish, text: res.text }
+      },
+    },
+    {
+      name: "wait_agent",
+      description: "Block until a task settles (by its task id from spawn_agent) or the timeout elapses. Args: { taskId, timeoutMs? } — subject clamps to 1-120000ms (default 30000); returns the settled result text or the still-running state on timeout.",
+      execute: async (input: unknown, ctx?: ToolCtx) => {
+        const c = requireCtx(ctx)
+        const taskId = (input as { taskId?: string }).taskId
+        const rawTimeout = (input as { timeoutMs?: number }).timeoutMs
+        if (!taskId) throw new Error("taskId is required")
+        if (!c.queryTask) return { authorization: "allowed", taskId, state: "unknown", error: "queryTask not available" }
+        // Clamp (codex wait.rs semantics): min 1s, max 120s, default 30s — a
+        // garbage value never becomes a 1ms kill or an unbounded hang.
+        const timeoutMs = clamp(Math.floor(rawTimeout ?? 30_000), 1_000, 120_000)
+        const deadline = Date.now() + timeoutMs
+        let res = await c.queryTask(taskId)
+        while (res.state === "running" && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 250))
+          res = await c.queryTask(taskId)
+        }
+        return { authorization: "allowed", taskId, state: res.state, finish: res.finish, text: res.text, timedOut: res.state === "running" }
       },
     },
     {

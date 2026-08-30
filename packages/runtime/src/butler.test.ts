@@ -245,4 +245,33 @@ describe("butler authority", () => {
     )
     expect((running as { state?: string }).state).toBe("running")
   })
+
+  it("wait_agent returns immediately for a settled task and times out for a stuck one", async () => {
+    const tools = createButlerTools({ registry: new SessionRegistry(new MemoryEventStore()), appendAudit: async () => {} })
+    const wait = tools.find((t) => t.name === "wait_agent")!
+    // Settled immediately.
+    const settled = await wait.execute({ taskId: "c1", timeoutMs: 5000 }, ctx({ kind: "parent", sessionId: "p1" }, {
+      queryTask: async () => ({ state: "settled", finish: "stop", text: "answer" }),
+    }))
+    expect((settled as { state?: string }).state).toBe("settled")
+    expect((settled as { text?: string }).text).toBe("answer")
+    expect((settled as { timedOut?: boolean }).timedOut).toBe(false)
+
+    // Running but resolves after a couple of polls (fake time via poll count).
+    let polls = 0
+    const eventually = await wait.execute({ taskId: "c2", timeoutMs: 5000 }, ctx({ kind: "parent", sessionId: "p1" }, {
+      queryTask: async () => {
+        polls++
+        return polls >= 3 ? { state: "settled", finish: "stop", text: "done" } : { state: "running" }
+      },
+    }))
+    expect((eventually as { state?: string }).state).toBe("settled")
+    expect((eventually as { text?: string }).text).toBe("done")
+
+    // Timeout: still running after the (clamped short) budget.
+    const stuck = await wait.execute({ taskId: "c3", timeoutMs: 1000 }, ctx({ kind: "parent", sessionId: "p1" }, {
+      queryTask: async () => ({ state: "running" }),
+    }))
+    expect((stuck as { state?: string }).state).toBe("running")
+  })
 })
