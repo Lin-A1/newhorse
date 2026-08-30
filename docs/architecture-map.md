@@ -67,7 +67,8 @@ newhorse（本 monorepo：引擎开发地 + 首个宿主项目 CLI）
 ## 3. 已知边界（诚实清单，非缺陷）
 
 - 跨进程 spawn-drive 延后（子会话由创建者进程驱动——但已注册，任何兄弟进程可 observe/steer/interrupt 它）；跨进程 listing/audit 聚合未走目录
-- 向量语义排序的真机冒烟（S8 real-api）待 `ANTHROPIC_API_KEY`（机制已被 23 个单测覆盖：vec0↔brute 等价、scope 隔离、重启重建、canary 自愈）
+- 跨进程 TOCTOU 微窗口残余（lookup→register 交错需 SQLite CAS 才能彻底消除；回滚会刷新所还行的心跳）——评审 PASS 后接受的 cosmetic 级残余
+- 向量语义排序的真机冒烟（S8 real-api）待 `ANTHROPIC_API_KEY`（机制已被 28 个单测覆盖：vec0↔brute 等价、scope 隔离、重启重建、canary 自愈、回填 scope、agent 隔离、注入 seam、廉价 re-attach）
 - Bun 1.3.14 断连 panic（server skip 测试；`bun upgrade` 需手动 PowerShell）
 - goal 预算强制（自动暂停）未做——`overBudget` 仅可见性
 - `.ts` 插件加载（信任边界未定）、`Session.ToolSettled` 死类型
