@@ -185,7 +185,19 @@ async function executeCommand(command: string): Promise<unknown> {
   const argv = shellSplit(command)
   const proc = Bun.spawn(argv, { stdout: "pipe", stderr: "pipe", cwd: process.cwd() })
   const out = await new Response(proc.stdout).text()
-  return out
+  const code = await proc.exited
+  // A hook command can emit a verdict as JSON on stdout (a stop hook printing
+  // {"decision":"block","reason":"..."}). Otherwise, a NON-ZERO exit is the
+  // block signal (a validator that rejects exits nonzero — conservative).
+  // An empty/plain-text stdout + exit 0 is allow (the command ran, no verdict).
+  if (code !== 0) return { decision: "block", reason: `hook command exited ${code}: ${out.trim().slice(0, 200)}` }
+  try {
+    const parsed = JSON.parse(out.trim())
+    if (parsed && typeof parsed === "object" && "decision" in parsed) return parsed
+  } catch {
+    // Not JSON — plain text output from a succeed-hook is observational (allow).
+  }
+  return { decision: "allow", output: out.trim() }
 }
 
 /** Shell-word tokenizer for hook commands. Splits on unquoted whitespace,

@@ -2,6 +2,7 @@ import type { LLMEvent, LLMRequest, SessionMessage, ContentPart, ToolCallPart } 
 import type { TurnRuntime, Agent, Tool, ToolCall, ToolResult, ToolCtx, Initiator } from "./runner"
 import { Session } from "../session/session"
 import { toLlmMessages } from "../session/messages"
+import { projectCompacted } from "./compaction"
 import { denyAllExecPolicy } from "./execpolicy"
 
 /** Hard cap on steps per drain to guarantee termination. */
@@ -87,7 +88,12 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     // the next request well-formed rather than feeding a malformed history.
     await failInterruptedTools(runtime.events, opts.sessionId, projected)
     const refreshed = await loadSession(runtime.events, opts.sessionId)
-    const messages = toLlmMessages(refreshed.snapshot().messages, opts.agent.model)
+    // Compaction-aware projection: if a Session.Compacted boundary exists, the
+    // folded head is DROPPED from the model's view (its summary marker stands
+    // in) — this is what actually bounds the request window; the full log stays
+    // durable. The boundary is read from the store so the projection is exact.
+    const { messages: visibleMessages } = projectCompacted(await runtime.events.read(opts.sessionId))
+    const messages = toLlmMessages(visibleMessages, opts.agent.model)
     if (messages.length === 0) {
       // Nothing promoted and no history yet — drain is done.
       break

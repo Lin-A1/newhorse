@@ -1,5 +1,11 @@
 import type { MemoryEntry, MemoryRecord, MemoryStore } from "./memory"
 
+/** Cheap content normalization for the dedup-fallback guard: lower-case,
+ * trim, collapse whitespace. */
+function normalize(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim()
+}
+
 /**
  * Memory extraction pipeline (borrowed from TencentDB-Agent-Memory L1 and
  * mem0's additive pattern): the "write" side of memory is NOT the model
@@ -58,11 +64,25 @@ export async function runMemoryExtraction(
 
   let decisions: ResetAction[]
   try {
-    decisions = await pipe.dedupMemories({ extracted, candidates })
+    // Enrich the dedup candidate pool with per-atom keyword hits (the global
+    // top-5 by priority is a weak similarity proxy; probing the atom's own
+    // content surfaces the true duplicates a dedup LLM should see).
+    const enriched: MemoryRecord[] = [...candidates]
+    const seen = new Set(candidates.map((c) => c.id))
+    for (const atom of extracted) {
+      const probe = await store.search(atom.content, 3, { sessionId: opts.sessionId, agentId: opts.agentId, userId: opts.userId })
+      for (const p of probe) {
+        if (!seen.has(p.id)) { seen.add(p.id); enriched.push(p) }
+      }
+    }
+    decisions = await pipe.dedupMemories({ extracted, candidates: enriched })
   } catch {
     // Fallback (TencentDB l1-extractor.ts:334): storage continues on dedup
-    // failure — but only NEW atoms, never duplicates against the candidates.
-    decisions = extracted.map(() => ({ action: "store" } as ResetAction))
+    // failure — but a candidate with NORMALIZED-identical content is skipped so
+    // a repeated fact is never duplicated (the cheap guard the LLM would have
+    // done).
+    const existing = new Set(candidates.map((c) => normalize(c.content)))
+    decisions = extracted.map((atom) => ({ action: existing.has(normalize(atom.content)) ? ("skip" as const) : ("store" as const) }))
   }
 
   const stored: MemoryRecord[] = []

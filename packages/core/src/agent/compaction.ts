@@ -1,6 +1,6 @@
 import { Session } from "../session/session"
 import type { EventStore } from "../session/store"
-import type { SessionMessage } from "@newhorse/schema"
+import type { SessionMessage, StoredEvent } from "@newhorse/schema"
 
 /**
  * Local compaction (AGENTS.md goal #2 — long-horizon, no remote-only behavior;
@@ -29,19 +29,27 @@ export async function compactSession(events: EventStore, sessionId: string, opts
   const retain = Math.max(2, opts.retain ?? 12)
   const stored = await events.read(sessionId)
   const messages: SessionMessage[] = []
+  const messageSeqs: number[] = []
   for (const e of stored) {
-    if (e.type === "Session.MessageAppended") messages.push((e.data as { message?: SessionMessage }).message!)
+    if (e.type === "Session.MessageAppended") {
+      messages.push((e.data as { message?: SessionMessage }).message!)
+      messageSeqs.push(e.seq)
+    }
   }
   if (messages.length <= retain) {
     // Nothing to compact — no boundary to write (the session is already small).
     return { boundarySeq: stored.at(-1)?.seq ?? -1, summary: "" }
   }
-  const head = messages.slice(0, messages.length - retain)
-  const tail = messages.slice(messages.length - retain)
-  const boundarySeq = stored.at(-1)!.seq
+  const headCount = messages.length - retain
+  const head = messages.slice(0, headCount)
+  const tail = messages.slice(headCount)
+  // boundarySeq = the LAST seq of the folded head. A read-time projection that
+  // honors the boundary drops every MessageAppended with seq <= boundarySeq
+  // (the head is represented by the summary marker), keeping ONLY the tail.
+  const boundarySeq = messageSeqs[headCount - 1]!
   // Local summary of the collapsed head: counts + the first user prompt's gist.
   const userPrompt = head.find((m) => m.kind === "user")?.text ?? ""
-  const summary = `[previous context: ${head.length} messages folded; original request: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}]`
+  const summary = `[previous context: ${headCount} messages folded; original request: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}]`
   // Append the compaction marker (a user-role message so it is a normal part of
   // history; the encoders map kind "compaction" → user, and the model sees it
   // as a context stub, never a fake assistant claim).
@@ -50,4 +58,37 @@ export async function compactSession(events: EventStore, sessionId: string, opts
   await events.append(sessionId, marker.type, marker.data as Record<string, unknown>)
   await events.append(sessionId, "Session.Compacted", { sessionId, boundarySeq, summary, retainedFrom: tail.length })
   return { boundarySeq, summary }
+}
+
+/**
+ * Read-time projection honoring the LAST compaction boundary: drop every
+ * MessageAppended at seq <= boundarySeq (that head is represented by the
+ * summary marker), keep the tail. This is what actually bounds the next
+ * request — the full log is still durable (append-only), the model just sees
+ * the compacted view. A session with no boundary returns its messages as-is.
+ */
+export function projectCompacted(stored: StoredEvent[]): { messages: SessionMessage[]; boundary: number } {
+  const boundaryEvent = [...stored].reverse().find((e) => e.type === "Session.Compacted")
+  const boundary = boundaryEvent ? Number((boundaryEvent.data as { boundarySeq?: number }).boundarySeq ?? -1) : -1
+  const messages: SessionMessage[] = []
+  // Fold like Session.replay (Prompted promotes a user message; MessageAppended
+  // pushes its message) but SKIP the head at seq <= boundary when a boundary
+  // exists. The head is represented by the summary marker message (appended
+  // AFTER the boundary, so it survives).
+  for (const e of stored) {
+    if (boundary >= 0 && e.seq <= boundary) continue
+    switch (e.type) {
+      case "Session.MessageAppended":
+        messages.push((e.data as { message?: SessionMessage }).message!)
+        break
+      case "Session.Prompted": {
+        const d = e.data as { id?: string; prompt?: string }
+        if (d.id && typeof d.prompt === "string") messages.push({ kind: "user", id: d.id, seq: e.seq, text: d.prompt })
+        break
+      }
+      default:
+        break
+    }
+  }
+  return { messages, boundary }
 }

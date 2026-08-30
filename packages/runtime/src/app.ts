@@ -155,7 +155,9 @@ export async function createApp(config: AppConfig): Promise<App> {
   // edit"). Tools are pluggable, so an override can be re-plugged later.
   const workspace = config.workspace ?? process.cwd()
   const contextProvider: SessionContextProvider = config.contextProvider ?? defaultContextProvider
-  const builtin = createBuiltinTools({ workspace, enableBash: config.enableBash ?? false, memoryStore: config.memoryStore })
+  // skillsDir = the plugin dir (its `skills/` sub-tree is discovered lazily by
+  // the skill tool). The tool is only exposed when a pluginsDir is configured.
+  const builtin = createBuiltinTools({ workspace, enableBash: config.enableBash ?? false, memoryStore: config.memoryStore, skillsDir: config.pluginsDir })
   // Discover a plugin directory (directory-as-registration-surface) and register
   // its capabilities into a PluginRegistry, so a pluginsDir yields tools (and
   // agents/commands/hooks) by convention rather than requiring the caller to
