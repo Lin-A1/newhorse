@@ -1,9 +1,10 @@
 import { createApp, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow, type SessionDirectory, type DirectoryEntry, type SettingsController, type AgentHomeConfig, type ApprovalHub, type Scheduler, type ScheduleInput, type Schedule } from "@newhorse/runtime"
 import { redactSettings, aggregateUsage } from "@newhorse/runtime"
+import type { MemoryStore, MemoryRecord } from "@newhorse/memory"
 import { listModels } from "@newhorse/llm"
 import type { AdapterConfig, Fetcher } from "@newhorse/llm"
 import type { StoredEvent, ApprovalRequest } from "@newhorse/schema"
-import { join } from "node:path"
+import { join, resolve, sep } from "node:path"
 
 /**
  * Runtime server (Phase 1): transport-only HTTP + SSE boundary over `createApp`.
@@ -74,6 +75,8 @@ export interface ServerConfig {
   readonly schedules?: Scheduler
   /** Injectable fetch for the provider models listing (tests). */
   readonly modelsFetch?: Fetcher
+  /** Shared memory store — client memory browser reads/deletes via /v1/memory. */
+  readonly memory?: MemoryStore
 }
 
 /** One session's create config (POST /v1/session body), transport DTO. */
@@ -152,10 +155,10 @@ function json(status: number, body: unknown): Response {
  *  requiring the resolved path to stay under root (root+sep compare). */
 const CONTENT_TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".map": "application/json" }
 async function serveStatic(root: string, pathname: string): Promise<Response> {
-  const normalizedRoot = root.replace(/[\\/]+$/, "") + "/"
+  const rootAbs = resolve(root)
   const rel = pathname === "/" ? "index.html" : decodeURIComponent(pathname.slice(1))
-  const resolved = join(root, rel)
-  if (!resolved.replace(/[\\/]+$/, "").startsWith(normalizedRoot.replace(/[\\/]+$/, ""))) return json(403, { error: "forbidden" })
+  const resolved = resolve(root, rel)
+  if (resolved !== rootAbs && !resolved.startsWith(rootAbs + sep)) return json(403, { error: "forbidden" })
   const file = Bun.file(resolved)
   if (await file.exists()) {
     const ext = resolved.slice(resolved.lastIndexOf(".")).toLowerCase()
@@ -163,7 +166,7 @@ async function serveStatic(root: string, pathname: string): Promise<Response> {
   }
   // SPA fallback: unknown extension-less paths load the app shell.
   if (!rel.includes(".")) {
-    const index = Bun.file(join(root, "index.html"))
+    const index = Bun.file(join(rootAbs, "index.html"))
     if (await index.exists()) return new Response(index, { headers: { "content-type": CONTENT_TYPES[".html"]! } })
   }
   return json(404, { error: "not found" })
@@ -216,6 +219,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   const settings = config.settings
   const approvals = config.approvals
   const schedules = config.schedules
+  const memory = config.memory
   const apps = new Map<string, App>()
   /** Sessions this process created (directory-owned; unregistered on stop). */
   const owned = new Set<string>()
@@ -518,6 +522,23 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       }
 
       // --- client-facing surfaces (settings / models / approvals / usage / schedules) ---
+
+      // GET /v1/memory?q= — the client's memory browser.
+      if (method === "GET" && parts.length === 2 && parts[1] === "memory") {
+        if (!memory) return json(404, { error: "no memory store configured" })
+        const q = url.searchParams.get("q") ?? ""
+        const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? 50)))
+        const rows: MemoryRecord[] = await memory.search(q, limit)
+        return json(200, { memories: rows })
+      }
+
+      // DELETE /v1/memory/:id — remove one memory.
+      if (method === "DELETE" && parts.length === 3 && parts[1] === "memory") {
+        if (!memory) return json(404, { error: "no memory store configured" })
+        if (!memory.delete) return json(501, { error: "memory store does not support delete" })
+        await memory.delete(parts[2]!)
+        return json(200, { removed: true })
+      }
 
       // GET /v1/settings — effective settings, secrets redacted.
       if (method === "GET" && parts.length === 2 && parts[1] === "settings") {

@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite"
+import { mkdirSync } from "node:fs"
+import { dirname } from "node:path"
 import type { StoredEvent, UnknownRecord, AggregateType } from "@newhorse/schema"
 import type { EventStore } from "./store"
 
@@ -23,6 +25,8 @@ export class SqliteEventStore implements EventStore {
   }
 
   static open(path: string): SqliteEventStore {
+    // A fresh dataDir must not crash the store (first-run experience).
+    mkdirSync(dirname(path), { recursive: true })
     return new SqliteEventStore(new Database(path))
   }
 

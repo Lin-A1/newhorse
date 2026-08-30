@@ -1,4 +1,6 @@
 import { Database } from "bun:sqlite"
+import { mkdirSync } from "node:fs"
+import { dirname } from "node:path"
 import type { UnknownRecord } from "@newhorse/schema"
 import { cosine, type EmbeddingProvider } from "./embedding"
 import { blobToFloat32, createBruteForceIndex, createSqliteVecIndex, float32Blob, loadSqliteVec, type VectorIndex } from "./vector-index"
@@ -167,6 +169,8 @@ export class SqliteMemoryStore implements MemoryStore {
   #indexKey: string | undefined
 
   constructor(dbPath: string) {
+    // A fresh dataDir must not crash the store (first-run experience).
+    mkdirSync(dirname(dbPath), { recursive: true })
     this.#db = new Database(dbPath)
     this.#ready = this.#migrate()
   }

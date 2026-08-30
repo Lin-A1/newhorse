@@ -58,6 +58,7 @@ const handle = await createServer({
   // auto-denies unanswered ones after its timeout — fail-closed with a window.
   approvals,
   schedules,
+  memory: settings.memory.on ? memStore : undefined,
   ...(settings.registry ? { directory, advertiseUrl: settings.advertiseUrl } : {}),
   ...(settings.uiDir ? { uiDir: settings.uiDir } : {}),
   settings: {

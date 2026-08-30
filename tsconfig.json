@@ -37,5 +37,10 @@
         "./packages/sdk/src/index.ts"
       ]
     }
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "apps",
+    "**/node_modules"
+  ]
 }
