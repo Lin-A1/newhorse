@@ -446,3 +446,51 @@ describe("runtime app", () => {
     })).rejects.toThrow(/sessionId/)
   })
 })
+
+describe("command consumption + memory trigger (app)", () => {
+  it("runCommand resolves a registered slash command via the plugin seam", async () => {
+    const { PluginRegistry } = await import("@newhorse/plugin")
+    const pr = new PluginRegistry()
+    pr.register({ kind: "command", name: "plan", description: "Make a plan", run: async (args) => `plan for ${args.join(",")}` })
+    const app = await createApp({
+      provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m",
+      workspace: await mkdtemp(join(tmpdir(), "nh-cmd-")),
+      plugins: pr,
+      fetch: (async () => new Response("data: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } })) as never,
+    })
+    expect(await app.runCommand("/plan fix bug")).toBe("plan for fix,bug")
+    expect(await app.runCommand("/nope")).toBeUndefined()
+    expect(await app.runCommand("not a command")).toBeUndefined()
+  })
+
+  it("enabled memory extraction stores a durable memory after a prompt settles", async () => {
+    const { MemoryMemoryStore } = await import("@newhorse/memory")
+    const store = new MemoryMemoryStore()
+    // A pipe-backed extraction: the app's LLM returns a JSON atom.
+    const payload = [
+      "data: " + JSON.stringify({ choices: [{ delta: { role: "assistant", content: "ok" }, finish_reason: "stop" }] }) + "\n\n",
+      "data: [DONE]\n\n",
+    ].join("")
+    let call = 0
+    const app = await createApp({
+      provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m",
+      workspace: await mkdtemp(join(tmpdir(), "nh-memapp-")),
+      memoryStore: store,
+      memoryExtract: { enabled: true },
+      fetch: (async () => {
+        call++
+        // Turn 1 = the session prompt; later calls = extraction pipe.
+        if (call === 1) return new Response(payload, { status: 200, headers: { "content-type": "text/event-stream" } })
+        return new Response("data: " + JSON.stringify({ choices: [{ delta: { content: '[{"content":"user is from Shanghai","type":"fact","priority":60}]' }, finish_reason: "stop" }] }) + "\n\n", { status: 200, headers: { "content-type": "text/event-stream" } })
+      }) as never,
+    })
+    await app.prompt("Hi", "user")
+    // wait for the fire-and-forget extraction to land ($: extraction is async)
+    let stored = false
+    for (let i = 0; i < 50 && !stored; i++) {
+      await new Promise((r) => setTimeout(r, 10))
+      stored = (await store.search("Shanghai")).length > 0
+    }
+    expect(stored).toBe(true)
+  })
+})

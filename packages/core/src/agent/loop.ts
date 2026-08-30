@@ -93,14 +93,16 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     await failInterruptedTools(runtime.events, opts.sessionId, projected)
     const refreshed = await loadSession(runtime.events, opts.sessionId)
     // Compaction trigger (AGENTS.md goal #2): measure the VISIBLE (projected)
-    // history, not the full log. If it exceeds the char budget and NO boundary
-    // exists yet (fixed point — never re-compacts a session that is already
-    // bounded), fold the head once. A single giant message cannot be folded
-    // (that is the model's real token cost), but the trigger stops churning
-    // once a boundary exists, so it never re-packs the same tail every turn.
+    // history. When it exceeds the char budget, fold the head — the projection
+    // only drops what the SUMMARY MARKER already represents (seq <= boundary),
+    // so a later compaction simply folds the NEW head that has grown since the
+    // last boundary. This is a long-horizon session's escape hatch: it fires
+    // as often as needed (never re-folds the same tail, because the tail is
+    // what the projection keeps), so a session cannot outgrow the window after
+    // its first compaction.
     const storedForCompaction = await runtime.events.read(opts.sessionId)
-    const { messages: visibleCheck, boundary: existingBoundary } = projectCompacted(storedForCompaction)
-    if (opts.compactAuto !== false && existingBoundary < 0) {
+    const { messages: visibleCheck } = projectCompacted(storedForCompaction)
+    if (opts.compactAuto !== false) {
       const chars = visibleCheck.reduce((n, m) => n + JSON.stringify(m).length, 0)
       if (chars > (opts.compactThreshold ?? 80_000)) {
         await compactSession(runtime.events, opts.sessionId)

@@ -36,6 +36,13 @@ function parseJsonArray(text: string): unknown[] {
   }
 }
 
+/** Clamp a model-emitted priority into [0,100] (same interval as memory_write;
+ * a 500 would otherwise outrank every legitimate memory). */
+function clampPriority(n: number): number {
+  if (!Number.isFinite(n) || n < 0) return 50
+  return n > 100 ? 100 : n
+}
+
 /** Build the default memory pipeline over any LLM client. */
 export function createDefaultMemoryPipeline(client: LlmClient, model: string): MemoryPipeline {
   const ask = async (system: string, user: string): Promise<unknown[]> => {
@@ -63,7 +70,7 @@ export function createDefaultMemoryPipeline(client: LlmClient, model: string): M
         .map((it): ExtractedMemory => ({
           content: String(it.content ?? ""),
           type: (["persona", "episodic", "instruction", "fact"] as const).includes(it.type as never) ? (it.type as ExtractedMemory["type"]) : "fact",
-          priority: Number.isFinite(Number(it.priority)) ? Number(it.priority) : 50,
+          priority: clampPriority(Number(it.priority)),
           sourceIds: Array.isArray(it.sourceIds) ? it.sourceIds.map(String) : undefined,
         }))
         .filter((m) => m.content.length > 0)
@@ -80,7 +87,7 @@ export function createDefaultMemoryPipeline(client: LlmClient, model: string): M
             targetIds: Array.isArray(it.targetIds) ? it.targetIds.map(String) : undefined,
             mergedContent: typeof it.mergedContent === "string" ? it.mergedContent : undefined,
             mergedType: ["persona", "episodic", "instruction", "fact"].includes(String(it.mergedType)) ? (it.mergedType as ResetAction["mergedType"]) : undefined,
-            mergedPriority: Number.isFinite(Number(it.mergedPriority)) ? Number(it.mergedPriority) : undefined,
+            mergedPriority: Number.isFinite(Number(it.mergedPriority)) ? clampPriority(Number(it.mergedPriority)) : undefined,
           }
         })
     },
