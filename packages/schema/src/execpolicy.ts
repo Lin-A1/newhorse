@@ -31,7 +31,7 @@ export type ExecRule =
 /** An interactive approval request (command or path write). */
 export interface ApprovalRequest {
   readonly id: string
-  readonly kind: "command" | "path"
+  readonly kind: "command" | "path" | "mode"
   readonly target: string
   readonly decision: Decision
   readonly reason?: string

@@ -133,6 +133,13 @@ export interface App {
   readonly todos: () => Promise<TodoItem[]>
   /** Read the session's current goal + budget state (durable fold). */
   readonly goal: () => Promise<GoalState | null>
+  /** Read the session's current approval policy. */
+  readonly policy: () => "strict" | "trusted" | "readonly"
+  /**
+   * Change the approval policy (host/operator action). Durably recorded
+   * (Session.PolicyChanged) and effective from the next prompt.
+   */
+  readonly setPolicy: (policy: "strict" | "trusted" | "readonly") => Promise<void>
 }
 
 /** Structured outcome of a prompt run (a shell renders this, not a string). */
@@ -277,12 +284,54 @@ export async function createApp(config: AppConfig): Promise<App> {
   // Approval policy (permission level): readonly filters the model's tool
   // surface to sideEffects:false tools (declarative — no name blacklists);
   // trusted leaves the surface whole and short-circuits the floor below.
-  const approvalPolicy = config.approvalPolicy ?? "strict"
-  const effectiveTools = approvalPolicy === "readonly" ? agentTools.filter((t) => t.sideEffects === false) : agentTools
-  // resolveTool resolves against the EFFECTIVE surface — a model hallucinating
-  // a filtered (write) tool gets "unknown tool", never an execution.
-  const effectiveToolMap = new Map(effectiveTools.map((t) => [t.name, t]))
-  const agent: Agent = { id: "primary", model: config.model, tools: effectiveTools }
+  // Approval policy is DYNAMIC: the host may set it (app.setPolicy) and the
+  // model may request a change (request_mode tool) — so the tool surface and
+  // the floor are computed per-prompt from currentPolicy, never cached.
+  let currentPolicy: "strict" | "trusted" | "readonly" = config.approvalPolicy ?? "strict"
+  const applyPolicy = (tools: typeof agentTools, policy: "strict" | "trusted" | "readonly") =>
+    policy === "readonly" ? tools.filter((t) => t.sideEffects === false) : tools
+
+  // The LIVE tool surface of the running prompt (mutable in place): when the
+  // policy changes mid-drain (request_mode approved), the same array is
+  // refilled so the next turn's request sees the widened surface — agent.tools
+  // is captured once per drain by the loop, so in-place is the only way.
+  let liveSurface: Tool[] = []
+  // request_mode: the model's ONLY channel out of readonly/plan mode. It goes
+  // through the SAME onApprove gate the transport installed — approval is the
+  // host's decision, and only then does the policy actually change.
+  const requestModeTool: Tool = {
+    name: "request_mode",
+    sideEffects: false, // a request, not an execution — the gate decides
+    description: "Request a change of the session approval policy (only meaningful in readonly/plan mode). Args: { target: \"strict\" | \"trusted\", reason } — the host approves or denies; on approval the policy changes for subsequent turns.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        target: { type: "string", enum: ["strict", "trusted"] },
+        reason: { type: "string", description: "Why the plan is complete and execution mode is needed." },
+      },
+      required: ["target", "reason"],
+    },
+    execute: async (input: unknown) => {
+      const { target, reason } = (input ?? {}) as { target?: string; reason?: string }
+      if (target !== "strict" && target !== "trusted") return { error: 'target must be "strict" or "trusted"' }
+      if (!reason) return { error: "reason is required" }
+      const approved = config.onApprove
+        ? await config.onApprove({ id: crypto.randomUUID(), kind: "mode", target, decision: "prompt", reason })
+        : false // no gate installed → the host was never asked → deny
+      if (!approved) return { requested: target, granted: false, reason: "host denied the mode change" }
+      // Inline the policy change (by: "model-approved"): currentPolicy is a
+      // closure variable and the durable event records WHO changed it. The
+      // live surface is refilled IN PLACE so the next turn's request sees the
+      // widened tool set.
+      const from = currentPolicy
+      currentPolicy = target
+      liveSurface.length = 0
+      liveSurface.push(...agentTools)
+      await events.append(sessionId, "Session.PolicyChanged", { sessionId, from, to: target, by: "model-approved", ts: Date.now() })
+      return { requested: target, granted: true, policy: target }
+    },
+  }
+  const agent: Agent = { id: "primary", model: config.model, tools: agentTools }
 
   // Agent definitions (Phase 4): pulled from the plugin seam (list("agent")) —
   // name -> definition, consumed by DAG nodes and butler spawn via resolveAgent.
@@ -428,10 +477,15 @@ export async function createApp(config: AppConfig): Promise<App> {
       }) : undefined
       const caller: Initiator = effPrincipal === "user" ? { kind: "user" } : config.asButler ? { kind: "butler", sessionId } : { kind: "parent", sessionId }
       try {
+        // Per-prompt tool surface from the CURRENT policy (+ request_mode in
+        // readonly so the model can ask to leave plan mode).
+        liveSurface.length = 0
+        liveSurface.push(...applyPolicy(agentTools, currentPolicy), ...(currentPolicy === "readonly" ? [requestModeTool] : []))
+        const promptAgent: Agent = { ...agent, tools: liveSurface }
         const result = await runSession(runtime, {
-          agent,
+          agent: promptAgent,
           sessionId,
-          resolveTool: (name) => effectiveToolMap.get(name),
+          resolveTool: (name) => liveSurface.find((t) => t.name === name),
           onEvent: emit,
           signal: ctrl.signal,
           caller,
@@ -465,8 +519,8 @@ export async function createApp(config: AppConfig): Promise<App> {
               }
               return { state: log.some((e) => e.type === "Session.Created") ? "running" : "unknown" }
             },
-            execPolicy: approvalPolicy === "trusted" ? allowAllExecPolicy : execPolicy,
-          } : { registry, appendAudit, execPolicy: approvalPolicy === "trusted" ? allowAllExecPolicy : execPolicy },
+            execPolicy: currentPolicy === "trusted" ? allowAllExecPolicy : execPolicy,
+          } : { registry, appendAudit, execPolicy: currentPolicy === "trusted" ? allowAllExecPolicy : execPolicy },
         })
         // Post-turn memory extraction (opt-in, fire-and-forget): the default
         // pipe uses the app's own LLM client + model; runMemoryExtraction is
@@ -519,6 +573,15 @@ export async function createApp(config: AppConfig): Promise<App> {
     },
     async goal() {
       return currentGoal(await events.read(sessionId)) ?? null
+    },
+    policy() {
+      return currentPolicy
+    },
+    async setPolicy(policy) {
+      const from = currentPolicy
+      if (from === policy) return
+      currentPolicy = policy
+      await events.append(sessionId, "Session.PolicyChanged", { sessionId, from, to: policy, by: "host", ts: Date.now() })
     },
     async runCommand(text) {
       // Slash command (transport entry): "/name args". The seam is the plugin
