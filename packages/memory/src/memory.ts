@@ -159,8 +159,12 @@ export class SqliteMemoryStore implements MemoryStore {
   #vecLoadable: boolean | undefined
   /** Resolves when the vector index is (or is known not to be) built. */
   #vectorReady: Promise<void> = Promise.resolve()
-  /** Single-flight guard so concurrent first embeds build the index once. */
+  /** Single-flight guard so concurrent first embeds build the index once
+   *  (keyed by tag:dims — a build for a DIFFERENT key is awaited, never
+   *  adopted, so a mid-build tag switch cannot inherit a mismatched index). */
   #ensuring: Promise<void> | undefined
+  #ensuringKey: string | undefined
+  #indexKey: string | undefined
 
   constructor(dbPath: string) {
     this.#db = new Database(dbPath)
@@ -184,14 +188,18 @@ export class SqliteMemoryStore implements MemoryStore {
    */
   attachEmbedder(embedder: EmbeddingProvider, tag?: string, opts?: { vectorMode?: "auto" | "brute" | "off"; vectorIndex?: VectorIndex }): { backfill: (limit?: number) => Promise<number> } {
     const tagChanged = tag !== this.#embedderTag
+    const modeChanged = opts?.vectorMode !== undefined && opts.vectorMode !== this.#vectorMode
+    const injectedChanged = opts?.vectorIndex !== undefined && opts.vectorIndex !== this.#injectedIndex
     this.#embedder = embedder
     this.#embedderTag = tag
     if (opts?.vectorMode) this.#vectorMode = opts.vectorMode
     if (opts?.vectorIndex) this.#injectedIndex = opts.vectorIndex
-    // A model switch invalidates the derived index (rows of the old tag are
-    // not the new tag's rows; dims may differ) — rebuild from scratch.
-    if (tagChanged || opts?.vectorIndex || opts?.vectorMode) this.#vectorIndex = undefined
-    if (this.#vectorMode === "off") this.#vectorIndex = undefined
+    // Reset the derived index only on an ACTUAL change (a model switch may
+    // mean different dims; a new injection is a different index) — an
+    // unchanged re-attach must be free, since createApp re-attaches per
+    // session and a rebuild is O(memories).
+    if (tagChanged || modeChanged || injectedChanged) this.#vectorIndex = undefined
+    if (this.#vectorMode === "off" && !this.#injectedIndex) this.#vectorIndex = undefined
     this.#vectorReady = this.#initVectorIndex()
     const embedderRef = embedder
     return {
@@ -219,20 +227,26 @@ export class SqliteMemoryStore implements MemoryStore {
    *  known (a restart finds embedded rows; a fresh store defers to the first
    *  successful embed, which calls this via #indexUpsert). */
   async #initVectorIndex(): Promise<void> {
-    if (this.#vectorMode === "off") return
+    if (this.#vectorMode === "off" && !this.#injectedIndex) return
     await this.#ready
     const row = this.#db.query("SELECT embedding FROM memory WHERE embedding IS NOT NULL AND embedding_model = ? LIMIT 1").get(this.#embedderTag ?? null) as { embedding: Buffer } | null
-    if (!row) return
-    await this.#ensureVectorIndex(Math.floor(row.embedding.byteLength / 4))
+    if (!row && !this.#injectedIndex) return
+    const dims = row ? Math.floor(row.embedding.byteLength / 4) : 0
+    await this.#ensureVectorIndex(dims)
   }
 
   async #ensureVectorIndex(dims: number): Promise<void> {
-    if (this.#vectorIndex) return
-    if (this.#ensuring) return this.#ensuring
+    const key = `${this.#embedderTag ?? ""}:${dims}`
+    if (this.#vectorIndex && this.#indexKey === key) return
+    if (this.#ensuringKey === key && this.#ensuring) return this.#ensuring
+    if (this.#ensuring) await this.#ensuring.catch(() => {})
+    this.#ensuringKey = key
     this.#ensuring = this.#buildVectorIndex(dims).finally(() => {
       this.#ensuring = undefined
+      this.#ensuringKey = undefined
     })
     await this.#ensuring
+    this.#indexKey = key
   }
 
   async #buildVectorIndex(dims: number): Promise<void> {

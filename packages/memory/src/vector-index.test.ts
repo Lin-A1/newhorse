@@ -299,6 +299,35 @@ describe("SqliteMemoryStore vector modes (integration)", () => {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
     }
   })
+  it("an unchanged re-attach does NOT rebuild the index (cheap idempotence)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-mem-"))
+    try {
+      const upserts: string[] = []
+      const counting: VectorIndex = {
+        mode: "brute",
+        upsert: (id) => {
+          upserts.push(id)
+          return true
+        },
+        remove: () => {},
+        search: () => (upserts.length > 0 ? [{ id: upserts[upserts.length - 1]!, score: 1 }] : []),
+        size: () => upserts.length,
+      }
+      const store = new SqliteMemoryStore(join(dir, "m.db"))
+      store.attachEmbedder(fakeProvider, "fake-model", { vectorIndex: counting })
+      await store.write({ content: "the cat purrs loudly", type: "fact", priority: 50, sessionId: "s1" })
+      const afterWrite = upserts.length
+      expect(afterWrite).toBeGreaterThan(0)
+      // Same tag/mode/injection re-attach (the per-session createApp shape):
+      // the built index must be kept, not rebuilt (rebuild is O(memories)).
+      store.attachEmbedder(fakeProvider, "fake-model", { vectorIndex: counting })
+      await store.search("feline naps", 5, { sessionId: "s1" })
+      expect(upserts.length).toBe(afterWrite)
+      store.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
 })
 
 // Type-level guard: the seam must stay assignable from both implementations.
