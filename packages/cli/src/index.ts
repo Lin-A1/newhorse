@@ -48,6 +48,17 @@ export async function main(argv: string[]): Promise<void> {
     else if (event.type === "reasoning") process.stdout.write(`\u001b[2m${event.text}\u001b[0m`)
     else if (event.type === "error") process.stderr.write(`\u001b[31m${event.message}\u001b[0m\n`)
   })
+  // A slash-command line ("/name args") resolves against the plugin registry's
+  // command capabilities — the transport never interprets commands itself.
+  if (promptText.startsWith("/")) {
+    const output = await app.runCommand(promptText)
+    if (output === undefined) {
+      console.error(`\u001b[31munknown command: ${promptText.split(" ")[0]}\u001b[0m`)
+      return
+    }
+    console.log(typeof output === "string" ? output : JSON.stringify(output, null, 2))
+    return
+  }
   await app.prompt(promptText, "user")
   const history = await app.resume()
   console.log()

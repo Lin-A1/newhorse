@@ -47,20 +47,18 @@ export interface CommandCapability {
  */
 export type HookEvent =
   | "pre-tool-use"
-  | "post-tool-use"
-  | "user-prompt-submit"
   | "stop"
-  | "subagent-start"
-  | "subagent-stop"
   | (string & {})
 
+/**
+ * Whitelist of hook events the loop ACTUALLY fires. Deliberately narrowed to
+ * the consumed set — a whitelisted-but-never-fired event (post-tool-use,
+ * user-prompt-submit, subagent-start/stop) would register a hook that silently
+ * never runs. To add one: wire the loop's emission first, then list it here.
+ */
 export const HOOK_EVENTS: ReadonlySet<string> = new Set([
   "pre-tool-use",
-  "post-tool-use",
-  "user-prompt-submit",
   "stop",
-  "subagent-start",
-  "subagent-stop",
 ])
 
 export interface HookCapability {

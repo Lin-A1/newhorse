@@ -4,6 +4,8 @@ import { mkdir } from "node:fs/promises"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry, discoverPlugin } from "@newhorse/plugin"
 import type { MemoryStore } from "@newhorse/memory"
+import { runMemoryExtraction } from "@newhorse/memory"
+import { createDefaultMemoryPipeline } from "./memory-pipeline"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
 import { driveChildSession, readChildText } from "./session-manager"
@@ -58,6 +60,14 @@ export interface AppConfig {
    */
   readonly memoryStore?: MemoryStore
   /**
+   * Post-turn memory extraction (default pipe): when enabled AND a memoryStore
+   * is present, the session's latest user/assistant turns are extracted into
+   * durable memories after a prompt settles (fail-closed — a broken LLM is a
+   * no-op). The pipe uses the app's own LLM client + model. Default OFF (a
+   * LLM call per turn is a real cost; the caller must opt in).
+   */
+  readonly memoryExtract?: { readonly enabled?: boolean }
+  /**
    * Workspace context provider (pluggable seam). Default = AGENTS.md discovery
    * + compose (with the Workdir line). A caller can inject a custom provider to
    * override the ambient context (e.g. a narrower scope for a child session).
@@ -90,6 +100,10 @@ export interface App {
   /** Steer the running drain: admit a prompt that is promoted at the next safe
    * boundary of the in-flight run (no-op if the session is idle). */
   readonly steer: (text: string) => Promise<void>
+  /** Run a slash-command line ("/name arg1 arg2") against a plugin command
+   * capability (the seam's consumer). Returns the command's output, or undefined
+   * when the text is not a registered command. */
+  readonly runCommand: (text: string) => Promise<unknown | undefined>
 }
 
 /** Structured outcome of a prompt run (a shell renders this, not a string). */
@@ -365,6 +379,28 @@ export async function createApp(config: AppConfig): Promise<App> {
             execPolicy,
           } : { registry, appendAudit, execPolicy },
         })
+        // Post-turn memory extraction (opt-in, fire-and-forget): the default
+        // pipe uses the app's own LLM client + model; runMemoryExtraction is
+        // fail-closed, so a broken LLM is a no-op, never a failed turn.
+        const memStore = config.memoryStore
+        if (memStore && config.memoryExtract?.enabled) {
+          void (async () => {
+            try {
+              const session = Session.replay(await events.read(sessionId))
+              const recent = session.messages
+                .filter((m) => m.kind === "user" || m.kind === "assistant")
+                .slice(-30)
+                .map((m) => ({ role: m.kind === "user" ? "user" : "assistant", text: m.kind === "user" ? (m as { text: string }).text : (m as { content: { type?: string; text?: string }[] }).content.filter((p) => p.type === "text").map((p) => p.text!).join("\n") }))
+                .filter((m) => m.text.trim().length > 0)
+              if (recent.length > 0) {
+                const pipe = createDefaultMemoryPipeline(llm, config.model)
+                await runMemoryExtraction(pipe, memStore, { messages: recent, sessionId })
+              }
+            } catch (err) {
+              void err // best-effort; memory extraction must never poison the turn
+            }
+          })()
+        }
         return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
       } finally {
         if (current === ctrl) current = undefined
@@ -387,6 +423,19 @@ export async function createApp(config: AppConfig): Promise<App> {
       // Admitted as a steer: the running drain promotes it at the next safe
       // provider-turn boundary (admission inbox semantics, see specs §2.2).
       await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: "user" })
+    },
+    async runCommand(text) {
+      // Slash command (transport entry): "/name args". The seam is the plugin
+      // registry's command capabilities — never a type branch here.
+      const trimmed = text.trim()
+      if (!trimmed.startsWith("/")) return undefined
+      const space = trimmed.indexOf(" ")
+      const name = trimmed.slice(1, space === -1 ? undefined : space).trim()
+      const args = (space === -1 ? "" : trimmed.slice(space + 1).trim()).split(/\s+/).filter(Boolean)
+      if (!name) return undefined
+      const cmd = pluginRegistry?.get("command", name)
+      if (!cmd) return undefined
+      return cmd.run(args)
     },
   }
 
