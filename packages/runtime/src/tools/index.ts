@@ -1,4 +1,4 @@
-import type { Tool } from "@newhorse/core"
+import type { Tool, EventStore } from "@newhorse/core"
 import type { MemoryStore } from "@newhorse/memory"
 import { discoverSkills } from "@newhorse/plugin"
 import { createReadTool } from "./read"
@@ -9,6 +9,7 @@ import { createSearchTool } from "./search"
 import { createBashTool } from "./bash"
 import { createMemorySearchTool, createMemoryWriteTool } from "./memory"
 import { createSkillTool } from "./skill"
+import { createTodoWriteTool } from "./todo"
 
 export { createExecPolicy, createBuiltinExecPolicy, rulesFilePath, simpleHash } from "./execpolicy"
 
@@ -32,6 +33,9 @@ export interface BuiltinToolsOptions {
   /** Optional plugin/skills directory — a `skill` loader tool is exposed that
    *  discovers skills/{name}/SKILL.md (or flat {name}.md) lazily. */
   readonly skillsDir?: string
+  /** Event store for the todo tool (durable task list). Optional — no events,
+   *  no todo tool. */
+  readonly events?: EventStore
 }
 
 export function createBuiltinTools(opts: BuiltinToolsOptions): Tool[] {
@@ -49,6 +53,9 @@ export function createBuiltinTools(opts: BuiltinToolsOptions): Tool[] {
   }
   if (opts.skillsDir) {
     tools.push(createSkillTool(() => discoverSkills(opts.skillsDir!)))
+  }
+  if (opts.events) {
+    tools.push(createTodoWriteTool(opts.events))
   }
   return tools
 }
