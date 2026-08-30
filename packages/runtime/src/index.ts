@@ -10,3 +10,4 @@ export * from "./tools/path"
 // transport never imports core directly — dependency direction stays
 // runtime → core, but transport → runtime).
 export type { SessionRow, RegistryQuery, AuditEventRow } from "@newhorse/core"
+export * from "./config"
