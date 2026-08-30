@@ -120,6 +120,11 @@ export async function runMemoryExtraction(
           sourceIds: atom.sourceIds,
         })
         stored.push(rec)
+        // The stale target is superseded — remove it so it never competes in
+        // a future candidate pool or a memory_search result (append-only
+        // provenance lives in the store's own audit; a superseded fact must
+        // not resurface as current).
+        await store.delete?.(target.id)
         break
       }
     }

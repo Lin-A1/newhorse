@@ -41,6 +41,8 @@ export interface MemoryRecord extends MemoryEntry {
 export interface MemoryStore {
   readonly write: (entry: MemoryEntry) => Promise<MemoryRecord>
   readonly search: (query: string, limit?: number, isolation?: { sessionId?: string; agentId?: string; userId?: string }) => Promise<MemoryRecord[]>
+  /** Remove a memory by id (update/merge replaces: the stale atom is removed). */
+  readonly delete?: (id: string) => Promise<void>
   readonly close?: () => void
 }
 
@@ -51,6 +53,10 @@ export class MemoryMemoryStore implements MemoryStore {
     const rec: MemoryRecord = { ...entry, id: crypto.randomUUID(), createdAt: Date.now() }
     this.#rows.push(rec)
     return rec
+  }
+  async delete(id: string): Promise<void> {
+    const idx = this.#rows.findIndex((r) => r.id === id)
+    if (idx >= 0) this.#rows.splice(idx, 1)
   }
   async search(query: string, limit = 5, isolation?: { sessionId?: string; agentId?: string; userId?: string }): Promise<MemoryRecord[]> {
     const q = query.toLowerCase()
@@ -123,6 +129,11 @@ export class SqliteMemoryStore implements MemoryStore {
     const stmt = this.#db.query(`SELECT * FROM memory${where} ORDER BY priority DESC, created_at DESC LIMIT ?`)
     const rows = stmt.all(...params) as Record<string, unknown>[]
     return rows.map(migrateRow)
+  }
+
+  async delete(id: string): Promise<void> {
+    await this.#ready
+    this.#db.run("DELETE FROM memory WHERE id = ?", [id])
   }
 
   close(): void {

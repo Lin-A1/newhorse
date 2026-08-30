@@ -2,7 +2,7 @@ import type { LLMEvent, LLMRequest, SessionMessage, ContentPart, ToolCallPart } 
 import type { TurnRuntime, Agent, Tool, ToolCall, ToolResult, ToolCtx, Initiator } from "./runner"
 import { Session } from "../session/session"
 import { toLlmMessages } from "../session/messages"
-import { projectCompacted } from "./compaction"
+import { projectCompacted, compactSession } from "./compaction"
 import { denyAllExecPolicy } from "./execpolicy"
 
 /** Hard cap on steps per drain to guarantee termination. */
@@ -42,6 +42,10 @@ export interface RunOptions {
   readonly onEvent?: (event: LoopEvent) => void
   /** Optional hook seam (stop / pre-tool-use). Absent = no hooks. */
   readonly runHooks?: (event: HookEvent, input: unknown) => Promise<HookVerdict>
+  /** Auto-compaction: when the visible history chars exceed the threshold,
+   * fold the head once before the request (goal #2 long-horizon). Default on. */
+  readonly compactThreshold?: number
+  readonly compactAuto?: boolean
   /** Optional cancellation: when aborted, the drain stops between steps. */
   readonly signal?: AbortSignal
   /** Trusted caller injected into tool ctx (M2b). Defaults to parent of sessionId. */
@@ -88,6 +92,20 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     // the next request well-formed rather than feeding a malformed history.
     await failInterruptedTools(runtime.events, opts.sessionId, projected)
     const refreshed = await loadSession(runtime.events, opts.sessionId)
+    // Compaction trigger (AGENTS.md goal #2): before building the request, if
+    // the visible history exceeds the char budget, compact ONCE (fold the head
+    // into a summary marker + durable Session.Compacted boundary). The
+    // projection below then drops the folded head — the request window is
+    // actually bounded, the full log stays durable. Compacted only once per
+    // drain (a marker exists afterwards, so re-compaction is a no-op).
+    if (opts.compactAuto !== false) {
+      const full = await runtime.events.read(opts.sessionId)
+      const nonSystem = full.filter((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string } }).message?.kind !== "system")
+      const chars = nonSystem.reduce((n, e) => n + ((e.data as { message?: { text?: string; content?: unknown } }).message?.text?.length ?? JSON.stringify(e.data).length), 0)
+      if (chars > (opts.compactThreshold ?? 80_000)) {
+        await compactSession(runtime.events, opts.sessionId)
+      }
+    }
     // Compaction-aware projection: if a Session.Compacted boundary exists, the
     // folded head is DROPPED from the model's view (its summary marker stands
     // in) — this is what actually bounds the request window; the full log stays
