@@ -11,7 +11,8 @@
   "dependencies": {
     "@newhorse/runtime": "workspace:*",
     "@newhorse/schema": "workspace:*",
-    "@newhorse/llm": "workspace:*"
+    "@newhorse/llm": "workspace:*",
+    "@newhorse/memory": "workspace:*"
   },
   "bin": {
     "newhorse-server": "./src/main.ts"

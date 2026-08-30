@@ -1,0 +1,15 @@
+{
+  "name": "@newhorse/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "tauri": "tauri",
+    "build": "npm run build:web && npm run build:sidecar && tauri build",
+    "build:web": "cd ../web && npm run build",
+    "build:sidecar": "cd ../.. && bun build --compile --target=bun-windows-x64 packages/server/src/main.ts --outfile apps/desktop/src-tauri/binaries/newhorse-server-x86_64-pc-windows-msvc.exe",
+    "sync:ui": "npm run build:web && xcopy /E /Y ..\\web\\dist src-tauri\\web-dist\\"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  }
+}

@@ -79,8 +79,12 @@
     "packages/server": {
       "name": "@newhorse/server",
       "version": "0.0.0",
+      "bin": {
+        "newhorse-server": "./src/main.ts",
+      },
       "dependencies": {
         "@newhorse/llm": "workspace:*",
+        "@newhorse/memory": "workspace:*",
         "@newhorse/runtime": "workspace:*",
         "@newhorse/schema": "workspace:*",
       },
