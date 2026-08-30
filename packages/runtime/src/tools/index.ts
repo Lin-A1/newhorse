@@ -10,6 +10,7 @@ import { createBashTool } from "./bash"
 import { createMemorySearchTool, createMemoryWriteTool } from "./memory"
 import { createSkillTool } from "./skill"
 import { createTodoWriteTool } from "./todo"
+import { createGoalTools } from "./goal"
 
 export { createExecPolicy, createBuiltinExecPolicy, rulesFilePath, simpleHash } from "./execpolicy"
 
@@ -56,6 +57,7 @@ export function createBuiltinTools(opts: BuiltinToolsOptions): Tool[] {
   }
   if (opts.events) {
     tools.push(createTodoWriteTool(opts.events))
+    tools.push(...createGoalTools(opts.events))
   }
   return tools
 }

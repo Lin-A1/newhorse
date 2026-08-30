@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { MemoryEventStore, MemorySessionInput, SqliteEventStore, DAGError, foldDAG, type TurnRuntime, type Tool, type DAGSpec } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, SqliteEventStore, DAGError, foldDAG, currentTodos, type TurnRuntime, type Tool, type DAGSpec } from "@newhorse/core"
 import { runDag, createSlotStore, replayDag, resumeDag, resolveNodeModel, type DagDeps } from "./dag-runner"
 import type { LLMEvent, LLMRequest } from "@newhorse/schema"
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
@@ -564,4 +564,18 @@ describe("resolveNodeModel (cost-down, goal #3)", () => {
     const runtime: TurnRuntime = { events, inbox, llm: stubLlm() }
     await expect(resumeDag("nope", diamond, { events, inbox, runtime, tools: [], workspace: "G:/proj" })).rejects.toThrow(DAGError)
   })
+it("DAG ↔ todo projection: a todoSessionId sees the graph as its durable checklist", async () => {
+  const events = new MemoryEventStore()
+  const inbox = new MemorySessionInput(events)
+  const todoSession = "watcher-1"
+  await events.append(todoSession, "Session.Created", { id: todoSession, location: "/w", createdAt: Date.now() })
+  const llm = stubLlm()
+  const runtime: TurnRuntime = { events, inbox, llm }
+  await runDag(diamond, { events, inbox, runtime, tools: [], concurrency: 2, workspace: "G:/proj", todoSessionId: todoSession })
+  // Final projection: every node terminal.
+  const todos = currentTodos(await events.read(todoSession))
+  expect(todos.length).toBe(4)
+  expect(todos.every((t) => t.status === "completed")).toBe(true)
+  expect(todos[0]!.content).toContain("DAG node:")
+})
 })

@@ -100,6 +100,13 @@ export interface DagDeps {
    * store is rebuilt from NodeResolved outputs. `dagId` is REQUIRED here.
    */
   readonly resume?: { readonly dagId: string }
+  /**
+   * DAG ↔ todo projection (goal-layer integration): when set, the graph is
+   * projected into that session's durable todo list — all active nodes as
+   * `pending` when the run starts, terminal states when it ends — so a
+   * user/butler watching the session sees DAG progress as a checklist.
+   */
+  readonly todoSessionId?: string
 }
 
 export interface DagOutcome {
@@ -195,6 +202,16 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   let aborted = false
   let stopped = false
 
+  // DAG ↔ todo projection: declare the graph as the session's checklist.
+  const writeTodos = async (): Promise<void> => {
+    if (!deps.todoSessionId) return
+    const todos = Object.keys(topo.nodes)
+      .filter((nid) => topo.active.has(nid))
+      .map((nid) => ({ content: `DAG node: ${nid}`, status: (status[nid] === "succeeded" ? "completed" : status[nid] === "running" ? "in_progress" : status[nid] === "failed" || status[nid] === "aborted" ? "cancelled" : "pending") as "completed" | "in_progress" | "cancelled" | "pending" }))
+    await deps.events.append(deps.todoSessionId, "Session.TodoUpdated", { sessionId: deps.todoSessionId, todos })
+  }
+  await writeTodos()
+
   /** Abort the whole graph: stop claiming new nodes, abort in-flight, mark the
    * graph aborted. Mirrors spec §3.3 (abort-graph). */
   const abortGraph = async (): Promise<void> => {
@@ -285,9 +302,15 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
 
       // A cancelled run settles with finish="interrupted" (loop returns it, does
       // NOT throw). It must NOT be recorded as succeeded/NodeResolved nor write a
-      // slot — it becomes NodeAborted. Same for an abort that fired between the
-      // runSession return and this write.
+      // Unified task semantics (goal layer integration): the node's child
+      // session carries a durable Session.Settled, so wait_agent/followup_task
+      // track a DAG node EXACTLY like a spawn_agent child (queryTask folds the
+      // child log — no separate DAG-task vocabulary).
+      const settleChild = async (finish: string): Promise<void> => {
+        await deps.events.append(childSessionId, "Session.Settled", { sessionId: childSessionId, finish, needsContinuation: false })
+      }
       if (!driven.settled || stopped) {
+        await settleChild(driven.settled ? "error" : "interrupted")
         await emitAbort(id)
         return
       }
@@ -304,6 +327,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       // Persist the output INSIDE the event — a restart can rebuild the slot
       // store from the log (resumeDag) instead of seeing only the ref.
       slotStore.set(dagId, id, slotId, { output, outputRef })
+      await settleChild(driven.finish)
       await emit("DAG.NodeResolved", { nodeId: id, slotId, sessionId: childSessionId, outputRef, output })
     } catch (e) {
       // An aborted control flow surfaces as a cancellation (NodeAborted), not a
@@ -371,6 +395,8 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
 
   pump()
   await waitForTerminal(topo, status)
+  // Final todo projection: every node in its terminal state.
+  await writeTodos()
   // Flush cascade-skipped persists before returning so a replay rebuilds them.
   for (const skip of pendingSkips) {
     await emit("DAG.NodeSkipped", skip)
