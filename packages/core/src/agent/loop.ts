@@ -82,6 +82,16 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
       break
     }
 
+    // Step budget (opencode MAX_STEPS_PROMPT): when close to the cap, TELL the
+    // model in-band (a user message, never the system prefix — that would
+    // perturb the Anthropic cache anchor) so it winds up instead of hitting
+    // a hard wall it cannot see.
+    const remaining = MAX_STEPS - turns
+    if (remaining <= 5) {
+      const budgetNote = `[budget] ${remaining} step(s) left this run; wrap up your answer now.`
+      messages.push({ role: "user", content: [{ type: "text", text: budgetNote }] })
+    }
+
     const request: LLMRequest = {
       model: opts.agent.model,
       messages,
