@@ -127,3 +127,31 @@ function eventsThrowAfter(events: LLMEvent[], err: Error): AsyncIterable<LLMEven
     throw err
   })()
 }
+
+it("auto-compaction bounds the request once (no repeated re-pack) for a long history", async () => {
+  let request: LLMRequest | undefined
+  const { runtime, resolveTool } = makeRuntime({
+    id: "t",
+    stream: async (req) => {
+      request = req
+      return eventsOf([{ type: "text.delta", text: "final" }, { type: "step-finish", finish: "stop" }])
+    },
+  })
+  await runtime.events.append("s", "Session.Created", { id: "s", location: "/w", createdAt: Date.now() })
+  // Seed a long history (> 80k chars by a wide margin) so the trigger fires.
+  const big = "x".repeat(2000)
+  for (let i = 0; i < 60; i++) {
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "user", id: `u${i}`, seq: i * 2, text: big } })
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "assistant", id: `a${i}`, seq: i * 2 + 1, content: [{ type: "text", text: big }], model: "m" } })
+  }
+  await runtime.events.append("s", "Session.Prompted", { id: "p", sessionId: "s", prompt: "go", delivery: "steer", principal: "user", promotedSeq: 999 })
+  const result = await runSession(runtime, { sessionId: "s", agent, resolveTool, compactThreshold: 80_000 })
+  expect(result.finish).toBe("stop")
+  // The request is bounded: far fewer chars than the 60·2000·2 seed.
+  const seenChars = request ? request.messages.map((m) => JSON.stringify(m.content)).join("").length : 0
+  const seededChars = 60 * 2000 * 2
+  expect(seenChars).toBeLessThan(seededChars / 2)
+  // A boundary was written exactly once.
+  const boundaryCount = (await runtime.events.read("s")).filter((e) => e.type === "Session.Compacted").length
+  expect(boundaryCount).toBe(1)
+})

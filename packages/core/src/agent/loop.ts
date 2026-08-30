@@ -92,16 +92,16 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     // the next request well-formed rather than feeding a malformed history.
     await failInterruptedTools(runtime.events, opts.sessionId, projected)
     const refreshed = await loadSession(runtime.events, opts.sessionId)
-    // Compaction trigger (AGENTS.md goal #2): before building the request, if
-    // the visible history exceeds the char budget, compact ONCE (fold the head
-    // into a summary marker + durable Session.Compacted boundary). The
-    // projection below then drops the folded head — the request window is
-    // actually bounded, the full log stays durable. Compacted only once per
-    // drain (a marker exists afterwards, so re-compaction is a no-op).
-    if (opts.compactAuto !== false) {
-      const full = await runtime.events.read(opts.sessionId)
-      const nonSystem = full.filter((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string } }).message?.kind !== "system")
-      const chars = nonSystem.reduce((n, e) => n + ((e.data as { message?: { text?: string; content?: unknown } }).message?.text?.length ?? JSON.stringify(e.data).length), 0)
+    // Compaction trigger (AGENTS.md goal #2): measure the VISIBLE (projected)
+    // history, not the full log. If it exceeds the char budget and NO boundary
+    // exists yet (fixed point — never re-compacts a session that is already
+    // bounded), fold the head once. A single giant message cannot be folded
+    // (that is the model's real token cost), but the trigger stops churning
+    // once a boundary exists, so it never re-packs the same tail every turn.
+    const storedForCompaction = await runtime.events.read(opts.sessionId)
+    const { messages: visibleCheck, boundary: existingBoundary } = projectCompacted(storedForCompaction)
+    if (opts.compactAuto !== false && existingBoundary < 0) {
+      const chars = visibleCheck.reduce((n, m) => n + JSON.stringify(m).length, 0)
       if (chars > (opts.compactThreshold ?? 80_000)) {
         await compactSession(runtime.events, opts.sessionId)
       }
