@@ -252,3 +252,12 @@ A subagent can be a NAMED agent: identity (role/specialism), a RESTRICTIVE tool 
 - **body injection** (`session-manager`): the agent body is a second system message, idempotency owned by the module (`@newhorse-agent-role` marker — callers pass a bare body and cannot double-append on re-drive).
 - **Fail-loud**: an unknown agent name throws (a typo must not spawn a full-authority child with no body); `spawn_agent`'s description documents its `agent:`/`model:`/`prompt:` args so a model can discover them.
 - **execpolicy bootstrap** (closed a long-standing SHOULD-FIX): `createBuiltinExecPolicy` now wraps the approve gate — a user-approved command/path persists as a consented rule (read-modify-write merge, so consecutive approvals and pre-existing file rules are never lost; the in-memory policy picks it up on the next load).
+
+## 22. Plugin consumers, skill loader, memory extraction (gap closure)
+
+The plugin seam was "registered but unconsumed" (docs §17); the two highest-value consumers + the memory write-side are now real:
+
+- **Hook seam** (core loop): `RunOptions.runHooks?` — `stop` (a block re-injects a reason as a steer and continues — "loop until done") and `pre-tool-use` (a block throws a durable `isError` tool result; the model sees the denial). Hook errors fail-open to allow (a broken hook never corrupts settlement). Runtime wires it from `pluginRegistry.list("hook")` via `makeHookRunner`.
+- **Skill loader** (runtime/tools/skill.ts): the three-level disclosure made consumable — a `skill` tool returns the light catalog (name+desc), fetches a body on `load:true` (level 2), flags references (level 3); wired from `createBuiltinTools({ skillsDir })` and `AppConfig.pluginsDir`. Lazy — never eagerly loads.
+- **Memory extraction** (packages/memory/extract.ts): the write side of memory is now an LLM pipeline (`extractL1MemoNext` + `dedupMemories` → store|update|merge|skip), with existing candidates in the prompt (mem0 additive) and fail-closed (broken LLM = no-op; dedup failure = store-new-only). update/merge write a NEW record (append-only provenance).
+- **Honest scope**: the extraction TRIGGER (post-turn invocation with the prompt templates wired to the app's LLM) is a deliberate next slice — the engine + seam + tests are in place, but a turn does not yet auto-invoke it (a model can still call `memory_write`). Command consumption is transport-level (a slash-command shell entry), seam ready.
