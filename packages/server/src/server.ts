@@ -32,6 +32,8 @@ export interface ServerConfig {
   ) => Promise<AppConfig> | AppConfig
   /** Transport-injected approval gate (M4 execpolicy). Absent → fail-closed. */
   readonly onApprove?: (req: ApprovalRequest) => Promise<boolean>
+  /** Pluggable session routing (default: process-local Map). */
+  readonly sessionResolver?: SessionResolver
 }
 
 /** One session's create config (POST /v1/session body), transport DTO. */
@@ -46,17 +48,19 @@ export interface SessionCreateRequest {
   readonly tools?: ReadonlyArray<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>
 }
 
+/**
+ * Pluggable session resolver — consulted when a session id is NOT in the
+ * server's local map (a host may lazily re-attach sessions from disk, proxy
+ * to another node, etc.). Default: absent → local map only.
+ */
+export type SessionResolver = (sessionId: string) => Promise<App | undefined> | App | undefined
+
 export interface ServerHandle {
   /** Base URL to reach this server (e.g. http://127.0.0.1:3927). */
   readonly baseUrl: string
   /** Read a session (test/debug helper). */
   readonly appFor: (sessionId: string) => App | undefined
   readonly stop: () => Promise<void>
-}
-
-function requireApp(apps: Map<string, App>, sessionId: string): { app: App; error?: undefined } | { app: undefined; error: string } {
-  const app = apps.get(sessionId)
-  return app ? { app } : { app: undefined, error: `session "${sessionId}" not found` }
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
@@ -139,7 +143,20 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   const host = config.host ?? "127.0.0.1"
   const port = config.port ?? 3927
   const token = config.token
+  const sessionResolver = config.sessionResolver
   const apps = new Map<string, App>()
+  /** apps map first; on a miss, consult the pluggable resolver (a host may
+   *  lazily re-attach sessions from disk or proxy from another node). */
+  const findApp = async (sessionId: string): Promise<{ app: App; error?: undefined } | { app: undefined; error: string }> => {
+    const local = apps.get(sessionId)
+    if (local) return { app: local }
+    if (!sessionResolver) return { app: undefined, error: `session "${sessionId}" not found` }
+    // A host-provided resolver may lazily re-attach sessions (from disk, from
+    // another node, etc.) — cache the result to avoid repeated resolution.
+    const resolved = await sessionResolver(sessionId)
+    if (resolved) { apps.set(sessionId, resolved); return { app: resolved } }
+    return { app: undefined, error: `session "${sessionId}" not found` }
+  }
   const sessionConfig = config.sessionConfig
 
   /** Build (or return cached) an App for a session id. */
@@ -222,7 +239,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
 
       // POST /v1/session/:id/prompt
       if (method === "POST" && parts.length === 4 && parts[3] === "prompt") {
-        const found = requireApp(apps, parts[2]!)
+        const found = await findApp(parts[2]!)
         if (!found.app) return json(404, { error: found.error })
         const parsed = await readJsonOr400<{ text?: string; principal?: "user" | "butler" | "parent" }>(req)
         if ("error" in parsed) return json(400, parsed)
@@ -232,7 +249,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
 
       // POST /v1/session/:id/steer
       if (method === "POST" && parts.length === 4 && parts[3] === "steer") {
-        const found = requireApp(apps, parts[2]!)
+        const found = await findApp(parts[2]!)
         if (!found.app) return json(404, { error: found.error })
         const parsed = await readJsonOr400<{ text?: string }>(req)
         if ("error" in parsed) return json(400, parsed)
@@ -243,7 +260,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
 
       // POST /v1/session/:id/interrupt
       if (method === "POST" && parts.length === 4 && parts[3] === "interrupt") {
-        const found = requireApp(apps, parts[2]!)
+        const found = await findApp(parts[2]!)
         if (!found.app) return json(404, { error: found.error })
         found.app.interrupt()
         return json(200, { interrupted: true })
@@ -251,7 +268,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
 
       // GET /v1/session/:id
       if (method === "GET" && parts.length === 3) {
-        const found = requireApp(apps, parts[2]!)
+        const found = await findApp(parts[2]!)
         if (!found.app) return json(404, { error: found.error })
         // Session is serializable; its snapshot (messages/headSeq) is the API shape.
         const session = await found.app.resume()
@@ -280,7 +297,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
 
       // GET /v1/session/:id/events
       if (method === "GET" && parts.length === 4 && parts[3] === "events") {
-        const found = requireApp(apps, parts[2]!)
+        const found = await findApp(parts[2]!)
         if (!found.app) return json(404, { error: found.error })
         const events: StoredEvent[] = await found.app.events.read(parts[2]!)
         return json(200, events)

@@ -74,7 +74,17 @@ export interface AppConfig {
    * no-op). The pipe uses the app's own LLM client + model. Default OFF (a
    * LLM call per turn is a real cost; the caller must opt in).
    */
-  readonly memoryExtract?: { readonly enabled?: boolean }
+  readonly memoryExtract?: {
+    readonly enabled?: boolean
+    /**
+     * Extraction trigger seam (pluggable): decide whether to extract after
+     * this settled prompt. Default: every settled prompt. E.g. everyNth or
+     * content-based triggers slot here without touching the pipeline.
+     */
+    readonly shouldExtract?: (result: { readonly step: number; readonly finish: string }, sessionId: string) => boolean
+    /** How many recent user/assistant turns to feed the extractor (default 30). */
+    readonly recentCount?: number
+  }
   /**
    * Semantic memory (switchable): when enabled AND a memoryStore is present,
    * an EmbeddingProvider is attached to the store — writes embed their content
@@ -535,9 +545,10 @@ export async function createApp(config: AppConfig): Promise<App> {
                 .slice(-30)
                 .map((m) => ({ role: m.kind === "user" ? "user" : "assistant", text: m.kind === "user" ? (m as { text: string }).text : (m as { content: { type?: string; text?: string }[] }).content.filter((p) => p.type === "text").map((p) => p.text!).join("\n") }))
                 .filter((m) => m.text.trim().length > 0)
-              if (recent.length > 0) {
+              if (recent.length > 0 && (!config.memoryExtract?.shouldExtract || config.memoryExtract.shouldExtract({ step: result.step, finish: result.finish }, sessionId))) {
                 const pipe = createDefaultMemoryPipeline(llm, config.model)
-                await runMemoryExtraction(pipe, memStore, { messages: recent, sessionId })
+                const recentCount = config.memoryExtract?.recentCount ?? 30
+                await runMemoryExtraction(pipe, memStore, { messages: recent.slice(-recentCount), sessionId })
               }
             } catch (err) {
               void err // best-effort; memory extraction must never poison the turn

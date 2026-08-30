@@ -107,6 +107,8 @@ export interface DagDeps {
    * user/butler watching the session sees DAG progress as a checklist.
    */
   readonly todoSessionId?: string
+  /** Pluggable scheduling strategy (dispatch order + poll cadence). */
+  readonly scheduler?: DagScheduler
 }
 
 export interface DagOutcome {
@@ -118,6 +120,19 @@ export interface DagOutcome {
   readonly models: Record<string, string>
 }
 
+/**
+ * Pluggable scheduling strategy for the DAG dispatcher. The READY semantics
+ * (dependency-satisfied nodes) are the DAG's definition and are NOT pluggable —
+ * a scheduler only decides IN WHAT ORDER to dispatch ready nodes and how long
+ * to wait between terminal-state polls. Absent = declaration-order dispatch.
+ */
+export interface DagScheduler {
+  /** Reorder/filter the ready list before dispatch (default: declaration order). */
+  readonly prioritize?: (ready: readonly string[], status: Readonly<Record<string, NodeState>>) => readonly string[]
+  /** Terminal-state poll interval ms (default 5). */
+  readonly pollMs?: number
+}
+
 /** Run a declarative DAG. Returns after all nodes reach a terminal state. */
 export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> {
   const topo = validate(spec)
@@ -126,6 +141,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   const dagId = deps.resume?.dagId ?? crypto.randomUUID()
   const isResume = !!deps.resume
   const concurrency = deps.concurrency ?? 2
+  const scheduler = deps.scheduler
   // Workspace is the child's project root. Defaults to cwd for convenience
   // (a DAG usually runs in the same process/cwd as its parent); a caller that
   // wants a DIFFERENT workspace must pass it explicitly — never rely on the
@@ -391,7 +407,10 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
         pendingSkips.push({ nodeId: id, reason: "cascade" })
       }
     }
-    const ready = readyNodes(topo, status, settle)
+    const declared = readyNodes(topo, status, settle)
+    // A scheduler reorders/filters the ready list (e.g. priority, deadline) —
+    // the ready SEMANTICS (dependency-satisfied) stay in readyNodes.
+    const ready = scheduler?.prioritize ? scheduler.prioritize(declared, status) : declared
     // Count nodes already RUNNING (claimed by a prior pump but not yet settled)
     // toward the concurrency cap. Previously `inFlight` only counted nodes
     // claimed THIS pump call and reset to 0 each time, so a slow node still in
@@ -414,7 +433,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   }
 
   pump()
-  await waitForTerminal(topo, status)
+  await waitForTerminal(topo, status, scheduler?.pollMs)
   // Final todo projection: every node in its terminal state.
   await writeTodos()
   // Flush cascade-skipped persists before returning so a replay rebuilds them.
@@ -427,10 +446,10 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
 }
 
 /** Poll status until every node is terminal (succeeded/failed/skipped/aborted). */
-async function waitForTerminal(topology: Topology, status: Record<string, NodeState>): Promise<void> {
+async function waitForTerminal(topology: Topology, status: Record<string, NodeState>, pollMs = 5): Promise<void> {
   const terminal = (id: string) => status[id] === "succeeded" || status[id] === "failed" || status[id] === "skipped" || status[id] === "aborted"
   while (!Object.keys(topology.nodes).every(terminal)) {
-    await new Promise((r) => setTimeout(r, 5))
+    await new Promise((r) => setTimeout(r, pollMs))
   }
 }
 
