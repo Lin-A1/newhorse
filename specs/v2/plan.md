@@ -12,7 +12,7 @@
 
 ---
 
-## Phase 1 — Runtime server（优先）
+## Phase 1 — Runtime server（✅ 已完成 2026-08-29）
 
 **目标**：把 `createApp` 暴露成 transport-无关的 HTTP + SSE 边界，shells（CLI/TUI/desktop/SDK）只消费它。
 
@@ -35,7 +35,7 @@
 
 ---
 
-## Phase 2 — 真子会话基座（"大脑"前置，先于编排；紧跟 Phase 1）
+## Phase 2 — 真子会话基座（✅ 已完成 2026-08-30）
 
 **为什么在 Phase 1 后**：Phase 1 先把 `createApp` 暴露成 server 边界（多会话/远程可用），Phase 2 则补上编排的真正地基——否则 server 只是单会话远程 prompt，子代理仍是僵尸。排序：先有外壳边界，再让子代理活过来。
 
@@ -53,7 +53,7 @@
 
 ---
 
-## Phase 3 — 模型编排工具 + DAG 子命令（同一基座）
+## Phase 3 — 模型编排工具 + DAG 子命令（✅ 大部完成：spawn 真驱动/回填/followup/wait/DAG resume/CLI dag；send/interrupt 进程内版已真）
 
 **目标**：模型是调度器（`spawn_agent`/`send_message`/`followup_task`/`wait`），声明式 DAG 是批/planned 形态。
 
@@ -68,7 +68,7 @@
 
 ---
 
-## Phase 4 — 记忆 + 技能 + 成本可见
+## Phase 4 — 记忆 + 技能 + 成本可见（✅ 大部完成：todo/goal/技能 loader/hook 消费/usage 持久化/语义记忆可开关；记忆提取触发已接）
 
 **目标**：长时运行不撞墙；可复用记忆；技能三级披露真正可用；成本可见。
 
@@ -85,7 +85,7 @@
 
 ---
 
-## Phase 5 — 本地 compaction + SessionManager（深水区）
+## Phase 5 — 本地 compaction + SessionManager（◐ 进程内 SessionManager 已真；compaction 双层已做、LLM 摘要 seam 已接线待注入真实摘要器；跨进程投递未做）
 
 **目标**：长时运行的诚实边界；跨会话效果投递。
 

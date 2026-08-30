@@ -261,3 +261,21 @@ The plugin seam was "registered but unconsumed" (docs §17); the two highest-val
 - **Skill loader** (runtime/tools/skill.ts): the three-level disclosure made consumable — a `skill` tool returns the light catalog (name+desc), fetches a body on `load:true` (level 2), flags references (level 3); wired from `createBuiltinTools({ skillsDir })` and `AppConfig.pluginsDir`. Lazy — never eagerly loads.
 - **Memory extraction** (packages/memory/extract.ts): the write side of memory is now an LLM pipeline (`extractL1MemoNext` + `dedupMemories` → store|update|merge|skip), with existing candidates in the prompt (mem0 additive) and fail-closed (broken LLM = no-op; dedup failure = store-new-only). update/merge write a NEW record (append-only provenance).
 - **Honest scope**: the extraction TRIGGER (post-turn invocation with the prompt templates wired to the app's LLM) is a deliberate next slice — the engine + seam + tests are in place, but a turn does not yet auto-invoke it (a model can still call `memory_write`). Command consumption is transport-level (a slash-command shell entry), seam ready.
+
+## 23. Unified task system — goal × DAG × todo × task (hierarchy)
+
+The four task mechanisms form one hierarchy; each layer owns a different question:
+
+- **goal** (`core/agent/goal.ts` + `tools/goal.ts`): the WHY — `Session.GoalUpdated {objective, status: active|paused|blocked|complete, tokenBudget}` (codex ThreadGoal pattern, but DURABLE). `tokens_used` aggregates the usage already persisted in `Session.StepEnded` — budget enforcement is replay-safe (compaction never prunes StepEnded). Tools: `goal_write` / `goal_read` (tokensRemaining + overBudget computed).
+- **DAG** (§12): the structured plan — now projected INTO the todo layer via `DagDeps.todoSessionId`: run start writes active nodes as `pending` todos, the end writes terminal states (`skipped/failed/aborted → cancelled`). Two writes per run, never per-event spam.
+- **todo** (§ todo): the model's in-session self-organization — `Session.TodoUpdated` full-snapshot events (opencode shape; LAST event wins), `todo_write` full-replace tool echoing the normalized list; at most ONE in_progress; subagent isolation free (each session folds its own aggregate).
+- **task** (delegation): `spawn_agent` children AND DAG nodes now share ONE semantics — every DAG terminal path (success / !settled / **catch: retry-exhausted & NodeFailed**) appends `Session.Settled` to the child session, so `wait_agent`/`followup_task` track a DAG node exactly like a spawned child (queryTask folds the child log; no separate DAG-task vocabulary). The catch path was a review-found MUST-FIX: a thrown error (provider failure, missing slot) previously left the child "running" forever.
+- **Honest scope**: goal budget ENFORCEMENT (auto-pause on over-budget) is not implemented — `overBudget` is visibility only; the claude-code-style user-role tail projection for todos is deferred (the tool echo is the baseline).
+
+## 24. Switchable semantic memory — EmbeddingProvider + RRF (Phase 4)
+
+- **Seam** (`memory/embedding.ts`): `EmbeddingProvider.embed(text, purpose) → number[] | null` — fail-soft (null on ANY failure, never throws; the write stores metadata-only = deferred embedding). Two assemblies: openai-compatible (`/embeddings {model,input}`) and MiniMax (`{model,texts,type:db|query}` asymmetric — probed live, 1536 dims via embo-01). `cosine()` is dimension-mismatch-safe.
+- **Storage**: SqliteMemoryStore + MemoryMemoryStore both accept `attachEmbedder(embedder, tag)` — writes embed into a Float32 BLOB column tagged with `embedding_model`; **the cosine path matches ONLY rows of the same tag**, and backfill re-embeds rows tagged by a different model — a model switch re-embeds instead of silently mixing vectors.
+- **Retrieval**: RRF fusion (k=60) of BM25 rank × cosine rank; a single path degrades to itself; no embedder = keyword-only FTS (the always-present floor).
+- **Switching**: `AppConfig.memoryVector { enabled, embedding }` (default OFF) + CLI `--memory-vector`. Silent-failure hardening: one-time stderr notice on first embed failure; a custom store without attachEmbedder warns instead of crashing.
+- **Real-API evidence**: a query with ZERO keyword overlap ("What coding language does the user like?") retrieves the TypeScript memory via MiniMax embo-01; backfill idempotent.

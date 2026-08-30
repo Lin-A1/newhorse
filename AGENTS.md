@@ -189,14 +189,14 @@ const events = db.query("SELECT ... FROM event WHERE aggregate_id = ?")
 
 ## Current Direction
 
-> 操作化的阶段计划：`specs/v2/plan.md`（Phase 0-5，含每阶段对到哪一差异点）。以下为方向摘要。
+> 操作化的阶段计划：`specs/v2/plan.md`。机制级锚点：`docs/architecture-map.md`（全机制地图 + 不变量 + 漂移哨兵——实现新东西前先对照它）。以下为方向状态（2026-08-30）。
 
-**Phase 1 — runtime server is the priority, not the shell.** The runtime domain assembly (`createApp`) is transport-agnostic and complete; CLI/TUI/desktop are thin transports. The next build block is a **runtime server** (HTTP + SSE) exposing `createApp` over a stable boundary: `prompt` / `steer` / `resume` / `listSessions` / `audit` / `interrupt` / `onEvent` (streamed) / future `spawn`. Shells (CLI, TUI) consume it; they hold no domain logic.
+**Phase 1-3 — DONE.** Runtime server（HTTP/SSE + token auth + 已知 Bun 1.3.14 断连 panic 记录在案）；真子会话基座（workspace 继承 + 可插拔 context provider + driveChildSession 统一驱动）；编排闭环（spawn_agent 真驱动 + 结果回填 + followup/wait + M4 进程内 SessionManager interrupt/send 真投递 + DAG resumeDag）。
 
-**Phase 2 — the "brain": a real child-session base.** Before any orchestration (model-driven or DAG), a spawned child must be a *live, driven session*: it inherits the parent's workspace + AGENTS.md context (`location` must be filled, never `""`), is driven by the turn loop, and its result is promoted back to the parent. Only then is `spawn_agent` / `followup_task` / DAG nodes meaningful.
+**Phase 4 — DONE（语义记忆为可开关）.** todo/goal 统一任务体系（goal×DAG×todo×task 四层：goal 预算=usage 聚合、DAG↔todo 投影、DAG 节点统一 Settled 语义）、todo_write durable 清单、语义记忆（EmbeddingProvider seam + FTS5×cosine RRF + model tag 防混 + deferred embedding）、skill loader、hook 消费（stop/pre-tool-use）、command 消费（runCommand + CLI slash）、agent roles（codex overlay 限制性叠加）。
 
-**Phase 3 — orchestration on that base:** the model-driven tools (`spawn_agent` / `send_message` / `followup_task` / `wait`) are the main entrance; the declarative DAG is the batch/planned form over the same base. Both share the child-session foundation; DAG remains a core differentiator (draw the graph forward), but it is not the only scheduler.
+**Phase 5 — PARTIAL.** compaction 双层（本地折叠 + LLM 摘要 seam 已接线、真实摘要器注入待做）；M4 SessionManager 进程内版完成，跨进程投递未做。
 
-**Phase 4 — memory + skills + cost visibility:** the memory seam (events + message kinds) and the `skill` loader tool are reserved in the schema now, implemented as tools + a pluggable index later; step usage is persisted and cost-down choices become visible.
+**巩固优先于扩张**：机制地图（architecture-map.md）与五支柱是漂移哨兵——新机制必须回答"服务哪条支柱、衔接哪个 seam、违反哪条不变量、降级档位是什么"。当前巩固清单：docs 同步（持续）、`compactSummarize` 注入真实摘要器、transport 暴露 memory 配置、Bun 升级后重开 server 断连测试。新大块（SDK / 向量化深化 / UI）开跑前先过漂移哨兵。
 
 Treat each phase as a waypoint, not the target. The target stays the five differentiators above; the milestone shape changes as the engine becomes usable, not as the design drifts.
