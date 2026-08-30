@@ -152,14 +152,20 @@ if (!skipLlm) {  const { mkdtemp, rm, writeFile, mkdir } = await import("node:fs
 }
 
 // S6 (optional): second protocol — if --openaiCompatUrl is given, run S1 through
-// the openai-compatible protocol to prove the four-axis Route swap.
+// the openai-compatible protocol to prove the four-axis Route swap. The URL is
+// the bare origin (the protocol appends /v1/chat/completions). A bad optional
+// endpoint reports FAIL honestly — it must never crash the whole smoke run.
 if (!skipLlm) {  const compatUrl = arg("openaiCompatUrl", "")
   const compatKey = process.env.OPENAI_API_KEY ?? apiKey
   const compatModel = arg("openaiCompatModel", "")
   if (compatUrl && compatModel) {
-    const app = await createApp({ provider: { kind: "openai-compatible", baseUrl: compatUrl, apiKey: compatKey }, model: compatModel })
-    const { result, texts, errors } = await run(app, "Reply with exactly: SMOKE6")
-    ok("S6 openai-compatible", result.finish === "stop" && /SMOKE6/.test(texts.join("")) && errors.length === 0, `finish=${result.finish}`)
+    try {
+      const app = await createApp({ provider: { kind: "openai-compatible", baseUrl: compatUrl, apiKey: compatKey }, model: compatModel })
+      const { result, texts, errors } = await run(app, "Reply with exactly: SMOKE6")
+      ok("S6 openai-compatible", result.finish === "stop" && /SMOKE6/.test(texts.join("")) && errors.length === 0, `finish=${result.finish}`)
+    } catch (e) {
+      ok("S6 openai-compatible", false, e instanceof Error ? e.message.slice(0, 80) : String(e).slice(0, 80))
+    }
   } else {
     results.push("SKIP S6 openai-compatible (pass --openaiCompatUrl and --openaiCompatModel)")
   }
