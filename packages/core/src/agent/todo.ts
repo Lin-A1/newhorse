@@ -41,7 +41,7 @@ export function validateTodoWrite(todos: unknown): { items: TodoItem[] } | { err
     if (!raw || typeof raw !== "object") return { error: "each todo must be an object" }
     const t = raw as { content?: unknown; status?: unknown; activeForm?: unknown }
     if (typeof t.content !== "string" || t.content.trim().length === 0) return { error: "todo.content is required" }
-    if (t.content.length > 200) return { error: "todo.content too long (max 200 chars)" }
+    if (t.content.trim().length > 200) return { error: "todo.content too long (max 200 chars)" }
     const status = t.status as TodoStatus
     if (!["pending", "in_progress", "completed", "cancelled"].includes(status)) {
       return { error: `todo.status must be pending|in_progress|completed|cancelled (got "${String(t.status)}")` }

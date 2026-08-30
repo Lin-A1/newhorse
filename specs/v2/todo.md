@@ -1,6 +1,6 @@
 # Todo (model-maintained task list) 设计 Spec
 
-> 状态：**规划（2026-08-30）** — 目标：给模型一个**持久的、事件溯源的**任务清单工具（todo/plan 模式），让长任务自我组织。
+> 状态：**已实现（2026-08-30）** — 事件 + 折叠/校验 + 工具 + createApp/DAG/CLI 接线全部落地（尾部 user-role 投影为可选增强，诚实延后）。 — 目标：给模型一个**持久的、事件溯源的**任务清单工具（todo/plan 模式），让长任务自我组织。
 > 借鉴（标注出处）：**opencode** `todowrite`（全量替换 + 事件溯源 `todo.updated` + subagent 默认 deny——与本引擎 log-first 原则最契合）；**claude code** `activeForm`（spinner UX）+ `<system-reminder>` 注入与"仅一个 in_progress"规则；**codex** `update_plan`（全量替换 + 至多一个 in_progress；其**非持久**设计被明确拒绝——违反 log-first）。
 
 ---

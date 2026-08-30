@@ -241,7 +241,7 @@ async function runDagCli(file: string): Promise<void> {
   const spec = (await import("node:fs/promises")).readFile(file, "utf8").then((s) => JSON.parse(s))
   const dagSpec = await spec as import("@newhorse/core").DAGSpec
   const workspace = process.cwd()
-  const tools = createBuiltinTools({ workspace })
+  const tools = createBuiltinTools({ workspace, events })
   // Provider for the DAG: env-first (same seams as the shell): NEWHORSE_PROVIDER
   // / NEWHORSE_BASE_URL / NEWHORSE_API_KEY, else the standard keys/defaults.
   const kind = (process.env.NEWHORSE_PROVIDER ?? "openai") as AdapterConfig["kind"]

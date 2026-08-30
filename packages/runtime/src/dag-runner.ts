@@ -129,7 +129,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   // Subagent nodes need hands: when the caller injects no tools, we default to
   // the builtin toolset so a research/explore node is not limited to bare model
   // answers (M3.5 §2.5 — cost-down is only meaningful if nodes can actually act).
-  const tools = deps.tools.length > 0 ? deps.tools : createBuiltinTools({ workspace })
+  const tools = deps.tools.length > 0 ? deps.tools : createBuiltinTools({ workspace, events: deps.events })
 
   // DAG nodes must actually be able to ACT (goal #3): cost-down is only
   // meaningful if a cheap-model subagent can read/write inside the workspace.
