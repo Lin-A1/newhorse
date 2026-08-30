@@ -139,7 +139,13 @@ export function createSqliteVecIndex(db: Database, dims: number, table = "memory
         return []
       }
     },
-    size: () => (db.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n,
+    size: () => {
+      try {
+        return (db.query(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n
+      } catch {
+        return 0
+      }
+    },
   }
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import { Database } from "bun:sqlite"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -135,7 +136,78 @@ describe("cross-process SessionManager (two servers, one directory)", () => {
       await rm(tmp, { recursive: true, force: true }).catch(() => {})
     }
   })
+
+  it("a slow-but-alive owner is NOT swept on proxy timeout (health-probe gate)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "nh-xp-"))
+    try {
+      const dir = createSqliteSessionDirectory(join(tmp, "registry.db"))
+      const b = await startServer(dir, doneFetcher())
+      // An owner that answers /v1/health quickly but stalls on the operation.
+      const slow = Bun.serve({
+        port: 0,
+        fetch: async (req) => {
+          if (new URL(req.url).pathname.endsWith("/health")) return json(200, { status: "ok" })
+          await new Promise((r) => setTimeout(r, 6000)) // proxyJson times out at 5s
+          return json(200, { ok: true })
+        },
+      })
+      dir.register("slow-owned", `http://127.0.0.1:${slow.port}`)
+      const res = await fetch(`${b.baseUrl}/v1/session/slow-owned/interrupt`, { method: "POST" })
+      expect(res.status).toBe(502)
+      // The owner is alive (health probe passed) — its row MUST survive.
+      expect(dir.lookup("slow-owned")?.endpoint).toBe(`http://127.0.0.1:${slow.port}`)
+      await b.stop()
+      slow.stop(true)
+    } finally {
+      await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    }
+  }, 15_000)
+
+  it("a local hit re-asserts ownership after a row was lost (owner-only self-heal)", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "nh-xp-"))
+    try {
+      const dir = createSqliteSessionDirectory(join(tmp, "registry.db"))
+      const a = await startServer(dir, doneFetcher())
+      await fetch(`${a.baseUrl}/v1/session`, { method: "POST", body: JSON.stringify({ sessionId: "held" }) })
+      // Simulate a wrongful sweep (a blip deleted the live owner's row).
+      dir.unregister("held")
+      expect(dir.lookup("held")).toBeUndefined()
+      // A create (or attach) on the holder restores the row.
+      const again = await fetch(`${a.baseUrl}/v1/session`, { method: "POST", body: JSON.stringify({ sessionId: "held" }) })
+      expect(again.status).toBe(201)
+      expect(dir.lookup("held")?.endpoint).toBe(a.baseUrl)
+      await a.stop()
+    } finally {
+      await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  it("a STALE foreign row is legitimate takeover; a FRESH one is refused", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "nh-xp-"))
+    try {
+      const dir = createSqliteSessionDirectory(join(tmp, "registry.db"))
+      const a = await startServer(dir, doneFetcher())
+      // FRESH foreign row (heartbeat just now) → 409, no local app created.
+      dir.register("contested", "http://127.0.0.1:59991")
+      const fresh = await fetch(`${a.baseUrl}/v1/session`, { method: "POST", body: JSON.stringify({ sessionId: "contested" }) })
+      expect(fresh.status).toBe(409)
+      // Same row, but stale (owner crashed) → takeover succeeds, row moves here.
+      const db = new Database(join(tmp, "registry.db"))
+      db.run("UPDATE session_live SET heartbeat_at = ? WHERE session_id = 'contested'", [Date.now() - 60_000])
+      db.close()
+      const takeover = await fetch(`${a.baseUrl}/v1/session`, { method: "POST", body: JSON.stringify({ sessionId: "contested" }) })
+      expect(takeover.status).toBe(201)
+      expect(dir.lookup("contested")?.endpoint).toBe(a.baseUrl)
+      await a.stop()
+    } finally {
+      await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    }
+  })
 })
+
+function json(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+}
 
 // Re-attach sanity: the resolver still works when a directory is absent.
 describe("server SessionResolver (pluggable session routing)", () => {

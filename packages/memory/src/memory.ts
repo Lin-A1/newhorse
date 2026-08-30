@@ -51,9 +51,10 @@ export interface MemoryStore {
    * searches fuse BM25 + cosine via RRF. When not attached, search is
    * keyword-only. `backfill` embeds existing rows that lack a vector.
    * `opts.vectorMode` picks the index: auto (vec0 when loadable, else
-   * in-memory scan) | brute | off (legacy per-query scan).
+   * in-memory scan) | brute | off (legacy per-query scan); `opts.vectorIndex`
+   * injects a host's own index (wins over vectorMode).
    */
-  readonly attachEmbedder?: (embedder: EmbeddingProvider, tag?: string, opts?: { vectorMode?: "auto" | "brute" | "off" }) => { backfill: (limit?: number) => Promise<number> }
+  readonly attachEmbedder?: (embedder: EmbeddingProvider, tag?: string, opts?: { vectorMode?: "auto" | "brute" | "off"; vectorIndex?: VectorIndex }) => { backfill: (limit?: number) => Promise<number> }
   readonly close?: () => void
 }
 
@@ -153,10 +154,13 @@ export class SqliteMemoryStore implements MemoryStore {
   #embedder: EmbeddingProvider | undefined
   #embedderTag: string | undefined
   #vectorIndex: VectorIndex | undefined
-  #vectorMode: "auto" | "brute" | "off" = "off"
+  #injectedIndex: VectorIndex | undefined
+  #vectorMode: "auto" | "brute" | "off" = "auto"
   #vecLoadable: boolean | undefined
   /** Resolves when the vector index is (or is known not to be) built. */
   #vectorReady: Promise<void> = Promise.resolve()
+  /** Single-flight guard so concurrent first embeds build the index once. */
+  #ensuring: Promise<void> | undefined
 
   constructor(dbPath: string) {
     this.#db = new Database(dbPath)
@@ -169,16 +173,25 @@ export class SqliteMemoryStore implements MemoryStore {
    * provider stores metadata-only) and searches fuse BM25 + cosine via RRF.
    * backfill embeds existing rows lacking a vector (idempotent, budgeted).
    *
-   * `vectorMode` picks the index behind cosine: "auto" (default) tries the
-   * sqlite-vec extension and falls back to the in-memory brute index; "brute"
-   * forces the in-memory index; "off" keeps the legacy per-query scan (kill
-   * switch). Index build is async — searches await it and degrade to FTS
-   * until it lands.
+   * `opts.vectorMode` picks the index behind cosine: "auto" (default) tries
+   * the sqlite-vec extension and falls back to the in-memory brute index;
+   * "brute" forces the in-memory index; "off" disengages indexing entirely
+   * (legacy per-query scan, kill switch). `opts.vectorIndex` injects a host's
+   * own index (hnsw, an external vector DB) — it wins over vectorMode. A tag
+   * CHANGE resets the index so the new model rebuilds under its own tag (a
+   * different model may also mean different dims). Index build is async and
+   * single-flight — searches await it and degrade to FTS until it lands.
    */
-  attachEmbedder(embedder: EmbeddingProvider, tag?: string, opts?: { vectorMode?: "auto" | "brute" | "off" }): { backfill: (limit?: number) => Promise<number> } {
+  attachEmbedder(embedder: EmbeddingProvider, tag?: string, opts?: { vectorMode?: "auto" | "brute" | "off"; vectorIndex?: VectorIndex }): { backfill: (limit?: number) => Promise<number> } {
+    const tagChanged = tag !== this.#embedderTag
     this.#embedder = embedder
     this.#embedderTag = tag
-    this.#vectorMode = opts?.vectorMode ?? "auto"
+    if (opts?.vectorMode) this.#vectorMode = opts.vectorMode
+    if (opts?.vectorIndex) this.#injectedIndex = opts.vectorIndex
+    // A model switch invalidates the derived index (rows of the old tag are
+    // not the new tag's rows; dims may differ) — rebuild from scratch.
+    if (tagChanged || opts?.vectorIndex || opts?.vectorMode) this.#vectorIndex = undefined
+    if (this.#vectorMode === "off") this.#vectorIndex = undefined
     this.#vectorReady = this.#initVectorIndex()
     const embedderRef = embedder
     return {
@@ -187,13 +200,13 @@ export class SqliteMemoryStore implements MemoryStore {
         await this.#vectorReady
         // Rows missing a vector OR tagged by a DIFFERENT model (a model switch
         // re-embeds under the current tag instead of mixing vectors).
-        const pending = this.#db.query("SELECT id, content FROM memory WHERE embedding IS NULL OR embedding_model IS NOT ? LIMIT ?").all(this.#embedderTag ?? null, limit) as { id: string; content: string }[]
+        const pending = this.#db.query("SELECT id, content, session_id FROM memory WHERE embedding IS NULL OR embedding_model IS NOT ? LIMIT ?").all(this.#embedderTag ?? null, limit) as { id: string; content: string; session_id: string | null }[]
         let n = 0
         for (const row of pending) {
           const v = await embedderRef.embed(row.content, "db")
           if (v) {
             this.#db.run("UPDATE memory SET embedding = ?, embedding_model = ? WHERE id = ?", [float32Blob(v), this.#embedderTag ?? null, row.id])
-            this.#vectorIndex?.upsert(row.id, new Float32Array(v), undefined)
+            this.#vectorIndex?.upsert(row.id, new Float32Array(v), row.session_id ?? undefined)
             n++
           }
         }
@@ -215,7 +228,17 @@ export class SqliteMemoryStore implements MemoryStore {
 
   async #ensureVectorIndex(dims: number): Promise<void> {
     if (this.#vectorIndex) return
-    if (this.#vectorMode === "brute") {
+    if (this.#ensuring) return this.#ensuring
+    this.#ensuring = this.#buildVectorIndex(dims).finally(() => {
+      this.#ensuring = undefined
+    })
+    await this.#ensuring
+  }
+
+  async #buildVectorIndex(dims: number): Promise<void> {
+    if (this.#injectedIndex) {
+      this.#vectorIndex = this.#injectedIndex
+    } else if (this.#vectorMode === "brute") {
       this.#vectorIndex = createBruteForceIndex()
     } else {
       if (this.#vecLoadable === undefined) this.#vecLoadable = await loadSqliteVec(this.#db)
@@ -350,7 +373,7 @@ export class SqliteMemoryStore implements MemoryStore {
     // Path 2 — cosine over the vector index (semantic; sees what keywords
     // cannot). Scope = session isolation, applied INSIDE the index so one
     // session's memories cannot crowd another out of its top-k; agent/user
-    // isolation is rarer and post-filters on the fetched rows.
+    // isolation post-filters on the fused rows below (single place, both paths).
     let cosRank: Map<string, number> | undefined
     if (this.#embedder && q) {
       await this.#vectorReady
@@ -375,6 +398,11 @@ export class SqliteMemoryStore implements MemoryStore {
     }
 
     // Fuse (RRF, k=60) when both paths hit; a single path degrades to itself.
+    // agent/user isolation post-filters HERE (one place, both paths): the
+    // sessionId scope is applied inside the index / the FTS SQL, but the
+    // rarer axes can only be checked on the fetched rows — without this the
+    // vector path would leak another agent's memories (mode-dependent
+    // isolation semantics).
     if (bm25Rank || cosRank) {
       const byId = new Map<string, MemoryRecord>()
       const fetchRows = (ids: string[]): void => {
@@ -383,7 +411,8 @@ export class SqliteMemoryStore implements MemoryStore {
         for (const r of stmt.all(...ids) as Record<string, unknown>[]) byId.set(String(r.id), migrateRow(r))
       }
       fetchRows([...(bm25Rank?.keys() ?? []), ...(cosRank?.keys() ?? [])])
-      const merged = rrfMerge([bm25Rank, cosRank], (id) => byId.get(id))
+      const inIso = (r: MemoryRecord): boolean => (!isolation?.agentId || r.agentId === isolation.agentId) && (!isolation?.userId || r.userId === isolation.userId)
+      const merged = rrfMerge([bm25Rank, cosRank], (id) => byId.get(id)).filter(inIso)
       if (merged.length > 0) return merged.slice(0, limit)
     }
 
@@ -418,7 +447,8 @@ function ftsQuery(q: string): string {
   return q.split(/\s+/).filter(Boolean).map((w) => `"${w.split('"').join('""')}"`).join(" ")
 }
 
-function migrateRow(row: Record<string, unknown>): MemoryRecord {  return {
+function migrateRow(row: Record<string, unknown>): MemoryRecord {
+  return {
     id: String(row.id),
     content: String(row.content),
     type: String(row.type) as MemoryType,

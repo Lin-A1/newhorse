@@ -17,9 +17,11 @@ describe("SqliteSessionDirectory (cross-process seam)", () => {
 
   it("register is an idempotent upsert that refreshes ownership and heartbeat", () => {
     const dir = createSqliteSessionDirectory(":memory:")
-    dir.register("s1", "http://a:1")
-    dir.register("s1", "http://a:1")
-    dir.register("s1", "http://b:2", 999) // an owner change (re-created session) overwrites
+    expect(dir.register("s1", "http://a:1")).toBeUndefined() // fresh claim: no previous
+    const prev = dir.register("s1", "http://a:1")
+    expect(prev?.endpoint).toBe("http://a:1") // re-register reports the previous row
+    const takeover = dir.register("s1", "http://b:2", 999) // an owner change overwrites
+    expect(takeover?.endpoint).toBe("http://a:1")
     const e = dir.lookup("s1")!
     expect(e.endpoint).toBe("http://b:2")
     expect(e.pid).toBe(999)

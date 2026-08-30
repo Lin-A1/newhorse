@@ -213,6 +213,92 @@ describe("SqliteMemoryStore vector modes (integration)", () => {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
     }
   })
+  it("backfill preserves the session scope (deferred embedding stays searchable scoped)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-mem-"))
+    try {
+      let down = true
+      const flaky = { embed: async (text: string) => (down ? null : fakeEmbed(text)) }
+      const store = new SqliteMemoryStore(join(dir, "m.db"))
+      store.attachEmbedder(flaky, "fake-model")
+      // Provider down at write time: metadata-only (deferred embedding).
+      await store.write({ content: "the cat purrs loudly", type: "fact", priority: 50, sessionId: "s1" })
+      down = false
+      const filled = await store.attachEmbedder(flaky, "fake-model").backfill()
+      expect(filled).toBe(1)
+      // Scoped search MUST find it (a scope-dropping backfill made it visible
+      // only to unscoped searches).
+      const s1 = await store.search("feline naps", 5, { sessionId: "s1" })
+      expect(s1[0]?.content).toBe("the cat purrs loudly")
+      store.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+  it("agent isolation post-filters the fused rows (no cross-agent leak on the index path)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-mem-"))
+    try {
+      const store = new SqliteMemoryStore(join(dir, "m.db"))
+      store.attachEmbedder(fakeProvider, "fake-model")
+      await store.write({ content: "the cat purrs loudly", type: "fact", priority: 50, sessionId: "s1", agentId: "agent-a" })
+      await store.write({ content: "a cat naps in the sun", type: "fact", priority: 50, sessionId: "s1", agentId: "agent-b" })
+      // Both rows are in scope s1; the agent axis must filter AFTER fusion.
+      const a = await store.search("feline naps", 5, { sessionId: "s1", agentId: "agent-a" })
+      expect(a.map((r) => r.content)).toEqual(["the cat purrs loudly"])
+      const b = await store.search("feline naps", 5, { sessionId: "s1", agentId: "agent-b" })
+      expect(b.map((r) => r.content)).toEqual(["a cat naps in the sun"])
+      store.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+  it("a host-injected VectorIndex wins over vectorMode (wide-mouth seam)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-mem-"))
+    try {
+      let searched = 0
+      const seen: string[] = []
+      const custom: VectorIndex = {
+        mode: "brute",
+        upsert: (id) => {
+          seen.push(id)
+          return true
+        },
+        remove: () => {},
+        search: (_q, _k, _scope) => {
+          searched++
+          // Echo the last upserted id so the fusion step can resolve it.
+          return seen.length > 0 ? [{ id: seen[seen.length - 1]!, score: 1 }] : []
+        },
+        size: () => seen.length,
+      }
+      const store = new SqliteMemoryStore(join(dir, "m.db"))
+      store.attachEmbedder(fakeProvider, "fake-model", { vectorIndex: custom })
+      await store.write({ content: "the cat purrs loudly", type: "fact", priority: 50, sessionId: "s1" })
+      const hits = await store.search("feline naps", 5, { sessionId: "s1" })
+      expect(searched).toBeGreaterThan(0)
+      expect(hits[0]?.content).toBe("the cat purrs loudly")
+      store.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+  it("re-attach with a different tag resets the index (model switch rebuilds under the new tag)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-mem-"))
+    try {
+      const store = new SqliteMemoryStore(join(dir, "m.db"))
+      store.attachEmbedder(fakeProvider, "model-a")
+      await store.write({ content: "the cat purrs loudly", type: "fact", priority: 50, sessionId: "s1" })
+      // Switch to a model whose rows do not exist yet: the index resets and
+      // defers; backfill re-embeds the old row under the new tag.
+      store.attachEmbedder(fakeProvider, "model-b")
+      const n = await store.attachEmbedder(fakeProvider, "model-b").backfill()
+      expect(n).toBe(1)
+      const hits = await store.search("feline naps", 5, { sessionId: "s1" })
+      expect(hits[0]?.content).toBe("the cat purrs loudly")
+      store.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
 })
 
 // Type-level guard: the seam must stay assignable from both implementations.

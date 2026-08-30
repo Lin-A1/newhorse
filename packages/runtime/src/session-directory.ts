@@ -32,8 +32,13 @@ export interface DirectoryEntry {
 }
 
 export interface SessionDirectory {
-  /** Upsert ownership of a live session (idempotent; refreshes the heartbeat). */
-  readonly register: (sessionId: string, endpoint: string, pid?: number) => void
+  /**
+   * Upsert ownership of a live session (refreshes the heartbeat). Returns the
+   * PREVIOUS entry when the row existed — an endpoint different from the
+   * caller's means this call took ownership AWAY from another live writer
+   * (the caller decides: rollback / 409 / legitimate takeover after restart).
+   */
+  readonly register: (sessionId: string, endpoint: string, pid?: number) => DirectoryEntry | undefined
   readonly unregister: (sessionId: string) => void
   readonly lookup: (sessionId: string) => DirectoryEntry | undefined
   /** Refresh the heartbeat for EVERY row of one endpoint (a server's own liveness tick). */
@@ -49,7 +54,12 @@ export interface SessionDirectory {
  *  server processes can register/sweep the same file concurrently. */
 export function createSqliteSessionDirectory(dbPath: string): SessionDirectory {
   const db = new Database(dbPath)
-  db.run("PRAGMA journal_mode = WAL")
+  try {
+    db.run("PRAGMA journal_mode = WAL")
+  } catch {
+    // A concurrent exclusive holder can refuse the switch — the default
+    // journal still works (single-writer per moment, busy_timeout below).
+  }
   db.run("PRAGMA busy_timeout = 5000")
   db.run(`CREATE TABLE IF NOT EXISTS session_live (
     session_id TEXT PRIMARY KEY,
@@ -59,11 +69,13 @@ export function createSqliteSessionDirectory(dbPath: string): SessionDirectory {
   )`)
   return {
     register(sessionId, endpoint, pid = process.pid) {
+      const previous = db.query("SELECT session_id, endpoint, pid, heartbeat_at FROM session_live WHERE session_id = ?").get(sessionId) as { session_id: string; endpoint: string; pid: number; heartbeat_at: number } | null
       db.run(
         `INSERT INTO session_live (session_id, endpoint, pid, heartbeat_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(session_id) DO UPDATE SET endpoint = excluded.endpoint, pid = excluded.pid, heartbeat_at = excluded.heartbeat_at`,
         [sessionId, endpoint, pid, Date.now()],
       )
+      return previous ? { sessionId: previous.session_id, endpoint: previous.endpoint, pid: previous.pid, heartbeatAt: previous.heartbeat_at } : undefined
     },
     unregister(sessionId) {
       db.run("DELETE FROM session_live WHERE session_id = ?", [sessionId])

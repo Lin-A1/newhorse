@@ -171,8 +171,25 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   /** Sessions this process created (directory-owned; unregistered on stop). */
   const owned = new Set<string>()
 
-  /** The URL peers use to reach this server (advertised or derived). */
-  const selfUrl = (): string => config.advertiseUrl ?? `http://${host}:${server.port}`
+  /** The URL peers use to reach this server (advertised or derived). Trailing
+   *  slashes are stripped so endpoint comparisons (stale-self guard) can't be
+   *  defeated by spelling. */
+  const selfUrl = (): string => (config.advertiseUrl ?? `http://${host}:${server.port}`).replace(/\/+$/, "")
+
+  /** Independent liveness probe for a proxy failure: only a failed HEALTH
+   *  CHECK (not a slow response, not our own client's disconnect) may sweep a
+   *  directory row — the owner re-asserts its row on the next heartbeat tick
+   *  anyway, but a wrong sweep would open a split-brain window. */
+  async function ownerAlive(entry: DirectoryEntry): Promise<boolean> {
+    try {
+      const headers: Record<string, string> = {}
+      if (token) headers.authorization = `Bearer ${token}`
+      const res = await fetch(`${entry.endpoint}/v1/health`, { headers, signal: AbortSignal.timeout(2000) })
+      return res.ok
+    } catch {
+      return false
+    }
+  }
 
   /** A resolved session: served locally, owned by a sibling process, or absent. */
   type Found = { kind: "local"; app: App } | { kind: "remote"; entry: DirectoryEntry } | { kind: "missing"; error: string }
@@ -195,13 +212,22 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       // A host-provided resolver may lazily re-attach sessions (from disk,
       // from another node, etc.) — cache the result to avoid repeated resolution.
       const resolved = await sessionResolver(sessionId)
-      if (resolved) { apps.set(sessionId, resolved); return { kind: "local", app: resolved } }
+      if (resolved) {
+        apps.set(sessionId, resolved)
+        // We now HOLD this session locally and the directory had no live row
+        // — claim ownership so cross-process ops route here.
+        if (directory) {
+          directory.register(sessionId, selfUrl())
+          owned.add(sessionId)
+        }
+        return { kind: "local", app: resolved }
+      }
     }
     return { kind: "missing", error: `session "${sessionId}" not found` }
   }
 
-  /** Proxy a JSON op to the owning server. Owner unreachable → sweep the
-   *  stale entry (self-healing directory) and report honestly (502). */
+  /** Proxy a JSON op to the owning server. Owner confirmed dead (health probe
+   *  fails) → sweep the stale entry (self-healing directory) and report 502. */
   async function proxyJson(entry: DirectoryEntry, path: string, init?: RequestInit): Promise<Response> {
     const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) }
     if (token) headers.authorization = `Bearer ${token}`
@@ -209,51 +235,80 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       const res = await fetch(entry.endpoint + path, { ...init, headers, signal: AbortSignal.timeout(5000) })
       return new Response(await res.arrayBuffer(), { status: res.status, headers: { "content-type": res.headers.get("content-type") ?? "application/json" } })
     } catch {
-      directory?.unregister(entry.sessionId)
-      return json(502, { error: `owner ${entry.endpoint} unreachable for session "${entry.sessionId}" (stale entry swept)` })
+      if (!init?.signal?.aborted && !(await ownerAlive(entry))) {
+        directory?.unregister(entry.sessionId)
+        return json(502, { error: `owner ${entry.endpoint} unreachable for session "${entry.sessionId}" (stale entry swept)` })
+      }
+      return json(502, { error: `owner ${entry.endpoint} unreachable for session "${entry.sessionId}"` })
     }
   }
 
-  /** Proxy the SSE prompt stream: relay the owner's event stream verbatim. */
+  /** Proxy the SSE prompt stream: relay the owner's event stream verbatim.
+   *  The client's own disconnect (signal aborted) is NOT an owner failure —
+   *  never sweep for it. */
   async function proxyPrompt(entry: DirectoryEntry, sessionId: string, body: string, signal?: AbortSignal): Promise<Response> {
     const headers: Record<string, string> = { "content-type": "application/json" }
     if (token) headers.authorization = `Bearer ${token}`
     try {
       const res = await fetch(`${entry.endpoint}/v1/session/${sessionId}/prompt`, { method: "POST", headers, body, signal })
-      return new Response(res.body, { status: res.status, headers: { "content-type": "text/event-stream" } })
+      return new Response(res.body, { status: res.status, headers: { "content-type": res.headers.get("content-type") ?? "text/event-stream" } })
     } catch {
-      directory?.unregister(entry.sessionId)
-      return json(502, { error: `owner ${entry.endpoint} unreachable for session "${entry.sessionId}" (stale entry swept)` })
+      if (!signal?.aborted && !(await ownerAlive(entry))) {
+        directory?.unregister(entry.sessionId)
+        return json(502, { error: `owner ${entry.endpoint} unreachable for session "${entry.sessionId}" (stale entry swept)` })
+      }
+      return json(502, { error: `owner ${entry.endpoint} unreachable for session "${entry.sessionId}"` })
     }
   }
   const sessionConfig = config.sessionConfig
 
+  type ResolveResult = { app: App; conflict?: undefined } | { app?: undefined; conflict: DirectoryEntry } | undefined
+
   /** Build (or return cached) an App for a session id. */
-  async function resolveApp(create: SessionCreateRequest): Promise<App | undefined> {
+  async function resolveApp(create: SessionCreateRequest): Promise<ResolveResult> {
     const id = create.sessionId ?? crypto.randomUUID()
     const existing = apps.get(id)
-    if (existing) return existing
+    if (existing) {
+      // Re-assert ownership on a local hit (idempotent, refreshes heartbeat):
+      // a proxy blip may have swept our row while the session is alive HERE —
+      // restoring it keeps the owner-only-writer invariant honest (only the
+      // holder writes its row).
+      if (directory) {
+        directory.register(id, selfUrl())
+        owned.add(id)
+      }
+      return { app: existing }
+    }
     if (!sessionConfig) return undefined
     const base = await sessionConfig({ ...create })
     // sessionId must be pinned, else createApp derives a workspace-stable id
     // that differs from the one the caller will use in paths.
     const app = await createApp({ ...base, sessionId: id, onApprove: config.onApprove })
-    apps.set(id, app)
-    // Register cross-process ownership (idempotent upsert) when a directory
-    // is wired — sibling processes can then interrupt/steer/observe this
-    // session by proxying to selfUrl().
     if (directory) {
-      directory.register(id, selfUrl())
+      // Register cross-process ownership. register returns the PREVIOUS row:
+      // a foreign FRESH row means a sibling owns this id and our pre-check
+      // raced — give the row back, discard the local App (two Apps must never
+      // drive one log) and report the conflict. A STALE foreign row (dead
+      // owner past the heartbeat window) is a legitimate takeover.
+      const previous = directory.register(id, selfUrl())
+      if (previous && previous.endpoint !== selfUrl() && Date.now() - previous.heartbeatAt < 30_000) {
+        directory.register(id, previous.endpoint, previous.pid)
+        void (app.events as { close?: () => void }).close?.()
+        return { conflict: previous }
+      }
       owned.add(id)
     }
-    return app
+    apps.set(id, app)
+    return { app }
   }
 
   /** SSE prompt: subscribe once, stream loop events, then result + [DONE].
    *  Client disconnect (req.signal) interrupts the app so the stream shuts
    *  down cleanly instead of leaving a half-open SSE connection — Bun's
    *  server.stop() would otherwise crash on a pending disconnected stream. */
+  let inFlight = 0
   async function promptStream(app: App, text: string, principal?: "user" | "butler" | "parent", signal?: AbortSignal): Promise<Response> {
+    inFlight++
     const sse = sseStream()
     // Flush headers NOW with an SSE comment line: Bun does not send response
     // headers until the first body byte, and a turn can go quiet for a long
@@ -285,6 +340,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         sse.close()
       })
       .finally(() => {
+        inFlight--
         clearInterval(keepalive)
         signal?.removeEventListener("abort", onAbort)
         unsubscribe()
@@ -320,15 +376,18 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         const parsed = await readJsonOr400<SessionCreateRequest>(req)
         if ("error" in parsed) return json(400, parsed)
         // Split-brain guard: an explicit id that a SIBLING process owns must
-        // not be re-created locally (two Apps would drive one log).
+        // not be re-created locally (two Apps would drive one log). The
+        // register-time takeover check in resolveApp closes the remaining
+        // check-then-act race.
         if (parsed.sessionId && directory) {
           const entry = directory.lookup(parsed.sessionId)
-          if (entry && entry.endpoint !== selfUrl()) return json(409, { error: `session "${parsed.sessionId}" is owned by ${entry.endpoint}` })
+          if (entry && entry.endpoint !== selfUrl() && Date.now() - entry.heartbeatAt < 30_000) return json(409, { error: `session "${parsed.sessionId}" is owned by ${entry.endpoint}` })
         }
-        const app = await resolveApp(parsed)
-        if (!app) return json(500, { error: "no sessionConfig provided; cannot create session" })
-        const session = await app.resume()
-        return json(201, { sessionId: app.sessionId, messageCount: session.messages.length, headSeq: session.headSeq })
+        const resolved = await resolveApp(parsed)
+        if (!resolved) return json(500, { error: "no sessionConfig provided; cannot create session" })
+        if (resolved.conflict) return json(409, { error: `session "${parsed.sessionId}" is owned by ${resolved.conflict.endpoint}` })
+        const session = await resolved.app.resume()
+        return json(201, { sessionId: resolved.app.sessionId, messageCount: session.messages.length, headSeq: session.headSeq })
       }
 
       // POST /v1/session/:id/prompt
@@ -412,11 +471,13 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   })
 
   // Cross-process liveness: refresh this endpoint's heartbeat so siblings do
-  // not sweep live sessions during long-running turns. Unref'd — the timer
-  // never holds the process open.
+  // not sweep live sessions during long-running turns, and sweep rows whose
+  // owner stopped heartbeating (crash / kill -9 — 30s = three missed ticks
+  // plus event-loop stall margin). Unref'd — never holds the process open.
   const heartbeatTimer = directory ? setInterval(() => {
     try {
       directory.heartbeat(selfUrl())
+      directory.sweep(30_000)
     } catch {
       // A transient lock/busy on the shared file is non-fatal — the next tick
       // refreshes; a persistently failed heartbeat surfaces via sweep.
@@ -428,16 +489,25 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
     baseUrl: `http://${host}:${server.port}`,
     appFor: (id) => apps.get(id),
     stop: async () => {
-      // Interrupt any in-flight prompt BEFORE closing the event store — a
-      // live stream would keep emitting into a closed controller/store.
+      // Interrupt any in-flight prompt BEFORE closing the event store, then
+      // wait (bounded) for them to settle — a late settle path would append
+      // into a closed store.
       for (const app of apps.values()) app.interrupt()
-      // Wait a tick so the interrupted prompt's settle path lands before the
-      // store closes (best-effort; a fully idle server has no in-flight work).
-      await new Promise((r) => setTimeout(r, 20))
+      const deadline = Date.now() + 2000
+      while (inFlight > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
       server.stop()
       if (heartbeatTimer) clearInterval(heartbeatTimer)
       // Release cross-process ownership for everything this process created.
-      if (directory) for (const id of owned) directory.unregister(id)
+      // Contention on the shared file must not skip the store shutdown below.
+      if (directory) {
+        for (const id of owned) {
+          try {
+            directory.unregister(id)
+          } catch {
+            // Heartbeat staleness sweep covers an un-unregistered row.
+          }
+        }
+      }
       for (const app of apps.values()) {
         // SqliteEventStore has close(); the EventStore interface doesn't.
         (app.events as { close?: () => void }).close?.()
