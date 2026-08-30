@@ -16,8 +16,16 @@ import { join, resolve } from "node:path"
  */
 export async function main(argv: string[]): Promise<void> {
   const args = parseArgs(argv)
-  const config: AdapterConfig = resolveProvider(args)
 
+  // `newhorse dag <file.json>` — declarative DAG scheduling: load a DAGSpec,
+  // run it, print per-node progress/results. The transport only parses +
+  // renders; runDag lives in the runtime.
+  if (args.dag) {
+    await runDagCli(resolve(args.dag))
+    return
+  }
+
+  const config: AdapterConfig = resolveProvider(args)
   const app = await createApp({
     provider: config,
     model: args.model ?? "gpt-4o-mini",
@@ -35,9 +43,16 @@ export async function main(argv: string[]): Promise<void> {
     },
   })
 
+  // Interactive REPL when no --prompt was given: Ctrl-C interrupts the current
+  // run, /steer / /list / /interrupt / <text> drive the session.
+  if (args.prompt === undefined && !process.env.NEWHORSE_NO_REPL) {
+    await repl(app)
+    return
+  }
+
   const promptText = args.prompt ?? (await readStdin())
   if (!promptText) {
-    console.error("usage: newhorse [--provider openai|openai-responses|anthropic] [--model NAME] [--prompt TEXT] [--butler] [--data-dir DIR] [--session ID] [--plugins-dir DIR]")
+    console.error("usage: newhorse [--provider ...] [--model NAME] [--prompt TEXT] [--butler] [--dag FILE] [--data-dir DIR] [--session ID] [--plugins-dir DIR]")
     return
   }
 
@@ -145,5 +160,69 @@ function printMessage(message: SessionMessage): void {
   } else if (message.kind === "assistant") {
     const text = message.content.filter((p): p is { type: "text"; text: string } => p.type === "text").map((p) => p.text).join("")
     if (text) process.stdout.write(`\u001b[32m${text}\u001b[0m\n`)
+  }
+}
+
+/** Interactive REPL: type a prompt, /steer <text>, /list, /interrupt, /quit.
+ *  Ctrl-C cancels the CURRENT run (the next prompt starts fresh — a per-run
+ *  AbortController inside app.prompt). */
+async function repl(app: Awaited<ReturnType<typeof import("@newhorse/runtime").createApp>>): Promise<void> {
+  // eslint-disable-next-line no-console
+  console.log("newhorse REPL — type a message, /help for commands. Ctrl-C interrupts the current run.")
+  app.onEvent((event) => {
+    if (event.type === "text") process.stdout.write(event.text)
+    else if (event.type === "error") process.stderr.write(`\u001b[31m${event.message}\u001b[0m\n`)
+    else if (event.type === "done") process.stdout.write(`\n`)
+  })
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  const ask = () => rl.question("> ", (line) => void handle(line))
+  const handle = async (line: string): Promise<void> => {
+    const text = line.trim()
+    if (text === "/quit" || text === "/exit") { rl.close(); process.exit(0); return }
+    if (text === "/help") { console.log("  /steer <text>  /list  /interrupt  /quit"); ask(); return }
+    if (text === "/list") {
+      console.log(JSON.stringify(await app.listSessions(), null, 2)); ask(); return
+    }
+    if (text === "/interrupt") { app.interrupt(); ask(); return }
+    if (text.startsWith("/steer ")) { await app.steer(text.slice(7).trim()); ask(); return }
+    if (!text) { ask(); return }
+    // A slash command resolves against the plugin seam (never interpreted here).
+    if (text.startsWith("/")) {
+      const output = await app.runCommand(text)
+      console.log(typeof output === "string" ? output : JSON.stringify(output, null, 2))
+      ask(); return
+    }
+    try {
+      const result = await app.prompt(text, "user")
+      console.log(`\u001b[2m(done: ${result.finish}, ${result.step} step(s))\u001b[0m`)
+    } catch (e) {
+      console.error(`\u001b[31m${e instanceof Error ? e.message : String(e)}\u001b[0m`)
+    }
+    ask()
+  }
+  ask()
+}
+
+/** `newhorse dag <spec.json>` — load a DAGSpec, run it, print node progress. */
+async function runDagCli(file: string): Promise<void> {
+  const { runDag, createBuiltinTools } = await import("@newhorse/runtime")
+  const { MemoryEventStore, MemorySessionInput } = await import("@newhorse/core")
+  const events = new MemoryEventStore()
+  const inbox = new MemorySessionInput(events)
+  const spec = (await import("node:fs/promises")).readFile(file, "utf8").then((s) => JSON.parse(s))
+  const dagSpec = await spec as import("@newhorse/core").DAGSpec
+  const workspace = process.cwd()
+  const tools = createBuiltinTools({ workspace })
+  // Provider for the DAG: env-first (same seams as the shell): NEWHORSE_PROVIDER
+  // / NEWHORSE_BASE_URL / NEWHORSE_API_KEY, else the standard keys/defaults.
+  const kind = (process.env.NEWHORSE_PROVIDER ?? "openai") as AdapterConfig["kind"]
+  const baseUrl = process.env.NEWHORSE_BASE_URL ?? (kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com")
+  const apiKey = process.env.NEWHORSE_API_KEY ?? (kind === "anthropic" ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY) ?? ""
+  const provider: AdapterConfig = { kind, baseUrl, apiKey }
+  const { makeLlmClient } = await import("@newhorse/llm")
+  const runtime = { events, inbox, llm: makeLlmClient(provider) }
+  const outcome = await runDag(dagSpec, { events, inbox, runtime, tools, workspace, defaultModel: process.env.NEWHORSE_MODEL ?? "gpt-4o-mini" })
+  for (const [id, status] of Object.entries(outcome.status)) {
+    console.log(`${status.padEnd(10)} ${id}${outcome.models[id] ? `  (${outcome.models[id]})` : ""}`)
   }
 }
