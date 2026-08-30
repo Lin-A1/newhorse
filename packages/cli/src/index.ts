@@ -34,6 +34,20 @@ export async function main(argv: string[]): Promise<void> {
     dataDir: resolveDataDir(args),
     pluginsDir: args["plugins-dir"] ? resolve(args["plugins-dir"]) : undefined,
     asButler: args.butler ? true : false,
+    // Semantic memory (switchable): --memory-vector turns it on, using the
+    // same provider env as the DAG path (NEWHORSE_PROVIDER/BASE_URL/API_KEY)
+    // against the /embeddings endpoint. Off = keyword-only FTS (the floor).
+    memoryVector: args["memory-vector"]
+      ? {
+          enabled: true,
+          embedding: {
+            kind: (process.env.NEWHORSE_EMBEDDING_KIND ?? "minimax") as "minimax" | "openai-compatible",
+            apiKey: process.env.NEWHORSE_API_KEY ?? process.env.ANTHROPIC_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
+            model: process.env.NEWHORSE_EMBEDDING_MODEL ?? "embo-01",
+            baseUrl: process.env.NEWHORSE_EMBEDDING_BASE_URL ?? "https://api.minimaxi.com",
+          },
+        }
+      : undefined,
     // M4 execpolicy: the transport owns the interactive approve gate. A prompt-
     // level tool decision (command/path) is surfaced to the user as a y/n
     // question; declining (or a non-TTY) fails closed to deny.

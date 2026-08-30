@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite"
 import type { UnknownRecord } from "@newhorse/schema"
+import { cosine, type EmbeddingProvider } from "./embedding"
 
 /**
  * Memory seam — the pluggable store behind `memory_search`/`memory_write`.
@@ -43,33 +44,97 @@ export interface MemoryStore {
   readonly search: (query: string, limit?: number, isolation?: { sessionId?: string; agentId?: string; userId?: string }) => Promise<MemoryRecord[]>
   /** Remove a memory by id (update/merge replaces: the stale atom is removed). */
   readonly delete?: (id: string) => Promise<void>
+  /**
+   * Attach an embedder (Phase 4 semantic search, switchable): writes embed
+   * their content (a failure stores metadata-only — deferred embedding) and
+   * searches fuse BM25 + cosine via RRF. When not attached, search is
+   * keyword-only. `backfill` embeds existing rows that lack a vector.
+   */
+  readonly attachEmbedder?: (embedder: EmbeddingProvider) => { backfill: (limit?: number) => Promise<number> }
   readonly close?: () => void
 }
 
 /** In-memory store (default, for tests / no-persist runs). */
 export class MemoryMemoryStore implements MemoryStore {
   readonly #rows: MemoryRecord[] = []
+  #embedder: EmbeddingProvider | undefined
+  /** id -> vector, parallel to #rows (memory rows are never mutated in place). */
+  readonly #vectors = new Map<string, number[]>()
+  /** Attach an embedder; writes embed (fail-soft) and searches fuse BM25+cosine. */
+  attachEmbedder(embedder: EmbeddingProvider): { backfill: (limit?: number) => Promise<number> } {
+    this.#embedder = embedder
+    const embedderRef = embedder
+    return {
+      backfill: async (limit = 100): Promise<number> => {
+        let n = 0
+        for (const r of this.#rows) {
+          if (this.#vectors.has(r.id) || n >= limit) continue
+          const v = await embedderRef.embed(r.content, "db")
+          if (v) { this.#vectors.set(r.id, v); n++ }
+        }
+        return n
+      },
+    }
+  }
   async write(entry: MemoryEntry): Promise<MemoryRecord> {
     const rec: MemoryRecord = { ...entry, id: crypto.randomUUID(), createdAt: Date.now() }
     this.#rows.push(rec)
+    // Fail-soft embedding: a broken provider stores metadata-only.
+    if (this.#embedder) {
+      const v = await this.#embedder.embed(rec.content, "db")
+      if (v) this.#vectors.set(rec.id, v)
+    }
     return rec
   }
   async delete(id: string): Promise<void> {
     const idx = this.#rows.findIndex((r) => r.id === id)
     if (idx >= 0) this.#rows.splice(idx, 1)
+    this.#vectors.delete(id)
   }
   async search(query: string, limit = 5, isolation?: { sessionId?: string; agentId?: string; userId?: string }): Promise<MemoryRecord[]> {
     const q = query.toLowerCase()
-    const hits = this.#rows.filter((r) => {
-      if (!r.content.toLowerCase().includes(q)) return false
+    const inIso = (r: MemoryRecord): boolean => {
       if (isolation?.sessionId && r.sessionId !== isolation.sessionId) return false
       if (isolation?.agentId && r.agentId !== isolation.agentId) return false
       if (isolation?.userId && r.userId !== isolation.userId) return false
       return true
-    })
+    }
+    const hits = this.#rows.filter((r) => r.content.toLowerCase().includes(q) && inIso(r))
+    const bm25Rank = new Map(hits.map((r, i) => [r.id, i]))
+    // Vector path: cosine over embedded rows (semantic matches the keyword
+    // path cannot see). No embedder or no query vector -> single-path FTS.
+    let cosRank: Map<string, number> | undefined
+    if (this.#embedder && q) {
+      const qv = await this.#embedder.embed(query, "query")
+      if (qv) {
+        const scored = this.#rows.filter((r) => this.#vectors.has(r.id) && inIso(r))
+          .map((r) => ({ id: r.id, cos: cosine(qv, this.#vectors.get(r.id)!) }))
+          .filter((s) => s.cos > 0.3)
+          .sort((a, b) => b.cos - a.cos)
+        cosRank = new Map(scored.map((s, i) => [s.id, i]))
+      }
+    }
+    const byId = new Map(this.#rows.map((r) => [r.id, r]))
+    const merged = rrfMerge([bm25Rank, cosRank], (id) => byId.get(id)).filter(inIso)
+    if (merged.length > 0) return merged.slice(0, limit)
     // Same ordering as SqliteMemoryStore: priority DESC, then newest first.
     return hits.sort((a, b) => b.priority - a.priority || b.createdAt - a.createdAt).slice(0, limit)
   }
+}
+
+/** Reciprocal-rank fusion (k=60, the standard constant): merge ranked id
+ *  lists into one ordering; lists may be undefined (single-path degrade). */
+export function rrfMerge(ranks: ReadonlyArray<Map<string, number> | undefined>, resolve: (id: string) => MemoryRecord | undefined): MemoryRecord[] {
+  const K = 60
+  const score = new Map<string, number>()
+  for (const rank of ranks) {
+    if (!rank) continue
+    for (const [id, i] of rank) score.set(id, (score.get(id) ?? 0) + 1 / (K + i + 1))
+  }
+  return [...score.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([id]) => resolve(id))
+    .filter((r): r is MemoryRecord => !!r)
 }
 
 /**
@@ -81,10 +146,35 @@ export class MemoryMemoryStore implements MemoryStore {
 export class SqliteMemoryStore implements MemoryStore {
   readonly #db: Database
   #ready: Promise<void>
+  #embedder: EmbeddingProvider | undefined
 
   constructor(dbPath: string) {
     this.#db = new Database(dbPath)
     this.#ready = this.#migrate()
+  }
+
+  /** Attach an embedder (switchable semantic search): writes embed their
+   *  content into the `embedding` BLOB (Float32Array; fail-soft — a broken
+   *  provider stores metadata-only) and searches fuse BM25 + cosine via RRF.
+   *  backfill embeds existing rows lacking a vector (idempotent, budgeted). */
+  attachEmbedder(embedder: EmbeddingProvider): { backfill: (limit?: number) => Promise<number> } {
+    this.#embedder = embedder
+    const embedderRef = embedder
+    return {
+      backfill: async (limit = 100): Promise<number> => {
+        await this.#ready
+        const pending = this.#db.query("SELECT id, content FROM memory WHERE embedding IS NULL LIMIT ?").all(limit) as { id: string; content: string }[]
+        let n = 0
+        for (const row of pending) {
+          const v = await embedderRef.embed(row.content, "db")
+          if (v) {
+            this.#db.run("UPDATE memory SET embedding = ? WHERE id = ?", [float32Blob(v), row.id])
+            n++
+          }
+        }
+        return n
+      },
+    }
   }
 
   #migrate(): Promise<void> {
@@ -130,15 +220,32 @@ export class SqliteMemoryStore implements MemoryStore {
       } catch {
         // no-op — the LIKE fallback covers it.
       }
+      // Vector column (optional, Phase 4 semantic search): a Float32Array
+      // serialized as BLOB. NULL = not yet embedded (deferred embedding).
+      try {
+        const cols = this.#db.query("PRAGMA table_info(memory)").all() as { name: string }[]
+        if (!cols.some((c) => c.name === "embedding")) {
+          this.#db.run("ALTER TABLE memory ADD COLUMN embedding BLOB")
+        }
+      } catch {
+        // no-op — vector search is optional; FTS still works.
+      }
     })
   }
 
   async write(entry: MemoryEntry): Promise<MemoryRecord> {
     await this.#ready
     const rec: MemoryRecord = { ...entry, id: crypto.randomUUID(), createdAt: Date.now() }
+    // Fail-soft embedding: a broken provider stores metadata-only (deferred) —
+    // backfill() can fill it later; the write itself never fails for it.
+    let embedding: Buffer | null = null
+    if (this.#embedder) {
+      const v = await this.#embedder.embed(rec.content, "db")
+      if (v) embedding = float32Blob(v)
+    }
     this.#db.run(
-      "INSERT INTO memory (id, content, type, priority, session_id, agent_id, user_id, source_ids, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [rec.id, rec.content, rec.type, rec.priority, rec.sessionId, rec.agentId ?? null, rec.userId ?? null, rec.sourceIds ? JSON.stringify(rec.sourceIds) : null, rec.metadata ? JSON.stringify(rec.metadata) : null, rec.createdAt],
+      "INSERT INTO memory (id, content, type, priority, session_id, agent_id, user_id, source_ids, metadata, created_at, embedding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [rec.id, rec.content, rec.type, rec.priority, rec.sessionId, rec.agentId ?? null, rec.userId ?? null, rec.sourceIds ? JSON.stringify(rec.sourceIds) : null, rec.metadata ? JSON.stringify(rec.metadata) : null, rec.createdAt, embedding],
     )
     return rec
   }
@@ -146,25 +253,55 @@ export class SqliteMemoryStore implements MemoryStore {
   async search(query: string, limit = 5, isolation?: { sessionId?: string; agentId?: string; userId?: string }): Promise<MemoryRecord[]> {
     await this.#ready
     const q = query.trim()
-    // FTS5 BM25 first (relevance-ranked — the similarity proxy). The JOIN
-    // preserves the bm25 ORDER and applies the isolation filter BEFORE the
-    // limit (the earlier two-step id-IN re-ordered by created_at and could
-    // under-deliver under isolation). Fall back to LIKE when FTS misses.
+    const isoSqlParts: string[] = []
+    const isoParams: string[] = []
+    if (isolation?.sessionId) { isoSqlParts.push("session_id = ?"); isoParams.push(isolation.sessionId) }
+    if (isolation?.agentId) { isoSqlParts.push("agent_id = ?"); isoParams.push(isolation.agentId) }
+    if (isolation?.userId) { isoSqlParts.push("user_id = ?"); isoParams.push(isolation.userId) }
+    const isoSql = isoSqlParts.length > 0 ? ` AND ${isoSqlParts.join(" AND ")}` : ""
+
+    // Path 1 — FTS5 BM25 (relevance-ranked keyword). The JOIN preserves the
+    // bm25 ORDER and applies isolation BEFORE the limit.
+    let bm25Rank: Map<string, number> | undefined
     if (q) {
       try {
-        const isoFts: string[] = []
-        const isoParams: string[] = []
-        if (isolation?.sessionId) { isoFts.push("m.session_id = ?"); isoParams.push(isolation.sessionId) }
-        if (isolation?.agentId) { isoFts.push("m.agent_id = ?"); isoParams.push(isolation.agentId) }
-        if (isolation?.userId) { isoFts.push("m.user_id = ?"); isoParams.push(isolation.userId) }
-        const isoSql = isoFts.length > 0 ? ` AND ${isoFts.join(" AND ")}` : ""
         const stmt = this.#db.query(`SELECT m.* FROM memory_fts f JOIN memory m ON m.id = f.id WHERE memory_fts MATCH ?${isoSql} ORDER BY bm25(memory_fts) LIMIT ?`)
-        const rows = stmt.all(ftsQuery(q), ...isoParams, limit) as Record<string, unknown>[]
-        if (rows.length > 0) return rows.map(migrateRow)
+        const rows = stmt.all(ftsQuery(q), ...isoParams, limit * 2) as Record<string, unknown>[]
+        if (rows.length > 0) bm25Rank = new Map(rows.map((r, i) => [String(r.id), i]))
       } catch {
-        // FTS unavailable or an untokenizable query — fall through to LIKE.
+        // FTS unavailable or an untokenizable query — fall through.
       }
     }
+
+    // Path 2 — cosine over embedded rows (semantic; sees what keywords cannot).
+    let cosRank: Map<string, number> | undefined
+    if (this.#embedder && q) {
+      const qv = await this.#embedder.embed(q, "query")
+      if (qv) {
+        const rows = this.#db.query(`SELECT id, embedding FROM memory WHERE embedding IS NOT NULL${isoSql}`).all(...isoParams) as { id: string; embedding: Buffer }[]
+        const scored = rows
+          .map((r) => ({ id: r.id, cos: cosine(qv, blobToFloat32(r.embedding)) }))
+          .filter((s) => s.cos > 0.3)
+          .sort((a, b) => b.cos - a.cos)
+          .slice(0, limit * 2)
+        if (scored.length > 0) cosRank = new Map(scored.map((s, i) => [s.id, i]))
+      }
+    }
+
+    // Fuse (RRF, k=60) when both paths hit; a single path degrades to itself.
+    if (bm25Rank || cosRank) {
+      const byId = new Map<string, MemoryRecord>()
+      const fetchRows = (ids: string[]): void => {
+        if (ids.length === 0) return
+        const stmt = this.#db.query(`SELECT * FROM memory WHERE id IN (${ids.map(() => "?").join(",")})`)
+        for (const r of stmt.all(...ids) as Record<string, unknown>[]) byId.set(String(r.id), migrateRow(r))
+      }
+      fetchRows([...(bm25Rank?.keys() ?? []), ...(cosRank?.keys() ?? [])])
+      const merged = rrfMerge([bm25Rank, cosRank], (id) => byId.get(id))
+      if (merged.length > 0) return merged.slice(0, limit)
+    }
+
+    // Fallback — LIKE + priority DESC (empty query, FTS-less build, or no hits).
     const cond = q ? ["content LIKE ?"] : []
     const params: (string | number)[] = q ? [`%${q}%`] : []
     if (isolation?.sessionId) { cond.push("session_id = ?"); params.push(isolation.sessionId) }
@@ -192,6 +329,18 @@ export class SqliteMemoryStore implements MemoryStore {
  *  term; an unparseable query throws and falls back to LIKE). */
 function ftsQuery(q: string): string {
   return q.split(/\s+/).filter(Boolean).map((w) => `"${w.split('"').join('""')}"`).join(" ")
+}
+
+/** Serialize a vector as a little-endian Float32 BLOB (compact storage). */
+function float32Blob(v: readonly number[]): Buffer {
+  const arr = new Float32Array(v)
+  return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength)
+}
+
+/** Deserialize a stored BLOB back into a number[] for cosine. */
+function blobToFloat32(b: Buffer): number[] {
+  const arr = new Float32Array(b.buffer, b.byteOffset, Math.floor(b.byteLength / 4))
+  return Array.from(arr)
 }
 
 function migrateRow(row: Record<string, unknown>): MemoryRecord {  return {

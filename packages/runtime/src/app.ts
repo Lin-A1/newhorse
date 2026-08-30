@@ -5,6 +5,7 @@ import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry, discoverPlugin } from "@newhorse/plugin"
 import type { MemoryStore } from "@newhorse/memory"
 import { runMemoryExtraction } from "@newhorse/memory"
+import { createEmbeddingProvider, type EmbeddingConfig } from "@newhorse/memory"
 import { createDefaultMemoryPipeline } from "./memory-pipeline"
 import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
@@ -67,6 +68,16 @@ export interface AppConfig {
    * LLM call per turn is a real cost; the caller must opt in).
    */
   readonly memoryExtract?: { readonly enabled?: boolean }
+  /**
+   * Semantic memory (switchable): when enabled AND a memoryStore is present,
+   * an EmbeddingProvider is attached to the store — writes embed their content
+   * (fail-soft, deferred) and searches fuse BM25 + cosine via RRF. Off (or a
+   * broken endpoint) = keyword-only FTS, which is always the floor.
+   */
+  readonly memoryVector?: {
+    readonly enabled?: boolean
+    readonly embedding: EmbeddingConfig
+  }
   /**
    * Workspace context provider (pluggable seam). Default = AGENTS.md discovery
    * + compose (with the Workdir line). A caller can inject a custom provider to
@@ -169,6 +180,15 @@ export async function createApp(config: AppConfig): Promise<App> {
   // edit"). Tools are pluggable, so an override can be re-plugged later.
   const workspace = config.workspace ?? process.cwd()
   const contextProvider: SessionContextProvider = config.contextProvider ?? defaultContextProvider
+  // Semantic memory (switchable): attach the embedder BEFORE the toolset so
+  // memory writes embed from the first turn; off or a broken endpoint degrades
+  // to keyword-only FTS (the always-present floor). Backfill runs in the
+  // background (budgeted; idempotent).
+  if (config.memoryStore && config.memoryVector?.enabled && config.memoryVector.embedding) {
+    const embedder = createEmbeddingProvider(config.memoryVector.embedding)
+    const { backfill } = config.memoryStore.attachEmbedder!(embedder)
+    void backfill().catch(() => {})
+  }
   // skillsDir = the plugin dir (its `skills/` sub-tree is discovered lazily by
   // the skill tool). The tool is only exposed when a pluginsDir is configured.
   const builtin = createBuiltinTools({ workspace, enableBash: config.enableBash ?? false, memoryStore: config.memoryStore, skillsDir: config.pluginsDir })

@@ -62,7 +62,9 @@ describe("SqliteMemoryStore", () => {
       expect(forA[0]!.content).toContain("session A")
       s.close()
     } finally {
-      await rm(dir, { recursive: true, force: true })
+      // Windows can hold the sqlite file lock briefly after close; a leaked
+      // temp dir is harmless (OS temp) and must not fail the assertion set.
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
     }
   })
 })
@@ -96,7 +98,57 @@ describe("SqliteMemoryStore FTS5 (relevance ranking)", () => {
       expect(hits.length).toBe(1)
       s.close()
     } finally {
-      await rm(dir, { recursive: true, force: true })
+      // Windows can hold the sqlite file lock briefly after close; a leaked
+      // temp dir is harmless (OS temp) and must not fail the assertion set.
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+})
+
+describe("semantic memory (attachEmbedder, switchable)", () => {
+  it("memory store: a semantic match the keyword path cannot see is found via cosine", async () => {
+    const store = new MemoryMemoryStore()
+    // A fake embedder: vectors that make "prefers typescript" semantically
+    // close to a query about coding language choice. Attached FIRST (the real
+    // app attaches at createApp, before any write).
+    const vecs: Record<string, number[]> = {}
+    const embed = (t: string, p: "db" | "query"): number[] => {
+      const key = `${p}:${t}`
+      if (!vecs[key]) vecs[key] = t.includes("TypeScript") || t.includes("coding language") ? [1, 0] : [0, 1]
+      return vecs[key]!
+    }
+    store.attachEmbedder!({ embed: async (t, p) => embed(t, p) })
+    await store.write({ content: "The user prefers TypeScript for frontend work", type: "persona", priority: 40, sessionId: "u" })
+    await store.write({ content: "Team standup is at nine", type: "fact", priority: 40, sessionId: "u" })
+    // Semantic search: the keyword path cannot see "coding language" ->
+    // "TypeScript" (no substring), but the vector path can.
+    const after = await store.search("coding language", 5, { sessionId: "u" })
+    expect(after.length).toBe(1)
+    expect(after[0]!.content).toContain("TypeScript")
+  })
+
+  it("sqlite store: writes embed into the BLOB, backfill fills deferred rows, cosine ranks", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-mem-vec-"))
+    const dbPath = join(dir, "mem.db")
+    try {
+      const s = new SqliteMemoryStore(dbPath)
+      // Deferred-embedding flow: the first embedder FAILS for the deferred row
+      // (metadata-only write), a second embedder backfills it; directional
+      // vectors let the query distinguish the two rows.
+      let failDeferred = true
+      s.attachEmbedder!({ embed: async (t) => failDeferred && t.includes("deferred") ? null : (t.includes("deferred") ? [0, 1] : [1, 0]) })
+      await s.write({ content: "embedded normally", type: "fact", priority: 40, sessionId: "u" })
+      await s.write({ content: "deferred row", type: "fact", priority: 40, sessionId: "u" })
+      failDeferred = false
+      const filled = await s.attachEmbedder!({ embed: async (t) => (t.includes("deferred") ? [0, 1] : [1, 0]) }).backfill()
+      expect(filled).toBe(1) // the deferred row got its vector
+      const hits = await s.search("embedded", 5, { sessionId: "u" })
+      expect(hits.length).toBe(1) // cosine: query [1,0] matches only row 1
+      s.close()
+    } finally {
+      // Windows can hold the sqlite file lock briefly after close; a leaked
+      // temp dir is harmless (OS temp) and must not fail the assertion set.
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
     }
   })
 })
