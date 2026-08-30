@@ -11,6 +11,7 @@ import { validateTodoWrite } from "@newhorse/core"
 export function createTodoWriteTool(events: EventStore): Tool {
   return {
     name: "todo_write",
+    sideEffects: false, // session-internal checklist; allowed in readonly/plan mode
     description: 'Write the FULL task list (replaces the previous one). Each item: { content (short imperative), status: "pending"|"in_progress"|"completed"|"cancelled", activeForm? (present-continuous, shown while working) }. Rules: at most ONE in_progress; mark completed immediately when done (do not batch); an empty list clears the list. Max 50 items. Use for multi-step tasks (3+ steps).',
     inputSchema: {
       type: "object",

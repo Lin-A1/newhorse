@@ -17,6 +17,7 @@
         "newhorse": "./src/index.ts",
       },
       "dependencies": {
+        "@newhorse/core": "workspace:*",
         "@newhorse/llm": "workspace:*",
         "@newhorse/runtime": "workspace:*",
         "@newhorse/schema": "workspace:*",

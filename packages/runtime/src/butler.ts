@@ -68,6 +68,7 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
   return [
     {
       name: "list_sessions",
+      sideEffects: false,
       description: "List sessions (observational, read-only).",
       execute: async (input: unknown, ctx?: ToolCtx) => {
         requireCtx(ctx)
@@ -81,6 +82,7 @@ export function createButlerTools(deps: ButlerDeps): Tool[] {
     },
     {
       name: "followup_task",
+      sideEffects: false,
       description: "Query a task's durable state by its task id (childSessionId from spawn_agent): running / settled / unknown, plus the result text when settled.",
       execute: async (input: unknown, ctx?: ToolCtx) => {
         const c = requireCtx(ctx)

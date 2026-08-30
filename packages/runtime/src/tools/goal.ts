@@ -34,6 +34,7 @@ export function createGoalTools(events: EventStore): Tool[] {
 
   const read: Tool = {
     name: "goal_read",
+    sideEffects: false,
     description: "Read the current goal: objective, status, tokens used, and budget remaining (over-budget is flagged).",
     inputSchema: { type: "object", properties: {} },
     execute: async (_input: unknown, ctx?: ToolCtx) => {

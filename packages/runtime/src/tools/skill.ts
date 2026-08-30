@@ -15,6 +15,7 @@ export type SkillCatalogLoader = () => Promise<SkillDisclosure[]>
 export function createSkillTool(loadCatalog: SkillCatalogLoader): Tool {
   return {
     name: "skill",
+    sideEffects: false,
     description: "Inspect or load a skill by name. Args: { name, load?: true to fetch the full SKILL.md body, full?: true to also note references/scripts }. Listing (no args) returns the catalog (name + description only).",
     inputSchema: {
       type: "object",

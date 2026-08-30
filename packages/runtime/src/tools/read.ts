@@ -15,6 +15,7 @@ const LINE_WIDTH_LIMIT = 2000
 export function createReadTool(workspace: string): Tool {
   return {
     name: "read",
+    sideEffects: false,
     description: `Read a text file (with line numbers). Path is relative to or under the workspace root: ${workspace}`,
     inputSchema: {
       type: "object",

@@ -20,6 +20,7 @@ const BYTES_BUDGET = 16 * 1024 * 1024
 export function createSearchTool(workspace: string): Tool {
   return {
     name: "search",
+    sideEffects: false,
     description: `Search workspace file contents for a regex (grep-like). Returns file:line:match. Path under workspace root: ${workspace}`,
     inputSchema: {
       type: "object",

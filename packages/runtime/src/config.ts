@@ -43,6 +43,7 @@ export const ENV = {
   embeddingModel: "NEWHORSE_EMBEDDING_MODEL",
   embeddingBaseUrl: "NEWHORSE_EMBEDDING_BASE_URL",
   embeddingApiKey: "NEWHORSE_EMBEDDING_API_KEY",
+  approvalPolicy: "NEWHORSE_APPROVAL_POLICY",
 } as const
 
 export type ProviderKind = "openai" | "openai-responses" | "anthropic" | "openai-compatible"
@@ -74,6 +75,8 @@ export interface RuntimeSettings {
   readonly workspace: string
   readonly allowBash: boolean
   readonly allowPluginCode: boolean
+  /** Permission level: strict (floor + approval) | trusted (full access) | readonly (plan mode). */
+  readonly approvalPolicy: "strict" | "trusted" | "readonly"
   readonly memory: MemorySettings
 }
 
@@ -81,7 +84,7 @@ export interface ConfigLayers {
   /** Process env (L5 — highest). */
   readonly env: Record<string, string | undefined>
   /** Call-site overrides (CLI flags / host code) — above env. */
-  readonly cli?: Partial<Pick<RuntimeSettings, "model" | "dataDir" | "port" | "token" | "workspace" | "allowBash" | "allowPluginCode" | "host">> & { readonly providerKind?: ProviderKind; readonly baseUrl?: string; readonly apiKey?: string }
+  readonly cli?: Partial<Pick<RuntimeSettings, "model" | "dataDir" | "port" | "token" | "workspace" | "allowBash" | "allowPluginCode" | "host" | "approvalPolicy">> & { readonly providerKind?: ProviderKind; readonly baseUrl?: string; readonly apiKey?: string }
   /** Home directory override (a host embedding the runtime redirects it). */
   readonly agentHome?: string
 }
@@ -134,6 +137,7 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
     workspace: layers.cli?.workspace ?? str(env, ENV.workspace) ?? process.cwd(),
     allowBash: layers.cli?.allowBash ?? flag(env, ENV.allowBash),
     allowPluginCode: layers.cli?.allowPluginCode ?? flag(env, ENV.allowPluginCode),
+    approvalPolicy: (layers.cli?.approvalPolicy ?? str(env, ENV.approvalPolicy) ?? "strict") as "strict" | "trusted" | "readonly",
     memory: {
       on: memoryOn,
       extraction: memoryOn && flag(env, ENV.memoryExtract),

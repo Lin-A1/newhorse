@@ -13,6 +13,7 @@ const DEFAULT_LIMIT = 200
 export function createListTool(workspace: string): Tool {
   return {
     name: "list",
+    sideEffects: false,
     description: `List files matching a glob pattern under the workspace (e.g. "**/*.ts"). Path is under the workspace root: ${workspace}`,
     inputSchema: {
       type: "object",

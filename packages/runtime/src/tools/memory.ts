@@ -11,6 +11,7 @@ import type { MemoryStore } from "@newhorse/memory"
 export function createMemorySearchTool(store: MemoryStore): Tool {
   return {
     name: "memory_search",
+    sideEffects: false,
     description: "Search the durable memory store for a fact/preference/instruction by keyword.",
     inputSchema: {
       type: "object",

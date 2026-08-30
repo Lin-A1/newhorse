@@ -26,6 +26,14 @@ export interface Tool {
   readonly description?: string
   readonly inputSchema?: Record<string, unknown>
   readonly execute: (input: unknown, ctx?: ToolCtx) => Promise<unknown>
+  /**
+   * Whether this tool changes the world outside the session (default true).
+   * Read-only tools (read/list/search/memory_search/goal_read/skill/
+   * list_sessions/followup_task/todo_write) declare `sideEffects: false` so a
+   * `readonly` approval policy can filter them from the model's tool surface
+   * declaratively — no name blacklists, no scattered if-chains.
+   */
+  readonly sideEffects?: boolean
 }
 
 /**

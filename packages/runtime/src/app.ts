@@ -14,6 +14,7 @@ import { resolveAgent, type AgentDefinition } from "./agent-resolver"
 import { currentTodos, type TodoItem } from "@newhorse/core"
 import { currentGoal, type GoalState } from "@newhorse/core"
 import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
+import { allowAllExecPolicy } from "@newhorse/core"
 import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
 import type { ExecPolicy, ExecRule, ApprovalRequest } from "@newhorse/schema"
 
@@ -80,6 +81,13 @@ export interface AppConfig {
    * (fail-soft, deferred) and searches fuse BM25 + cosine via RRF. Off (or a
    * broken endpoint) = keyword-only FTS, which is always the floor.
    */
+  /**
+   * Approval policy (permission level):
+   *   strict (default) — execpolicy floor + interactive/deny approval gate;
+   *   trusted          — full access: the permission floor never blocks;
+   *   readonly         — plan mode: only sideEffects:false tools are exposed.
+   */
+  readonly approvalPolicy?: "strict" | "trusted" | "readonly"
   readonly memoryVector?: {
     readonly enabled?: boolean
     readonly embedding: EmbeddingConfig
@@ -266,7 +274,15 @@ export async function createApp(config: AppConfig): Promise<App> {
   // the explicit/plugin/builtin copies). Resolve the agent's tool list from the
   // deduped map so execution precedence and the protocol surface agree.
   const agentTools = [...toolMap.values()]
-  const agent: Agent = { id: "primary", model: config.model, tools: agentTools }
+  // Approval policy (permission level): readonly filters the model's tool
+  // surface to sideEffects:false tools (declarative — no name blacklists);
+  // trusted leaves the surface whole and short-circuits the floor below.
+  const approvalPolicy = config.approvalPolicy ?? "strict"
+  const effectiveTools = approvalPolicy === "readonly" ? agentTools.filter((t) => t.sideEffects === false) : agentTools
+  // resolveTool resolves against the EFFECTIVE surface — a model hallucinating
+  // a filtered (write) tool gets "unknown tool", never an execution.
+  const effectiveToolMap = new Map(effectiveTools.map((t) => [t.name, t]))
+  const agent: Agent = { id: "primary", model: config.model, tools: effectiveTools }
 
   // Agent definitions (Phase 4): pulled from the plugin seam (list("agent")) —
   // name -> definition, consumed by DAG nodes and butler spawn via resolveAgent.
@@ -415,7 +431,7 @@ export async function createApp(config: AppConfig): Promise<App> {
         const result = await runSession(runtime, {
           agent,
           sessionId,
-          resolveTool: (name) => toolMap.get(name),
+          resolveTool: (name) => effectiveToolMap.get(name),
           onEvent: emit,
           signal: ctrl.signal,
           caller,
@@ -449,8 +465,8 @@ export async function createApp(config: AppConfig): Promise<App> {
               }
               return { state: log.some((e) => e.type === "Session.Created") ? "running" : "unknown" }
             },
-            execPolicy,
-          } : { registry, appendAudit, execPolicy },
+            execPolicy: approvalPolicy === "trusted" ? allowAllExecPolicy : execPolicy,
+          } : { registry, appendAudit, execPolicy: approvalPolicy === "trusted" ? allowAllExecPolicy : execPolicy },
         })
         // Post-turn memory extraction (opt-in, fire-and-forget): the default
         // pipe uses the app's own LLM client + model; runMemoryExtraction is

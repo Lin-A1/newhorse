@@ -16,3 +16,13 @@ export const denyAllExecPolicy: ExecPolicy = {
   decide: (): Decision => "forbid",
   decidePath: (): Decision => "forbid",
 }
+
+/**
+ * The allow-all counterpart of denyAllExecPolicy: used by the `trusted`
+ * approval policy (full access) so a permission floor never blocks a run the
+ * operator explicitly trusted. Audit trail still applies at the tool layer.
+ */
+export const allowAllExecPolicy: ExecPolicy = {
+  decide: (): Decision => "allow",
+  decidePath: (): Decision => "allow",
+}
