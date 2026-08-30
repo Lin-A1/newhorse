@@ -30,6 +30,7 @@ export const ENV = {
   apiKey: "NEWHORSE_API_KEY",
   model: "NEWHORSE_MODEL",
   contextWindow: "NEWHORSE_CONTEXT_WINDOW",
+  maxOutputTokens: "NEWHORSE_MAX_OUTPUT_TOKENS",
   dataDir: "NEWHORSE_DATA_DIR",
   port: "NEWHORSE_PORT",
   host: "NEWHORSE_HOST",
@@ -79,6 +80,9 @@ export interface RuntimeSettings {
    *  trigger (a 32k-token model folds before it overflows, a 200k-token one
    *  does not summarize half-empty). Absent = the fixed 80k-char fallback. */
   readonly contextWindowTokens?: number
+  /** Output budget per model reply (tokens) — without it the anthropic
+   *  protocol silently truncates replies at a 4096-token floor. */
+  readonly maxOutputTokens?: number
   readonly host: string
   readonly port: number
   readonly token?: string
@@ -102,7 +106,7 @@ export interface ConfigLayers {
   /** Process env (L5 — highest). */
   readonly env: Record<string, string | undefined>
   /** Call-site overrides (CLI flags / host code) — above env. */
-  readonly cli?: Partial<Pick<RuntimeSettings, "model" | "dataDir" | "port" | "token" | "workspace" | "allowBash" | "allowPluginCode" | "host" | "approvalPolicy" | "contextWindowTokens">> & { readonly providerKind?: ProviderKind; readonly baseUrl?: string; readonly apiKey?: string }
+  readonly cli?: Partial<Pick<RuntimeSettings, "model" | "dataDir" | "port" | "token" | "workspace" | "allowBash" | "allowPluginCode" | "host" | "approvalPolicy" | "contextWindowTokens" | "maxOutputTokens">> & { readonly providerKind?: ProviderKind; readonly baseUrl?: string; readonly apiKey?: string }
   /** Home directory override (a host embedding the runtime redirects it). */
   readonly agentHome?: string
 }
@@ -134,6 +138,8 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
   const model = layers.cli?.model ?? str(env, ENV.model) ?? "gpt-4o-mini"
   const contextWindow = str(env, ENV.contextWindow)
   const contextWindowTokens = layers.cli?.contextWindowTokens ?? (contextWindow ? Number(contextWindow) : undefined)
+  const maxOutput = str(env, ENV.maxOutputTokens)
+  const maxOutputTokens = layers.cli?.maxOutputTokens ?? (maxOutput ? Number(maxOutput) : undefined)
   const dataDir = layers.cli?.dataDir ?? str(env, ENV.dataDir) ?? join(agentHome, "data")
   const memoryOn = flag(env, ENV.memory)
   const vectorOn = flag(env, ENV.memoryVector)
@@ -153,6 +159,7 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
     provider,
     model,
     ...(contextWindowTokens && Number.isFinite(contextWindowTokens) && contextWindowTokens > 0 ? { contextWindowTokens } : {}),
+    ...(maxOutputTokens && Number.isFinite(maxOutputTokens) && maxOutputTokens > 0 ? { maxOutputTokens } : {}),
     host: layers.cli?.host ?? str(env, ENV.host) ?? "127.0.0.1",
     port: layers.cli?.port ?? Number(str(env, ENV.port) ?? 3927),
     ...(layers.cli?.token ?? str(env, ENV.token) ? { token: layers.cli?.token ?? str(env, ENV.token) } : {}),

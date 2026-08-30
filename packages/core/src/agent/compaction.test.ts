@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { MemoryEventStore } from "../session/store"
-import { compactSession } from "./compaction"
+import { compactSession, summarizeTimeoutMs } from "./compaction"
 
 async function seed(events: MemoryEventStore, id: string, n: number): Promise<void> {
   await events.append(id, "Session.Created", { id, location: "/w", createdAt: Date.now() })
@@ -64,4 +64,34 @@ describe("compactSession LLM-summary seam", () => {
     const res2 = await compactSession(events2, "s5", { retain: 5, summarize: async () => { throw new Error("llm down") } })
     expect(res2.summary).toContain("folded") // local marker fallback
   })
+})
+
+describe("compaction tail byte budget (scale-aware, deadlock-free)", () => {
+  it("folds when BYTES exceed the tail budget even though the COUNT fits retain (old code returned 'nothing to compact' forever)", async () => {
+    const events = new MemoryEventStore()
+    // 4 messages x ~5k chars: count 4 <= retain 12, but 20k chars > 8k budget.
+    await events.append("s9", "Session.Created", { id: "s9", location: "/w", createdAt: Date.now() })
+    for (let i = 0; i < 4; i++) {
+      await events.append("s9", "Session.MessageAppended", { sessionId: "s9", message: { kind: "user", id: `u${i}`, seq: i, text: "x".repeat(5000) } })
+    }
+    const res = await compactSession(events, "s9", { retain: 12, maxTailChars: 8_000 })
+    expect(res.boundarySeq).toBeGreaterThanOrEqual(0)
+    const { messages } = (await import("./compaction")).projectCompacted(await events.read("s9"))
+    const tailChars = messages.slice(1).reduce((n, m) => n + JSON.stringify(m).length, 0) // [1..] = kept tail ( [0] is the marker)
+    expect(tailChars).toBeLessThanOrEqual(8_000)
+  })
+
+  it("caps the summarizer prompt at summarizeMaxChars", async () => {
+    const events = new MemoryEventStore()
+    await seed(events, "s10", 30)
+    let promptLen = 0
+    await compactSession(events, "s10", { retain: 2, summarizeMaxChars: 120, summarize: async (head) => { promptLen = head.length; return "ok" } })
+    expect(promptLen).toBeLessThanOrEqual(120)
+  })
+})
+
+it("summarizeTimeoutMs scales with the prompt (fixed 10s degraded big-head summaries)", () => {
+  expect(summarizeTimeoutMs(1_000)).toBe(10_000) // floor
+  expect(summarizeTimeoutMs(30_000)).toBe(12_000)
+  expect(summarizeTimeoutMs(250_000)).toBe(100_000)
 })

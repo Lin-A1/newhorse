@@ -102,6 +102,10 @@ export interface AppConfig {
    *  trigger to the model (a small window must fold before it overflows, a
    *  large one must not summarize half-empty). Absent = 80k-char fallback. */
   readonly contextWindowTokens?: number
+  /** Output budget per model reply (tokens). The anthropic protocol REQUIRES a
+   *  max_tokens value — unset, every reply silently truncates at a 4096 floor.
+   *  Set per model by the host (e.g. 8192, 16384, 64000). */
+  readonly maxOutputTokens?: number
   readonly memoryVector?: {
     readonly enabled?: boolean
     /** Index behind cosine: auto (sqlite-vec when loadable, else in-memory) | brute | off (legacy scan). */
@@ -507,6 +511,7 @@ export async function createApp(config: AppConfig): Promise<App> {
           caller,
           runHooks: makeHookRunner(pluginRegistry),
           contextWindowTokens: config.contextWindowTokens,
+          maxOutputTokens: config.maxOutputTokens,
           compactSummarize: async (headText) => {
             // The app's own LLM summarizes the folded head (provider-agnostic —
             // any LlmClient). A failure/timeout inside compactSession falls

@@ -44,6 +44,7 @@ const handle = await createServer({
     provider: create.provider ?? settings.provider,
     model: create.model ?? settings.model,
     contextWindowTokens: create.contextWindowTokens ?? settings.contextWindowTokens,
+    maxOutputTokens: create.maxOutputTokens ?? settings.maxOutputTokens,
     workspace: create.workspace ?? settings.workspace,
     dataDir: create.dataDir ?? settings.dataDir,
     enableBash: settings.allowBash,

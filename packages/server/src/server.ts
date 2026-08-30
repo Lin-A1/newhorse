@@ -65,6 +65,8 @@ export interface SessionCreateRequest {
   readonly model?: string
   /** The create-model's context window in tokens (scales auto-compaction). */
   readonly contextWindowTokens?: number
+  /** Output budget per reply in tokens (avoids the anthropic 4096 floor). */
+  readonly maxOutputTokens?: number
   readonly provider?: AdapterConfig
   readonly enableBash?: boolean
   readonly pluginsDir?: string

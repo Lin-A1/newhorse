@@ -21,15 +21,38 @@ import type { SessionMessage, StoredEvent } from "@newhorse/schema"
 export interface CompactOptions {
   /** Keep this many most-recent messages verbatim. Default 12. */
   readonly retain?: number
+  /** Byte budget for the retained tail (the same JSON-chars measure the
+   *  trigger uses). A COUNT-only retain makes no promise about tail size —
+   *  one 50k-char file-read message twelve times over still overflows a
+   *  small window. When the newest messages exceed this budget, the count
+   *  cap shrinks so the overflow folds into the summarized head instead.
+   *  Derived from the model window when known; default 30_000 chars. */
+  readonly maxTailChars?: number
   /** Optional LLM summarizer: (folded head text) -> summary. When absent, a
    *  cheap LOCAL marker ("[previous context: N messages folded...]") is used.
    *  The seam keeps compaction provider-agnostic — the caller (runtime) injects
    *  the summary call; a broken summarizer fails back to the local marker. */
   readonly summarize?: (headText: string) => Promise<string>
+  /** Cap on the head text handed to the summarizer (chars). Default 30_000 —
+   *  scale it with the model window: a 200k-token model can summarize far
+   *  more head than a 32k-token one. */
+  readonly summarizeMaxChars?: number
+  /** Hard timeout for the summarizer. Default scales with the prompt size
+   *  (see summarizeTimeoutMs) — a fixed 10s silently degraded to the local
+   *  marker exactly on the biggest (most summary-worthy) heads. */
+  readonly summarizeTimeoutMs?: number
 }
 
-/** Compaction: keep the newest `retain` messages, fold the older head into a
- *  compacted marker, and append the durable boundary. Returns the new head seq. */
+/** Summarizer timeout scaled to the prompt it must read: ~2.5k chars/s of
+ *  provider throughput, floored at 10s (small heads still need model latency). */
+export function summarizeTimeoutMs(promptChars: number): number {
+  return Math.max(10_000, Math.ceil(promptChars / 2_500) * 1_000)
+}
+
+/** Compaction: keep the newest messages verbatim (count-capped by `retain`
+ *  AND byte-capped by `maxTailChars` — whichever is tighter), fold everything
+ *  older into a compacted marker, and append the durable boundary. Returns
+ *  the new head seq. */
 export async function compactSession(events: EventStore, sessionId: string, opts: CompactOptions = {}): Promise<{ boundarySeq: number; summary: string }> {
   const retain = Math.max(2, opts.retain ?? 12)
   const stored = await events.read(sessionId)
@@ -41,11 +64,26 @@ export async function compactSession(events: EventStore, sessionId: string, opts
       messageSeqs.push(e.seq)
     }
   }
-  if (messages.length <= retain) {
+  // Effective keep: newest messages that fit BOTH the count cap and the byte
+  // budget (always at least one — the newest exchange is the working context;
+  // a single message larger than the whole budget still stays, documented).
+  let keep = Math.min(retain, messages.length)
+  if (opts.maxTailChars !== undefined) {
+    let chars = 0
+    let fit = 0
+    for (let i = messages.length - 1; i >= 0 && fit < retain; i--) {
+      const c = JSON.stringify(messages[i]!).length
+      if (chars + c > opts.maxTailChars && fit > 0) break
+      chars += c
+      fit++
+    }
+    keep = Math.min(keep, Math.max(fit, 1))
+  }
+  const headCount = messages.length - keep
+  if (headCount <= 0) {
     // Nothing to compact — no boundary to write (the session is already small).
     return { boundarySeq: stored.at(-1)?.seq ?? -1, summary: "" }
   }
-  const headCount = messages.length - retain
   const head = messages.slice(0, headCount)
   const tail = messages.slice(headCount)
   // boundarySeq = the LAST seq of the folded head. A read-time projection that
@@ -58,13 +96,16 @@ export async function compactSession(events: EventStore, sessionId: string, opts
   if (opts.summarize) {
     try {
       // Race the summarizer against a hard timeout: a hung LLM must not stall
-      // the turn; on timeout/failure the cheap local marker stands in.
+      // the turn; on timeout/failure the cheap local marker stands in. The
+      // timeout scales with the prompt actually sent — a fixed 10s degraded
+      // to the local marker exactly on the biggest heads.
+      const prompt = headText.slice(0, opts.summarizeMaxChars ?? 30_000)
       const result = await Promise.race([
         // The loser of the race must never surface a late unhandled rejection
         // (a summarizer failing AFTER the timeout resolved would crash the
         // process) — swallow it: the local marker already stood in.
-        opts.summarize(headText.slice(0, 30_000)).then((s) => `[previous context] ${s}`).catch(() => ""),
-        new Promise<string>((r) => setTimeout(() => r(""), 10_000)),
+        opts.summarize(prompt).then((s) => `[previous context] ${s}`).catch(() => ""),
+        new Promise<string>((r) => setTimeout(() => r(""), opts.summarizeTimeoutMs ?? summarizeTimeoutMs(prompt.length))),
       ])
       summary = result || localSummary(headCount, head)
     } catch {

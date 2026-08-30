@@ -302,6 +302,22 @@ describe("openai responses protocol", () => {
   })
 })
 
+describe("anthropic max_tokens budget", () => {
+  it("honors an explicit maxTokens (host/model config path)", () => {
+    const body = anthropicProtocol.encode(req({ maxTokens: 16_384 }))
+    expect(body.max_tokens).toBe(16_384)
+  })
+  it("falls back to the 4096 floor only when no budget is known (API requires the field)", () => {
+    const body = anthropicProtocol.encode(req())
+    expect(body.max_tokens).toBe(4096)
+  })
+  it("openai omits max_tokens when no budget is set (model default applies)", () => {
+    const body = openaiProtocol.encode(req())
+    expect(body.max_tokens).toBeUndefined()
+    expect(openaiProtocol.encode(req({ maxTokens: 8192 })).max_tokens).toBe(8192)
+  })
+})
+
 describe("makeLlmClient with injected fetch", () => {
   it("captures the endpoint and headers", async () => {
     let capturedUrl = ""

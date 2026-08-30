@@ -56,6 +56,10 @@ export interface RunOptions {
   /** Chars-per-token ratio for the window->chars conversion (CJK ≈ 1,
    * English ≈ 4; the default 2.5 is a conservative mixed-content value). */
   readonly charsPerToken?: number
+  /** Output budget for the model's replies (tokens). When absent, protocols
+   * apply their own fallback — the anthropic protocol MUST send a value (the
+   * API requires it) and would silently truncate at its conservative floor. */
+  readonly maxOutputTokens?: number
   /** Optional LLM summarizer used by compaction (head text -> summary). The
    * runtime injects it from its LLM client; absent = cheap local marker. */
   readonly compactSummarize?: (headText: string) => Promise<string>
@@ -135,7 +139,7 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     if (opts.compactAuto !== false) {
       const chars = visibleCheck.reduce((n, m) => n + JSON.stringify(m).length, 0)
       if (chars > compactLimit(opts)) {
-        await compactSession(runtime.events, opts.sessionId, { summarize: opts.compactSummarize })
+        await compactSession(runtime.events, opts.sessionId, { summarize: opts.compactSummarize, maxTailChars: compactionTailChars(opts) })
       }
     }
     // Compaction-aware projection: if a Session.Compacted boundary exists, the
@@ -163,6 +167,7 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
       model: opts.agent.model,
       messages,
       tools: opts.agent.tools?.map(toSpec),
+      maxTokens: opts.maxOutputTokens,
     }
 
     let turn: { needsContinuation: boolean; step: number; finish: "tool" | "stop" | "length" | "content-filter" | "error" }
@@ -362,6 +367,15 @@ export function compactLimit(opts: Pick<RunOptions, "compactThreshold" | "contex
   if (opts.compactThreshold !== undefined) return opts.compactThreshold
   if (opts.contextWindowTokens !== undefined) return Math.floor(opts.contextWindowTokens * (opts.charsPerToken ?? 2.5) * COMPACT_WINDOW_FRACTION)
   return COMPACT_CHAR_FALLBACK
+}
+
+/** Byte budget for the RETAINED TAIL after a fold (the trigger folds when the
+ *  visible history exceeds compactLimit; the tail that survives the fold must
+ *  be strictly smaller, else the trigger re-fires every turn with nothing to
+ *  fold). Explicit window scaling; fixed 30k-char fallback. */
+export function compactionTailChars(opts: Pick<RunOptions, "contextWindowTokens" | "charsPerToken">): number {
+  if (opts.contextWindowTokens !== undefined) return Math.floor(opts.contextWindowTokens * (opts.charsPerToken ?? 2.5) * 0.3)
+  return 30_000
 }
 
 async function appendMessage(runtime: TurnRuntime, sessionId: string, message: SessionMessage): Promise<void> {

@@ -55,6 +55,10 @@ export const anthropicProtocol: Protocol = {
       messages.push({ role: m.role, content: parts })
     }
 
+    // max_tokens is REQUIRED by the Anthropic API — the 4096 floor exists only
+    // for requests that carry no explicit budget. Real budgets come from
+    // host/model config (RunOptions.maxOutputTokens / NEWHORSE_MAX_OUTPUT_TOKENS):
+    // a silent 4096 truncate is indistinguishable from a model stopping early.
     const body: Body = { model: request.model, messages, stream: true, max_tokens: request.maxTokens ?? 4096 }
     // `request.system` is folded into the cacheable system prefix. It MUST be
     // static (the model prefix has a stable cache_control anchor); per-turn

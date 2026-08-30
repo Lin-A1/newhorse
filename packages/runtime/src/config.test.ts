@@ -36,6 +36,12 @@ describe("loadRuntimeSettings (harness floor)", () => {
     expect(loadRuntimeSettings({ env: { NEWHORSE_CONTEXT_WINDOW: "999" }, cli: { contextWindowTokens: 4096 } }).contextWindowTokens).toBe(4096)
   })
 
+  it("maxOutputTokens: NEWHORSE_MAX_OUTPUT_TOKENS parses; invalid/absent stays undefined", () => {
+    expect(loadRuntimeSettings({ env: { NEWHORSE_MAX_OUTPUT_TOKENS: "16384" } }).maxOutputTokens).toBe(16384)
+    expect(loadRuntimeSettings({ env: {} }).maxOutputTokens).toBeUndefined()
+    expect(loadRuntimeSettings({ env: { NEWHORSE_MAX_OUTPUT_TOKENS: "bogus" } }).maxOutputTokens).toBeUndefined()
+  })
+
   it("provider apiKey falls back to the kind-specific standard env", () => {
     const s = loadRuntimeSettings({ env: { NEWHORSE_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-a" } })
     expect(s.provider.apiKey).toBe("sk-a")
