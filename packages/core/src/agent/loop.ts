@@ -44,9 +44,18 @@ export interface RunOptions {
   /** Optional hook seam (stop / pre-tool-use). Absent = no hooks. */
   readonly runHooks?: (event: HookEvent, input: unknown) => Promise<HookVerdict>
   /** Auto-compaction: when the visible history chars exceed the threshold,
-   * fold the head once before the request (goal #2 long-horizon). Default on. */
+   * fold the head once before the request (goal #2 long-horizon). Default on.
+   * The threshold is MODEL-RELATIVE when the window is known (see
+   * compactLimit); an explicit compactThreshold always wins. */
   readonly compactThreshold?: number
   readonly compactAuto?: boolean
+  /** The current model's context window in tokens (host/model config supplies
+   * it; it is deliberately NOT a built-in per-model table — that would make
+   * core captive to a model registry). Scales the compaction trigger. */
+  readonly contextWindowTokens?: number
+  /** Chars-per-token ratio for the window->chars conversion (CJK ≈ 1,
+   * English ≈ 4; the default 2.5 is a conservative mixed-content value). */
+  readonly charsPerToken?: number
   /** Optional LLM summarizer used by compaction (head text -> summary). The
    * runtime injects it from its LLM client; absent = cheap local marker. */
   readonly compactSummarize?: (headText: string) => Promise<string>
@@ -125,7 +134,7 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     }
     if (opts.compactAuto !== false) {
       const chars = visibleCheck.reduce((n, m) => n + JSON.stringify(m).length, 0)
-      if (chars > (opts.compactThreshold ?? 80_000)) {
+      if (chars > compactLimit(opts)) {
         await compactSession(runtime.events, opts.sessionId, { summarize: opts.compactSummarize })
       }
     }
@@ -338,6 +347,21 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
 
   await runtime.events.append(opts.sessionId, "Session.StepEnded", { sessionId: opts.sessionId, step, finish, usage } as Record<string, unknown>)
   return { needsContinuation, step, finish, usage }
+}
+
+/** Model-relative compaction budget: explicit compactThreshold wins; else a
+ *  FRACTION of the model's own window (a 32k-token model must trigger before
+ *  it overflows, a 200k-token model must not summarize half-empty); else the
+ *  fixed 80k-char fallback (window unknown). Chars stay the measure — no
+ *  tokenizer dependency; charsPerToken converts, conservatively. The 0.6
+ *  fraction leaves headroom for the turn's own reply + tool outputs (a turn
+ *  can add a lot before the next check). */
+const COMPACT_WINDOW_FRACTION = 0.6
+const COMPACT_CHAR_FALLBACK = 80_000
+export function compactLimit(opts: Pick<RunOptions, "compactThreshold" | "contextWindowTokens" | "charsPerToken">): number {
+  if (opts.compactThreshold !== undefined) return opts.compactThreshold
+  if (opts.contextWindowTokens !== undefined) return Math.floor(opts.contextWindowTokens * (opts.charsPerToken ?? 2.5) * COMPACT_WINDOW_FRACTION)
+  return COMPACT_CHAR_FALLBACK
 }
 
 async function appendMessage(runtime: TurnRuntime, sessionId: string, message: SessionMessage): Promise<void> {

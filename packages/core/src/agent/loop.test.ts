@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { MemoryEventStore } from "../session/store"
 import { MemorySessionInput } from "../session/input"
 import { Session, asSessionMessage } from "../session/session"
-import { runSession } from "./loop"
+import { runSession, compactLimit } from "./loop"
 import type { TurnRuntime, Agent, Tool } from "./runner"
 import type { LLMEvent, LLMRequest } from "@newhorse/schema"
 
@@ -228,4 +228,62 @@ it("goal enforcement is skipped when the budget is not exceeded", async () => {
   const result = await runSession(runtime, { sessionId: "s", agent, resolveTool })
   expect(result.finish).toBe("stop")
   expect(llmCalled).toBe(true)
+})
+
+it("compaction threshold is MODEL-RELATIVE: a small window fires where the 80k default would not", async () => {
+  const { runtime, resolveTool } = makeRuntime({
+    id: "t",
+    stream: async () => eventsOf([{ type: "text.delta", text: "final" }, { type: "step-finish", finish: "stop" }]),
+  })
+  await runtime.events.append("s", "Session.Created", { id: "s", location: "/w", createdAt: Date.now() })
+  // ~10 messages x ~2.1k chars ≈ 21k visible chars: under the 80k fallback,
+  // over a 4k-token window's budget (4000 × 2.5 chars/token × 0.6 = 6000).
+  const big = "x".repeat(2000)
+  for (let i = 0; i < 10; i++) {
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "user", id: `u${i}`, seq: i * 2, text: big } })
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "assistant", id: `a${i}`, seq: i * 2 + 1, content: [{ type: "text", text: big }], model: "m" } })
+  }
+  await runtime.events.append("s", "Session.Prompted", { id: "p", sessionId: "s", prompt: "go", delivery: "steer", principal: "user", promotedSeq: 999 })
+  await runSession(runtime, { sessionId: "s", agent, resolveTool, contextWindowTokens: 4_000 })
+  expect((await runtime.events.read("s")).some((e) => e.type === "Session.Compacted")).toBe(true)
+})
+
+it("compaction stays on the 80k fallback when no window is known (same history, no fire)", async () => {
+  const { runtime, resolveTool } = makeRuntime({
+    id: "t",
+    stream: async () => eventsOf([{ type: "text.delta", text: "final" }, { type: "step-finish", finish: "stop" }]),
+  })
+  await runtime.events.append("s", "Session.Created", { id: "s", location: "/w", createdAt: Date.now() })
+  const big = "x".repeat(2000)
+  for (let i = 0; i < 10; i++) {
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "user", id: `u${i}`, seq: i * 2, text: big } })
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "assistant", id: `a${i}`, seq: i * 2 + 1, content: [{ type: "text", text: big }], model: "m" } })
+  }
+  await runtime.events.append("s", "Session.Prompted", { id: "p", sessionId: "s", prompt: "go", delivery: "steer", principal: "user", promotedSeq: 999 })
+  await runSession(runtime, { sessionId: "s", agent, resolveTool })
+  expect((await runtime.events.read("s")).some((e) => e.type === "Session.Compacted")).toBe(false)
+})
+
+it("explicit compactThreshold wins over the window-derived budget", async () => {
+  const { runtime, resolveTool } = makeRuntime({
+    id: "t",
+    stream: async () => eventsOf([{ type: "text.delta", text: "final" }, { type: "step-finish", finish: "stop" }]),
+  })
+  await runtime.events.append("s", "Session.Created", { id: "s", location: "/w", createdAt: Date.now() })
+  const big = "x".repeat(2000)
+  for (let i = 0; i < 10; i++) {
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "user", id: `u${i}`, seq: i * 2, text: big } })
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "assistant", id: `a${i}`, seq: i * 2 + 1, content: [{ type: "text", text: big }], model: "m" } })
+  }
+  await runtime.events.append("s", "Session.Prompted", { id: "p", sessionId: "s", prompt: "go", delivery: "steer", principal: "user", promotedSeq: 999 })
+  // Window would derive 6000; the explicit 1M override must win -> no fold.
+  await runSession(runtime, { sessionId: "s", agent, resolveTool, contextWindowTokens: 4_000, compactThreshold: 1_000_000 })
+  expect((await runtime.events.read("s")).some((e) => e.type === "Session.Compacted")).toBe(false)
+})
+
+it("compactLimit derives window-fraction budgets with explicit precedence", async () => {
+  expect(compactLimit({})).toBe(80_000)
+  expect(compactLimit({ contextWindowTokens: 10_000 })).toBe(15_000) // 10000×2.5×0.6
+  expect(compactLimit({ contextWindowTokens: 10_000, charsPerToken: 4 })).toBe(24_000)
+  expect(compactLimit({ contextWindowTokens: 10_000, compactThreshold: 999 })).toBe(999)
 })

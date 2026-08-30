@@ -98,6 +98,10 @@ export interface AppConfig {
    *   readonly         — plan mode: only sideEffects:false tools are exposed.
    */
   readonly approvalPolicy?: "strict" | "trusted" | "readonly"
+  /** The session model's context window in tokens — scales the auto-compaction
+   *  trigger to the model (a small window must fold before it overflows, a
+   *  large one must not summarize half-empty). Absent = 80k-char fallback. */
+  readonly contextWindowTokens?: number
   readonly memoryVector?: {
     readonly enabled?: boolean
     /** Index behind cosine: auto (sqlite-vec when loadable, else in-memory) | brute | off (legacy scan). */
@@ -502,6 +506,7 @@ export async function createApp(config: AppConfig): Promise<App> {
           signal: ctrl.signal,
           caller,
           runHooks: makeHookRunner(pluginRegistry),
+          contextWindowTokens: config.contextWindowTokens,
           compactSummarize: async (headText) => {
             // The app's own LLM summarizes the folded head (provider-agnostic —
             // any LlmClient). A failure/timeout inside compactSession falls

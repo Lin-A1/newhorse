@@ -63,6 +63,8 @@ export interface SessionCreateRequest {
   readonly workspace?: string
   readonly sessionId?: string
   readonly model?: string
+  /** The create-model's context window in tokens (scales auto-compaction). */
+  readonly contextWindowTokens?: number
   readonly provider?: AdapterConfig
   readonly enableBash?: boolean
   readonly pluginsDir?: string

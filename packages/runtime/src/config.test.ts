@@ -28,6 +28,14 @@ describe("loadRuntimeSettings (harness floor)", () => {
     expect(s.port).toBe(5000)
   })
 
+  it("contextWindowTokens: NEWHORSE_CONTEXT_WINDOW parses; invalid/absent stays undefined", () => {
+    expect(loadRuntimeSettings({ env: { NEWHORSE_CONTEXT_WINDOW: "128000" } }).contextWindowTokens).toBe(128000)
+    expect(loadRuntimeSettings({ env: {} }).contextWindowTokens).toBeUndefined()
+    expect(loadRuntimeSettings({ env: { NEWHORSE_CONTEXT_WINDOW: "bogus" } }).contextWindowTokens).toBeUndefined()
+    expect(loadRuntimeSettings({ env: { NEWHORSE_CONTEXT_WINDOW: "-5" } }).contextWindowTokens).toBeUndefined()
+    expect(loadRuntimeSettings({ env: { NEWHORSE_CONTEXT_WINDOW: "999" }, cli: { contextWindowTokens: 4096 } }).contextWindowTokens).toBe(4096)
+  })
+
   it("provider apiKey falls back to the kind-specific standard env", () => {
     const s = loadRuntimeSettings({ env: { NEWHORSE_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-a" } })
     expect(s.provider.apiKey).toBe("sk-a")

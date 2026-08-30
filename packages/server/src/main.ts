@@ -43,6 +43,7 @@ const handle = await createServer({
     // different providers) — server-level settings are only the default.
     provider: create.provider ?? settings.provider,
     model: create.model ?? settings.model,
+    contextWindowTokens: create.contextWindowTokens ?? settings.contextWindowTokens,
     workspace: create.workspace ?? settings.workspace,
     dataDir: create.dataDir ?? settings.dataDir,
     enableBash: settings.allowBash,
@@ -64,6 +65,7 @@ console.log(`newhorse runtime server`)
 console.log(`  listening : ${handle.baseUrl}`)
 console.log(`  home      : ${settings.agentHome}`)
 console.log(`  provider  : ${settings.provider.kind} @ ${settings.provider.baseUrl} (${settings.model})`)
+if (settings.contextWindowTokens) console.log(`  context   : ${settings.contextWindowTokens} tokens (compaction scales to the window)`)
 console.log(`  dataDir   : ${settings.dataDir}`)
 console.log(`  memory    : ${settings.memory.on ? `on${settings.memory.vector.enabled ? " + semantic" : ""}${settings.memory.extraction ? " + extraction" : ""}` : "off"}`)
 console.log(`  bash      : ${settings.allowBash ? "on" : "off"}  plugin code: ${settings.allowPluginCode ? "trusted" : "off"}`)
