@@ -205,8 +205,26 @@ async function repl(app: Awaited<ReturnType<typeof import("@newhorse/runtime").c
     try {
       const text = line.trim()
       if (text === "/quit" || text === "/exit") { rl.close(); process.exit(0); return }
-      if (text === "/help") { console.log("  /steer <text>  /list  /interrupt  /quit"); return }
+      if (text === "/help") { console.log("  <text>  /steer <text>  /todos  /goal  /list  /sessions  /interrupt  /quit"); return }
       if (text === "/list") { console.log(JSON.stringify(await app.listSessions(), null, 2)); return }
+      if (text === "/sessions") { console.log(JSON.stringify(await app.listSessions(), null, 2)); return }
+      if (text === "/todos") {
+        const todos = await app.todos()
+        if (todos.length === 0) { console.log("(no todos)"); return }
+        for (const t of todos) {
+          const mark = t.status === "completed" ? "[x]" : t.status === "in_progress" ? "[~]" : t.status === "cancelled" ? "[-]" : "[ ]"
+          const label = t.status === "in_progress" && t.activeForm ? t.activeForm : t.content
+          console.log(`${mark} ${label}`)
+        }
+        return
+      }
+      if (text === "/goal") {
+        const g = await app.goal()
+        if (!g) { console.log("(no goal set — the model can set one via goal_write)"); return }
+        const budget = g.tokenBudget !== undefined ? ` | budget ${g.tokensUsed}/${g.tokenBudget} tokens${g.tokenBudget !== undefined && g.tokensUsed > g.tokenBudget ? " (OVER)" : ""}` : ` | ${g.tokensUsed} tokens used`
+        console.log(`[${g.status}] ${g.objective}${budget}`)
+        return
+      }
       if (text === "/interrupt") { app.interrupt(); return }
       if (text.startsWith("/steer ")) { await app.steer(text.slice(7).trim()); return }
       if (!text) return

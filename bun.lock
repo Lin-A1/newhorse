@@ -65,6 +65,13 @@
       "name": "@newhorse/schema",
       "version": "0.0.0",
     },
+    "packages/sdk": {
+      "name": "@newhorse/sdk",
+      "version": "0.0.0",
+      "dependencies": {
+        "@newhorse/schema": "workspace:*",
+      },
+    },
     "packages/server": {
       "name": "@newhorse/server",
       "version": "0.0.0",
@@ -89,6 +96,8 @@
     "@newhorse/runtime": ["@newhorse/runtime@workspace:packages/runtime"],
 
     "@newhorse/schema": ["@newhorse/schema@workspace:packages/schema"],
+
+    "@newhorse/sdk": ["@newhorse/sdk@workspace:packages/sdk"],
 
     "@newhorse/server": ["@newhorse/server@workspace:packages/server"],
 

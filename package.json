@@ -11,7 +11,8 @@
       "packages/runtime",
       "packages/cli",
       "packages/memory",
-      "packages/server"
+      "packages/server",
+      "packages/sdk"
     ]
   },
   "scripts": {

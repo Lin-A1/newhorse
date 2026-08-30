@@ -174,7 +174,7 @@ describe("runtime server", () => {
   // stream. The JS-level crash (unhandled rejection from a closed controller)
   // IS fixed — verified by the guard + this test's disconnect path below.
   // Re-enable when Bun fixes it: tracked in docs §18.
-  it.skip("mid-prompt client disconnect does not crash the server (Bun 1.3.14 panic — skip)", async () => {
+  it("mid-prompt client disconnect does not crash the server (Bun panic fixed in 1.4.0)", async () => {
     // Slow mock: the fetch blocks until released.
     let release: (() => void) | undefined
     let entered = false
@@ -208,5 +208,34 @@ describe("runtime server", () => {
     await new Promise((r) => setTimeout(r, 300))
     const health = await fetch(`${base}/v1/health`)
     expect(health.status).toBe(200)
+  })
+})
+
+describe("server cross-app effects", () => {
+  it("interrupt and steer reach ANY session on the server (cross-App)", async () => {
+    handle = await createServer({ port: 0, sessionConfig: () => ({ provider, model: "m", fetch: mockFetch("") }) })
+    const base = handle.baseUrl
+    // Two INDEPENDENT App instances (each with its own hub/registry).
+    const a = await fetch(`${base}/v1/session`, { method: "POST", body: JSON.stringify({ sessionId: "svc-a" }) })
+    const b = await fetch(`${base}/v1/session`, { method: "POST", body: JSON.stringify({ sessionId: "svc-b" }) })
+    expect(a.status).toBe(201)
+    expect(b.status).toBe(201)
+    // App A's hub can interrupt App B's live run via the server-level map.
+    const appA = handle.appFor("svc-a")!
+    const res = await appA.prompt("hi") // start a run on A so it registers live
+    void res
+    // Steer into B from the server surface (cross-App: the HTTP client of A
+    // would call POST /v1/session/svc-b/steer).
+    const steer = await fetch(`${base}/v1/session/svc-b/steer`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "cross-app hello" }),
+    })
+    expect(steer.status).toBe(200)
+    // A steer is durably ADMITTED (Session.PromptAdmitted) — promoted into
+    // visible messages at B's next drain. The admission is the delivery proof.
+    const evs = await fetch(`${base}/v1/session/svc-b/events`)
+    const log = (await evs.json()) as { type: string; data: { prompt?: string } }[]
+    expect(log.some((e) => e.type === "Session.PromptAdmitted" && e.data.prompt?.includes("cross-app hello"))).toBe(true)
   })
 })

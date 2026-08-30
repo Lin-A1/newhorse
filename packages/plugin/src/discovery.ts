@@ -20,12 +20,12 @@ export interface DiscoverOptions {
   readonly dir: string
 }
 
-export async function discoverPlugin(dir: string): Promise<Capability[]> {
+export async function discoverPlugin(dir: string, opts?: { readonly trustCode?: boolean }): Promise<Capability[]> {
   const caps: Capability[] = []
 
   const tools = await readDir(dir, "tools")
   for (const file of tools) {
-    const cap = await readTool(dir, file)
+    const cap = await readTool(dir, file, opts?.trustCode ?? false)
     if (cap) caps.push(cap)
   }
 
@@ -119,7 +119,16 @@ function baseSlug(name: string): string {
  * later concern; until then a `.ts` declaration is skipped the same way a
  * non-JSON file is, so discovery never registers a tool it cannot execute.
  */
-async function readTool(dir: string, file: string): Promise<Capability | undefined> {
+async function readTool(dir: string, file: string, trustCode: boolean): Promise<Capability | undefined> {
+  // A .ts tool definition is EXECUTABLE CODE: it loads only when the caller
+  // opted in (trustCode) — loading third-party code is a trust decision, not
+  // a convention. The module must default-export a Tool-shaped object.
+  if (file.endsWith(".ts") && trustCode) {
+    const mod = await import(`${dir}/tools/${file}`)
+    const t = (mod.default ?? mod.tool) as { name?: unknown; execute?: unknown; description?: unknown } | undefined
+    if (!t || typeof t.name !== "string" || typeof t.execute !== "function") return undefined
+    return { kind: "tool", name: t.name, description: typeof t.description === "string" ? t.description : undefined, execute: t.execute as (input: unknown, ctx?: unknown) => Promise<unknown> }
+  }
   if (!file.endsWith(".json")) return undefined
   const def = await readJsonFile(`${dir}/tools/${file}`)
   if (!def || typeof def.name !== "string") return undefined

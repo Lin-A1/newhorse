@@ -11,6 +11,8 @@ import { createButlerTools } from "./butler"
 import { createSessionHub } from "./hub"
 import { driveChildSession, readChildText } from "./session-manager"
 import { resolveAgent, type AgentDefinition } from "./agent-resolver"
+import { currentTodos, type TodoItem } from "@newhorse/core"
+import { currentGoal, type GoalState } from "@newhorse/core"
 import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
 import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
 import type { ExecPolicy, ExecRule, ApprovalRequest } from "@newhorse/schema"
@@ -35,6 +37,10 @@ export interface AppConfig {
    * kinds register through the same seam so a later milestone can wire them
    * without rework. Optional. */
   readonly pluginsDir?: string
+  /** Trust switch for EXECUTABLE plugin code (.ts tool definitions). Off by
+   *  default — loading third-party code is a trust decision, not a convention.
+   *  JSON tool declarations (schema-only stubs) are unaffected. */
+  readonly allowPluginCode?: boolean
   /** Direct tool list override (for tests or embedding). Optional. */
   readonly tools?: readonly Tool[]
   /** Data dir to persist the event store across restarts. */
@@ -115,6 +121,10 @@ export interface App {
    * capability (the seam's consumer). Returns the command's output, or undefined
    * when the text is not a registered command. */
   readonly runCommand: (text: string) => Promise<unknown | undefined>
+  /** Read the session's current todo list (durable fold — restart-safe). */
+  readonly todos: () => Promise<TodoItem[]>
+  /** Read the session's current goal + budget state (durable fold). */
+  readonly goal: () => Promise<GoalState | null>
 }
 
 /** Structured outcome of a prompt run (a shell renders this, not a string). */
@@ -220,7 +230,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   let pluginRegistry = config.plugins
   if (config.pluginsDir) {
     pluginRegistry ??= new PluginRegistry()
-    const caps = await discoverPlugin(config.pluginsDir)
+    const caps = await discoverPlugin(config.pluginsDir, { trustCode: config.allowPluginCode ?? false })
     if (caps.length > 0) pluginRegistry.registerDiscovered(caps)
   }
   const pluginTools = pluginRegistry?.list("tool").map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, execute: t.execute })) ?? []
@@ -410,6 +420,20 @@ export async function createApp(config: AppConfig): Promise<App> {
           signal: ctrl.signal,
           caller,
           runHooks: makeHookRunner(pluginRegistry),
+          compactSummarize: async (headText) => {
+            // The app's own LLM summarizes the folded head (provider-agnostic —
+            // any LlmClient). A failure/timeout inside compactSession falls
+            // back to the local marker; here we only convert the stream to text.
+            const stream = await llm.stream({ model: config.model, messages: [
+              { role: "system", content: [{ type: "text", text: "Summarize the conversation head in under 200 words. Capture the objective, decisions made, and current state. Output only the summary." }] },
+              { role: "user", content: [{ type: "text", text: headText }] },
+            ] })
+            let out = ""
+            for await (const ev of stream) {
+              if (ev.type === "text.delta") out += ev.text
+            }
+            return out.trim()
+          },
           toolCtx: hub ? {
             registry,
             appendAudit,
@@ -473,6 +497,12 @@ export async function createApp(config: AppConfig): Promise<App> {
       // Admitted as a steer: the running drain promotes it at the next safe
       // provider-turn boundary (admission inbox semantics, see specs §2.2).
       await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: "user" })
+    },
+    async todos() {
+      return currentTodos(await events.read(sessionId))
+    },
+    async goal() {
+      return currentGoal(await events.read(sessionId)) ?? null
     },
     async runCommand(text) {
       // Slash command (transport entry): "/name args". The seam is the plugin

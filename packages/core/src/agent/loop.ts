@@ -3,6 +3,7 @@ import type { TurnRuntime, Agent, Tool, ToolCall, ToolResult, ToolCtx, Initiator
 import { Session } from "../session/session"
 import { toLlmMessages } from "../session/messages"
 import { projectCompacted, compactSession } from "./compaction"
+import { currentGoal } from "./goal"
 import { denyAllExecPolicy } from "./execpolicy"
 
 /** Hard cap on steps per drain to guarantee termination. */
@@ -49,6 +50,10 @@ export interface RunOptions {
   /** Optional LLM summarizer used by compaction (head text -> summary). The
    * runtime injects it from its LLM client; absent = cheap local marker. */
   readonly compactSummarize?: (headText: string) => Promise<string>
+  /** Goal budget enforcement: when an ACTIVE goal's tokenBudget is exceeded by
+   * the aggregated persisted usage, pause the run durably (finish="length",
+   * goal status -> blocked). Default on. */
+  readonly goalEnforce?: boolean
   /** Optional cancellation: when aborted, the drain stops between steps. */
   readonly signal?: AbortSignal
   /** Trusted caller injected into tool ctx (M2b). Defaults to parent of sessionId. */
@@ -105,6 +110,19 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     // its first compaction.
     const storedForCompaction = await runtime.events.read(opts.sessionId)
     const { messages: visibleCheck } = projectCompacted(storedForCompaction)
+    // Goal budget enforcement (goal layer): when the ACTIVE goal carries a
+    // tokenBudget and the session's aggregated usage exceeds it, pause the run
+    // durably — a steer tells the model the budget is spent, the drain stops
+    // (needsContinuation=false, finish="length"), and the operator decides
+    // whether to raise the budget or stop. Enforced BEFORE the next request.
+    const goal = currentGoal(storedForCompaction)
+    if (opts.goalEnforce !== false && goal?.status === "active" && goal.tokenBudget !== undefined && goal.tokensUsed > goal.tokenBudget) {
+      await runtime.inbox.admit({ id: crypto.randomUUID(), sessionId: opts.sessionId, prompt: `[goal budget] token budget exhausted (${goal.tokensUsed} > ${goal.tokenBudget}). The run is paused — raise the budget via goal_write or start a new session.`, delivery: "steer", principal: "parent" })
+      await runtime.events.append(opts.sessionId, "Session.GoalUpdated", { sessionId: opts.sessionId, objective: goal.objective, status: "blocked", tokenBudget: goal.tokenBudget, ts: Date.now() })
+      const result: TurnResult = { needsContinuation: false, step: turns, finish: "length" }
+      opts.onEvent?.({ type: "done", step: result.step, needsContinuation: false, finish: "length" })
+      return result
+    }
     if (opts.compactAuto !== false) {
       const chars = visibleCheck.reduce((n, m) => n + JSON.stringify(m).length, 0)
       if (chars > (opts.compactThreshold ?? 80_000)) {

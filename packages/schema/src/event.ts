@@ -48,7 +48,6 @@ export type SessionEvent =
   | SessionEventBase<"Session.PromptAdmitted", { readonly id: string; readonly sessionId: string; readonly prompt: string; readonly delivery: Delivery; readonly principal: Principal; readonly admittedSeq: number }>
   | SessionEventBase<"Session.Prompted", { readonly id: string; readonly sessionId: string; readonly prompt: string; readonly delivery: Delivery; readonly principal: Principal; readonly promotedSeq: number }>
   | SessionEventBase<"Session.MessageAppended", { readonly sessionId: string; readonly message: SessionMessage }>
-  | SessionEventBase<"Session.ToolSettled", { readonly sessionId: string; readonly assistantMessageId: string; readonly callId: string; readonly name: string; readonly isError?: boolean }>
   | SessionEventBase<"Session.StepEnded", { readonly sessionId: string; readonly step: number; readonly finish: string; readonly usage?: LLMUsage }>
   | SessionEventBase<"Session.Interrupted", { readonly sessionId: string }>
   | SessionEventBase<"Session.Spawned", { readonly sessionId: string; readonly parentId: string }>
