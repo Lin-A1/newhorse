@@ -48,3 +48,10 @@ describe("createDefaultMemoryPipeline", () => {
     expect(out.length).toBe(0)
   })
 })
+
+it("clamps model-emitted priority into [0,100] (500 -> 100; negative -> 50)", async () => {
+  const pipe = createDefaultMemoryPipeline(stubClient(`[{"content":"over","type":"fact","priority":500},{"content":"under","type":"fact","priority":-3}]`), "m")
+  const out = await pipe.extractL1MemoNext({ messages: [], candidates: [] })
+  expect(out[0]!.priority).toBe(100)
+  expect(out[1]!.priority).toBe(50)
+})

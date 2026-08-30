@@ -155,3 +155,38 @@ it("auto-compaction bounds the request once (no repeated re-pack) for a long his
   const boundaryCount = (await runtime.events.read("s")).filter((e) => e.type === "Session.Compacted").length
   expect(boundaryCount).toBe(1)
 })
+
+it("auto-compaction re-fires on a later turn after the first boundary (long-horizon escape)", async () => {
+  let request: LLMRequest | undefined
+  const { runtime, resolveTool } = makeRuntime({
+    id: "t",
+    stream: async (req) => {
+      request = req
+      return eventsOf([{ type: "text.delta", text: "ok" }, { type: "step-finish", finish: "stop" }])
+    },
+  })
+  await runtime.events.append("s", "Session.Created", { id: "s", location: "/w", createdAt: Date.now() })
+  const big = "x".repeat(2000)
+  for (let i = 0; i < 60; i++) {
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "user", id: `u${i}`, seq: i * 2, text: big } })
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "assistant", id: `a${i}`, seq: i * 2 + 1, content: [{ type: "text", text: big }], model: "m" } })
+  }
+  await runtime.events.append("s", "Session.Prompted", { id: "p", sessionId: "s", prompt: "go", delivery: "steer", principal: "user", promotedSeq: 999 })
+  await runSession(runtime, { sessionId: "s", agent, resolveTool, compactThreshold: 80_000 })
+
+  // Hard part: after the first compaction, append enough NEW content that the
+  // PROJECTED tail (kept by the boundary) again exceeds the budget, then run
+  // a second drain — the trigger must fire AGAIN (deeper boundary), not stall.
+  const after = await runtime.events.read("s")
+  const lastSeq = after.at(-1)!.seq
+  for (let i = 0; i < 60; i++) {
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "user", id: `u2-${i}`, seq: lastSeq + 1 + i * 2, text: big } })
+    await runtime.events.append("s", "Session.MessageAppended", { sessionId: "s", message: { kind: "assistant", id: `a2-${i}`, seq: lastSeq + 2 + i * 2, content: [{ type: "text", text: big }], model: "m" } })
+  }
+  await runtime.events.append("s", "Session.Prompted", { id: "p2", sessionId: "s", prompt: "continue", delivery: "steer", principal: "user", promotedSeq: lastSeq + 130 })
+  await runSession(runtime, { sessionId: "s", agent, resolveTool, compactThreshold: 80_000 })
+
+  const boundaries = (await runtime.events.read("s")).filter((e) => e.type === "Session.Compacted").map((e) => (e.data as { boundarySeq?: number }).boundarySeq)
+  expect(boundaries.length).toBe(2)
+  expect(boundaries[1]!).toBeGreaterThan(boundaries[0]!) // a second, deeper fold
+})
