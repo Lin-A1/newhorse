@@ -51,6 +51,13 @@ export class SqliteEventStore implements EventStore {
     if (!cols.some((c) => c.name === "aggregate")) {
       this.#db.run("ALTER TABLE event ADD COLUMN aggregate TEXT NOT NULL DEFAULT 'session'")
     }
+    // Event timestamps (client-facing read models — usage heatmap, timelines):
+    // the durable shape stays (aggregate_id, seq, type, data); created_at is
+    // store-level metadata. Legacy rows keep NULL (honestly excluded from
+    // time-based views rather than backfilled with a fake time).
+    if (!cols.some((c) => c.name === "created_at")) {
+      this.#db.run("ALTER TABLE event ADD COLUMN created_at INTEGER")
+    }
     // A legacy DB may also have events without a corresponding `event_sequence`
     // row (the allocator predates the sequence table, or the DB was created by an
     // even older build). When the sequence table is empty but events exist, the
@@ -67,7 +74,7 @@ export class SqliteEventStore implements EventStore {
 
   async append<T extends UnknownRecord>(aggregate_id: string, type: string, data: T, aggregate: AggregateType = "session"): Promise<StoredEvent> {
     const seq = this.#nextSeq(aggregate_id)
-    this.#db.run("INSERT INTO event (aggregate_id, seq, type, data, aggregate) VALUES (?, ?, ?, ?, ?)", [aggregate_id, seq, type, JSON.stringify(data), aggregate])
+    this.#db.run("INSERT INTO event (aggregate_id, seq, type, data, aggregate, created_at) VALUES (?, ?, ?, ?, ?, ?)", [aggregate_id, seq, type, JSON.stringify(data), aggregate, Date.now()])
     return { aggregate, aggregate_id, seq, type, data }
   }
 

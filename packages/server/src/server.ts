@@ -1,6 +1,9 @@
-import { createApp, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow, type SessionDirectory, type DirectoryEntry } from "@newhorse/runtime"
-import type { AdapterConfig } from "@newhorse/llm"
+import { createApp, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow, type SessionDirectory, type DirectoryEntry, type SettingsController, type AgentHomeConfig, type ApprovalHub, type Scheduler, type ScheduleInput, type Schedule } from "@newhorse/runtime"
+import { redactSettings, aggregateUsage } from "@newhorse/runtime"
+import { listModels } from "@newhorse/llm"
+import type { AdapterConfig, Fetcher } from "@newhorse/llm"
 import type { StoredEvent, ApprovalRequest } from "@newhorse/schema"
+import { join } from "node:path"
 
 /**
  * Runtime server (Phase 1): transport-only HTTP + SSE boundary over `createApp`.
@@ -56,6 +59,21 @@ export interface ServerConfig {
   readonly directory?: SessionDirectory
   /** URL other processes use to reach THIS server (default: derived baseUrl). */
   readonly advertiseUrl?: string
+  /** Directory with the built client UI (index.html + assets). When set, all
+   *  non-/v1 GET paths serve it with SPA fallback — one origin for API + UI:
+   *  standalone web, LAN mobile, and the desktop webview are the same artifact. */
+  readonly uiDir?: string
+  /** Settings surface for the client's settings page (read effective / write patch). */
+  readonly settings?: SettingsController
+  /** Interactive approval hub: the engine's gate parks requests here and the
+   *  client settles them via /v1/approvals. When present it is the DEFAULT
+   *  gate for created sessions (an explicit onApprove still wins). */
+  readonly approvals?: ApprovalHub
+  /** Scheduled prompts (定时任务). CRUD via /v1/schedules; the caller owns the
+   *  tick loop (the standalone entrypoint starts one; a host may use its own). */
+  readonly schedules?: Scheduler
+  /** Injectable fetch for the provider models listing (tests). */
+  readonly modelsFetch?: Fetcher
 }
 
 /** One session's create config (POST /v1/session body), transport DTO. */
@@ -86,6 +104,9 @@ export interface ServerHandle {
   readonly baseUrl: string
   /** Read a session (test/debug helper). */
   readonly appFor: (sessionId: string) => App | undefined
+  /** Fire-and-forget a user prompt into a session (get-or-create) — the
+   *  scheduled-prompts delivery path; the prompt lands in the durable inbox. */
+  readonly admitPrompt: (sessionId: string, prompt: string) => Promise<void>
   readonly stop: () => Promise<void>
 }
 
@@ -125,6 +146,27 @@ async function readJsonOr400<T>(req: Request): Promise<T | { error: string }> {
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+}
+
+/** Serve the built client UI with SPA fallback. Path traversal is blocked by
+ *  requiring the resolved path to stay under root (root+sep compare). */
+const CONTENT_TYPES: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2", ".map": "application/json" }
+async function serveStatic(root: string, pathname: string): Promise<Response> {
+  const normalizedRoot = root.replace(/[\\/]+$/, "") + "/"
+  const rel = pathname === "/" ? "index.html" : decodeURIComponent(pathname.slice(1))
+  const resolved = join(root, rel)
+  if (!resolved.replace(/[\\/]+$/, "").startsWith(normalizedRoot.replace(/[\\/]+$/, ""))) return json(403, { error: "forbidden" })
+  const file = Bun.file(resolved)
+  if (await file.exists()) {
+    const ext = resolved.slice(resolved.lastIndexOf(".")).toLowerCase()
+    return new Response(file, { headers: CONTENT_TYPES[ext] ? { "content-type": CONTENT_TYPES[ext]! } : {} })
+  }
+  // SPA fallback: unknown extension-less paths load the app shell.
+  if (!rel.includes(".")) {
+    const index = Bun.file(join(root, "index.html"))
+    if (await index.exists()) return new Response(index, { headers: { "content-type": CONTENT_TYPES[".html"]! } })
+  }
+  return json(404, { error: "not found" })
 }
 
 /** SSE stream: one `data: {json}\n\n` per event; `[DONE]` at the end. */
@@ -171,6 +213,9 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   const token = config.token
   const sessionResolver = config.sessionResolver
   const directory = config.directory
+  const settings = config.settings
+  const approvals = config.approvals
+  const schedules = config.schedules
   const apps = new Map<string, App>()
   /** Sessions this process created (directory-owned; unregistered on stop). */
   const owned = new Set<string>()
@@ -287,7 +332,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
     const base = await sessionConfig({ ...create })
     // sessionId must be pinned, else createApp derives a workspace-stable id
     // that differs from the one the caller will use in paths.
-    const app = await createApp({ ...base, sessionId: id, onApprove: config.onApprove })
+    const app = await createApp({ ...base, sessionId: id, onApprove: config.onApprove ?? config.approvals?.gate })
     if (directory) {
       // Register cross-process ownership. register returns the PREVIOUS row:
       // a foreign FRESH row means a sibling owns this id and our pre-check
@@ -323,7 +368,6 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
     // events, and an idle socket would be dropped (Bun default 10s). Comment
     // lines are ignored by every SSE client, so they are safe between events.
     const keepalive = setInterval(() => sse.emit(": keepalive\n\n"), 15_000)
-    keepalive.unref?.()
     const unsubscribe = app.onEvent((event) => {
       sse.emit(`data: ${JSON.stringify(event)}\n\n`)
     })
@@ -366,9 +410,12 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
 
       const url = new URL(req.url)
       const parts = url.pathname.split("/").filter(Boolean)
-      if (parts[0] !== "v1") return json(404, { error: "not found" })
-
       const method = req.method
+      // The built client UI (SPA) — one origin with the API.
+      if (parts[0] !== "v1") {
+        if (config.uiDir && method === "GET") return serveStatic(config.uiDir, url.pathname)
+        return json(404, { error: "not found" })
+      }
 
       // GET /v1/health
       if (method === "GET" && parts.length === 2 && parts[1] === "health") {
@@ -470,6 +517,104 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         return json(200, events)
       }
 
+      // --- client-facing surfaces (settings / models / approvals / usage / schedules) ---
+
+      // GET /v1/settings — effective settings, secrets redacted.
+      if (method === "GET" && parts.length === 2 && parts[1] === "settings") {
+        if (!settings) return json(404, { error: "no settings controller configured" })
+        return json(200, redactSettings(settings.get()))
+      }
+
+      // PUT /v1/settings — merge a patch into the agent-home config file.
+      if (method === "PUT" && parts.length === 2 && parts[1] === "settings") {
+        if (!settings) return json(404, { error: "no settings controller configured" })
+        const parsed = await readJsonOr400<AgentHomeConfig>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const next = await settings.write(parsed)
+        return json(200, redactSettings(next))
+      }
+
+      // GET /v1/models — the configured provider's available model ids.
+      if (method === "GET" && parts.length === 2 && parts[1] === "models") {
+        if (!settings) return json(404, { error: "no settings controller configured" })
+        const provider: AdapterConfig = settings.get().provider
+        const models = await listModels(provider, config.modelsFetch ?? globalThis.fetch.bind(globalThis))
+        return json(200, { models })
+      }
+
+      // GET /v1/approvals — pending interactive approvals (the client polls).
+      if (method === "GET" && parts.length === 2 && parts[1] === "approvals") {
+        if (!approvals) return json(404, { error: "no approval hub configured" })
+        return json(200, { approvals: approvals.pending() })
+      }
+
+      // POST /v1/approvals/:id {allow} — settle one pending approval.
+      if (method === "POST" && parts.length === 3 && parts[1] === "approvals") {
+        if (!approvals) return json(404, { error: "no approval hub configured" })
+        const parsed = await readJsonOr400<{ allow?: boolean }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const settled = approvals.resolve(parts[2]!, parsed.allow === true)
+        return json(settled ? 200 : 404, settled ? { settled: true } : { error: "unknown or already-settled approval id" })
+      }
+
+      // GET /v1/usage?days=N — per-day token totals (heatmap data).
+      if (method === "GET" && parts.length === 2 && parts[1] === "usage") {
+        if (!settings) return json(404, { error: "no settings controller configured" })
+        const days = Math.min(365, Math.max(1, Number(url.searchParams.get("days") ?? 30)))
+        try {
+          return json(200, await aggregateUsage(join(settings.get().dataDir, "events.db"), days))
+        } catch (e) {
+          // No events db yet (fresh install) — an empty summary, not an error.
+          return json(200, { days: [], totals: { inputTokens: 0, outputTokens: 0, steps: 0 }, sessions: 0, note: e instanceof Error ? e.message : String(e) })
+        }
+      }
+
+      // GET /v1/schedules — all scheduled prompts.
+      if (method === "GET" && parts.length === 2 && parts[1] === "schedules") {
+        if (!schedules) return json(404, { error: "no scheduler configured" })
+        return json(200, { schedules: await schedules.list() })
+      }
+
+      // POST /v1/schedules — create a scheduled prompt.
+      if (method === "POST" && parts.length === 2 && parts[1] === "schedules") {
+        if (!schedules) return json(404, { error: "no scheduler configured" })
+        const parsed = await readJsonOr400<ScheduleInput>(req)
+        if ("error" in parsed) return json(400, parsed)
+        try {
+          const created: Schedule = await schedules.add(parsed)
+          return json(201, created)
+        } catch (e) {
+          return json(400, { error: e instanceof Error ? e.message : String(e) })
+        }
+      }
+
+      // PATCH /v1/schedules/:id — update (enable/disable, change prompt/cadence).
+      if (method === "PATCH" && parts.length === 3 && parts[1] === "schedules") {
+        if (!schedules) return json(404, { error: "no scheduler configured" })
+        const parsed = await readJsonOr400<Partial<ScheduleInput>>(req)
+        if ("error" in parsed) return json(400, parsed)
+        try {
+          const updated = await schedules.update(parts[2]!, parsed)
+          return updated ? json(200, updated) : json(404, { error: "unknown schedule id" })
+        } catch (e) {
+          return json(400, { error: e instanceof Error ? e.message : String(e) })
+        }
+      }
+
+      // DELETE /v1/schedules/:id
+      if (method === "DELETE" && parts.length === 3 && parts[1] === "schedules") {
+        if (!schedules) return json(404, { error: "no scheduler configured" })
+        const removed = await schedules.remove(parts[2]!)
+        return json(removed ? 200 : 404, removed ? { removed: true } : { error: "unknown schedule id" })
+      }
+
+      // POST /v1/schedules/:id/run — fire one schedule now.
+      if (method === "POST" && parts.length === 4 && parts[1] === "schedules" && parts[3] === "run") {
+        if (!schedules) return json(404, { error: "no scheduler configured" })
+        const ok = await schedules.runNow(parts[2]!)
+        return json(ok ? 200 : 404, ok ? { triggered: true } : { error: "unknown schedule id" })
+      }
+
       return json(404, { error: "not found" })
     },
   })
@@ -487,11 +632,32 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       // refreshes; a persistently failed heartbeat surfaces via sweep.
     }
   }, 10_000) : undefined
-  heartbeatTimer?.unref?.()
+
+  // Scheduled prompts (定时任务): when a scheduler is wired, the server owns a
+  // 30s tick; each DUE schedule is fired through the scheduler's own `fire`
+  // callback, which the host delegates to handle.admitPrompt (below).
+  let scheduleTimer: ReturnType<typeof setInterval> | undefined
+  if (schedules) {
+    scheduleTimer = setInterval(() => {
+      void schedules.tick().catch(() => {
+        // A transient tick failure (lock, fs) is non-fatal — the next tick retries.
+      })
+    }, 30_000)
+  }
+
+  const admitPrompt = async (sessionId: string, prompt: string): Promise<void> => {
+    const resolved = await resolveApp({ sessionId })
+    const app = resolved?.app
+    if (!app) throw new Error(`cannot attach session "${sessionId}" (no sessionConfig)`)
+    void app.prompt(prompt, "user").catch(() => {
+      // A failed fire is recorded by the scheduler's lastResult bookkeeping.
+    })
+  }
 
   const handle: ServerHandle = {
     baseUrl: `http://${host}:${server.port}`,
     appFor: (id) => apps.get(id),
+    admitPrompt,
     stop: async () => {
       // Interrupt any in-flight prompt BEFORE closing the event store, then
       // wait (bounded) for them to settle — a late settle path would append
@@ -501,6 +667,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       while (inFlight > 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20))
       server.stop()
       if (heartbeatTimer) clearInterval(heartbeatTimer)
+      if (scheduleTimer) clearInterval(scheduleTimer)
       // Release cross-process ownership for everything this process created.
       // Contention on the shared file must not skip the store shutdown below.
       if (directory) {

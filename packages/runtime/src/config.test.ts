@@ -1,5 +1,8 @@
 import { describe, expect, it } from "bun:test"
-import { loadRuntimeSettings } from "./config"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { loadRuntimeSettings, writeAgentHomeConfig, readAgentHomeConfig } from "./config"
 
 describe("loadRuntimeSettings (harness floor)", () => {
   it("defaults: home ~/.newhorse, dataDir under it, openai provider, port 3927", () => {
@@ -47,3 +50,32 @@ describe("loadRuntimeSettings (harness floor)", () => {
     expect(s.provider.apiKey).toBe("sk-a")
   })
 })
+
+  it("agent-home config file is a settings layer: defaults < file < env; write merges (unknown keys preserved)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "nh-cfg-"))
+    try {
+      // Empty home: defaults.
+      expect(loadRuntimeSettings({ agentHome: home, env: {} }).model).toBe("gpt-4o-mini")
+      // Write a patch: model + provider + an UNKNOWN key (must survive).
+      await writeAgentHomeConfig(home, { model: "MiniMax-M2", provider: { kind: "anthropic", baseUrl: "https://api.minimaxi.com/anthropic", apiKey: "sk-file" } } as never)
+      const raw = JSON.parse(await import("node:fs/promises").then((fs) => fs.readFile(join(home, "config.json"), "utf8")) ) as Record<string, unknown>
+      ;(raw as Record<string, unknown>).customFutureKey = 1
+      await (await import("node:fs/promises")).writeFile(join(home, "config.json"), JSON.stringify(raw))
+      // File layer effective when env silent.
+      const s = loadRuntimeSettings({ agentHome: home, env: {} })
+      expect(s.model).toBe("MiniMax-M2")
+      expect(s.provider.kind).toBe("anthropic")
+      expect(s.provider.apiKey).toBe("sk-file")
+      // Env wins over file (ops override).
+      const s2 = loadRuntimeSettings({ agentHome: home, env: { NEWHORSE_MODEL: "env-model" } })
+      expect(s2.model).toBe("env-model")
+      // readAgentHomeConfig returns the merged file with unknown keys intact.
+      const cfg = await readAgentHomeConfig(home)
+      expect((cfg as Record<string, unknown>).customFutureKey).toBe(1)
+      // Corrupt file = empty layer, never a crash.
+      await (await import("node:fs/promises")).writeFile(join(home, "config.json"), "{oops")
+      expect(loadRuntimeSettings({ agentHome: home, env: {} }).model).toBe("gpt-4o-mini")
+    } finally {
+      await rm(home, { recursive: true, force: true }).catch(() => {})
+    }
+  })
