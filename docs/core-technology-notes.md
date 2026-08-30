@@ -205,6 +205,8 @@ Design docs live in `docs/`. Plans live in `specs/v2/`. When a core mechanism is
 
 ## 18. Runtime server — HTTP/SSE boundary over createApp (Phase 1)
 
+> **独立仓库**：runtime server 独立存储/复用于 [**Lin-A1/agent-runtime**](https://github.com/Lin-A1/agent-runtime)（env 驱动入口 `packages/server/src/main.ts`；本节机制两仓一致，改造在 newhorse 落地后同步）。
+
 `packages/server` is the transport boundary for the domain assembly — it parses HTTP, maps endpoints to `App` members, and streams `LoopEvent`s. Server holds no domain logic (per AGENTS.md "transport only").
 
 - **Entry**: `createServer(config)` → `ServerHandle { baseUrl, appFor, stop }`. `Bun.serve` on `host` (default `127.0.0.1`) + `port` (default `3927`; `port:0` picks an ephemeral port in tests).

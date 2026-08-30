@@ -78,6 +78,18 @@ The runtime treats **AGENTS.md as an ambient, model-visible context source** —
 - Do not conflate this file (the project-owner's target) with any single `AGENTS.md` semantics bound to one model vendor.
 - This file sets the direction for the engine; a workspace AGENTS.md sets the direction for that project's sessions. Both are runtime inputs, not hidden configuration.
 
+## Repository Topology
+
+```
+newhorse (this monorepo: engine DEVELOPMENT ground + first host project)
+  ──runtime changes developed here, synced──▶  agent-runtime (github.com/Lin-A1/agent-runtime: standalone storage / reuse boundary)
+```
+
+- **This repo owns engine development.** Runtime-side changes (packages `schema/core/llm/plugin/memory/runtime/server/sdk`) must be **synced to agent-runtime** after landing here (`git pull upstream dev` there; the mirror tracks this repo's `dev`).
+- **agent-runtime is the reuse boundary**: downstream AI-native products embed the runtime via that repo (SDK / HTTP). Its README/AGENTS describe the runtime from the CONSUMER's perspective and must stay in sync with reality here.
+- **Naming discipline**: in this repo, "the engine" refers to the runtime packages; "newhorse" covers both the engine and the host project (CLI shell, host flows). In agent-runtime docs, only the engine is described.
+- **Non-runtime work** (host flows, project-specific tooling) stays in this repo and is NOT synced.
+
 ## Environment & Tech
 
 - Workspace root: the repo. Default branch is `dev`; `v1` holds archived v1 code.

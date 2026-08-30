@@ -4,6 +4,8 @@
 
 Not bound to one model; orchestrate agents with declarative scheduling instead of being orchestrated by another framework's runtime.
 
+> **Repository topology**: this monorepo is the ENGINE DEVELOPMENT ground and the first host project (its CLI shell). The runtime server is independently stored and reused at [**Lin-A1/agent-runtime**](https://github.com/Lin-A1/agent-runtime) — runtime changes developed here are synced there; see `AGENTS.md` → "Repository topology".
+
 > This README is a quick map. The target (north star) lives in `AGENTS.md`; the implemented/decision record lives in `docs/core-technology-notes.md`; the plans live in `specs/v2/`.
 
 ## What it is (five differentiators)

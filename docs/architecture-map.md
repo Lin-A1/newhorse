@@ -3,6 +3,17 @@
 > 状态：**巩固锚点（2026-08-30）**。目的：列出全部已实现机制、它们服务的 AGENTS.md 支柱、相互衔接关系，以及跨机制不变量——实现新东西前对照本图，防止**目的漂移**（做不在北星里的功能）与**功能漂移**（机制间语义脱节/重复）。
 > 规则：本图与代码冲突时，以代码为准并立即修图。每个机制标注 [支柱#]。
 
+## 仓库拓扑（命名区分）
+
+```
+newhorse（本 monorepo：引擎开发地 + 首个宿主项目 CLI）
+  ──runtime 改造在此开发，落地后同步──▶  agent-runtime（github.com/Lin-A1/agent-runtime：独立存储 / 复用边界）
+```
+
+- 本图描述的机制**同时存在于两仓**（agent-runtime 是本仓的独立镜像/复用边界）。runtime 包（schema/core/llm/plugin/memory/runtime/server/sdk）的改动在 newhorse 落地后必须同步到 agent-runtime。
+- 命名：文档中 "the engine" 指 runtime 包集合；"newhorse" = 引擎 + 首个宿主（CLI/host flows）；"agent-runtime" = 独立复用仓库。
+- 非运行时工作（宿主流程、项目特定工具）只留在 newhorse，不同步。
+
 ---
 
 ## 0. 五支柱 → 机制映射（目的锚）

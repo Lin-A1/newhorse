@@ -1,6 +1,6 @@
 # Runtime Server (Phase 1) 接口 Spec
 
-> 状态：**已实现（2026-08-29）** — `packages/server` + 10 测试（含真实 socket 断连回归）。实现决策记录于 `docs/core-technology-notes.md` §18。方向：runtime server 优先；transport 只做 parse/headers/stream，领域逻辑全在 `createApp`。所有端点映射到 `packages/runtime/src/app.ts` 的 `App` 成员。
+> 状态：**已实现（2026-08-29；独立存储于 [Lin-A1/agent-runtime](https://github.com/Lin-A1/agent-runtime)，含 env 驱动入口 `packages/server/src/main.ts`）** — `packages/server` + 10 测试（含真实 socket 断连回归）。实现决策记录于 `docs/core-technology-notes.md` §18。方向：runtime server 优先；transport 只做 parse/headers/stream，领域逻辑全在 `createApp`。所有端点映射到 `packages/runtime/src/app.ts` 的 `App` 成员。
 > 遵循 AGENTS.md："CLI / server / SDK 是 transport only；它们不持有任何领域逻辑"。
 
 ---
