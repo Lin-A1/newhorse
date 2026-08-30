@@ -100,6 +100,8 @@ export interface AppConfig {
   readonly approvalPolicy?: "strict" | "trusted" | "readonly"
   readonly memoryVector?: {
     readonly enabled?: boolean
+    /** Index behind cosine: auto (sqlite-vec when loadable, else in-memory) | brute | off (legacy scan). */
+    readonly mode?: "auto" | "brute" | "off"
     readonly embedding: EmbeddingConfig
   }
   /**
@@ -241,7 +243,7 @@ export async function createApp(config: AppConfig): Promise<App> {
         },
       }
       // Tag = the embedding model so rows from different models never mix.
-      const { backfill } = config.memoryStore.attachEmbedder(watched, config.memoryVector.embedding.model)
+      const { backfill } = config.memoryStore.attachEmbedder(watched, config.memoryVector.embedding.model, { vectorMode: config.memoryVector.mode ?? "auto" })
       void backfill().catch(() => {})
     }
   }

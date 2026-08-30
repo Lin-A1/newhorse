@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite"
 import type { UnknownRecord } from "@newhorse/schema"
 import { cosine, type EmbeddingProvider } from "./embedding"
+import { blobToFloat32, createBruteForceIndex, createSqliteVecIndex, float32Blob, loadSqliteVec, type VectorIndex } from "./vector-index"
 
 /**
  * Memory seam — the pluggable store behind `memory_search`/`memory_write`.
@@ -49,8 +50,10 @@ export interface MemoryStore {
    * their content (a failure stores metadata-only — deferred embedding) and
    * searches fuse BM25 + cosine via RRF. When not attached, search is
    * keyword-only. `backfill` embeds existing rows that lack a vector.
+   * `opts.vectorMode` picks the index: auto (vec0 when loadable, else
+   * in-memory scan) | brute | off (legacy per-query scan).
    */
-  readonly attachEmbedder?: (embedder: EmbeddingProvider, tag?: string) => { backfill: (limit?: number) => Promise<number> }
+  readonly attachEmbedder?: (embedder: EmbeddingProvider, tag?: string, opts?: { vectorMode?: "auto" | "brute" | "off" }) => { backfill: (limit?: number) => Promise<number> }
   readonly close?: () => void
 }
 
@@ -138,33 +141,50 @@ export function rrfMerge(ranks: ReadonlyArray<Map<string, number> | undefined>, 
 }
 
 /**
- * SQLite-backed store: one `memory` table with content + metadata columns,
- * no vector index yet. Keyword matching is a simple LIKE scan. Put this FIRST
- * (facts survive restarts); a vec0/FTS5 index is a later capability on the
- * same seam.
+ * SQLite-backed store: one `memory` table with content + metadata columns.
+ * Keyword matching is FTS5 (BM25-ranked, LIKE fallback); semantic matching
+ * goes through the VectorIndex seam (brute in-memory scan by default, vec0
+ * KNN when the extension loads). The `embedding` BLOB stays canonical — the
+ * vector index is a derived, rebuild-at-attach structure.
  */
 export class SqliteMemoryStore implements MemoryStore {
   readonly #db: Database
   #ready: Promise<void>
   #embedder: EmbeddingProvider | undefined
   #embedderTag: string | undefined
+  #vectorIndex: VectorIndex | undefined
+  #vectorMode: "auto" | "brute" | "off" = "off"
+  #vecLoadable: boolean | undefined
+  /** Resolves when the vector index is (or is known not to be) built. */
+  #vectorReady: Promise<void> = Promise.resolve()
 
   constructor(dbPath: string) {
     this.#db = new Database(dbPath)
     this.#ready = this.#migrate()
   }
 
-  /** Attach an embedder (switchable semantic search): writes embed their
-   *  content into the `embedding` BLOB (Float32Array; fail-soft — a broken
-   *  provider stores metadata-only) and searches fuse BM25 + cosine via RRF.
-   *  backfill embeds existing rows lacking a vector (idempotent, budgeted). */
-  attachEmbedder(embedder: EmbeddingProvider, tag?: string): { backfill: (limit?: number) => Promise<number> } {
+  /**
+   * Attach an embedder (switchable semantic search): writes embed their
+   * content into the `embedding` BLOB (Float32Array; fail-soft — a broken
+   * provider stores metadata-only) and searches fuse BM25 + cosine via RRF.
+   * backfill embeds existing rows lacking a vector (idempotent, budgeted).
+   *
+   * `vectorMode` picks the index behind cosine: "auto" (default) tries the
+   * sqlite-vec extension and falls back to the in-memory brute index; "brute"
+   * forces the in-memory index; "off" keeps the legacy per-query scan (kill
+   * switch). Index build is async — searches await it and degrade to FTS
+   * until it lands.
+   */
+  attachEmbedder(embedder: EmbeddingProvider, tag?: string, opts?: { vectorMode?: "auto" | "brute" | "off" }): { backfill: (limit?: number) => Promise<number> } {
     this.#embedder = embedder
     this.#embedderTag = tag
+    this.#vectorMode = opts?.vectorMode ?? "auto"
+    this.#vectorReady = this.#initVectorIndex()
     const embedderRef = embedder
     return {
       backfill: async (limit = 100): Promise<number> => {
         await this.#ready
+        await this.#vectorReady
         // Rows missing a vector OR tagged by a DIFFERENT model (a model switch
         // re-embeds under the current tag instead of mixing vectors).
         const pending = this.#db.query("SELECT id, content FROM memory WHERE embedding IS NULL OR embedding_model IS NOT ? LIMIT ?").all(this.#embedderTag ?? null, limit) as { id: string; content: string }[]
@@ -173,12 +193,48 @@ export class SqliteMemoryStore implements MemoryStore {
           const v = await embedderRef.embed(row.content, "db")
           if (v) {
             this.#db.run("UPDATE memory SET embedding = ?, embedding_model = ? WHERE id = ?", [float32Blob(v), this.#embedderTag ?? null, row.id])
+            this.#vectorIndex?.upsert(row.id, new Float32Array(v), undefined)
             n++
           }
         }
         return n
       },
     }
+  }
+
+  /** Build the vector index from durable BLOBs once their dimensions are
+   *  known (a restart finds embedded rows; a fresh store defers to the first
+   *  successful embed, which calls this via #indexUpsert). */
+  async #initVectorIndex(): Promise<void> {
+    if (this.#vectorMode === "off") return
+    await this.#ready
+    const row = this.#db.query("SELECT embedding FROM memory WHERE embedding IS NOT NULL AND embedding_model = ? LIMIT 1").get(this.#embedderTag ?? null) as { embedding: Buffer } | null
+    if (!row) return
+    await this.#ensureVectorIndex(Math.floor(row.embedding.byteLength / 4))
+  }
+
+  async #ensureVectorIndex(dims: number): Promise<void> {
+    if (this.#vectorIndex) return
+    if (this.#vectorMode === "brute") {
+      this.#vectorIndex = createBruteForceIndex()
+    } else {
+      if (this.#vecLoadable === undefined) this.#vecLoadable = await loadSqliteVec(this.#db)
+      this.#vectorIndex = this.#vecLoadable ? (createSqliteVecIndex(this.#db, dims) ?? createBruteForceIndex()) : createBruteForceIndex()
+    }
+    const index = this.#vectorIndex
+    // Rebuild from the canonical BLOBs (vec0 may hold rows from an earlier
+    // process; the brute index starts empty). Scope = the memory's session id
+    // so per-session KNN is exact (vec0 partition key / brute-side filter).
+    const rows = this.#db.query("SELECT id, session_id, embedding FROM memory WHERE embedding IS NOT NULL AND embedding_model = ?").all(this.#embedderTag ?? null) as { id: string; session_id: string | null; embedding: Buffer }[]
+    for (const r of rows) index.upsert(r.id, blobToFloat32(r.embedding), r.session_id ?? undefined)
+  }
+
+  /** Index one freshly-embedded vector (creates the index lazily on the first
+   *  embed when the store had no embedded rows at attach time). */
+  async #indexUpsert(id: string, vec: number[], sessionId?: string): Promise<void> {
+    if (this.#vectorMode === "off") return
+    await this.#ensureVectorIndex(vec.length)
+    this.#vectorIndex?.upsert(id, new Float32Array(vec), sessionId)
   }
 
   #migrate(): Promise<void> {
@@ -248,14 +304,23 @@ export class SqliteMemoryStore implements MemoryStore {
     // Fail-soft embedding: a broken provider stores metadata-only (deferred) —
     // backfill() can fill it later; the write itself never fails for it.
     let embedding: Buffer | null = null
+    let embedded: number[] | undefined
     if (this.#embedder) {
       const v = await this.#embedder.embed(rec.content, "db")
-      if (v) embedding = float32Blob(v)
+      if (v) {
+        embedding = float32Blob(v)
+        embedded = v
+      }
     }
     this.#db.run(
       "INSERT INTO memory (id, content, type, priority, session_id, agent_id, user_id, source_ids, metadata, created_at, embedding, embedding_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [rec.id, rec.content, rec.type, rec.priority, rec.sessionId, rec.agentId ?? null, rec.userId ?? null, rec.sourceIds ? JSON.stringify(rec.sourceIds) : null, rec.metadata ? JSON.stringify(rec.metadata) : null, rec.createdAt, embedding, embedding ? (this.#embedderTag ?? null) : null],
     )
+    if (embedded) {
+      // Index the vector too (await the lazy build so the first embedded write
+      // is searchable; a failed build leaves the store on the FTS floor).
+      await this.#indexUpsert(rec.id, embedded, rec.sessionId)
+    }
     return rec
   }
 
@@ -282,18 +347,30 @@ export class SqliteMemoryStore implements MemoryStore {
       }
     }
 
-    // Path 2 — cosine over embedded rows (semantic; sees what keywords cannot).
+    // Path 2 — cosine over the vector index (semantic; sees what keywords
+    // cannot). Scope = session isolation, applied INSIDE the index so one
+    // session's memories cannot crowd another out of its top-k; agent/user
+    // isolation is rarer and post-filters on the fetched rows.
     let cosRank: Map<string, number> | undefined
     if (this.#embedder && q) {
+      await this.#vectorReady
       const qv = await this.#embedder.embed(q, "query")
       if (qv) {
-        const rows = this.#db.query(`SELECT id, embedding FROM memory WHERE embedding IS NOT NULL AND embedding_model = ?${isoSql}`).all(this.#embedderTag ?? null, ...isoParams) as { id: string; embedding: Buffer }[]
-        const scored = rows
-          .map((r) => ({ id: r.id, cos: cosine(qv, blobToFloat32(r.embedding)) }))
-          .filter((s) => s.cos > 0.3)
-          .sort((a, b) => b.cos - a.cos)
-          .slice(0, limit * 2)
-        if (scored.length > 0) cosRank = new Map(scored.map((s, i) => [s.id, i]))
+        let hits: ReadonlyArray<{ id: string; score: number }>
+        if (this.#vectorIndex) {
+          hits = this.#vectorIndex.search(new Float32Array(qv), limit * 2, isolation?.sessionId)
+            .filter((h) => h.score > 0.3)
+        } else {
+          // Legacy scan (vectorMode "off", or embedder attached but no index
+          // yet): read + score every embedded row per query.
+          const rows = this.#db.query(`SELECT id, session_id, agent_id, user_id, embedding FROM memory WHERE embedding IS NOT NULL AND embedding_model = ?${isoSql}`).all(this.#embedderTag ?? null, ...isoParams) as { id: string; agent_id: string | null; user_id: string | null; embedding: Buffer }[]
+          hits = rows
+            .map((r) => ({ id: r.id, score: cosine(qv, Array.from(blobToFloat32(r.embedding))), agentId: r.agent_id ?? undefined, userId: r.user_id ?? undefined }))
+            .filter((s) => s.score > 0.3)
+            .filter((s) => (!isolation?.agentId || s.agentId === isolation.agentId) && (!isolation?.userId || s.userId === isolation.userId))
+        }
+        const ranked = [...hits].sort((a, b) => b.score - a.score).slice(0, limit * 2)
+        if (ranked.length > 0) cosRank = new Map(ranked.map((h, i) => [h.id, i]))
       }
     }
 
@@ -326,6 +403,7 @@ export class SqliteMemoryStore implements MemoryStore {
   async delete(id: string): Promise<void> {
     await this.#ready
     this.#db.run("DELETE FROM memory WHERE id = ?", [id])
+    this.#vectorIndex?.remove(id)
   }
 
   close(): void {
@@ -338,18 +416,6 @@ export class SqliteMemoryStore implements MemoryStore {
  *  term; an unparseable query throws and falls back to LIKE). */
 function ftsQuery(q: string): string {
   return q.split(/\s+/).filter(Boolean).map((w) => `"${w.split('"').join('""')}"`).join(" ")
-}
-
-/** Serialize a vector as a little-endian Float32 BLOB (compact storage). */
-function float32Blob(v: readonly number[]): Buffer {
-  const arr = new Float32Array(v)
-  return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength)
-}
-
-/** Deserialize a stored BLOB back into a number[] for cosine. */
-function blobToFloat32(b: Buffer): number[] {
-  const arr = new Float32Array(b.buffer, b.byteOffset, Math.floor(b.byteLength / 4))
-  return Array.from(arr)
 }
 
 function migrateRow(row: Record<string, unknown>): MemoryRecord {  return {

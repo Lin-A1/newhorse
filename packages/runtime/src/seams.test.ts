@@ -1,13 +1,12 @@
 import { describe, expect, it } from "bun:test"
-import { MemoryEventStore, MemorySessionInput, type TurnRuntime, type NodeState } from "@newhorse/core"
-import { runDag, type DagScheduler, type DagSpec } from "./dag-runner"
-import type { Tool } from "./runner"
+import { MemoryEventStore, MemorySessionInput, type TurnRuntime, type NodeState, type DAGSpec } from "@newhorse/core"
+import { runDag, type DagScheduler } from "./dag-runner"
 import type { LLMEvent, LLMRequest } from "@newhorse/schema"
 import { createApp } from "./app"
 
 // --- DAG scheduler seam ---
 
-const diamond: DagSpec = {
+const diamond: DAGSpec = {
   nodes: {
     A: { id: "A", agent: { name: "a", model: "m" }, input: "root" },
     B: { id: "B", agent: { name: "b", model: "m" }, dependsOn: ["A"], input: "fromB" },
@@ -71,10 +70,10 @@ describe("memory extraction trigger seam", () => {
         provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", workspace,
         memoryStore: new ((await import("@newhorse/memory")).MemoryMemoryStore)(),
         memoryExtract: { enabled: true, shouldExtract: () => false },
-        fetch: (async (_input, init) => {
+        fetch: async () => {
           total.push({ model: "m" })
           return new Response("data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n" + "data: [DONE]\n\n", { status: 200, headers: { "content-type": "text/event-stream" } })
-        }) as never,
+        },
       })
       await app.prompt("remember nothing", "user")
       // Only the session turn consumed the LLM; extraction was skipped.

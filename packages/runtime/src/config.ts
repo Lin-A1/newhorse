@@ -39,11 +39,14 @@ export const ENV = {
   memory: "NEWHORSE_MEMORY",
   memoryExtract: "NEWHORSE_MEMORY_EXTRACT",
   memoryVector: "NEWHORSE_MEMORY_VECTOR",
+  memoryVectorMode: "NEWHORSE_MEMORY_VECTOR_MODE",
   embeddingKind: "NEWHORSE_EMBEDDING_KIND",
   embeddingModel: "NEWHORSE_EMBEDDING_MODEL",
   embeddingBaseUrl: "NEWHORSE_EMBEDDING_BASE_URL",
   embeddingApiKey: "NEWHORSE_EMBEDDING_API_KEY",
   approvalPolicy: "NEWHORSE_APPROVAL_POLICY",
+  registry: "NEWHORSE_REGISTRY",
+  advertiseUrl: "NEWHORSE_ADVERTISE_URL",
 } as const
 
 export type ProviderKind = "openai" | "openai-responses" | "anthropic" | "openai-compatible"
@@ -59,6 +62,8 @@ export interface MemorySettings {
   readonly extraction: boolean
   readonly vector: {
     readonly enabled: boolean
+    /** Index behind cosine: auto (vec0 extension, else in-memory) | brute | off (legacy per-query scan). */
+    readonly mode: "auto" | "brute" | "off"
     readonly embedding: { readonly kind: "minimax" | "openai-compatible"; readonly baseUrl: string; readonly apiKey: string; readonly model: string }
   }
 }
@@ -78,6 +83,14 @@ export interface RuntimeSettings {
   /** Permission level: strict (floor + approval) | trusted (full access) | readonly (plan mode). */
   readonly approvalPolicy: "strict" | "trusted" | "readonly"
   readonly memory: MemorySettings
+  /**
+   * Cross-process session registry (M4): a shared SQLite file path. When set,
+   * the server registers owned sessions there and proxies ops for sessions
+   * owned by sibling processes. Unset → single-process routing only.
+   */
+  readonly registry?: string
+  /** URL peers use to reach this server (default: derived from host:port). */
+  readonly advertiseUrl?: string
 }
 
 export interface ConfigLayers {
@@ -119,6 +132,7 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
   const vectorOn = flag(env, ENV.memoryVector)
   const vector: MemorySettings["vector"] = {
     enabled: vectorOn,
+    mode: (str(env, ENV.memoryVectorMode) ?? "auto") as "auto" | "brute" | "off",
     embedding: {
       kind: (str(env, ENV.embeddingKind) ?? "minimax") as "minimax" | "openai-compatible",
       baseUrl: str(env, ENV.embeddingBaseUrl) ?? "https://api.minimaxi.com",
@@ -143,5 +157,7 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
       extraction: memoryOn && flag(env, ENV.memoryExtract),
       vector,
     },
+    ...(str(env, ENV.registry) ? { registry: str(env, ENV.registry) } : {}),
+    ...(str(env, ENV.advertiseUrl) ? { advertiseUrl: str(env, ENV.advertiseUrl) } : {}),
   }
 }

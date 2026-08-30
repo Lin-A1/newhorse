@@ -10,5 +10,8 @@
   },
   "dependencies": {
     "@newhorse/schema": "workspace:*"
+  },
+  "optionalDependencies": {
+    "sqlite-vec": "^0.1.9"
   }
 }

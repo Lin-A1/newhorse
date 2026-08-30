@@ -167,6 +167,48 @@ async function run(app: App, text: string): Promise<{ result: PromptResult; text
   }
 }
 
+// S8: memory vectorization — REAL embeddings: a paraphrase query (no keyword
+// overlap) must rank the right memory first, and the ranking must survive a
+// store restart (attach-time index rebuild). Skips honestly when the
+// embedding endpoint is unreachable (fail-soft) — that is an endpoint
+// problem, not a runtime failure.
+{
+  const { mkdtemp, rm } = await import("node:fs/promises")
+  const { tmpdir } = await import("node:os")
+  const { join } = await import("node:path")
+  const { SqliteMemoryStore, createEmbeddingProvider } = await import("../../packages/memory/src/index.ts")
+  const embedKey = process.env.MINIMAX_API_KEY ?? apiKey
+  const dir = await mkdtemp(join(tmpdir(), "nh-smoke8-"))
+  try {
+    const dbPath = join(dir, "mem.db")
+    const embed = createEmbeddingProvider({ kind: "minimax", apiKey: embedKey, model: "embo-01" })
+    const store1 = new SqliteMemoryStore(dbPath)
+    store1.attachEmbedder(embed, "embo-01")
+    await store1.write({ content: "database credentials are rotated on the first monday of each month", type: "fact", priority: 50, sessionId: "s1" })
+    await store1.write({ content: "the office cafeteria is closed on fridays", type: "fact", priority: 50, sessionId: "s1" })
+    const filled = await store1.search("database credentials", 5, { sessionId: "s1" })
+    if (filled.length >= 2) {
+      // Both rows retrievable — the vector path is populated. Now the
+      // paraphrase: zero shared keywords with either row.
+      const hits = await store1.search("production db password change cadence", 2, { sessionId: "s1" })
+      const top = hits[0]?.content ?? ""
+      ok("S8 vector semantic rank", top.includes("credentials"), `top=${top.slice(0, 50)}`)
+      store1.close()
+      // Restart: reopen + re-attach (rebuild) → same winner.
+      const store2 = new SqliteMemoryStore(dbPath)
+      store2.attachEmbedder(embed, "embo-01")
+      const again = await store2.search("production db password change cadence", 2, { sessionId: "s1" })
+      ok("S8b vector survives restart", (again[0]?.content ?? "").includes("credentials"), `top=${(again[0]?.content ?? "").slice(0, 50)}`)
+      store2.close()
+    } else {
+      store1.close()
+      results.push("SKIP S8 vector semantic rank (embedding endpoint unreachable — fail-soft)")
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
 console.log(results.join("\n"))
 if (results.some((r) => r.startsWith("FAIL"))) {
   console.error("SMOKE: FAILURES PRESENT")

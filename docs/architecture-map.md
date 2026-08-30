@@ -42,10 +42,10 @@ newhorse（本 monorepo：引擎开发地 + 首个宿主项目 CLI）
 | Agent roles | `runtime/agent-resolver.ts` | ✅ | ← plugin agents 定义；→ DAG 节点/spawn_agent |
 | 内置工具 ×12 | `runtime/tools/*` | ✅（真机 S7 实证） | read/write/edit/list/search/bash/memory×2/skill/todo/goal×2 |
 | execpolicy | `runtime/tools/execpolicy.ts` | ✅（14 轮审查 + bootstrap 接线） | ← bash/write/edit/read 决策；approve 持久规则 |
-| Memory（store+FTS5+语义） | `memory/*` | ✅（语义真机：1536 维零重叠命中；model tag 防混） | 提取管线 `extract.ts` 引擎就绪、**触发已接**（memoryExtract.enabled） |
-| Runtime server | `server/*` | ✅（Bun 1.3.14 断连 panic=已知 skip，升级后重开） | ← createApp；→ 未来 SDK/TUI |
+| Memory（store+FTS5+语义+向量索引） | `memory/*` | ✅（语义真机：1536 维零重叠命中；model tag 防混；VectorIndex：vec0/auto↔brute↔off，scope 分区隔离，canary 自愈） | 提取管线 `extract.ts` 引擎就绪、**触发已接**（memoryExtract.enabled） |
+| Runtime server | `server/*` | ✅（SSE `: open` 立即 flush + 15s keepalive；idleTimeout 可配） | ← createApp；→ 未来 SDK/TUI |
 | CLI | `cli/src/index.ts` | ✅（REPL + dag 子命令 + slash + /list） | ← createApp/runDag |
-| SessionManager（M4 进程内） | `hub.ts register/interrupt/send` | ✅（进程内真投递；跨进程=真 M4 边界） | ← app.prompt 登记 + child registerLive |
+| SessionManager（进程内 + 跨进程） | `hub.ts`（进程内）+ `session-directory.ts` + server 代理路由 | ✅（进程内真投递；跨进程 observe/steer/interrupt/SSE 代理经共享 SQLite 目录，心跳+sweep 自愈） | ← app.prompt 登记 + child registerLive；← NEWHORSE_REGISTRY |
 | DAG（声明式） | `core/agent/dag.ts` + `runtime/dag-runner.ts` | ✅（resume/slots 持久/cost-down） | → Session.Settled（统一 task）→ todo 投影 |
 | 统一 task（goal×DAG×todo×task） | `core/agent/{todo,goal}.ts` | ✅（DAG catch 路径 settlement 已锁） | goal 预算=usage 聚合；强制（自动暂停）未做 |
 | 真子会话驱动 | `runtime/session-manager.ts`（driveChildSession/readChildText） | ✅ | ← DAG 节点/hub spawn；Created→上下文→admit→runSession 统一路径 |
@@ -66,10 +66,10 @@ newhorse（本 monorepo：引擎开发地 + 首个宿主项目 CLI）
 
 ## 3. 已知边界（诚实清单，非缺陷）
 
-- hub `interrupt/send` 仅进程内（跨进程 SessionManager = 真 M4）
+- 跨进程 spawn-drive 延后（子会话由创建者进程驱动——但已注册，任何兄弟进程可 observe/steer/interrupt 它）；跨进程 listing/audit 聚合未走目录
+- 向量语义排序的真机冒烟（S8 real-api）待 `ANTHROPIC_API_KEY`（机制已被 23 个单测覆盖：vec0↔brute 等价、scope 隔离、重启重建、canary 自愈）
 - Bun 1.3.14 断连 panic（server skip 测试；`bun upgrade` 需手动 PowerShell）
 - goal 预算强制（自动暂停）未做——`overBudget` 仅可见性
-- compaction LLM 摘要 seam 接线未注入真实摘要器（`compactSummarize` 待 app 传）
 - `.ts` 插件加载（信任边界未定）、`Session.ToolSettled` 死类型
 - openai-responses 协议 mock 级（未真机）
 - todo 尾部投影（claude-code 式 reminder）延后（工具回显为基线）

@@ -135,7 +135,7 @@ describe("runtime server", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text: "hi" }),
-    })
+    }).then((r) => r.text()) // consume the stream: the turn runs to [DONE] before we snapshot
     const res = await fetch(`${base}/v1/session/${sessionId}`)
     expect(res.status).toBe(200)
     const snap = (await res.json()) as { messages: { kind: string; text?: string }[]; headSeq: number }

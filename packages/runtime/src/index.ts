@@ -4,6 +4,7 @@ export * from "./hub"
 export * from "./dag-runner"
 export * from "./context"
 export * from "./session-manager"
+export * from "./session-directory"
 export * from "./tools"
 export * from "./tools/path"
 // Console surface types used by transports (re-exported from core so a

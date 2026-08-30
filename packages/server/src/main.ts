@@ -1,8 +1,7 @@
 import { createServer } from "./server"
 import type { SessionCreateRequest } from "./server"
-import { createApp } from "@newhorse/runtime"
+import { createApp, loadRuntimeSettings, createSqliteSessionDirectory } from "@newhorse/runtime"
 import { MemoryMemoryStore, SqliteMemoryStore, createEmbeddingProvider } from "@newhorse/memory"
-import { loadRuntimeSettings } from "@newhorse/runtime"
 import { join } from "node:path"
 
 /**
@@ -18,19 +17,27 @@ const settings = loadRuntimeSettings({ env: process.env })
 // Memory: a durable SQLite store per dataDir when memory is on; in-memory otherwise.
 const memStore = settings.memory.on ? new SqliteMemoryStore(join(settings.dataDir, "memory.db")) : new MemoryMemoryStore()
 // Semantic search (switchable): attach once; the settings carry the model tag.
+// The vector index mode: auto (sqlite-vec when loadable, else in-memory scan).
 if (settings.memory.vector.enabled) {
   const { backfill } = memStore.attachEmbedder(
     createEmbeddingProvider({ kind: "minimax", apiKey: settings.memory.vector.embedding.apiKey, model: settings.memory.vector.embedding.model }),
     settings.memory.vector.embedding.model,
+    { vectorMode: settings.memory.vector.mode },
   )
   void backfill().catch(() => {})
 }
+
+// Cross-process SessionManager (M4): when NEWHORSE_REGISTRY points at a shared
+// SQLite file, this server registers owned sessions there and proxies ops for
+// sibling-owned sessions. Unset → single-process routing.
+const directory = settings.registry ? createSqliteSessionDirectory(settings.registry) : undefined
 
 const handle = await createServer({
   host: settings.host,
   port: settings.port,
   token: settings.token,
   onApprove: async () => false, // server is non-interactive: fail-closed (M4)
+  ...(directory ? { directory, advertiseUrl: settings.advertiseUrl } : {}),
   sessionConfig: (create: SessionCreateRequest) => ({
     // Per-session provider override honored (a host may map workspaces to
     // different providers) — server-level settings are only the default.

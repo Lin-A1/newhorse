@@ -1,4 +1,4 @@
-import { createApp, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow } from "@newhorse/runtime"
+import { createApp, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow, type SessionDirectory, type DirectoryEntry } from "@newhorse/runtime"
 import type { AdapterConfig } from "@newhorse/llm"
 import type { StoredEvent, ApprovalRequest } from "@newhorse/schema"
 
@@ -12,6 +12,12 @@ import type { StoredEvent, ApprovalRequest } from "@newhorse/schema"
  * Sessions are held in a process-local map (sessionId → App); `POST /session`
  * creates or attaches. Multiple sessions run in parallel; each `App` is one
  * durable session attached to a workspace.
+ *
+ * Cross-process routing (M4, optional): when a `directory` is configured,
+ * sessions created here are REGISTERED with this server's URL, so a sibling
+ * server process can interrupt/steer/observe them by proxying over HTTP —
+ * and vice versa (a miss in the local map resolves through the directory).
+ * The directory is one shared SQLite file (see createSqliteSessionDirectory).
  */
 
 /** Server configuration (transport concerns only). */
@@ -20,6 +26,13 @@ export interface ServerConfig {
   readonly host?: string
   /** Port to bind. Default 3927. */
   readonly port?: number
+  /**
+   * Socket idle timeout in seconds (Bun default 10 kills SSE streams that go
+   * quiet during long tool executions). Default 120; a 15s SSE keepalive
+   * comment also runs on every prompt stream, so only pathological gaps
+   * depend on this.
+   */
+  readonly idleTimeout?: number
   /**
    * Optional bearer token. When set, every request must carry
    * `Authorization: Bearer <token>` (constant-time compare). When absent,
@@ -32,8 +45,17 @@ export interface ServerConfig {
   ) => Promise<AppConfig> | AppConfig
   /** Transport-injected approval gate (M4 execpolicy). Absent → fail-closed. */
   readonly onApprove?: (req: ApprovalRequest) => Promise<boolean>
-  /** Pluggable session routing (default: process-local Map). */
+  /** Pluggable session resolver (host lazy re-attach). */
   readonly sessionResolver?: SessionResolver
+  /**
+   * Cross-process live-session directory. When set, owned sessions are
+   * registered so sibling processes can reach them, and sessions owned by
+   * siblings are proxied on a local-map miss. Heartbeats keep ownership
+   * alive; stop() unregisters everything this process created.
+   */
+  readonly directory?: SessionDirectory
+  /** URL other processes use to reach THIS server (default: derived baseUrl). */
+  readonly advertiseUrl?: string
 }
 
 /** One session's create config (POST /v1/session body), transport DTO. */
@@ -144,18 +166,65 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   const port = config.port ?? 3927
   const token = config.token
   const sessionResolver = config.sessionResolver
+  const directory = config.directory
   const apps = new Map<string, App>()
-  /** apps map first; on a miss, consult the pluggable resolver (a host may
-   *  lazily re-attach sessions from disk or proxy from another node). */
-  const findApp = async (sessionId: string): Promise<{ app: App; error?: undefined } | { app: undefined; error: string }> => {
+  /** Sessions this process created (directory-owned; unregistered on stop). */
+  const owned = new Set<string>()
+
+  /** The URL peers use to reach this server (advertised or derived). */
+  const selfUrl = (): string => config.advertiseUrl ?? `http://${host}:${server.port}`
+
+  /** A resolved session: served locally, owned by a sibling process, or absent. */
+  type Found = { kind: "local"; app: App } | { kind: "remote"; entry: DirectoryEntry } | { kind: "missing"; error: string }
+  const findSession = async (sessionId: string): Promise<Found> => {
     const local = apps.get(sessionId)
-    if (local) return { app: local }
-    if (!sessionResolver) return { app: undefined, error: `session "${sessionId}" not found` }
-    // A host-provided resolver may lazily re-attach sessions (from disk, from
-    // another node, etc.) — cache the result to avoid repeated resolution.
-    const resolved = await sessionResolver(sessionId)
-    if (resolved) { apps.set(sessionId, resolved); return { app: resolved } }
-    return { app: undefined, error: `session "${sessionId}" not found` }
+    if (local) return { kind: "local", app: local }
+    if (directory) {
+      const entry = directory.lookup(sessionId)
+      if (entry) {
+        if (entry.endpoint === selfUrl()) {
+          // Stale self-entry (we ARE that endpoint but hold no app — the owner
+          // restarted). Sweep it rather than proxying to ourselves.
+          directory.unregister(sessionId)
+        } else {
+          return { kind: "remote", entry }
+        }
+      }
+    }
+    if (sessionResolver) {
+      // A host-provided resolver may lazily re-attach sessions (from disk,
+      // from another node, etc.) — cache the result to avoid repeated resolution.
+      const resolved = await sessionResolver(sessionId)
+      if (resolved) { apps.set(sessionId, resolved); return { kind: "local", app: resolved } }
+    }
+    return { kind: "missing", error: `session "${sessionId}" not found` }
+  }
+
+  /** Proxy a JSON op to the owning server. Owner unreachable → sweep the
+   *  stale entry (self-healing directory) and report honestly (502). */
+  async function proxyJson(entry: DirectoryEntry, path: string, init?: RequestInit): Promise<Response> {
+    const headers: Record<string, string> = { ...(init?.headers as Record<string, string> | undefined) }
+    if (token) headers.authorization = `Bearer ${token}`
+    try {
+      const res = await fetch(entry.endpoint + path, { ...init, headers, signal: AbortSignal.timeout(5000) })
+      return new Response(await res.arrayBuffer(), { status: res.status, headers: { "content-type": res.headers.get("content-type") ?? "application/json" } })
+    } catch {
+      directory?.unregister(entry.sessionId)
+      return json(502, { error: `owner ${entry.endpoint} unreachable for session "${entry.sessionId}" (stale entry swept)` })
+    }
+  }
+
+  /** Proxy the SSE prompt stream: relay the owner's event stream verbatim. */
+  async function proxyPrompt(entry: DirectoryEntry, sessionId: string, body: string, signal?: AbortSignal): Promise<Response> {
+    const headers: Record<string, string> = { "content-type": "application/json" }
+    if (token) headers.authorization = `Bearer ${token}`
+    try {
+      const res = await fetch(`${entry.endpoint}/v1/session/${sessionId}/prompt`, { method: "POST", headers, body, signal })
+      return new Response(res.body, { status: res.status, headers: { "content-type": "text/event-stream" } })
+    } catch {
+      directory?.unregister(entry.sessionId)
+      return json(502, { error: `owner ${entry.endpoint} unreachable for session "${entry.sessionId}" (stale entry swept)` })
+    }
   }
   const sessionConfig = config.sessionConfig
 
@@ -170,6 +239,13 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
     // that differs from the one the caller will use in paths.
     const app = await createApp({ ...base, sessionId: id, onApprove: config.onApprove })
     apps.set(id, app)
+    // Register cross-process ownership (idempotent upsert) when a directory
+    // is wired — sibling processes can then interrupt/steer/observe this
+    // session by proxying to selfUrl().
+    if (directory) {
+      directory.register(id, selfUrl())
+      owned.add(id)
+    }
     return app
   }
 
@@ -179,6 +255,16 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
    *  server.stop() would otherwise crash on a pending disconnected stream. */
   async function promptStream(app: App, text: string, principal?: "user" | "butler" | "parent", signal?: AbortSignal): Promise<Response> {
     const sse = sseStream()
+    // Flush headers NOW with an SSE comment line: Bun does not send response
+    // headers until the first body byte, and a turn can go quiet for a long
+    // time (hung LLM, long tool) — clients and cross-process proxies must see
+    // the 200 immediately, not at the first event.
+    sse.emit(": open\n\n")
+    // Keepalive comments every 15s: a turn running a long tool emits no
+    // events, and an idle socket would be dropped (Bun default 10s). Comment
+    // lines are ignored by every SSE client, so they are safe between events.
+    const keepalive = setInterval(() => sse.emit(": keepalive\n\n"), 15_000)
+    keepalive.unref?.()
     const unsubscribe = app.onEvent((event) => {
       sse.emit(`data: ${JSON.stringify(event)}\n\n`)
     })
@@ -199,6 +285,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         sse.close()
       })
       .finally(() => {
+        clearInterval(keepalive)
         signal?.removeEventListener("abort", onAbort)
         unsubscribe()
       })
@@ -208,6 +295,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   const server = Bun.serve({
     hostname: host,
     port,
+    idleTimeout: config.idleTimeout ?? 120,
     async fetch(req) {
       // Token gate (constant-time). Without a token, only loopback binds.
       if (token) {
@@ -231,6 +319,12 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       if (method === "POST" && parts.length === 2 && parts[1] === "session") {
         const parsed = await readJsonOr400<SessionCreateRequest>(req)
         if ("error" in parsed) return json(400, parsed)
+        // Split-brain guard: an explicit id that a SIBLING process owns must
+        // not be re-created locally (two Apps would drive one log).
+        if (parsed.sessionId && directory) {
+          const entry = directory.lookup(parsed.sessionId)
+          if (entry && entry.endpoint !== selfUrl()) return json(409, { error: `session "${parsed.sessionId}" is owned by ${entry.endpoint}` })
+        }
         const app = await resolveApp(parsed)
         if (!app) return json(500, { error: "no sessionConfig provided; cannot create session" })
         const session = await app.resume()
@@ -239,40 +333,49 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
 
       // POST /v1/session/:id/prompt
       if (method === "POST" && parts.length === 4 && parts[3] === "prompt") {
-        const found = await findApp(parts[2]!)
-        if (!found.app) return json(404, { error: found.error })
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
         const parsed = await readJsonOr400<{ text?: string; principal?: "user" | "butler" | "parent" }>(req)
         if ("error" in parsed) return json(400, parsed)
         if (!parsed.text) return json(400, { error: "text is required" })
+        if (found.kind === "remote") return proxyPrompt(found.entry, parts[2]!, JSON.stringify({ text: parsed.text, principal: parsed.principal }), req.signal)
         return promptStream(found.app, parsed.text, parsed.principal, req.signal)
       }
 
       // POST /v1/session/:id/steer
       if (method === "POST" && parts.length === 4 && parts[3] === "steer") {
-        const found = await findApp(parts[2]!)
-        if (!found.app) return json(404, { error: found.error })
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
         const parsed = await readJsonOr400<{ text?: string }>(req)
         if ("error" in parsed) return json(400, parsed)
         if (!parsed.text) return json(400, { error: "text is required" })
+        if (found.kind === "remote") return proxyJson(found.entry, `/v1/session/${parts[2]!}/steer`, { method: "POST", body: JSON.stringify({ text: parsed.text }) })
         await found.app.steer(parsed.text)
         return json(200, { admitted: true })
       }
 
       // POST /v1/session/:id/interrupt
       if (method === "POST" && parts.length === 4 && parts[3] === "interrupt") {
-        const found = await findApp(parts[2]!)
-        if (!found.app) return json(404, { error: found.error })
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return proxyJson(found.entry, `/v1/session/${parts[2]!}/interrupt`, { method: "POST" })
         found.app.interrupt()
         return json(200, { interrupted: true })
       }
 
       // GET /v1/session/:id
       if (method === "GET" && parts.length === 3) {
-        const found = await findApp(parts[2]!)
-        if (!found.app) return json(404, { error: found.error })
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return proxyJson(found.entry, `/v1/session/${parts[2]!}`)
         // Session is serializable; its snapshot (messages/headSeq) is the API shape.
         const session = await found.app.resume()
         return json(200, session.snapshot())
+      }
+
+      // GET /v1/live — the cross-process directory view (who owns what).
+      if (method === "GET" && parts.length === 2 && parts[1] === "live") {
+        return json(200, { self: selfUrl(), live: directory?.entries() ?? [] })
       }
 
       // GET /v1/sessions
@@ -297,8 +400,9 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
 
       // GET /v1/session/:id/events
       if (method === "GET" && parts.length === 4 && parts[3] === "events") {
-        const found = await findApp(parts[2]!)
-        if (!found.app) return json(404, { error: found.error })
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return proxyJson(found.entry, `/v1/session/${parts[2]!}/events`)
         const events: StoredEvent[] = await found.app.events.read(parts[2]!)
         return json(200, events)
       }
@@ -306,6 +410,19 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       return json(404, { error: "not found" })
     },
   })
+
+  // Cross-process liveness: refresh this endpoint's heartbeat so siblings do
+  // not sweep live sessions during long-running turns. Unref'd — the timer
+  // never holds the process open.
+  const heartbeatTimer = directory ? setInterval(() => {
+    try {
+      directory.heartbeat(selfUrl())
+    } catch {
+      // A transient lock/busy on the shared file is non-fatal — the next tick
+      // refreshes; a persistently failed heartbeat surfaces via sweep.
+    }
+  }, 10_000) : undefined
+  heartbeatTimer?.unref?.()
 
   const handle: ServerHandle = {
     baseUrl: `http://${host}:${server.port}`,
@@ -318,6 +435,9 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       // store closes (best-effort; a fully idle server has no in-flight work).
       await new Promise((r) => setTimeout(r, 20))
       server.stop()
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
+      // Release cross-process ownership for everything this process created.
+      if (directory) for (const id of owned) directory.unregister(id)
       for (const app of apps.values()) {
         // SqliteEventStore has close(); the EventStore interface doesn't.
         (app.events as { close?: () => void }).close?.()

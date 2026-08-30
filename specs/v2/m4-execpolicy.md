@@ -284,7 +284,8 @@ interface AppConfig {
 
 ## 6. 边界与不做（M4 本次裁剪）
 
-- **不做**：Web UI（下个 milestone）、跨进程 SessionManager、持久 grant 授权（M5）、delegate-per-role 收紧（留给后续）。
+- **不做**：Web UI（下个 milestone）、持久 grant 授权（M5）、delegate-per-role 收紧（留给后续）。
+- **状态更新（2026-08-30）**：跨进程 SessionManager 已实现（原 M4 裁剪项落地）——`runtime/session-directory.ts` seam + 共享 SQLite 目录 + server 跨进程代理路由（observe/steer/interrupt/SSE），spawn-drive 仍延后（见 docs/core-technology-notes.md §26）。
 - **不做**：把 read/list/search 纳入 execpolicy（只读常态，沙箱已管边界）——但须在文档**显式声明**：
   - **模型可读凭据类文件内容属可接受风险**；
   - **enableBash=true 时，模型可经 bash 读取/写入执行用户权限可达的任何文件（含 `/etc/passwd`、宿主其它工作区），此为基础残余风险**（M3.5 §2.2 已声明"不受 fs 沙箱"）；
