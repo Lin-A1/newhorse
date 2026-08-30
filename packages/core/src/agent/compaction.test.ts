@@ -51,3 +51,17 @@ describe("compactSession", () => {
     expect(tailTexts.join(",")).toContain("message 19")
   })
 })
+
+describe("compactSession LLM-summary seam", () => {
+  it("uses the injected summarizer and falls back to the local marker on failure", async () => {
+    const events = new MemoryEventStore()
+    await seed(events, "s4", 20)
+    const res = await compactSession(events, "s4", { retain: 5, summarize: async () => "the user asked about xs and got an answer about ys" })
+    expect(res.summary).toContain("the user asked about xs")
+
+    const events2 = new MemoryEventStore()
+    await seed(events2, "s5", 20)
+    const res2 = await compactSession(events2, "s5", { retain: 5, summarize: async () => { throw new Error("llm down") } })
+    expect(res2.summary).toContain("folded") // local marker fallback
+  })
+})

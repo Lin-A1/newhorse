@@ -66,3 +66,37 @@ describe("SqliteMemoryStore", () => {
     }
   })
 })
+
+describe("SqliteMemoryStore FTS5 (relevance ranking)", () => {
+  it("ranks BM25 relevance over priority (a close match beats a high-priority unrelated memory)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-mem-fts-"))
+    const dbPath = join(dir, "mem.db")
+    try {
+      const s = new SqliteMemoryStore(dbPath)
+      await s.write({ content: "The user prefers TypeScript for frontend work", type: "persona", priority: 30, sessionId: "u" })
+      await s.write({ content: "Always run tests before commit", type: "instruction", priority: 95, sessionId: "u" })
+      const hits = await s.search("TypeScript frontend", 5, { sessionId: "u" })
+      expect(hits.length).toBeGreaterThan(0)
+      // The TypeScript memory ranks first (relevance), despite the 95-priority
+      // instruction being present.
+      expect(hits[0]!.content).toContain("TypeScript")
+      s.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("falls back to LIKE when FTS cannot tokenize (a query with an FTS-unsafe char)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-mem-fts2-"))
+    const dbPath = join(dir, "mem.db")
+    try {
+      const s = new SqliteMemoryStore(dbPath)
+      await s.write({ content: "a b c", type: "fact", priority: 10, sessionId: "u" })
+      const hits = await s.search("a", 5, { sessionId: "u" })
+      expect(hits.length).toBe(1)
+      s.close()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})

@@ -21,6 +21,11 @@ import type { SessionMessage, StoredEvent } from "@newhorse/schema"
 export interface CompactOptions {
   /** Keep this many most-recent messages verbatim. Default 12. */
   readonly retain?: number
+  /** Optional LLM summarizer: (folded head text) -> summary. When absent, a
+   *  cheap LOCAL marker ("[previous context: N messages folded...]") is used.
+   *  The seam keeps compaction provider-agnostic — the caller (runtime) injects
+   *  the summary call; a broken summarizer fails back to the local marker. */
+  readonly summarize?: (headText: string) => Promise<string>
 }
 
 /** Compaction: keep the newest `retain` messages, fold the older head into a
@@ -47,9 +52,21 @@ export async function compactSession(events: EventStore, sessionId: string, opts
   // honors the boundary drops every MessageAppended with seq <= boundarySeq
   // (the head is represented by the summary marker), keeping ONLY the tail.
   const boundarySeq = messageSeqs[headCount - 1]!
-  // Local summary of the collapsed head: counts + the first user prompt's gist.
-  const userPrompt = head.find((m) => m.kind === "user")?.text ?? ""
-  const summary = `[previous context: ${headCount} messages folded; original request: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}]`
+  // Summary of the collapsed head: an LLM summary when injected (compact the
+  // head text), else the cheap local marker (counts + first prompt gist).
+  const headText = head.map((m) => (m.kind === "user" ? m.text : m.kind === "assistant" ? (m as { content?: { type?: string; text?: string }[] }).content?.filter((p) => p.type === "text").map((p) => p.text!).join("\n") ?? "" : "")).join("\n\n")
+  let summary: string
+  if (opts.summarize) {
+    try {
+      summary = `[previous context] ${await opts.summarize(headText.slice(0, 30_000))}`
+    } catch {
+      const userPrompt = head.find((m) => m.kind === "user")?.text ?? ""
+      summary = `[previous context: ${headCount} messages folded; original request: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}]`
+    }
+  } else {
+    const userPrompt = head.find((m) => m.kind === "user")?.text ?? ""
+    summary = `[previous context: ${headCount} messages folded; original request: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}]`
+  }
   // Append the compaction marker (a user-role message so it is a normal part of
   // history; the encoders map kind "compaction" → user, and the model sees it
   // as a context stub, never a fake assistant claim).

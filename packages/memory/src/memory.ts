@@ -103,6 +103,26 @@ export class SqliteMemoryStore implements MemoryStore {
           created_at INTEGER NOT NULL
         )
       `)
+      // FTS5 index for rank-ordered (BM25) keyword search — a real similarity
+      // proxy without a vector embedder. Content is kept in sync via triggers
+      // after insert/delete; FTS is best-effort (a query against a missing
+      // FTS row falls through to LIKE in search()).
+      try {
+        this.#db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(content, id UNINDEXED)`)
+        this.#db.run(`
+          CREATE TRIGGER IF NOT EXISTS memory_fts_after_insert AFTER INSERT ON memory BEGIN
+            INSERT INTO memory_fts (id, content) VALUES (new.id, new.content);
+          END
+        `)
+        this.#db.run(`
+          CREATE TRIGGER IF NOT EXISTS memory_fts_after_delete AFTER DELETE ON memory BEGIN
+            DELETE FROM memory_fts WHERE id = old.id;
+          END
+        `)
+      } catch {
+        // FTS5 may be unavailable in a minimal build — the search falls back
+        // to LIKE; never fail migration for the optional index.
+      }
     })
   }
 
@@ -119,6 +139,28 @@ export class SqliteMemoryStore implements MemoryStore {
   async search(query: string, limit = 5, isolation?: { sessionId?: string; agentId?: string; userId?: string }): Promise<MemoryRecord[]> {
     await this.#ready
     const q = query.trim()
+    // FTS5 BM25 first (relevance-ranked — the similarity proxy): match ids in
+    // rank order, then apply the isolation filter + limit on the main table.
+    // Fall back to LIKE + priority DESC when FTS is unavailable or empty.
+    if (q) {
+      try {
+        const ftsRows = this.#db.query(`SELECT id FROM memory_fts WHERE memory_fts MATCH ? ORDER BY bm25(memory_fts) LIMIT ?`).all(ftsQuery(q), limit) as { id: string }[]
+        if (ftsRows.length > 0) {
+          const iso: string[] = []
+          const isoParams: string[] = []
+          if (isolation?.sessionId) { iso.push("session_id = ?"); isoParams.push(isolation.sessionId) }
+          if (isolation?.agentId) { iso.push("agent_id = ?"); isoParams.push(isolation.agentId) }
+          if (isolation?.userId) { iso.push("user_id = ?"); isoParams.push(isolation.userId) }
+          const isoSql = iso.length > 0 ? ` AND ${iso.join(" AND ")}` : ""
+          const ids = ftsRows.map((r) => r.id)
+          const stmt = this.#db.query(`SELECT * FROM memory WHERE id IN (${ids.map(() => "?").join(",")})${isoSql} ORDER BY created_at DESC LIMIT ?`)
+          const rows = stmt.all(...ids, ...isoParams, limit) as Record<string, unknown>[]
+          if (rows.length > 0) return rows.map(migrateRow)
+        }
+      } catch {
+        // FTS unavailable or an untokenizable query — fall through to LIKE.
+      }
+    }
     const cond = q ? ["content LIKE ?"] : []
     const params: (string | number)[] = q ? [`%${q}%`] : []
     if (isolation?.sessionId) { cond.push("session_id = ?"); params.push(isolation.sessionId) }
@@ -141,8 +183,14 @@ export class SqliteMemoryStore implements MemoryStore {
   }
 }
 
-function migrateRow(row: Record<string, unknown>): MemoryRecord {
-  return {
+/** Wrap a user query as a quoted FTS5 MATCH term so punctuation/special
+ *  characters cannot break the FTS query (each word becomes a quoted prefix
+ *  term; an unparseable query throws and falls back to LIKE). */
+function ftsQuery(q: string): string {
+  return q.split(/\s+/).filter(Boolean).map((w) => `"${w.split('"').join('""')}"`).join(" ")
+}
+
+function migrateRow(row: Record<string, unknown>): MemoryRecord {  return {
     id: String(row.id),
     content: String(row.content),
     type: String(row.type) as MemoryType,
