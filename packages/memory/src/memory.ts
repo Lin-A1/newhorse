@@ -50,7 +50,7 @@ export interface MemoryStore {
    * searches fuse BM25 + cosine via RRF. When not attached, search is
    * keyword-only. `backfill` embeds existing rows that lack a vector.
    */
-  readonly attachEmbedder?: (embedder: EmbeddingProvider) => { backfill: (limit?: number) => Promise<number> }
+  readonly attachEmbedder?: (embedder: EmbeddingProvider, tag?: string) => { backfill: (limit?: number) => Promise<number> }
   readonly close?: () => void
 }
 
@@ -61,7 +61,7 @@ export class MemoryMemoryStore implements MemoryStore {
   /** id -> vector, parallel to #rows (memory rows are never mutated in place). */
   readonly #vectors = new Map<string, number[]>()
   /** Attach an embedder; writes embed (fail-soft) and searches fuse BM25+cosine. */
-  attachEmbedder(embedder: EmbeddingProvider): { backfill: (limit?: number) => Promise<number> } {
+  attachEmbedder(embedder: EmbeddingProvider, _tag?: string): { backfill: (limit?: number) => Promise<number> } {
     this.#embedder = embedder
     const embedderRef = embedder
     return {
@@ -147,6 +147,7 @@ export class SqliteMemoryStore implements MemoryStore {
   readonly #db: Database
   #ready: Promise<void>
   #embedder: EmbeddingProvider | undefined
+  #embedderTag: string | undefined
 
   constructor(dbPath: string) {
     this.#db = new Database(dbPath)
@@ -157,18 +158,21 @@ export class SqliteMemoryStore implements MemoryStore {
    *  content into the `embedding` BLOB (Float32Array; fail-soft — a broken
    *  provider stores metadata-only) and searches fuse BM25 + cosine via RRF.
    *  backfill embeds existing rows lacking a vector (idempotent, budgeted). */
-  attachEmbedder(embedder: EmbeddingProvider): { backfill: (limit?: number) => Promise<number> } {
+  attachEmbedder(embedder: EmbeddingProvider, tag?: string): { backfill: (limit?: number) => Promise<number> } {
     this.#embedder = embedder
+    this.#embedderTag = tag
     const embedderRef = embedder
     return {
       backfill: async (limit = 100): Promise<number> => {
         await this.#ready
-        const pending = this.#db.query("SELECT id, content FROM memory WHERE embedding IS NULL LIMIT ?").all(limit) as { id: string; content: string }[]
+        // Rows missing a vector OR tagged by a DIFFERENT model (a model switch
+        // re-embeds under the current tag instead of mixing vectors).
+        const pending = this.#db.query("SELECT id, content FROM memory WHERE embedding IS NULL OR embedding_model IS NOT ? LIMIT ?").all(this.#embedderTag ?? null, limit) as { id: string; content: string }[]
         let n = 0
         for (const row of pending) {
           const v = await embedderRef.embed(row.content, "db")
           if (v) {
-            this.#db.run("UPDATE memory SET embedding = ? WHERE id = ?", [float32Blob(v), row.id])
+            this.#db.run("UPDATE memory SET embedding = ?, embedding_model = ? WHERE id = ?", [float32Blob(v), this.#embedderTag ?? null, row.id])
             n++
           }
         }
@@ -220,12 +224,17 @@ export class SqliteMemoryStore implements MemoryStore {
       } catch {
         // no-op — the LIKE fallback covers it.
       }
-      // Vector column (optional, Phase 4 semantic search): a Float32Array
-      // serialized as BLOB. NULL = not yet embedded (deferred embedding).
+      // Vector columns (optional, Phase 4 semantic search): a Float32Array
+      // serialized as BLOB + the embedding model tag. NULL = not yet embedded
+      // (deferred embedding). The tag prevents cross-model vector mixing: a
+      // query only matches rows embedded by the SAME model.
       try {
         const cols = this.#db.query("PRAGMA table_info(memory)").all() as { name: string }[]
         if (!cols.some((c) => c.name === "embedding")) {
           this.#db.run("ALTER TABLE memory ADD COLUMN embedding BLOB")
+        }
+        if (!cols.some((c) => c.name === "embedding_model")) {
+          this.#db.run("ALTER TABLE memory ADD COLUMN embedding_model TEXT")
         }
       } catch {
         // no-op — vector search is optional; FTS still works.
@@ -244,8 +253,8 @@ export class SqliteMemoryStore implements MemoryStore {
       if (v) embedding = float32Blob(v)
     }
     this.#db.run(
-      "INSERT INTO memory (id, content, type, priority, session_id, agent_id, user_id, source_ids, metadata, created_at, embedding) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [rec.id, rec.content, rec.type, rec.priority, rec.sessionId, rec.agentId ?? null, rec.userId ?? null, rec.sourceIds ? JSON.stringify(rec.sourceIds) : null, rec.metadata ? JSON.stringify(rec.metadata) : null, rec.createdAt, embedding],
+      "INSERT INTO memory (id, content, type, priority, session_id, agent_id, user_id, source_ids, metadata, created_at, embedding, embedding_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      [rec.id, rec.content, rec.type, rec.priority, rec.sessionId, rec.agentId ?? null, rec.userId ?? null, rec.sourceIds ? JSON.stringify(rec.sourceIds) : null, rec.metadata ? JSON.stringify(rec.metadata) : null, rec.createdAt, embedding, embedding ? (this.#embedderTag ?? null) : null],
     )
     return rec
   }
@@ -278,7 +287,7 @@ export class SqliteMemoryStore implements MemoryStore {
     if (this.#embedder && q) {
       const qv = await this.#embedder.embed(q, "query")
       if (qv) {
-        const rows = this.#db.query(`SELECT id, embedding FROM memory WHERE embedding IS NOT NULL${isoSql}`).all(...isoParams) as { id: string; embedding: Buffer }[]
+        const rows = this.#db.query(`SELECT id, embedding FROM memory WHERE embedding IS NOT NULL AND embedding_model = ?${isoSql}`).all(this.#embedderTag ?? null, ...isoParams) as { id: string; embedding: Buffer }[]
         const scored = rows
           .map((r) => ({ id: r.id, cos: cosine(qv, blobToFloat32(r.embedding)) }))
           .filter((s) => s.cos > 0.3)

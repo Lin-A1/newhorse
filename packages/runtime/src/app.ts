@@ -186,8 +186,29 @@ export async function createApp(config: AppConfig): Promise<App> {
   // background (budgeted; idempotent).
   if (config.memoryStore && config.memoryVector?.enabled && config.memoryVector.embedding) {
     const embedder = createEmbeddingProvider(config.memoryVector.embedding)
-    const { backfill } = config.memoryStore.attachEmbedder!(embedder)
-    void backfill().catch(() => {})
+    // A custom MemoryStore without attachEmbedder cannot do semantic search —
+    // warn once instead of crashing createApp on a non-null assertion.
+    if (!config.memoryStore.attachEmbedder) {
+      console.error("\u001b[33m[memory] memoryVector.enabled but the store does not support attachEmbedder — semantic search off\u001b[0m")
+    } else {
+      // One-time stderr notice when embedding fails (silent degradation is the
+      // failure mode that makes a user believe semantic search is on).
+      let warnedEmbedFail = false
+      const watched: typeof embedder = {
+        dimensions: embedder.dimensions,
+        embed: async (text, purpose) => {
+          const v = await embedder.embed(text, purpose)
+          if (!v && !warnedEmbedFail) {
+            warnedEmbedFail = true
+            console.error("\u001b[33m[memory] embedding failed — semantic search degraded to keyword-only (check the embedding endpoint/key)\u001b[0m")
+          }
+          return v
+        },
+      }
+      // Tag = the embedding model so rows from different models never mix.
+      const { backfill } = config.memoryStore.attachEmbedder(watched, config.memoryVector.embedding.model)
+      void backfill().catch(() => {})
+    }
   }
   // skillsDir = the plugin dir (its `skills/` sub-tree is discovered lazily by
   // the skill tool). The tool is only exposed when a pluginsDir is configured.
