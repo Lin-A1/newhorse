@@ -190,3 +190,41 @@ it("auto-compaction re-fires on a later turn after the first boundary (long-hori
   expect(boundaries.length).toBe(2)
   expect(boundaries[1]!).toBeGreaterThan(boundaries[0]!) // a second, deeper fold
 })
+
+it("goal budget enforcement pauses an over-budget run (finish=length, goal blocked)", async () => {
+  const { runtime, resolveTool } = makeRuntime({
+    id: "t",
+    stream: async () => eventsOf([{ type: "text.delta", text: "should never reach the LLM" }, { type: "step-finish", finish: "stop" }]),
+  })
+  await runtime.events.append("s", "Session.Created", { id: "s", location: "/w", createdAt: Date.now() })
+  // Budget 100; the seeded usage is 500 (over).
+  await runtime.events.append("s", "Session.StepEnded", { sessionId: "s", step: 1, finish: "stop", usage: { inputTokens: 400, outputTokens: 100 } })
+  await runtime.events.append("s", "Session.GoalUpdated", { sessionId: "s", objective: "finish", status: "active", tokenBudget: 100, ts: Date.now() })
+  await runtime.events.append("s", "Session.Prompted", { id: "p", sessionId: "s", prompt: "go", delivery: "steer", principal: "user", promotedSeq: 99 })
+
+  const result = await runSession(runtime, { sessionId: "s", agent, resolveTool })
+  expect(result.finish).toBe("length")
+  expect(result.needsContinuation).toBe(false)
+  // Goal durably flipped to blocked.
+  const log = await runtime.events.read("s")
+  const blocked = log.filter((e) => e.type === "Session.GoalUpdated").at(-1)
+  expect((blocked?.data as { status?: string }).status).toBe("blocked")
+  // The model-readable pause steer was admitted.
+  const prompted = log.filter((e) => e.type === "Session.Prompted")
+  expect(prompted.some((e) => (e.data as { prompt?: string }).prompt?.includes("budget exhausted"))).toBe(true)
+})
+
+it("goal enforcement is skipped when the budget is not exceeded", async () => {
+  let llmCalled = false
+  const { runtime, resolveTool } = makeRuntime({
+    id: "t",
+    stream: async () => { llmCalled = true; return eventsOf([{ type: "text.delta", text: "ok" }, { type: "step-finish", finish: "stop" }]) },
+  })
+  await runtime.events.append("s", "Session.Created", { id: "s", location: "/w", createdAt: Date.now() })
+  await runtime.events.append("s", "Session.StepEnded", { sessionId: "s", step: 1, finish: "stop", usage: { inputTokens: 10, outputTokens: 5 } })
+  await runtime.events.append("s", "Session.GoalUpdated", { sessionId: "s", objective: "small task", status: "active", tokenBudget: 100000, ts: Date.now() })
+  await runtime.events.append("s", "Session.Prompted", { id: "p", sessionId: "s", prompt: "go", delivery: "steer", principal: "user", promotedSeq: 99 })
+  const result = await runSession(runtime, { sessionId: "s", agent, resolveTool })
+  expect(result.finish).toBe("stop")
+  expect(llmCalled).toBe(true)
+})

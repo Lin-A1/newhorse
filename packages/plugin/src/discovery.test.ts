@@ -69,3 +69,23 @@ describe("directory discovery", () => {
     expect(shellSplit(`echo 'a "b"'`)).toEqual(["echo", 'a "b"'])
   })
 })
+
+describe(".ts tool loading (trust switch)", () => {
+  it("skips .ts tools without trust; loads a default-exported Tool with trust", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-ts-tool-"))
+    try {
+      await mkdir(join(dir, "tools"), { recursive: true })
+      await writeFile(join(dir, "tools", "code.ts"), `export default { name: "coded", description: "coded tool", execute: async () => "CODED-RESULT" }`)
+      // Untrusted: the .ts definition is NOT loaded.
+      const untrusted = await discoverPlugin(dir)
+      expect(untrusted.some((c) => c.kind === "tool" && c.name === "coded")).toBe(false)
+      // Trusted: it loads and executes.
+      const trusted = await discoverPlugin(dir, { trustCode: true })
+      const tool = trusted.find((c) => c.kind === "tool" && c.name === "coded")
+      expect(tool).toBeTruthy()
+      expect(await tool!.execute({}, undefined)).toBe("CODED-RESULT")
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})

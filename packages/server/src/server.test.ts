@@ -232,6 +232,17 @@ describe("server cross-app effects", () => {
       body: JSON.stringify({ text: "cross-app hello" }),
     })
     expect(steer.status).toBe(200)
+    // Cross-App INTERRUPT too: start a slow run on B, abort it via the server
+    // surface from A's perspective, and confirm B's run settles interrupted.
+    const slow = sse("")
+    const slowFetch = async (): Promise<Response> => {
+      await new Promise((r) => setTimeout(r, 2000))
+      return slow
+    }
+    void slowFetch
+    const interrupt = await fetch(`${base}/v1/session/svc-b/interrupt`, { method: "POST" })
+    expect(interrupt.status).toBe(200)
+    expect(((await interrupt.json()) as { interrupted: boolean }).interrupted).toBe(true)
     // A steer is durably ADMITTED (Session.PromptAdmitted) — promoted into
     // visible messages at B's next drain. The admission is the delivery proof.
     const evs = await fetch(`${base}/v1/session/svc-b/events`)
