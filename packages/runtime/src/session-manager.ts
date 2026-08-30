@@ -34,6 +34,11 @@ export interface DriveChildOptions {
   /** Role-overlay body (agent definition) appended after the workspace system
    *  context in the child's first-turn system message. Optional. */
   readonly systemExtra?: string
+  /** Optional live-registration hook (M4 session manager): a parent hub can
+   *  register the child's AbortController so it can interrupt/send the child
+   *  while it runs. The child's controller is created here; on invocation the
+   *  driver wraps it with an admit for the inbox. */
+  readonly registerLive?: (abort: () => void, admit: (text: string) => Promise<void>) => () => void
   /** Tool-ctx for the child run (e.g. a workspace execpolicy so fs tools can
    *  act — a DAG node must keep its hands). Pass undefined for deny-all. */
   readonly toolCtx?: Omit<ToolCtx, "caller">
@@ -74,19 +79,34 @@ export async function driveChildSession(opts: DriveChildOptions): Promise<DriveC
     }
   }
   await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: opts.prompt, delivery: "steer" })
-  const result = await runSession(opts.runtime, {
-    sessionId,
-    agent: opts.agent,
-    resolveTool: (name) => opts.tools.find((t) => t.name === name),
-    signal: opts.signal,
-    caller: { kind: "parent", sessionId: opts.parentId },
-    toolCtx: opts.toolCtx,
-  })
-  return {
-    sessionId,
-    finish: result.finish,
-    settled: result.finish !== "interrupted",
-    text: await readChildText(events, sessionId),
+  // Live registration (M4 session manager): the child's AbortController is
+  // created here so a parent hub can interrupt it mid-run; the admit wraps the
+  // child's own inbox. Unregistered on settle (finally).
+  const childCtrl = new AbortController()
+  const unregisterLive = opts.registerLive
+    ? opts.registerLive(
+        () => childCtrl.abort(),
+        (text) => inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: "parent" }).then(() => {}),
+      )
+    : undefined
+  let result
+  try {
+    result = await runSession(opts.runtime, {
+      sessionId,
+      agent: opts.agent,
+      resolveTool: (name) => opts.tools.find((t) => t.name === name),
+      signal: opts.signal ?? childCtrl.signal,
+      caller: { kind: "parent", sessionId: opts.parentId },
+      toolCtx: opts.toolCtx,
+    })
+    return {
+      sessionId,
+      finish: result.finish,
+      settled: result.finish !== "interrupted",
+      text: await readChildText(events, sessionId),
+    }
+  } finally {
+    unregisterLive?.()
   }
 }
 

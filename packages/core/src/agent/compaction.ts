@@ -51,21 +51,24 @@ export async function compactSession(events: EventStore, sessionId: string, opts
   // boundarySeq = the LAST seq of the folded head. A read-time projection that
   // honors the boundary drops every MessageAppended with seq <= boundarySeq
   // (the head is represented by the summary marker), keeping ONLY the tail.
-  const boundarySeq = messageSeqs[headCount - 1]!
-  // Summary of the collapsed head: an LLM summary when injected (compact the
+  const boundarySeq = messageSeqs[headCount - 1]!  // Summary of the collapsed head: an LLM summary when injected (compact the
   // head text), else the cheap local marker (counts + first prompt gist).
   const headText = head.map((m) => (m.kind === "user" ? m.text : m.kind === "assistant" ? (m as { content?: { type?: string; text?: string }[] }).content?.filter((p) => p.type === "text").map((p) => p.text!).join("\n") ?? "" : "")).join("\n\n")
   let summary: string
   if (opts.summarize) {
     try {
-      summary = `[previous context] ${await opts.summarize(headText.slice(0, 30_000))}`
+      // Race the summarizer against a hard timeout: a hung LLM must not stall
+      // the turn; on timeout/failure the cheap local marker stands in.
+      const result = await Promise.race([
+        opts.summarize(headText.slice(0, 30_000)).then((s) => `[previous context] ${s}`),
+        new Promise<string>((r) => setTimeout(() => r(""), 10_000)),
+      ])
+      summary = result || localSummary(headCount, head)
     } catch {
-      const userPrompt = head.find((m) => m.kind === "user")?.text ?? ""
-      summary = `[previous context: ${headCount} messages folded; original request: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}]`
+      summary = localSummary(headCount, head)
     }
   } else {
-    const userPrompt = head.find((m) => m.kind === "user")?.text ?? ""
-    summary = `[previous context: ${headCount} messages folded; original request: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}]`
+    summary = localSummary(headCount, head)
   }
   // Append the compaction marker (a user-role message so it is a normal part of
   // history; the encoders map kind "compaction" → user, and the model sees it
@@ -84,6 +87,12 @@ export async function compactSession(events: EventStore, sessionId: string, opts
  * request — the full log is still durable (append-only), the model just sees
  * the compacted view. A session with no boundary returns its messages as-is.
  */
+/** Cheap local summary (no LLM): counts + the first user prompt's gist. */
+function localSummary(headCount: number, head: SessionMessage[]): string {
+  const userPrompt = head.find((m) => m.kind === "user")?.text ?? ""
+  return `[previous context: ${headCount} messages folded; original request: ${userPrompt.slice(0, 120)}${userPrompt.length > 120 ? "…" : ""}]`
+}
+
 export function projectCompacted(stored: StoredEvent[]): { messages: SessionMessage[]; boundary: number } {
   const boundaryEvent = [...stored].reverse().find((e) => e.type === "Session.Compacted")
   const boundary = boundaryEvent ? Number((boundaryEvent.data as { boundarySeq?: number }).boundarySeq ?? -1) : -1

@@ -234,7 +234,7 @@ export async function createApp(config: AppConfig): Promise<App> {
         events,
         () => ({ interrupt: () => {}, prompt: async () => "" }),
         workspace,
-        async (childId, parentId, childWorkspace, model, prompt, agentName) => {
+        async (childId, parentId, childWorkspace, model, prompt, agentName, registerLive) => {
           // Role overlay (Phase 4): a named agent from the plugin registry
           // narrows tools + supplies a system body; else bare spawned agent.
           // An UNKNOWN agent name fails loudly (a typo must not silently spawn
@@ -256,6 +256,7 @@ export async function createApp(config: AppConfig): Promise<App> {
               prompt: prompt ?? "You are a spawned agent working for your parent. Complete the task.",
               parentId,
               systemExtra: resolved.body,
+              registerLive,
               contextProvider: config.contextProvider,
             })
             // Durable settle boundary (followup_task reads it) + promote the

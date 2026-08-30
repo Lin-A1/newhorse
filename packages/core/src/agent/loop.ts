@@ -46,6 +46,9 @@ export interface RunOptions {
    * fold the head once before the request (goal #2 long-horizon). Default on. */
   readonly compactThreshold?: number
   readonly compactAuto?: boolean
+  /** Optional LLM summarizer used by compaction (head text -> summary). The
+   * runtime injects it from its LLM client; absent = cheap local marker. */
+  readonly compactSummarize?: (headText: string) => Promise<string>
   /** Optional cancellation: when aborted, the drain stops between steps. */
   readonly signal?: AbortSignal
   /** Trusted caller injected into tool ctx (M2b). Defaults to parent of sessionId. */
@@ -105,7 +108,7 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     if (opts.compactAuto !== false) {
       const chars = visibleCheck.reduce((n, m) => n + JSON.stringify(m).length, 0)
       if (chars > (opts.compactThreshold ?? 80_000)) {
-        await compactSession(runtime.events, opts.sessionId)
+        await compactSession(runtime.events, opts.sessionId, { summarize: opts.compactSummarize })
       }
     }
     // Compaction-aware projection: if a Session.Compacted boundary exists, the

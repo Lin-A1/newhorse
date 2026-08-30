@@ -123,6 +123,13 @@ export class SqliteMemoryStore implements MemoryStore {
         // FTS5 may be unavailable in a minimal build — the search falls back
         // to LIKE; never fail migration for the optional index.
       }
+      // Backfill an existing DB (rows written before the FTS index existed) so
+      // search ranks them too. Idempotent.
+      try {
+        this.#db.run(`INSERT INTO memory_fts (id, content) SELECT id, content FROM memory WHERE id NOT IN (SELECT id FROM memory_fts)`)
+      } catch {
+        // no-op — the LIKE fallback covers it.
+      }
     })
   }
 
@@ -139,24 +146,21 @@ export class SqliteMemoryStore implements MemoryStore {
   async search(query: string, limit = 5, isolation?: { sessionId?: string; agentId?: string; userId?: string }): Promise<MemoryRecord[]> {
     await this.#ready
     const q = query.trim()
-    // FTS5 BM25 first (relevance-ranked — the similarity proxy): match ids in
-    // rank order, then apply the isolation filter + limit on the main table.
-    // Fall back to LIKE + priority DESC when FTS is unavailable or empty.
+    // FTS5 BM25 first (relevance-ranked — the similarity proxy). The JOIN
+    // preserves the bm25 ORDER and applies the isolation filter BEFORE the
+    // limit (the earlier two-step id-IN re-ordered by created_at and could
+    // under-deliver under isolation). Fall back to LIKE when FTS misses.
     if (q) {
       try {
-        const ftsRows = this.#db.query(`SELECT id FROM memory_fts WHERE memory_fts MATCH ? ORDER BY bm25(memory_fts) LIMIT ?`).all(ftsQuery(q), limit) as { id: string }[]
-        if (ftsRows.length > 0) {
-          const iso: string[] = []
-          const isoParams: string[] = []
-          if (isolation?.sessionId) { iso.push("session_id = ?"); isoParams.push(isolation.sessionId) }
-          if (isolation?.agentId) { iso.push("agent_id = ?"); isoParams.push(isolation.agentId) }
-          if (isolation?.userId) { iso.push("user_id = ?"); isoParams.push(isolation.userId) }
-          const isoSql = iso.length > 0 ? ` AND ${iso.join(" AND ")}` : ""
-          const ids = ftsRows.map((r) => r.id)
-          const stmt = this.#db.query(`SELECT * FROM memory WHERE id IN (${ids.map(() => "?").join(",")})${isoSql} ORDER BY created_at DESC LIMIT ?`)
-          const rows = stmt.all(...ids, ...isoParams, limit) as Record<string, unknown>[]
-          if (rows.length > 0) return rows.map(migrateRow)
-        }
+        const isoFts: string[] = []
+        const isoParams: string[] = []
+        if (isolation?.sessionId) { isoFts.push("m.session_id = ?"); isoParams.push(isolation.sessionId) }
+        if (isolation?.agentId) { isoFts.push("m.agent_id = ?"); isoParams.push(isolation.agentId) }
+        if (isolation?.userId) { isoFts.push("m.user_id = ?"); isoParams.push(isolation.userId) }
+        const isoSql = isoFts.length > 0 ? ` AND ${isoFts.join(" AND ")}` : ""
+        const stmt = this.#db.query(`SELECT m.* FROM memory_fts f JOIN memory m ON m.id = f.id WHERE memory_fts MATCH ?${isoSql} ORDER BY bm25(memory_fts) LIMIT ?`)
+        const rows = stmt.all(ftsQuery(q), ...isoParams, limit) as Record<string, unknown>[]
+        if (rows.length > 0) return rows.map(migrateRow)
       } catch {
         // FTS unavailable or an untokenizable query — fall through to LIKE.
       }

@@ -175,30 +175,45 @@ async function repl(app: Awaited<ReturnType<typeof import("@newhorse/runtime").c
     else if (event.type === "done") process.stdout.write(`\n`)
   })
   const rl = createInterface({ input: process.stdin, output: process.stdout })
-  const ask = () => rl.question("> ", (line) => void handle(line))
+  let rlClosed = false
+  rl.on("close", () => { rlClosed = true })
+  // Ctrl-C cancels the CURRENT run via app.interrupt() (per-run AbortController
+  // inside app.prompt). It never kills the REPL — the next prompt is fresh.
+  rl.on("SIGINT", () => {
+    app.interrupt()
+    process.stdout.write("\u001b[2m(interrupting…)\u001b[0m\n")
+  })
+  const ask = (): void => {
+    if (rlClosed) return
+    rl.question("> ", (line) => void handle(line))
+  }
   const handle = async (line: string): Promise<void> => {
-    const text = line.trim()
-    if (text === "/quit" || text === "/exit") { rl.close(); process.exit(0); return }
-    if (text === "/help") { console.log("  /steer <text>  /list  /interrupt  /quit"); ask(); return }
-    if (text === "/list") {
-      console.log(JSON.stringify(await app.listSessions(), null, 2)); ask(); return
-    }
-    if (text === "/interrupt") { app.interrupt(); ask(); return }
-    if (text.startsWith("/steer ")) { await app.steer(text.slice(7).trim()); ask(); return }
-    if (!text) { ask(); return }
-    // A slash command resolves against the plugin seam (never interpreted here).
-    if (text.startsWith("/")) {
-      const output = await app.runCommand(text)
-      console.log(typeof output === "string" ? output : JSON.stringify(output, null, 2))
-      ask(); return
-    }
     try {
-      const result = await app.prompt(text, "user")
-      console.log(`\u001b[2m(done: ${result.finish}, ${result.step} step(s))\u001b[0m`)
+      const text = line.trim()
+      if (text === "/quit" || text === "/exit") { rl.close(); process.exit(0); return }
+      if (text === "/help") { console.log("  /steer <text>  /list  /interrupt  /quit"); return }
+      if (text === "/list") { console.log(JSON.stringify(await app.listSessions(), null, 2)); return }
+      if (text === "/interrupt") { app.interrupt(); return }
+      if (text.startsWith("/steer ")) { await app.steer(text.slice(7).trim()); return }
+      if (!text) return
+      // A slash command resolves against the plugin seam (never interpreted here).
+      if (text.startsWith("/")) {
+        const output = await app.runCommand(text)
+        console.log(typeof output === "string" ? output : JSON.stringify(output, null, 2))
+        return
+      }
+      try {
+        const result = await app.prompt(text, "user")
+        console.log(`\u001b[2m(done: ${result.finish}, ${result.step} step(s))\u001b[0m`)
+      } catch (e) {
+        console.error(`\u001b[31m${e instanceof Error ? e.message : String(e)}\u001b[0m`)
+      }
     } catch (e) {
+      // A throwing sub-command (list/steer/runCommand) must never kill the REPL.
       console.error(`\u001b[31m${e instanceof Error ? e.message : String(e)}\u001b[0m`)
+    } finally {
+      ask() // always re-arm — the loop never dies silently.
     }
-    ask()
   }
   ask()
 }

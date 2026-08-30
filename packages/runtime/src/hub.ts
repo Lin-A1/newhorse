@@ -44,19 +44,21 @@ export interface SessionHub {
  * the runtime/tools; this keeps the hub a thin surface and the seam open for a
  * future cross-process SessionManager.
  */
-export type ChildDriver = (childId: string, parentId: string, parentWorkspace: string, model?: string, prompt?: string, agentName?: string) => Promise<void>
+export type ChildDriver = (childId: string, parentId: string, parentWorkspace: string, model?: string, prompt?: string, agentName?: string, registerLive?: (abort: () => void, admit: (text: string) => Promise<void>) => () => void) => Promise<void>
 
 /** In-memory hub over a shared event store. Sessions are created lazily. */
 export function createSessionHub(events: EventStore, _open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }, workspace?: string, driver?: ChildDriver): SessionHub {
   const sessions = new Set<string>()
   const live = new Map<string, RegisterHandle>()
+  /** Register a live session handle; returns an identity-guarded unregister. */
+  const doRegister = (sessionId: string, handle: RegisterHandle): (() => void) => {
+    live.set(sessionId, handle)
+    return () => {
+      if (live.get(sessionId) === handle) live.delete(sessionId)
+    }
+  }
   return {
-    register(sessionId, handle) {
-      live.set(sessionId, handle)
-      return () => {
-        if (live.get(sessionId) === handle) live.delete(sessionId)
-      }
-    },
+    register: doRegister,
     async interrupt(sessionId: string) {
       const h = live.get(sessionId)
       if (!h) {
@@ -89,7 +91,10 @@ export function createSessionHub(events: EventStore, _open: (sessionId: string) 
       // settlement + promotion. `prompt` is the spawner's task instruction;
       // `agentName` selects a role-overlay definition (Phase 4).
       if (driver) {
-        void driver(id, parentId, childWorkspace, model, prompt, agentName).catch(async (err: unknown) => {
+        // Pass the hub's register to the driver so it can register LIVE child
+        // sessions (a butler can interrupt/send its own children, M4). The
+        // driver calls registerLive with a child's abort/admit.
+        void driver(id, parentId, childWorkspace, model, prompt, agentName, (childAbort, childAdmit) => doRegister(id, { abort: childAbort, admit: childAdmit })).catch(async (err: unknown) => {
           void err
           // A driver that fails BEFORE writing Settled leaves a zombie; the
           // app-provided driver catches its own errors (and writes Settled),
