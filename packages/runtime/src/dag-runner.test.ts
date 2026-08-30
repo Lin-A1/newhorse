@@ -578,4 +578,29 @@ it("DAG ↔ todo projection: a todoSessionId sees the graph as its durable check
   expect(todos.every((t) => t.status === "completed")).toBe(true)
   expect(todos[0]!.content).toContain("DAG node:")
 })
+
+it("a thrown node error settles its child as error (no forever-running followup)", async () => {
+  const events = new MemoryEventStore()
+  const inbox = new MemorySessionInput(events)
+  // A fails on EVERY attempt (provider boom) — retry exhausts then NodeFailed.
+  const llm: TurnRuntime["llm"] = { id: "t", stream: async () => { throw new Error("provider boom") } }
+  const runtime: TurnRuntime = { events, inbox, llm }
+  const spec: DAGSpec = { nodes: { A: { id: "A", agent: { name: "a", model: "m" }, input: "root" } } }
+  const outcome = await runDag(spec, { events, inbox, runtime, tools: [], concurrency: 1, workspace: "G:/proj", maxRetries: 1 })
+  expect(outcome.status["A"]).toBe("failed")
+  // The child aggregate is DURABLY settled as error — followup/wait see a
+  // terminal state instead of "running" forever.
+  const dagLog = await events.read((await events.aggregateIds()).find(async () => false) ?? "")
+  void dagLog
+  const dags: string[] = []
+  for (const id of await events.aggregateIds()) {
+    if ((await events.read(id)).some((e) => e.type === "DAG.Declared")) dags.push(id)
+  }
+  const started = (await events.read(dags[0]!)).find((e) => e.type === "DAG.NodeStarted")
+  const childId = (started?.data as { sessionId?: string }).sessionId
+  const childLog = await events.read(childId!)
+  const settled = childLog.filter((e) => e.type === "Session.Settled")
+  expect(settled.length).toBeGreaterThan(0)
+  expect((settled.at(-1)?.data as { finish?: string }).finish).toBe("error")
+})
 })

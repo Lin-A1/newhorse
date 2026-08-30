@@ -207,7 +207,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
     if (!deps.todoSessionId) return
     const todos = Object.keys(topo.nodes)
       .filter((nid) => topo.active.has(nid))
-      .map((nid) => ({ content: `DAG node: ${nid}`, status: (status[nid] === "succeeded" ? "completed" : status[nid] === "running" ? "in_progress" : status[nid] === "failed" || status[nid] === "aborted" ? "cancelled" : "pending") as "completed" | "in_progress" | "cancelled" | "pending" }))
+      .map((nid) => ({ content: `DAG node: ${nid}`, status: (status[nid] === "succeeded" ? "completed" : status[nid] === "running" ? "in_progress" : status[nid] === "failed" || status[nid] === "aborted" || status[nid] === "skipped" ? "cancelled" : "pending") as "completed" | "in_progress" | "cancelled" | "pending" }))
     await deps.events.append(deps.todoSessionId, "Session.TodoUpdated", { sessionId: deps.todoSessionId, todos })
   }
   await writeTodos()
@@ -259,8 +259,12 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
     const node = topo.nodes[id]!
     const ctrl = new AbortController()
     running.set(id, ctrl)
+    // Hoisted so the CATCH path can settle the child too: a thrown buildInput
+    // (missing slot) fires BEFORE driveChildSession creates the aggregate —
+    // settling then would fabricate a Settled-only zombie log.
+    const childSessionId = crypto.randomUUID()
+    let childCreated = false
     try {
-      const childSessionId = crypto.randomUUID()
 
       // Role overlay resolved BEFORE the durable claim: the effective model
       // must match what actually runs (an agent def may override), so
@@ -282,7 +286,9 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
       await emit("DAG.NodeStarted", { nodeId: id, sessionId: childSessionId, model: resolved.model! })
       // driveChildSession: Created (location=workspace) → system context →
       // admit → runSession. toolCtx carries the node execpolicy so the child
-      // keeps its hands (no deny-all fallback).
+      // keeps its hands (no deny-all fallback). From here the child aggregate
+      // exists — every terminal path below must settle it.
+      childCreated = true
       const agent: Agent = { id: node.agent.name, model: resolved.model, tools: [...resolved.tools] }
       const driven = await driveChildSession({
         runtime: deps.runtime,
@@ -337,6 +343,20 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
         return
       }
       const reason = e instanceof Error ? e.message : String(e)
+      // A thrown error (provider failure, buildInput missing slot) must still
+      // settle the child durably — otherwise followup_task reports "running"
+      // forever on exactly the path that needs a terminal marker most. Only a
+      // CREATED child settles (an early buildInput throw never made one).
+      if (childCreated) {
+        try {
+          const log = await deps.events.read(childSessionId)
+          if (log.some((ev) => ev.type === "Session.Created") && !log.some((ev) => ev.type === "Session.Settled")) {
+            await deps.events.append(childSessionId, "Session.Settled", { sessionId: childSessionId, finish: "error", needsContinuation: false })
+          }
+        } catch {
+          // best-effort: the DAG-level NodeFailed below is the durable truth.
+        }
+      }
       const attempt = (attempts.get(id) ?? 0) + 1
       if (attempt <= maxRetries) {
         attempts.set(id, attempt)
