@@ -81,7 +81,7 @@ describe(".ts tool loading (trust switch)", () => {
       expect(untrusted.some((c) => c.kind === "tool" && c.name === "coded")).toBe(false)
       // Trusted: it loads and executes.
       const trusted = await discoverPlugin(dir, { trustCode: true })
-      const tool = trusted.find((c) => c.kind === "tool" && c.name === "coded")
+      const tool = trusted.find((c) => c.kind === "tool" && c.name === "coded") as { execute: (i: unknown, c: unknown) => Promise<unknown> } | undefined
       expect(tool).toBeTruthy()
       expect(await tool!.execute({}, undefined)).toBe("CODED-RESULT")
     } finally {

@@ -209,9 +209,10 @@ it("goal budget enforcement pauses an over-budget run (finish=length, goal block
   const log = await runtime.events.read("s")
   const blocked = log.filter((e) => e.type === "Session.GoalUpdated").at(-1)
   expect((blocked?.data as { status?: string }).status).toBe("blocked")
-  // The model-readable pause steer was admitted.
-  const prompted = log.filter((e) => e.type === "Session.Prompted")
-  expect(prompted.some((e) => (e.data as { prompt?: string }).prompt?.includes("budget exhausted"))).toBe(true)
+  // The model-readable pause steer was admitted (a PromptAdmitted — it is
+  // promoted at the next drain, not this one).
+  const admitted = log.filter((e) => e.type === "Session.PromptAdmitted")
+  expect(admitted.some((e) => (e.data as { prompt?: string }).prompt?.includes("budget exhausted"))).toBe(true)
 })
 
 it("goal enforcement is skipped when the budget is not exceeded", async () => {
