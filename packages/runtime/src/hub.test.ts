@@ -110,3 +110,39 @@ describe("hub spawn + driver closure (spawn → live child → settle → promot
     expect((promoted?.data as { prompt?: string }).prompt).toContain("failed")
   })
 })
+describe("hub SessionManager (M4 live-effect base)", () => {
+  it("interrupt aborts a REGISTERED session (not a stub flag)", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    const hub = createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }))
+    // A session that is mid-run registers its abort handle.
+    let aborted = false
+    const unregister = hub.register("live-1", { abort: () => { aborted = true }, admit: async () => {} })
+    const res = await hub.interrupt("live-1")
+    expect(res.implemented).toBe(true)
+    expect(aborted).toBe(true)
+    unregister()
+    // After unregister, an interrupt reports honestly (not a fake success).
+    const after = await hub.interrupt("live-1")
+    expect(after.implemented).toBe(false)
+  })
+
+  it("send admits a steer into a registered session's inbox", async () => {
+    const events = new MemoryEventStore()
+    const inbox = new MemorySessionInput(events)
+    await events.append("l", "Session.Created", { id: "l", location: "/w", createdAt: Date.now() })
+    const hub = createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }))
+    hub.register("l", { abort: () => {}, admit: (text) => inbox.admit({ id: crypto.randomUUID(), sessionId: "l", prompt: text, delivery: "steer", principal: "butler" }).then(() => {}) })
+    const res = await hub.send("l", "do it")
+    expect(res.implemented).toBe(true)
+    expect(await inbox.hasPending("l", "steer")).toBe(true)
+  })
+
+  it("interrupt of an UNREGISTERED session does not crash and reports pending", async () => {
+    const events = new MemoryEventStore()
+    const hub = createSessionHub(events, () => ({ interrupt: () => {}, prompt: async () => "" }))
+    const res = await hub.interrupt("nobody")
+    expect(res.implemented).toBe(false)
+    expect(res.pending).toBe(true)
+  })
+})

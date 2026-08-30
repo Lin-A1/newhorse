@@ -351,6 +351,13 @@ export async function createApp(config: AppConfig): Promise<App> {
       // run and a later prompt is unaffected (an AbortSignal cannot be reset).
       const ctrl = new AbortController()
       current = ctrl
+      // Live-session registration (M4 session manager): the butler hub can now
+      // interrupt THIS session (abort) and send it a steer (admit) — so
+      // `send_to_session`/`interrupt` from another butler tool are REAL.
+      const unregisterLive = hub ? hub.register(sessionId, {
+        abort: () => ctrl.abort(),
+        admit: (text) => inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: "butler" }).then(() => {}),
+      }) : undefined
       const caller: Initiator = effPrincipal === "user" ? { kind: "user" } : config.asButler ? { kind: "butler", sessionId } : { kind: "parent", sessionId }
       try {
         const result = await runSession(runtime, {
@@ -403,6 +410,7 @@ export async function createApp(config: AppConfig): Promise<App> {
         }
         return { step: result.step, needsContinuation: result.needsContinuation, finish: result.finish }
       } finally {
+        unregisterLive?.()
         if (current === ctrl) current = undefined
       }
     },

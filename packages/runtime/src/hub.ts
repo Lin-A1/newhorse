@@ -1,25 +1,38 @@
-import type { EventStore } from "@newhorse/core"
+import type { EventStore, SessionInputStore } from "@newhorse/core"
 
 /**
- * Lightweight multi-session hub (M2b). Tracks a set of runnable sessions within
- * a single app/process and exposes the effects a butler's privileged tools need:
- * interrupt a target, send a prompt to a target, spawn a child. This is the
- * "same-app session tree" the authority model scopes to (see
- * specs/v2/m2b-butler-authority.md §3.3).
+ * Lightweight multi-session hub (M2b) with a PROCESS-LOCAL SessionManager
+ * (M4 base). Tracks every runnable session in the app/process and exposes the
+ * effects the butler's privileged tools need: interrupt a target, send a
+ * prompt to a target, spawn a child. This is the "same-app session tree" the
+ * authority model scopes to (see specs/v2/m2b-butler-authority.md §3.3).
+ *
+ * interrupt/send are REAL now: a session is registered (by app.prompt and by
+ * the child driver) with its AbortController + inbox, so interrupt() aborts
+ * and send() admits a steer. A session that was never registered (e.g. a
+ * cold child before its driver starts) reports `implemented:false` — the
+ * honest "not yet live" signal, never a fake success.
  */
-/** Result of a hub effect — distinguishes "authorized & scheduled" from "actually
- * applied". In the single-app boundary only spawn is applied; interrupt/send are
- * stubs until a full SessionManager exists (M4). */
 export interface HubResult {
   readonly implemented: boolean
   readonly pending?: boolean
   readonly sessionId?: string
 }
 
+export type RegisterHandle = {
+  /** Abort the live run (interrupt). */
+  abort: () => void
+  /** Admit a steer to this session's inbox (send). */
+  admit: (content: string) => Promise<void>
+}
+
 export interface SessionHub {
+  /** Register a live session (app.prompt / child driver) so interrupt/send can
+   *  reach it. Returns an unregister. */
+  register(sessionId: string, handle: RegisterHandle): () => void
   /** Interrupt a target session's running prompt. */
   interrupt(sessionId: string): Promise<HubResult>
-  /** Send a prompt into a target session's inbox. */
+  /** Send a prompt into a target session's inbox (steer). */
   send(sessionId: string, content: string): Promise<HubResult>
   /** Spawn a child session; returns the new session id. */
   spawn(parentId: string, model?: string, prompt?: string, agentName?: string): Promise<string>
@@ -34,21 +47,31 @@ export interface SessionHub {
 export type ChildDriver = (childId: string, parentId: string, parentWorkspace: string, model?: string, prompt?: string, agentName?: string) => Promise<void>
 
 /** In-memory hub over a shared event store. Sessions are created lazily. */
-export function createSessionHub(events: EventStore, open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }, workspace?: string, driver?: ChildDriver): SessionHub {
+export function createSessionHub(events: EventStore, _open: (sessionId: string) => { interrupt(): void; prompt: (text: string) => Promise<unknown> }, workspace?: string, driver?: ChildDriver): SessionHub {
   const sessions = new Set<string>()
+  const live = new Map<string, RegisterHandle>()
   return {
-    async interrupt(sessionId: string) {
-      sessions.delete(sessionId)
-      void sessionId
-      void events
-      // Stub until a full SessionManager (M4): reports "not implemented" rather
-      // than pretending the target was cancelled.
-      return { implemented: false, pending: true, sessionId }
+    register(sessionId, handle) {
+      live.set(sessionId, handle)
+      return () => {
+        if (live.get(sessionId) === handle) live.delete(sessionId)
+      }
     },
-    async send(sessionId: string, _content: string) {
-      void open
-      // Stub until a full SessionManager (M4).
-      return { implemented: false, pending: true, sessionId }
+    async interrupt(sessionId: string) {
+      const h = live.get(sessionId)
+      if (!h) {
+        // Not live (or already settled) — report honestly, not a fake success.
+        return { implemented: false, pending: true, sessionId }
+      }
+      sessions.delete(sessionId)
+      h.abort()
+      return { implemented: true, sessionId }
+    },
+    async send(sessionId: string, content: string) {
+      const h = live.get(sessionId)
+      if (!h) return { implemented: false, pending: true, sessionId }
+      await h.admit(content)
+      return { implemented: true, sessionId }
     },
     async spawn(parentId: string, model?: string, prompt?: string, agentName?: string) {
       const id = crypto.randomUUID()
@@ -63,8 +86,8 @@ export function createSessionHub(events: EventStore, open: (sessionId: string) =
       sessions.add(id)
       // Pluggable driver: when supplied, the child is actually RUN (not a dead
       // row) with the task prompt. Fire-and-forget — the driver owns
-      // settlement + promotion. Never let a driver rejection become an
-      // unhandled rejection (a failed child must still get a durable Settled).
+      // settlement + promotion. `prompt` is the spawner's task instruction;
+      // `agentName` selects a role-overlay definition (Phase 4).
       if (driver) {
         void driver(id, parentId, childWorkspace, model, prompt, agentName).catch(async (err: unknown) => {
           void err
