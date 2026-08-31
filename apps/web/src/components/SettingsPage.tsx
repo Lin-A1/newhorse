@@ -77,7 +77,7 @@ export function SettingsPage() {
         <div className="grid md:grid-cols-2 gap-3">
           <label className="text-xs text-slate-500 space-y-1 block">
             协议
-            <select className="w-full rounded-lg bg-ink-900 border border-ink-600 px-2 py-1.5 text-sm text-slate-200" value={s.provider.kind} onChange={(e) => patch({ provider: { ...s.provider, kind: e.target.value } })}>
+            <select className="w-full rounded-lg bg-ink-900 border border-ink-600 px-2 py-1.5 text-sm text-slate-200" value={s.provider.kind} onChange={(e) => patch({ provider: { kind: e.target.value, baseUrl: s.provider.baseUrl } })}>
               {["openai", "openai-compatible", "anthropic", "openai-responses"].map((k) => (
                 <option key={k} value={k}>
                   {k}
@@ -87,7 +87,7 @@ export function SettingsPage() {
           </label>
           <label className="text-xs text-slate-500 space-y-1 block">
             Base URL
-            <input className="w-full rounded-lg bg-ink-900 border border-ink-600 px-2 py-1.5 text-sm text-slate-200" defaultValue={s.provider.baseUrl} onBlur={(e) => e.target.value !== s.provider.baseUrl && patch({ provider: { ...s.provider, kind: s.provider.kind, baseUrl: e.target.value } })} />
+            <input className="w-full rounded-lg bg-ink-900 border border-ink-600 px-2 py-1.5 text-sm text-slate-200" defaultValue={s.provider.baseUrl} onBlur={(e) => e.target.value !== s.provider.baseUrl && patch({ provider: { kind: s.provider.kind, baseUrl: e.target.value } })} />
           </label>
         </div>
         <div className="grid md:grid-cols-2 gap-3">
@@ -117,7 +117,7 @@ export function SettingsPage() {
           </label>
         </div>
         {keyInput && (
-          <button className="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-ink-950" disabled={saving} onClick={() => patch({ provider: { ...s.provider, kind: s.provider.kind, baseUrl: s.provider.baseUrl, apiKey: keyInput } }).then(() => setKeyInput(""))}>
+          <button className="rounded-lg bg-accent px-4 py-1.5 text-sm font-medium text-ink-950" disabled={saving} onClick={() => patch({ provider: { kind: s.provider.kind, baseUrl: s.provider.baseUrl, apiKey: keyInput } }).then(() => setKeyInput(""))}>
             保存 Key
           </button>
         )}

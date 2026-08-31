@@ -83,8 +83,8 @@ export class SqliteEventStore implements EventStore {
   }
 
   async read(aggregate_id: string): Promise<StoredEvent[]> {
-    const rows = this.#db.query("SELECT seq, type, data, aggregate FROM event WHERE aggregate_id = ? ORDER BY seq ASC").all(aggregate_id) as { seq: number; type: string; data: string; aggregate: AggregateType }[]
-    return rows.map((r) => ({ aggregate: r.aggregate, aggregate_id, seq: r.seq, type: r.type, data: JSON.parse(r.data) as UnknownRecord }))
+    const rows = this.#db.query("SELECT seq, type, data, aggregate, created_at FROM event WHERE aggregate_id = ? ORDER BY seq ASC").all(aggregate_id) as { seq: number; type: string; data: string; aggregate: AggregateType; created_at: number | null }[]
+    return rows.map((r) => ({ aggregate: r.aggregate, aggregate_id, seq: r.seq, type: r.type, data: JSON.parse(r.data) as UnknownRecord, ...(r.created_at !== null ? { ts: r.created_at } : {}) }))
   }
 
   async latestSeq(aggregate_id: string): Promise<number> {

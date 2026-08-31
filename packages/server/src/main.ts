@@ -68,28 +68,34 @@ const handle = await createServer({
       return loadRuntimeSettings({ env: process.env })
     },
   },
-  sessionConfig: (create: SessionCreateRequest) => ({
+  // Per-session config resolves FRESH settings at create time — otherwise a
+  // settings-page change would never reach new sessions (the closure would
+  // hold the startup snapshot forever).
+  sessionConfig: (create: SessionCreateRequest) => {
+  const fresh = loadRuntimeSettings({ env: process.env })
+  return ({
     // Per-session provider override honored (a host may map workspaces to
     // different providers) — server-level settings are only the default.
-    provider: create.provider ?? settings.provider,
-    model: create.model ?? settings.model,
-    contextWindowTokens: create.contextWindowTokens ?? settings.contextWindowTokens,
-    maxOutputTokens: create.maxOutputTokens ?? settings.maxOutputTokens,
-    workspace: create.workspace ?? settings.workspace,
-    dataDir: create.dataDir ?? settings.dataDir,
-    enableBash: settings.allowBash,
-    allowPluginCode: settings.allowPluginCode,
-    memoryStore: settings.memory.on ? memStore : undefined,
-    memoryExtract: settings.memory.extraction ? { enabled: true } : undefined,
-    ...(settings.memory.vector.enabled
+    provider: create.provider ?? fresh.provider,
+    model: create.model ?? fresh.model,
+    contextWindowTokens: create.contextWindowTokens ?? fresh.contextWindowTokens,
+    maxOutputTokens: create.maxOutputTokens ?? fresh.maxOutputTokens,
+    workspace: create.workspace ?? fresh.workspace,
+    dataDir: create.dataDir ?? fresh.dataDir,
+    enableBash: fresh.allowBash,
+    allowPluginCode: fresh.allowPluginCode,
+    memoryStore: fresh.memory.on ? memStore : undefined,
+    memoryExtract: fresh.memory.extraction ? { enabled: true } : undefined,
+    ...(fresh.memory.vector.enabled
       ? {
           memoryVector: {
             enabled: true,
-            embedding: { kind: settings.memory.vector.embedding.kind, baseUrl: settings.memory.vector.embedding.baseUrl, apiKey: settings.memory.vector.embedding.apiKey, model: settings.memory.vector.embedding.model },
+            embedding: { kind: fresh.memory.vector.embedding.kind, baseUrl: fresh.memory.vector.embedding.baseUrl, apiKey: fresh.memory.vector.embedding.apiKey, model: fresh.memory.vector.embedding.model },
           },
         }
-      : {}),
-  }),
+      : {})
+  })
+  },
 })
 
 // Wire scheduled-prompt delivery to the server's admit path (the scheduler

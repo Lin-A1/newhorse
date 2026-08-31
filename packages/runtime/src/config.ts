@@ -152,9 +152,26 @@ function readAgentHomeConfigSync(agentHome: string): AgentHomeConfig {
 }
 
 /** Merge-write a settings patch into the config file (unknown keys preserved). */
+/** Merge-write a settings patch into the config file (unknown keys preserved).
+ *  `provider` merges PER FIELD — a client round-trip sends the redacted view
+ *  (no apiKey), which must never wipe the stored key. Client-only display keys
+ *  (hasApiKey/apiKeyHint) are stripped before persisting. */
 export async function writeAgentHomeConfig(agentHome: string, patch: AgentHomeConfig): Promise<AgentHomeConfig> {
   const current = await readAgentHomeConfig(agentHome)
-  const next = { ...current, ...patch, memory: patch.memory ? { ...current.memory, ...patch.memory } : current.memory }
+  const patchProvider = patch.provider as Record<string, unknown> | undefined
+  const mergedProvider = patchProvider
+    ? ({ ...(current.provider as Record<string, unknown> | undefined), ...patchProvider } as Record<string, unknown>)
+    : (current.provider as Record<string, unknown> | undefined)
+  if (mergedProvider) {
+    delete mergedProvider.hasApiKey
+    delete mergedProvider.apiKeyHint
+  }
+  const next = {
+    ...current,
+    ...patch,
+    ...(patchProvider ? { provider: mergedProvider as AgentHomeConfig["provider"] } : {}),
+    memory: patch.memory ? { ...current.memory, ...patch.memory } : current.memory,
+  }
   await mkdir(agentHome, { recursive: true })
   await writeFile(configFilePath(agentHome), JSON.stringify(next, null, 2) + "\n", "utf8")
   return next

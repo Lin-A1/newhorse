@@ -105,7 +105,7 @@ export function ChatPage({ onRunning }: { onRunning: (r: boolean) => void }) {
           {sessions.map((s) => (
             <button key={s.sessionId} onClick={() => setCurrent(s.sessionId)} className={`w-full text-left px-3 py-2 text-sm border-l-2 ${current === s.sessionId ? "border-accent bg-ink-800 text-white" : "border-transparent text-slate-400 hover:bg-ink-800/60"}`}>
               <div className="truncate">{s.title || s.sessionId.slice(0, 8)}</div>
-              <div className="text-[11px] text-slate-600">{new Date(s.updatedAt).toLocaleString()} {s.model ? `· ${s.model}` : ""}</div>
+              <div className="text-[11px] text-slate-600">{s.updatedAt > 1000 ? new Date(s.updatedAt).toLocaleString() : "—"} {s.model ? `· ${s.model}` : ""}</div>
             </button>
           ))}
           {sessions.length === 0 && <div className="px-3 py-6 text-xs text-slate-600">还没有会话</div>}

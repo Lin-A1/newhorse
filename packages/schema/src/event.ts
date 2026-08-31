@@ -27,6 +27,9 @@ export interface StoredEvent<T = UnknownRecord> {
   readonly seq: number
   readonly type: string
   readonly data: T
+  /** Store-level write time (ms). Present for events written after the
+   *  created_at column shipped; legacy rows carry no timestamp. */
+  readonly ts?: number
 }
 
 export type Delivery = "steer" | "queue"

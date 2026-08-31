@@ -138,7 +138,9 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
   let hasCreated = false
 
   for (const event of stored) {
-    updatedAt = event.seq
+    // Real write time when the store provides one (created_at); legacy events
+    // fall back to keeping the previous value.
+    updatedAt = event.ts ?? updatedAt
     switch (event.type) {
       case "Session.Created": {
         const d = event.data as { id?: string; location?: string; projectId?: string; createdAt?: number }

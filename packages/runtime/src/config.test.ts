@@ -79,3 +79,22 @@ describe("loadRuntimeSettings (harness floor)", () => {
       await rm(home, { recursive: true, force: true }).catch(() => {})
     }
   })
+
+  it("provider patch merges per field: a redacted client round-trip never wipes the stored key", async () => {
+    const home = await mkdtemp(join(tmpdir(), "nh-cfg-"))
+    try {
+      await writeAgentHomeConfig(home, { provider: { kind: "openai-compatible", baseUrl: "https://x", apiKey: "sk-real-secret" } } as never)
+      // The client PUTs the redacted view (hasApiKey/apiKeyHint, NO apiKey).
+      await writeAgentHomeConfig(home, { provider: { kind: "openai-compatible", baseUrl: "https://y", hasApiKey: true, apiKeyHint: "…cret" } } as never)
+      const cfg = await readAgentHomeConfig(home)
+      const provider = cfg.provider as { kind: string; baseUrl: string; apiKey?: string; hasApiKey?: boolean; apiKeyHint?: boolean }
+      expect(provider.apiKey).toBe("sk-real-secret") // survived
+      expect(provider.baseUrl).toBe("https://y") // updated
+      expect(provider.hasApiKey).toBeUndefined() // display junk stripped
+      expect(provider.apiKeyHint).toBeUndefined()
+      const s = loadRuntimeSettings({ agentHome: home, env: {} })
+      expect(s.provider.apiKey).toBe("sk-real-secret")
+    } finally {
+      await rm(home, { recursive: true, force: true }).catch(() => {})
+    }
+  })
