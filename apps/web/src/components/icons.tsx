@@ -4,6 +4,7 @@
  */
 import type { ComponentType } from "react"
 import {
+  Archive,
   ArrowLeft,
   ArrowUp,
   ArrowUpRight,
@@ -14,7 +15,9 @@ import {
   Circle,
   Clock,
   Copy,
+  Crown,
   FileText,
+  Folder,
   Globe,
   LoaderCircle,
   MessageSquare,
@@ -26,6 +29,7 @@ import {
   Plus,
   Search,
   Settings,
+  Shield,
   Square,
   SquareTerminal,
   StickyNote,
@@ -81,3 +85,7 @@ export const IconSun = wrap(Sun)
 export const IconMoon = wrap(Moon)
 export const IconMonitor = wrap(Monitor)
 export const IconGlobe = wrap(Globe)
+export const IconFolder = wrap(Folder)
+export const IconArchive = wrap(Archive)
+export const IconButler = wrap(Crown)
+export const IconShield = wrap(Shield)

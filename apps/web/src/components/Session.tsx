@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { api, foldTranscript, type SessionRow } from "../api"
 import { EmotionBall } from "./EmotionBall"
 import { Markdown } from "./Markdown"
 import { ModelPill } from "./ModelPill"
-import { takePendingPrompt, useStore } from "../store"
-import { IconSend, IconStop, IconTool, IconCheck, IconSpinner, IconCircle, IconTarget, IconBrain, IconNote, IconChevron, IconFile, IconTerminal, IconPencil, IconSearch, IconCopy } from "./icons"
+import { FileTree } from "./FileTree"
+import { pendingPrefills, takePendingPrefill, takePendingPrompt, useStore } from "../store"
+import { IconSend, IconStop, IconTool, IconCheck, IconSpinner, IconCircle, IconTarget, IconBrain, IconNote, IconChevron, IconFile, IconFolder, IconTerminal, IconPencil, IconSearch, IconCopy, IconButler, IconShield } from "./icons"
 
 /** pick a semantic icon per tool name (read=file, bash=terminal, edit=pencil…) */
 function toolIcon(name: string | undefined, cls: string): ReactNode {
@@ -24,6 +26,8 @@ export interface Turn {
   toolName?: string
   elapsed?: string
   isError?: boolean
+  /** seq of the user turn's Prompted event — the fork point for 回退重发 */
+  seq?: number
 }
 
 const VERBS: Record<string, string> = { read: "读取", Read: "读取", search: "检索", Grep: "检索", write: "写入", Write: "写入", edit: "编辑", Edit: "编辑", bash: "运行", Bash: "运行", webfetch: "抓取", WebFetch: "抓取", skill: "技能", memory_search: "检索记忆", memory_write: "沉淀记忆", todo_write: "整理任务", spawn_agent: "派出子代理" }
@@ -139,8 +143,13 @@ function toolDetail(toolName: string | undefined, body: string | undefined): str
 }
 
 export function SessionView({ id }: { id: string }) {
-  const { refreshSessions, setRunning, setMood, setSessionStatus, approvals, settleApproval, showToast, settings } = useStore()
-  const policy = settings?.approvalPolicy ?? "strict"
+  const { refreshSessions, setRunning, setMood, setSessionStatus, approvals, settleApproval, showToast, settings, setView } = useStore()
+  const [policy, setPolicyState] = useState<"strict" | "readonly" | "trusted">("strict")
+  const [policyAnchor, setPolicyAnchor] = useState<{ left: number; bottom: number } | null>(null)
+  const [treeOpen, setTreeOpen] = useState(false)
+  const [commands, setCommands] = useState<Array<{ name: string; description?: string }>>([])
+  const [cmdSelected, setCmdSelected] = useState(0)
+  const [slashAnchor, setSlashAnchor] = useState<{ left: number; bottom: number; width: number } | null>(null)
   const [turns, setTurns] = useState<Turn[]>([])
   const [parts, setParts] = useState<Turn[]>([])
   const [busy, setBusy] = useState(false)
@@ -184,6 +193,83 @@ export function SessionView({ id }: { id: string }) {
     api.context(id).then(setCtx).catch(() => {})
   }, [id])
 
+  // per-session permission level (分级 harness) — server is authoritative
+  useEffect(() => {
+    api.policy(id).then((r) => setPolicyState(r.policy)).catch(() => setPolicyState(settings?.approvalPolicy === "trusted" ? "trusted" : settings?.approvalPolicy === "readonly" ? "readonly" : "strict"))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
+  // slash-command catalog, loaded lazily the first time the composer types "/"
+  useEffect(() => {
+    if (!input.startsWith("/") || commands.length > 0) return
+    void api.commands().then((r) => setCommands(r.commands)).catch(() => setCommands([]))
+  }, [input, commands.length])
+
+  const changePolicy = async (p: "strict" | "readonly" | "trusted"): Promise<void> => {
+    setPolicyAnchor(null)
+    try {
+      await api.setPolicy(id, p)
+      setPolicyState(p)
+      showToast(p === "readonly" ? "已切换为只读（计划模式）" : p === "trusted" ? "已切换为完全访问" : "已切换为默认审批")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  // --- slash commands: "/" opens the popover; Enter expands the command body
+  // into the composer (server-authoritative via the plugin command seam) ---
+  const slashTyping = input.startsWith("/") && !input.includes(" ") && !busy
+  const matchingCommands = slashTyping ? commands.filter((c) => c.name.toLowerCase().startsWith(input.slice(1).toLowerCase())) : []
+  // The composer panel is overflow-hidden (rounded corners), so both popovers
+  // are portal'd to <body> with fixed anchors — never clipped.
+  const composerBoxRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!slashTyping) {
+      setSlashAnchor(null)
+      return
+    }
+    const el = composerBoxRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    setSlashAnchor({ left: r.left + 8, bottom: window.innerHeight - r.top + 6, width: r.width - 16 })
+  }, [slashTyping, input])
+  // Outside click / Escape dismisses the portal'd popovers (same contract as
+  // ModelPill's popover; the session Esc handler sees data-nh-popover and
+  // correctly does NOT abort the run while a menu is open).
+  useEffect(() => {
+    if (!policyAnchor && !slashAnchor) return
+    const onDown = (e: MouseEvent): void => {
+      const t = e.target instanceof Element ? e.target : null
+      if (t?.closest("[data-nh-popover],[data-nh-popover-anchor]")) return
+      setPolicyAnchor(null)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return
+      if (policyAnchor) {
+        e.stopPropagation()
+        setPolicyAnchor(null)
+      }
+      if (slashAnchor) setSlashAnchor(null)
+    }
+    document.addEventListener("mousedown", onDown)
+    window.addEventListener("keydown", onKey, true)
+    return () => {
+      document.removeEventListener("mousedown", onDown)
+      window.removeEventListener("keydown", onKey, true)
+    }
+  }, [policyAnchor, slashAnchor])
+  // keep the slash highlight in sync with the filtered list
+  useEffect(() => setCmdSelected(0), [input])
+  const expandCommand = async (line: string): Promise<void> => {
+    try {
+      const r = await api.runCommand(id, line)
+      if (typeof r.output === "string") setInput(r.output)
+      else showToast("命令没有返回文本")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message.replace(/^\d+\s*/, "").slice(0, 80) : String(e))
+    }
+  }
+
   useEffect(() => {
     loadMeta()
   }, [loadMeta, id])
@@ -199,6 +285,10 @@ export function SessionView({ id }: { id: string }) {
       // Home-hero handoff: the first prompt was stashed before navigation.
       const pending = takePendingPrompt(id)
       if (pending) void sendRef.current(pending)
+      // 回退重发 handoff: a fork stashed the rewound turn's text — prefill the
+      // composer for editing, but never auto-send (opencode edit-and-resend).
+      const prefill = takePendingPrefill(id)
+      if (prefill !== undefined) setInput(prefill)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fold, setMood, setSessionStatus, id])
@@ -344,6 +434,29 @@ export function SessionView({ id }: { id: string }) {
     setInput("")
   }
 
+  /** 回退重发 (opencode edit-and-resend): fork the log BEFORE this user turn,
+   *  attach the fork as a live session, prefill its composer with the rewound
+   *  text for editing — the old session stays intact (append-only philosophy).
+   *  The role is passed on attach too (belt) — createApp also restores it from
+   *  the copied Session.Created (suspenders). */
+  const forkAndRewind = async (t: Turn): Promise<void> => {
+    if (t.seq === undefined) {
+      showToast("这条消息没有可定位的分叉点")
+      return
+    }
+    try {
+      const ws = localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace || undefined
+      const r = await api.forkSession(id, t.seq - 1)
+      await api.createSession(r.sessionId, ws, rows?.role === "butler")
+      pendingPrefills.set(r.sessionId, t.text)
+      localStorage.setItem("NEWHORSE_CURRENT_SESSION", r.sessionId)
+      window.dispatchEvent(new CustomEvent("nh-session-updated", { detail: r.sessionId }))
+      setView({ kind: "session", id: r.sessionId })
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const pending = approvals[0]
 
   const saveGoal = async (): Promise<void> => {
@@ -382,6 +495,12 @@ export function SessionView({ id }: { id: string }) {
     <div className="flex h-full flex-col">
       {/* goal + context strip */}
       <div className="flex items-center gap-2 border-b border-line bg-black/10 px-4 py-1.5 text-[11px]">
+        {rows?.role === "butler" && (
+          <span className="pill shrink-0 !border-accent/30 !bg-accent/10 !py-0 !text-[10px] !text-accent" title="固定管家角色：可派出 / 等待 / 中断子代理，动作全部审计">
+            <IconButler size={10} />
+            管家
+          </span>
+        )}
         {goal ? (
           <button className="flex min-w-0 items-center gap-1.5 text-dim hover:text-fg" onClick={() => setGoalOpen(!goalOpen)} title="查看/编辑目标">
             <span className="font-medium text-ok">目标</span>
@@ -393,19 +512,22 @@ export function SessionView({ id }: { id: string }) {
             )}
           </button>
         ) : (
-          <button className="text-faint hover:text-fg" onClick={() => setGoalOpen(!goalOpen)}>
+          <button className="shrink-0 text-faint hover:text-fg" onClick={() => setGoalOpen(!goalOpen)}>
             + 设定目标
           </button>
         )}
         {ctx && ctx.windowTokens !== undefined && ctx.ratio !== undefined && (
-          <div className="ml-auto flex items-center gap-1.5" title={`约 ${ctx.estTokens} / ${ctx.windowTokens} tokens`}>
+          <div className="ml-auto flex shrink-0 items-center gap-1.5" title={`约 ${ctx.estTokens} / ${ctx.windowTokens} tokens`}>
             <div className="h-1 w-20 overflow-hidden rounded-full bg-white/[0.08]">
               <div className={`h-full rounded-full ${ctx.ratio > 0.8 ? "bg-bad" : "bg-accent"}`} style={{ width: `${Math.round(ctx.ratio * 100)}%` }} />
             </div>
             <span className="tnum text-faint">{Math.round(ctx.ratio * 100)}%</span>
           </div>
         )}
-        <button className="ml-auto text-faint hover:text-fg" title="导出会话 Markdown" onClick={() => void exportMd()}>
+        <button className={`shrink-0 transition-colors ${treeOpen ? "text-accent" : "text-faint hover:text-fg"}`} title="工作区文件树" onClick={() => setTreeOpen(!treeOpen)}>
+          <IconFolder size={12} />
+        </button>
+        <button className="shrink-0 text-faint hover:text-fg" title="导出会话 Markdown" onClick={() => void exportMd()}>
           导出
         </button>
       </div>
@@ -424,6 +546,9 @@ export function SessionView({ id }: { id: string }) {
           {goal && <div className="text-[11px] text-faint">当前：{goal.objective}（{goal.status}）· 已用 {goal.tokensUsed ?? 0} tokens</div>}
         </div>
       )}
+      {/* body: transcript+composer on the left, optional file tree on the right */}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
       {/* stream — document flow */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-4 pb-10 pt-6 md:px-6 xl:max-w-[1000px] 2xl:max-w-[1160px]">
@@ -439,7 +564,7 @@ export function SessionView({ id }: { id: string }) {
             </div>
           )}
           {turns.map((t, i) => (
-            <TurnRow key={i} t={t} index={i} sessionId={id} showToast={showToast} />
+            <TurnRow key={i} t={t} index={i} sessionId={id} showToast={showToast} onFork={(tt) => void forkAndRewind(tt)} />
           ))}
           {/* ZCode-style work separator between the user's message and the run */}
           {busy && (
@@ -506,12 +631,12 @@ export function SessionView({ id }: { id: string }) {
             </button>
           </div>
         )}
-        <div className="panel-strong composer-solid overflow-hidden !rounded-[18px]">
+        <div ref={composerBoxRef} className="panel-strong composer-solid relative overflow-hidden !rounded-[18px]">
           <textarea
             ref={composerRef}
             className="nh-grow max-h-44 min-h-[46px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-sm outline-none placeholder:text-faint"
             rows={1}
-            placeholder={busy ? "运行中…输入追问，Enter 插入（Esc 中断）" : "继续对话…"}
+            placeholder={busy ? "运行中…输入追问，Enter 插入（Esc 中断）" : "继续对话…输入 / 可唤起命令"}
             value={input}
             onChange={(e) => {
               setInput(e.target.value)
@@ -520,8 +645,23 @@ export function SessionView({ id }: { id: string }) {
               el.style.height = Math.min(el.scrollHeight, 176) + "px"
             }}
             onKeyDown={(e) => {
+              if (slashTyping && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                e.preventDefault()
+                setCmdSelected((s) => Math.max(0, Math.min(matchingCommands.length - 1, s + (e.key === "ArrowDown" ? 1 : -1))))
+                return
+              }
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
+                if (slashTyping && matchingCommands[cmdSelected]) {
+                  void expandCommand(`/${matchingCommands[cmdSelected]!.name}`)
+                  return
+                }
+                if (!busy && input.startsWith("/")) {
+                  // unknown/typed-through command line: the server is
+                  // authoritative (404 → toast, never a stray prompt)
+                  void expandCommand(input.trim())
+                  return
+                }
                 if (busy) void steer(input)
                 else void send()
               }
@@ -530,16 +670,22 @@ export function SessionView({ id }: { id: string }) {
           {/* bottom toolbar (ZCode-style composer) */}
           <div className="flex items-center gap-2 px-2.5 py-1.5">
             <ModelPill compact />
-            {policy === "readonly" && (
-              <span className="pill !border-warn/25 !bg-warn/10 !text-[10.5px] !text-warn" title="计划模式：仅可读，模型无法执行写入操作">
-                只读
-              </span>
-            )}
-            {policy === "trusted" && (
-              <span className="pill !border-ok/25 !bg-ok/10 !text-[10.5px] !text-ok" title="完全访问：跳过审批">
-                完全访问
-              </span>
-            )}
+            {/* permission level — a real menu, server-durable per session;
+                portal'd to <body> so the composer's overflow-hidden never clips it */}
+            <button
+              className={`pill hover:border-linestrong hover:!text-fg ${policy === "readonly" ? "!border-warn/25 !bg-warn/10 !text-warn" : policy === "trusted" ? "!border-ok/25 !bg-ok/10 !text-ok" : ""}`}
+              title="权限分级：本会话生效（写入事件日志）"
+              data-nh-popover-anchor
+              onClick={(e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                setPolicyAnchor((a) => (a ? null : { left: r.left, bottom: window.innerHeight - r.top + 6 }))
+              }}
+              aria-haspopup="menu"
+              aria-expanded={!!policyAnchor}
+            >
+              <IconShield size={10} />
+              {policy === "readonly" ? "只读" : policy === "trusted" ? "完全访问" : "默认审批"}
+            </button>
             {!busy && (
               <span className="hidden items-center gap-2 text-[10px] text-faint lg:flex">
                 <span className="flex items-center gap-1"><kbd className="nh-kbd">Enter</kbd> 发送</span>
@@ -558,27 +704,65 @@ export function SessionView({ id }: { id: string }) {
           </div>
         </div>
       </div>
+      </div>
+      {/* file tree — inside the body row, right of the transcript */}
+      {treeOpen && <FileTree workspace={localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace} onPick={(p) => setInput((v) => (v ? `${v} ${p}` : p))} onClose={() => setTreeOpen(false)} />}
+      </div>
+      {/* portal'd popovers (composer overflow-hidden can never clip them) */}
+      {slashAnchor &&
+        createPortal(
+          <div className="pop-surface fade fixed z-50 max-h-56 overflow-y-auto rounded-xl border border-linestrong py-1 shadow-modal" style={{ left: slashAnchor.left, bottom: slashAnchor.bottom, width: slashAnchor.width }} data-nh-popover>
+            <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-[0.12em] text-faint">斜杠命令 · Enter 展开到输入框</div>
+            {commands.length === 0 && <div className="px-3 py-2 text-xs text-faint">没有可用命令（把 commands/*.md 放进插件目录即可注册）</div>}
+            {commands.length > 0 && matchingCommands.length === 0 && <div className="px-3 py-2 text-xs text-faint">没有匹配的命令</div>}
+            {matchingCommands.map((c, i) => (
+              <button
+                key={c.name}
+                className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12.5px] transition-colors ${i === cmdSelected ? "bg-surface2 text-fg" : "text-dim hover:bg-surface2"}`}
+                onMouseEnter={() => setCmdSelected(i)}
+                onClick={() => void expandCommand(`/${c.name}`)}
+              >
+                <span className="font-mono text-accent">/{c.name}</span>
+                <span className="min-w-0 flex-1 truncate text-faint">{c.description ?? ""}</span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
+      {policyAnchor &&
+        createPortal(
+          <div className="pop-surface fade fixed z-50 w-52 rounded-xl border border-linestrong py-1 shadow-modal" style={{ left: policyAnchor.left, bottom: policyAnchor.bottom }} data-nh-popover>
+            {([
+              { id: "strict", label: "默认审批", desc: "危险操作弹出批准" },
+              { id: "readonly", label: "只读 · 计划模式", desc: "只暴露只读工具" },
+              { id: "trusted", label: "完全访问", desc: "跳过审批，直执行" },
+            ] as const).map((o) => (
+              <button key={o.id} className="flex w-full items-start gap-2 px-3 py-1.5 text-left transition-colors hover:bg-surface2" onClick={() => void changePolicy(o.id)}>
+                <span className="mt-0.5 w-3 shrink-0">{policy === o.id ? <IconCheck size={11} className="text-accent" /> : null}</span>
+                <span>
+                  <span className="block text-[12.5px] text-fg">{o.label}</span>
+                  <span className="block text-[10.5px] text-faint">{o.desc}</span>
+                </span>
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }
 
 /** Single transcript row — document flow (assistant has NO bubble). */
-function TurnRow({ t, live, sessionId, showToast }: { t: Turn; index: number; live?: boolean; sessionId?: string; showToast?: (msg: string) => void }) {
+function TurnRow({ t, live, sessionId, showToast, onFork }: { t: Turn; index: number; live?: boolean; sessionId?: string; showToast?: (msg: string) => void; onFork?: (t: Turn) => void }) {
   if (t.kind === "user") {
     return (
       <div className="rise group mb-5 flex justify-end items-start gap-1.5">
         <div className="max-w-[82%] rounded-xl rounded-br-sm border border-line bg-surface2 px-3 py-1.5 text-[13.5px] whitespace-pre-wrap break-words leading-relaxed text-fg">{t.text}</div>
-        {sessionId && (
+        {sessionId && onFork && (
           <button
             className="mt-1 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100 hover:text-accent"
-            title="从此分叉（回溯重发）"
-            onClick={() => {
-              api.forkSession(sessionId).then((r) => {
-                localStorage.setItem("NEWHORSE_CURRENT_SESSION", r.sessionId)
-                if (showToast) showToast(`已分叉 ${r.sessionId.slice(0, 8)}`)
-                window.dispatchEvent(new CustomEvent("nh-session-updated", { detail: r.sessionId }))
-              }).catch((e) => { if (showToast) showToast(e instanceof Error ? e.message : String(e)) })
-            }}
+            title="回退到这里：分叉一条新会话，这条消息回到输入框可改后重发"
+            onClick={() => void onFork(t)}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 3v12a3 3 0 0 0 3 3h9M15 6l3 3-3 3"/></svg>
           </button>

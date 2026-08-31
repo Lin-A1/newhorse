@@ -30,6 +30,18 @@ function Shell() {
     return () => window.removeEventListener("nh-open-settings", onOpen)
   }, [setView])
 
+  // Ctrl+K toggles the command palette (opencode keybind)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+
   useEffect(() => {
     const onUpdated = (): void => {
       void refreshSessions()
@@ -138,6 +150,8 @@ function Shell() {
           <div className="pop-in rounded-xl border border-linestrong bg-surface2/95 px-4 py-2.5 text-[13px] text-fg shadow-modal backdrop-blur">{toast}</div>
         </div>
       )}
+
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </div>
   )
 }

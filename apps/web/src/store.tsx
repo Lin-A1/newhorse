@@ -119,6 +119,24 @@ export function takePendingPrompt(id: string): string | undefined {
   return p
 }
 
+/**
+ * One-shot PREFILL (回退重发): a forked session stashes the text of the user
+ * turn being rewound; the SessionView puts it into the composer for editing —
+ * unlike pendingPrompts this does NOT auto-send (opencode edit-and-resend).
+ */
+export const pendingPrefills = new Map<string, string>()
+
+export function takePendingPrefill(id: string): string | undefined {
+  const p = pendingPrefills.get(id)
+  if (p !== undefined) pendingPrefills.delete(id)
+  return p
+}
+
+/** The active workspace for NEW sessions (localStorage over the server default). */
+export function currentWorkspace(serverDefault?: string): string | undefined {
+  return localStorage.getItem("NEWHORSE_WORKSPACE") || serverDefault || undefined
+}
+
 /** Group sessions by recency for the sidebar. */
 export function groupSessions(rows: SessionRow[]): Array<{ label: string; rows: SessionRow[] }> {
   const now = Date.now()

@@ -28,17 +28,29 @@ async function json<T>(path: string, opts?: { method?: string; body?: unknown })
 
 // --- sessions ---
 
-export interface SessionRow { sessionId: string; workspace: string; title?: string; status: string; model?: string; parentId?: string; createdAt: number; updatedAt: number }
+export interface SessionRow { sessionId: string; workspace: string; title?: string; status: string; model?: string; parentId?: string; role?: "butler"; createdAt: number; updatedAt: number; archived?: boolean }
 export interface ChatMessage { role: "user" | "assistant" | "system" | "tool"; content: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown; text2?: string }> }
+
+/** One durable event row (the client folds it into a transcript). `seq` is
+ *  the fork point for 回退重发. */
+export interface StoredEventRow { aggregate?: string; seq: number; type: string; data: Record<string, unknown> }
 
 export const api = {
   health: () => json<{ status: string }>("/v1/health"),
-  createSession: (sessionId?: string, workspace?: string) => json<{ sessionId: string; messageCount: number }>("/v1/session", { body: { sessionId, workspace } }),
+  createSession: (sessionId?: string, workspace?: string, asButler?: boolean) => json<{ sessionId: string; messageCount: number }>("/v1/session", { body: { ...(sessionId ? { sessionId } : {}), ...(workspace ? { workspace } : {}), ...(asButler ? { asButler: true } : {}) } }),
   sessions: (workspace?: string) => json<{ rows?: SessionRow[] } | SessionRow[]>("/v1/sessions" + (workspace ? `?workspace=${encodeURIComponent(workspace)}` : "")).then((r) => (Array.isArray(r) ? r : r.rows ?? [])) as Promise<SessionRow[]>,
   snapshot: (id: string) => json<{ id: string; messages?: Array<{ kind: string; text?: string; content?: unknown }>; headSeq: number }>(`/v1/session/${id}`),
-  events: (id: string) => json<Array<{ type: string; data: Record<string, unknown> }>>(`/v1/session/${id}/events`),
+  events: (id: string) => json<StoredEventRow[]>(`/v1/session/${id}/events`),
   interrupt: (id: string) => json<{ interrupted: boolean }>(`/v1/session/${id}/interrupt`, { body: {} }),
   steer: (id: string, text: string) => json<{ admitted: boolean }>(`/v1/session/${id}/steer`, { body: { text } }),
+
+  // --- per-session permission level (分级 harness) ---
+  policy: (id: string) => json<{ policy: "strict" | "readonly" | "trusted" }>(`/v1/session/${id}/policy`),
+  setPolicy: (id: string, policy: "strict" | "readonly" | "trusted") => json<{ policy: string }>(`/v1/session/${id}/policy`, { body: { policy } }),
+
+  // --- slash commands (plugin command seam) ---
+  commands: () => json<{ commands: Array<{ name: string; description?: string }> }>("/v1/commands"),
+  runCommand: (id: string, text: string) => json<{ output: unknown }>(`/v1/session/${id}/command`, { body: { text } }),
 
   /** Stream one prompt over SSE; onEvent receives each server event. Returns
    *  the final result payload. The stream ends with [DONE]. */
@@ -163,9 +175,10 @@ export function relativeTime(ts: number): string {
   return `${d.getMonth() + 1}月${d.getDate()}日`
 }
 
-/** Fold the durable event log into a displayable transcript. */
-export function foldTranscript(events: Array<{ type: string; data: Record<string, unknown> }>): Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string }> {
-  type FoldRow = { kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; isError?: boolean }
+/** Fold the durable event log into a displayable transcript. User turns keep
+ *  the `seq` of their Prompted event — the fork point for 回退重发. */
+export function foldTranscript(events: StoredEventRow[]): Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; seq?: number }> {
+  type FoldRow = { kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; isError?: boolean; seq?: number }
   const out: FoldRow[] = []
   // tool-call rows awaiting their result message (results arrive in call order)
   const pendingToolRows: number[] = []
@@ -180,7 +193,7 @@ export function foldTranscript(events: Array<{ type: string; data: Record<string
     const d = e.data ?? {}
     if (e.type === "Session.Prompted") {
       flush()
-      out.push({ kind: "user", text: String(d.prompt ?? "") })
+      out.push({ kind: "user", text: String(d.prompt ?? ""), seq: e.seq })
     } else if (e.type === "Session.MessageAppended") {
       const m = d.message as { kind?: string; text?: string; content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; model?: string; output?: unknown } | undefined
       if (!m) continue

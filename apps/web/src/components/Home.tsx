@@ -3,16 +3,19 @@ import { Sparkles as IconSparkle, ChevronRight as IconChevronRight } from "lucid
 import { api, prettyTitle, relativeTime } from "../api"
 import { EmotionBall } from "./EmotionBall"
 import { ModelPill } from "./ModelPill"
-import { IconSend, IconArrowUpRight } from "./icons"
+import { IconSend, IconArrowUpRight, IconButler } from "./icons"
 import { pendingPrompts, useStore } from "../store"
 
 const SUGGESTIONS = ["读取当前仓库结构并总结", "帮我写一个周报草稿", "检查最近改动的代码质量", "给这个项目写一份 README"]
 
-/** Home hero: ball + composer + suggestions + recent sessions. */
+/** Home hero: ball + composer + suggestions + recent sessions. The composer
+ *  has a 管家 toggle — on = the session is created as the fixed BUTLER role
+ *  (coordinator toolset: spawn_agent / wait / interrupt, audited). */
 export function Home({ onCreated }: { onCreated: (id: string) => void }) {
-  const { sessions, mood, showToast } = useStore()
+  const { sessions, mood, showToast, settings } = useStore()
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
+  const [butler, setButler] = useState(false)
   const recent = sessions.slice(0, 4)
 
   const send = async (): Promise<void> => {
@@ -20,7 +23,8 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     if (!body || busy) return
     setBusy(true)
     try {
-      const created = await api.createSession()
+      const ws = localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace || undefined
+      const created = await api.createSession(undefined, ws, butler)
       // Hand the first prompt to the session view so it drives the live stream.
       pendingPrompts.set(created.sessionId, body)
       onCreated(created.sessionId)
@@ -59,7 +63,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
           </div>
           <div className="rise" style={{ ["--d" as string]: "60ms" }}>
             <h1 className="text-[24px] font-semibold tracking-tight text-fg">有什么可以帮你？</h1>
-            <p className="mt-1.5 text-[13px] text-faint">把任务交给管家，它会自己读文件、跑工具、记重点</p>
+            <p className="mt-1.5 text-[13px] text-faint">{butler ? "管家模式：把任务拆给子代理并行干，结果汇总给你" : "把任务交给管家，它会自己读文件、跑工具、记重点"}</p>
           </div>
           <div className="panel-strong composer-solid rise w-full overflow-hidden !rounded-[18px] transition-shadow" style={{ ["--d" as string]: "120ms" }}>
             <textarea
@@ -77,6 +81,15 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
             />
             <div className="flex items-center gap-2 border-t border-line px-2.5 py-1.5">
               <ModelPill compact />
+              <button
+                className={`pill transition-colors ${butler ? "!border-accent/40 !bg-accent/10 !text-accent" : "hover:border-linestrong hover:!text-fg"}`}
+                title="管家模式：创建的会话是固定「管家」角色，可派出/等待/中断子代理"
+                onClick={() => setButler((v) => !v)}
+                aria-pressed={butler}
+              >
+                <IconButler size={11} />
+                管家
+              </button>
               <span className="flex-1" />
               <button className="btn-primary h-8 w-8 shrink-0 !rounded-full !p-0" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送">
                 <IconSend size={15} />

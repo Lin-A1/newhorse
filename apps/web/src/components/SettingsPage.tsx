@@ -4,7 +4,7 @@ import { api } from "../api"
 import { useStore } from "../store"
 import { cycleTheme, getThemePref, type ThemePref } from "../theme"
 import { Globe as IconGlobe, Sun as IconSun, Moon as IconMoon, Monitor as IconMonitor } from "lucide-react"
-import { IconCheck } from "./icons"
+import { IconCheck, IconPencil, IconPlay, IconPlus, IconTrash } from "./icons"
 
 type SectionId = "model" | "budget" | "memory" | "network" | "appearance" | "about"
 
@@ -81,59 +81,65 @@ export function SettingsPage() {
           {err && <div className="mb-3 rounded-xl border border-bad/25 bg-bad/[0.08] px-3.5 py-2.5 text-xs text-bad">{err}</div>}
 
           {section === "model" && (
-            <Panel title="模型与供应商" desc="协议 / 地址 / 密钥；修改对新会话生效。">
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="协议">
-                  <select className="input-base" value={settings.provider.kind} onChange={(e) => patch({ provider: { kind: e.target.value, baseUrl: settings.provider.baseUrl } })}>
-                    {["openai", "openai-compatible", "anthropic", "openai-responses"].map((k) => (
-                      <option key={k} value={k}>
-                        {k}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Base URL">
-                  <input className="input-base" defaultValue={settings.provider.baseUrl} onBlur={(e) => e.target.value !== settings.provider.baseUrl && patch({ provider: { kind: settings.provider.kind, baseUrl: e.target.value } })} />
-                </Field>
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label={<>API Key{settings.provider.hasApiKey && <span className="ml-1 text-faint">（已设置 {settings.provider.apiKeyHint}）</span>}</>}>
-                  <div className="relative">
-                    <input className="input-base pr-12" type={showKey ? "text" : "password"} placeholder={settings.provider.hasApiKey ? "留空保持不变" : "粘贴 API Key"} value={keyInput} onChange={(e) => setKeyInput(e.target.value)} autoComplete="off" />
-                    <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 py-0.5 text-[10px] text-faint transition-colors hover:text-fg" onClick={() => setShowKey((v) => !v)}>
-                      {showKey ? "隐藏" : "显示"}
-                    </button>
-                  </div>
-                </Field>
-                <Field label="模型（在会话输入框的胶囊里切换）">
-                  <div className="flex items-center gap-2">
+            <>
+              <ProviderProfiles />
+              <Panel title="独立供应商（未启用档案时的兜底）" desc="没有激活任何档案时，新会话使用这里的协议 / 地址 / 密钥与预算。">
+                <fieldset disabled={!!settings.activeProviderId} className={settings.activeProviderId ? "pointer-events-none space-y-3 opacity-50" : "space-y-3"}>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="协议">
+                    <select className="input-base" value={settings.provider.kind} onChange={(e) => patch({ provider: { kind: e.target.value, baseUrl: settings.provider.baseUrl } })}>
+                      {["openai", "openai-compatible", "anthropic", "openai-responses"].map((k) => (
+                        <option key={k} value={k}>
+                          {k}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Base URL">
+                    <input className="input-base" defaultValue={settings.provider.baseUrl} onBlur={(e) => e.target.value !== settings.provider.baseUrl && patch({ provider: { kind: settings.provider.kind, baseUrl: e.target.value } })} />
+                  </Field>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label={<>API Key{settings.provider.hasApiKey && <span className="ml-1 text-faint">（已设置 {settings.provider.apiKeyHint}）</span>}</>}>
+                    <div className="relative">
+                      <input className="input-base pr-12" type={showKey ? "text" : "password"} placeholder={settings.provider.hasApiKey ? "留空保持不变" : "粘贴 API Key"} value={keyInput} onChange={(e) => setKeyInput(e.target.value)} autoComplete="off" />
+                      <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1 py-0.5 text-[10px] text-faint transition-colors hover:text-fg" onClick={() => setShowKey((v) => !v)}>
+                        {showKey ? "隐藏" : "显示"}
+                      </button>
+                    </div>
+                  </Field>
+                  <Field label="模型（也可在输入框胶囊里切换）">
                     <div className="input-base flex items-center !py-0 text-[13px]" style={{ minHeight: 34 }}>
                       {settings.model}
                     </div>
-                    {keyInput.trim() && (
-                      <button className="btn-primary shrink-0 !px-3 !py-1.5 !text-xs" disabled={saving} onClick={() => void saveKey()}>
-                        保存 Key
-                      </button>
-                    )}
-                  </div>
-                </Field>
-              </div>
-              {!settings.provider.hasApiKey && !keyInput.trim() && (
-                <div className="flex items-center gap-2 rounded-lg border border-warn/30 bg-warn/[0.07] px-3 py-2 text-[12px] text-warn">
-                  <Info size={13} />
-                  尚未设置 API Key——先在上方粘贴一个再保存，模型下拉列表才能拉取。
+                  </Field>
                 </div>
-              )}
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field label="上下文窗口（tokens）">
-                  <input type="number" className="input-base" defaultValue={settings.contextWindowTokens ?? ""} placeholder="如 128000" onBlur={(e) => patch({ contextWindowTokens: Number(e.target.value) || undefined })} />
-                </Field>
-                <Field label="单次输出上限（tokens）">
-                  <input type="number" className="input-base" defaultValue={settings.maxOutputTokens ?? ""} placeholder="如 16384" onBlur={(e) => patch({ maxOutputTokens: Number(e.target.value) || undefined })} />
-                </Field>
-              </div>
-              <div className="text-[11px] text-faint">压缩触发与折叠尾部随窗口自动缩放。</div>
-            </Panel>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field label="上下文窗口（tokens）">
+                    <input type="number" className="input-base" defaultValue={settings.contextWindowTokens ?? ""} placeholder="如 128000" onBlur={(e) => patch({ contextWindowTokens: Number(e.target.value) || undefined })} />
+                  </Field>
+                  <Field label="单次输出上限（tokens）">
+                    <input type="number" className="input-base" defaultValue={settings.maxOutputTokens ?? ""} placeholder="如 16384" onBlur={(e) => patch({ maxOutputTokens: Number(e.target.value) || undefined })} />
+                  </Field>
+                </div>
+                <div className="text-[11px] text-faint">压缩触发与折叠尾部随窗口自动缩放；档案激活时以档案内的预算为准。</div>
+                {keyInput.trim() && (
+                  <button className="btn-primary !px-3 !py-1.5 !text-xs" disabled={saving} onClick={() => void saveKey()}>
+                    保存 Key
+                  </button>
+                )}
+                {!settings.provider.hasApiKey && !keyInput.trim() && !settings.providers?.length && (
+                  <div className="flex items-center gap-2 rounded-lg border border-warn/30 bg-warn/[0.07] px-3 py-2 text-[12px] text-warn">
+                    <Info size={13} />
+                    尚未设置 API Key——先在上方粘贴一个再保存，模型下拉列表才能拉取。
+                  </div>
+                )}
+                </fieldset>
+                {settings.activeProviderId && (
+                  <div className="text-[11px] text-faint">档案激活中——这里被档案接管，停用档案后可再编辑。</div>
+                )}
+              </Panel>
+            </>
           )}
 
 
@@ -267,6 +273,176 @@ function AppearanceSection() {
           </button>
         ))}
       </div>
+    </Panel>
+  )
+}
+
+/** A draft being edited in the profile form (id present = editing existing). */
+interface ProfileDraft {
+  id: string
+  name: string
+  kind: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  contextWindowTokens: string
+  maxOutputTokens: string
+}
+
+const emptyDraft = (): ProfileDraft => ({ id: crypto.randomUUID(), name: "", kind: "openai-compatible", baseUrl: "", apiKey: "", model: "", contextWindowTokens: "", maxOutputTokens: "" })
+
+/** ccswitch-style provider presets: named, complete, one-click switchable.
+ *  A preset carries protocol + baseUrl + key + model + budgets together, so
+ *  switching can never leave the window budget behind. Secrets never round-
+ *  trip: a blank key field keeps the stored one (server-side merge by id). */
+function ProviderProfiles() {
+  const { settings, reloadSettings, showToast } = useStore()
+  const [draft, setDraft] = useState<ProfileDraft | null>(null)
+  const profiles = settings?.providers ?? []
+  const activeId = settings?.activeProviderId
+  const activeProfile = profiles.find((p) => p.id === activeId)
+
+  const startEdit = (id: string): void => {
+    const p = profiles.find((x) => x.id === id)
+    setDraft(
+      p
+        ? { id: p.id, name: p.name, kind: p.kind, baseUrl: p.baseUrl, apiKey: "", model: p.model ?? "", contextWindowTokens: p.contextWindowTokens ? String(p.contextWindowTokens) : "", maxOutputTokens: p.maxOutputTokens ? String(p.maxOutputTokens) : "" }
+        : emptyDraft(),
+    )
+  }
+
+  const save = async (): Promise<void> => {
+    if (!draft || !draft.name.trim()) {
+      showToast("档案需要一个名称")
+      return
+    }
+    const item: Record<string, unknown> = {
+      id: draft.id,
+      name: draft.name.trim(),
+      kind: draft.kind,
+      baseUrl: draft.baseUrl.trim() || (draft.kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"),
+    }
+    if (draft.apiKey.trim()) item.apiKey = draft.apiKey.trim() // blank = keep stored key
+    if (draft.model.trim()) item.model = draft.model.trim()
+    if (Number(draft.contextWindowTokens) > 0) item.contextWindowTokens = Number(draft.contextWindowTokens)
+    if (Number(draft.maxOutputTokens) > 0) item.maxOutputTokens = Number(draft.maxOutputTokens)
+    try {
+      await api.putSettings({ providers: [item] })
+      await reloadSettings()
+      setDraft(null)
+      showToast("档案已保存")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const activate = async (id: string): Promise<void> => {
+    try {
+      await api.putSettings(id === activeId ? { activeProviderId: "" } : { activeProviderId: id })
+      await reloadSettings()
+      showToast(id === activeId ? "已停用档案（回到独立供应商）" : "档案已启用（新会话生效）")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const remove = async (id: string): Promise<void> => {
+    try {
+      await api.putSettings({ providersRemove: [id] })
+      await reloadSettings()
+      if (draft?.id === id) setDraft(null)
+      showToast("档案已删除")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const set = (k: keyof ProfileDraft, v: string): void => setDraft((d) => (d ? { ...d, [k]: v } : d))
+
+  return (
+    <Panel title="供应商档案" desc="像 ccswitch 一样把一整套配置命名保存，一键整组切换（协议 + 地址 + 密钥 + 模型 + 预算）。">
+      {activeProfile && (
+        <div className="flex items-center gap-2 rounded-lg border border-ok/25 bg-ok/[0.07] px-3 py-2 text-[12px] text-ok">
+          <IconCheck size={13} />
+          当前由档案「{activeProfile.name}」提供配置 · 模型 {settings?.model}
+        </div>
+      )}
+      <div className="space-y-2">
+        {profiles.map((p) => (
+          <div key={p.id} className={`rounded-xl border p-3 transition-colors ${p.id === activeId ? "border-accent/40 bg-accent/[0.05]" : "border-line bg-surface hover:border-linestrong"}`}>
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{p.name}</span>
+              <span className="shrink-0 rounded border border-line bg-surface2 px-1.5 py-0.5 text-[10px] text-faint">{p.kind}</span>
+              {p.id === activeId && <span className="shrink-0 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent">使用中</span>}
+              <button className="nh-icon-btn" title={p.id === activeId ? "停用" : "启用此档案"} onClick={() => void activate(p.id)}>
+                <IconPlay size={12} />
+              </button>
+              <button className="nh-icon-btn" title="编辑" onClick={() => startEdit(p.id)}>
+                <IconPencil size={12} />
+              </button>
+              <button className="nh-icon-btn hover:!text-bad" title="删除" onClick={() => void remove(p.id)}>
+                <IconTrash size={12} />
+              </button>
+            </div>
+            <div className="mt-1 truncate font-mono text-[11px] text-faint">
+              {p.baseUrl} · {p.model ?? "（跟随独立设置）"}
+              {p.hasApiKey ? ` · Key ${p.apiKeyHint ?? "已设置"}` : " · 无 Key"}
+              {p.contextWindowTokens ? ` · 窗口 ${p.contextWindowTokens}` : ""}
+            </div>
+          </div>
+        ))}
+        {profiles.length === 0 && <div className="rounded-xl border border-dashed border-line px-3 py-4 text-center text-[12px] text-faint">还没有档案——把你常用的供应商各存一份，切换就不用来回填表了。</div>}
+      </div>
+
+      {!draft ? (
+        <button className="btn-ghost flex w-full items-center justify-center gap-1.5 !py-2 !text-xs" onClick={() => setDraft(emptyDraft())}>
+          <IconPlus size={13} /> 新增供应商档案
+        </button>
+      ) : (
+        <div className="space-y-2.5 rounded-xl border border-linestrong bg-surface2/60 p-3">
+          <div className="grid gap-2.5 md:grid-cols-2">
+            <Field label="名称">
+              <input className="input-base" placeholder="如 DeepSeek 官方" value={draft.name} onChange={(e) => set("name", e.target.value)} autoFocus />
+            </Field>
+            <Field label="协议">
+              <select className="input-base" value={draft.kind} onChange={(e) => set("kind", e.target.value)}>
+                {["openai", "openai-compatible", "anthropic", "openai-responses"].map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="grid gap-2.5 md:grid-cols-2">
+            <Field label="Base URL">
+              <input className="input-base" placeholder="https://…" value={draft.baseUrl} onChange={(e) => set("baseUrl", e.target.value)} />
+            </Field>
+            <Field label="API Key（留空保持已存的）">
+              <input className="input-base" type="password" placeholder="粘贴 Key" value={draft.apiKey} onChange={(e) => set("apiKey", e.target.value)} autoComplete="off" />
+            </Field>
+          </div>
+          <div className="grid gap-2.5 md:grid-cols-3">
+            <Field label="模型">
+              <input className="input-base" placeholder="如 deepseek-chat" value={draft.model} onChange={(e) => set("model", e.target.value)} />
+            </Field>
+            <Field label="上下文窗口">
+              <input type="number" className="input-base" placeholder="如 128000" value={draft.contextWindowTokens} onChange={(e) => set("contextWindowTokens", e.target.value)} />
+            </Field>
+            <Field label="输出上限">
+              <input type="number" className="input-base" placeholder="如 16384" value={draft.maxOutputTokens} onChange={(e) => set("maxOutputTokens", e.target.value)} />
+            </Field>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-primary !px-4 !py-1.5 !text-xs" onClick={() => void save()}>
+              保存档案
+            </button>
+            <button className="btn-ghost !px-4 !py-1.5 !text-xs" onClick={() => setDraft(null)}>
+              取消
+            </button>
+          </div>
+        </div>
+      )}
     </Panel>
   )
 }

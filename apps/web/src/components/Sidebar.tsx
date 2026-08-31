@@ -3,24 +3,62 @@ import { EmotionBall, type Mood } from "./EmotionBall"
 import { groupSessions, useStore, type View } from "../store"
 import { api, prettyTitle, relativeTime, type SessionRow } from "../api"
 import { cycleTheme, getThemePref, type ThemePref } from "../theme"
-import { IconChart, IconClock, IconGear, IconMemory, IconPlus, IconSearch, IconSun, IconMoon, IconMonitor } from "./icons"
+import { IconArchive, IconChart, IconCheck, IconClock, IconFolder, IconGear, IconMemory, IconPencil, IconPlus, IconSearch, IconSun, IconMoon, IconMonitor, IconX } from "./icons"
 
-/** Sessions-first sidebar (grouped by recency) + utility navigation. */
+/** Sessions-first sidebar (grouped by recency) + utility navigation.
+ *  Row hover reveals rename/archive; the workspace chip filters the list and
+ *  becomes the default workspace for NEW sessions. */
 export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void }) {
-  const { sessions, view, setView, running } = useStore()
+  const { sessions, settings, refreshSessions, view, setView, showToast, running } = useStore()
   const [filter, setFilter] = useState("")
   const [workspace, setWorkspace] = useState(() => localStorage.getItem("NEWHORSE_WORKSPACE") ?? "")
+  const [wsOpen, setWsOpen] = useState(false)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [renameText, setRenameText] = useState("")
   const [themePref, setThemePref] = useState<ThemePref>(getThemePref())
+
   const groups = useMemo(() => groupSessions(sessions), [sessions])
   const filtered = useMemo(() => {
-    if (!filter.trim()) return groups
+    const byWs = workspace.trim() ? groups.map((g) => ({ ...g, rows: g.rows.filter((r) => r.workspace === workspace.trim()) })).filter((g) => g.rows.length > 0) : groups
+    if (!filter.trim()) return byWs
     const q = filter.toLowerCase()
-    return groups.map((g) => ({ ...g, rows: g.rows.filter((r: SessionRow) => (r.title ?? r.sessionId).toLowerCase().includes(q)) })).filter((g) => g.rows.length > 0)
-  }, [groups, filter])
+    return byWs.map((g) => ({ ...g, rows: g.rows.filter((r: SessionRow) => (r.title ?? r.sessionId).toLowerCase().includes(q)) })).filter((g) => g.rows.length > 0)
+  }, [groups, filter, workspace])
 
   const go = (v: View): void => {
     setView(v)
     onClose?.()
+  }
+
+  const saveWorkspace = (): void => {
+    const ws = workspace.trim()
+    if (ws) localStorage.setItem("NEWHORSE_WORKSPACE", ws)
+    else localStorage.removeItem("NEWHORSE_WORKSPACE")
+    setWsOpen(false)
+    showToast(ws ? `工作区：${ws}` : "已清除工作区过滤")
+  }
+
+  const commitRename = async (id: string): Promise<void> => {
+    const title = renameText.trim()
+    setRenaming(null)
+    if (!title) return
+    try {
+      await api.setTitle(id, title)
+      await refreshSessions()
+      showToast("已重命名")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const archive = async (id: string): Promise<void> => {
+    try {
+      await api.archiveSession(id)
+      await refreshSessions()
+      showToast("已归档（可在事件日志中恢复）")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
   }
 
   const utilities: Array<{ label: string; Icon: typeof IconChart; target: View["kind"] }> = [
@@ -52,6 +90,45 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
           新会话
           <kbd className="nh-kbd ml-auto opacity-0 transition-opacity group-hover:opacity-100">Enter</kbd>
         </button>
+        {/* workspace chip: filters the list + defaults NEW sessions */}
+        <button className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] text-faint transition-colors hover:bg-surface2 hover:text-fg" onClick={() => setWsOpen(!wsOpen)} title="工作区：过滤会话并作为新会话的默认目录">
+          <IconFolder size={13} className={workspace.trim() ? "text-accent" : ""} />
+          <span className="min-w-0 flex-1 truncate text-left">{workspace.trim() || "全部工作区"}</span>
+          {workspace.trim() && (
+            <span
+              className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:text-bad group-hover:opacity-70"
+              title="清除工作区过滤"
+              onClick={(e) => {
+                e.stopPropagation()
+                setWorkspace("")
+                localStorage.removeItem("NEWHORSE_WORKSPACE")
+              }}
+            >
+              <IconX size={11} />
+            </span>
+          )}
+        </button>
+        {wsOpen && (
+          <div className="pop-in mb-1.5 space-y-1.5 rounded-xl border border-linestrong bg-surface2 p-2 shadow-card" data-nh-popover>
+            <input
+              className="input-base !py-1.5 font-mono text-[11.5px]"
+              placeholder="绝对路径，如 G:\proj（空 = 全部）"
+              value={workspace}
+              onChange={(e) => setWorkspace(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveWorkspace()
+                if (e.key === "Escape") setWsOpen(false)
+              }}
+              autoFocus
+            />
+            <div className="flex items-center justify-between text-[10.5px] text-faint">
+              <span>服务端默认：{settings?.workspace ? settings.workspace.split(/[\\/]/).slice(-1)[0] : "—"}</span>
+              <button className="flex items-center gap-1 rounded-md border border-line bg-surface px-1.5 py-0.5 text-fg hover:border-linestrong" onClick={saveWorkspace}>
+                <IconCheck size={10} /> 应用
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="px-2.5 pb-2">
@@ -61,13 +138,28 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
         </div>
       </div>
 
-
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2">
         {filtered.map((g) => (
           <div key={g.label} className="mb-3">
             <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-faint">{g.label}</div>
             {g.rows.map((r) => {
               const active = view.kind === "session" && view.id === r.sessionId
+              if (renaming === r.sessionId) {
+                return (
+                  <div key={r.sessionId} className="mb-0.5 rounded-lg border border-accent/40 bg-surface2 px-2 py-1.5">
+                    <input
+                      className="input-base !py-1 text-xs"
+                      value={renameText}
+                      onChange={(e) => setRenameText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void commitRename(r.sessionId)
+                        if (e.key === "Escape") setRenaming(null)
+                      }}
+                      autoFocus
+                    />
+                  </div>
+                )
+              }
               return (
                 <button
                   key={r.sessionId}
@@ -79,11 +171,40 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
                   className={`group relative mb-0.5 w-full rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${active ? "bg-surface2 text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" : "text-dim hover:bg-surface2 hover:text-fg"}`}
                 >
                   <span className={`absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-gradient-to-b from-accent to-accent-2 transition-all duration-200 ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`} />
-                  <div className="truncate text-[12.5px] leading-5">{prettyTitle(r.title, r.sessionId.slice(0, 8))}</div>
+                  <div className="flex items-center gap-1.5">
+                    {r.role === "butler" && <span className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-1.5 py-px text-[9px] font-medium text-accent">管家</span>}
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] leading-5">{prettyTitle(r.title, r.sessionId.slice(0, 8))}</span>
+                  </div>
                   <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-faint">
                     <span className={`inline-block h-1 w-1 rounded-full ${r.status === "active" ? "bg-ok shadow-[0_0_5px_rgba(52,211,153,0.8)]" : "bg-faint"}`} />
                     <span className="tnum">{relativeTime(r.updatedAt)}</span>
                     {r.model && <span className="truncate">{r.model.split("/").pop()}</span>}
+                    {/* hover actions — stopPropagation keeps the row unopened */}
+                    <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                      <span
+                        role="button"
+                        className="rounded p-0.5 hover:text-fg"
+                        title="重命名"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setRenameText(r.title ?? "")
+                          setRenaming(r.sessionId)
+                        }}
+                      >
+                        <IconPencil size={11} />
+                      </span>
+                      <span
+                        role="button"
+                        className="rounded p-0.5 hover:text-warn"
+                        title="归档"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void archive(r.sessionId)
+                        }}
+                      >
+                        <IconArchive size={11} />
+                      </span>
+                    </span>
                   </div>
                 </button>
               )
