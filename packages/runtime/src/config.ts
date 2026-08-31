@@ -216,14 +216,29 @@ async function writeAgentHomeConfigInner(agentHome: string, patch: AgentHomeConf
     return p
   }
   const byId = new Map<string, Record<string, unknown>>((current.providers ?? []).map((p) => [p.id, stripDisplay({ ...p })]))
+  // Empty-string semantics on a preset upsert: `apiKey` "" (or absent) KEEPS the
+  // stored key — a client cannot know it to resend it. For the editable fields
+  // (baseUrl/model/budgets) "" CLEARS the stored value: a preset must be able
+  // to un-set a field, not only overwrite it. Other empties (name/kind) keep.
+  const CLEARABLE = new Set(["baseUrl", "model", "contextWindowTokens", "maxOutputTokens"])
   for (const item of patch.providers ?? []) {
-    // An empty-string apiKey means "keep the stored key" (a client cannot know
-    // it to resend it) — the server-side guard, not just client cooperation.
-    const { apiKey: blankKey, ...rest } = item as Record<string, unknown>
-    void blankKey
-    const incoming = (item as Record<string, unknown>).apiKey === "" ? rest : (item as Record<string, unknown>)
+    const raw = item as Record<string, unknown>
+    const incoming: Record<string, unknown> = {}
+    const clearing: string[] = []
+    for (const [k, v] of Object.entries(raw)) {
+      if (k === "apiKey") continue
+      if (CLEARABLE.has(k) && (v === "" || v === null || v === undefined)) {
+        clearing.push(k)
+        continue
+      }
+      if (v === "" || v === null || v === undefined) continue
+      incoming[k] = v
+    }
+    if (typeof raw.apiKey === "string" && raw.apiKey !== "") incoming.apiKey = raw.apiKey
     const prev = byId.get(item.id)
-    byId.set(item.id, stripDisplay({ ...(prev ?? {}), ...incoming }))
+    const merged = stripDisplay({ ...(prev ?? {}), ...incoming })
+    for (const k of clearing) delete merged[k]
+    byId.set(item.id, merged)
   }
   const removed = new Set(patch.providersRemove ?? [])
   for (const id of removed) byId.delete(id)
@@ -286,8 +301,11 @@ function resolveProvider(env: Record<string, string | undefined>, file: AgentHom
   const profile = activeProfile(file)
   const kind = (cli?.providerKind ?? str(env, ENV.provider) ?? profile?.kind ?? file.provider?.kind ?? "openai") as ProviderKind
   const defaultBase = kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"
-  const baseUrl = cli?.baseUrl ?? str(env, ENV.baseUrl) ?? profile?.baseUrl ?? file.provider?.baseUrl ?? defaultBase
-  const apiKey = cli?.apiKey ?? str(env, ENV.apiKey) ?? (kind === "anthropic" ? str(env, "ANTHROPIC_API_KEY") : str(env, "OPENAI_API_KEY")) ?? profile?.apiKey ?? file.provider?.apiKey
+  // Empty strings in the file are "cleared" values, never real URLs/keys.
+  const fileBaseUrl = file.provider?.baseUrl || undefined
+  const fileApiKey = file.provider?.apiKey || undefined
+  const baseUrl = cli?.baseUrl ?? str(env, ENV.baseUrl) ?? profile?.baseUrl ?? fileBaseUrl ?? defaultBase
+  const apiKey = cli?.apiKey ?? str(env, ENV.apiKey) ?? (kind === "anthropic" ? str(env, "ANTHROPIC_API_KEY") : str(env, "OPENAI_API_KEY")) ?? profile?.apiKey ?? fileApiKey
   return { kind, baseUrl, ...(apiKey ? { apiKey } : {}) }
 }
 

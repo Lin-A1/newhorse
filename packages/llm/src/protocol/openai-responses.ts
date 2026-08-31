@@ -39,7 +39,16 @@ export const openaiResponsesProtocol: Protocol = {
       // input as an ordered history; a tool call that precedes the text it
       // narrates changes model interpretation).
       const text = textOfContent(m.content)
-      if (text) input.push({ role: m.role, content: [{ type: "input_text", text }] })
+      const images = m.role === "user" ? m.content.filter((p): p is Extract<typeof p, { type: "image" }> => p.type === "image") : []
+      if (text || images.length > 0) {
+        input.push({
+          role: m.role,
+          content: [
+            ...(text ? [{ type: "input_text" as const, text }] : []),
+            ...images.map((img) => ({ type: "input_image" as const, image_url: `data:${img.mime};base64,${img.data}` })),
+          ],
+        })
+      }
 
       // Emit tool-call / tool-result items at the top level.
       const toolCalls = m.content.filter((p) => p.type === "tool-call")

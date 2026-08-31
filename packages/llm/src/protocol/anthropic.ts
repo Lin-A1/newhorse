@@ -227,6 +227,9 @@ function mapContentPart(part: ContentPart): Body[] {
   switch (part.type) {
     case "text":
       return [{ type: "text", text: part.text }]
+    case "image":
+      // Anthropic wants base64 blocks in user content; `data` is raw base64.
+      return [{ type: "image", source: { type: "base64", media_type: part.mime, data: part.data } }]
     case "reasoning": {
       // When the payload carries an Anthropic signature, re-emit the thinking
       // block so the SAME model can continue a multi-step tool sequence with its

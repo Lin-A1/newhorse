@@ -49,7 +49,19 @@ export interface ToolResultPart {
   readonly isError?: boolean
 }
 
-export type ContentPart = TextPart | ReasoningPart | ToolCallPart | ToolResultPart
+/**
+ * An image attached to a user turn. `data` is the raw base64 payload (NO
+ * `data:` URL prefix — the protocols add their own framing). Size is bounded
+ * at the transport (per-image cap); the event log carries it verbatim so
+ * "model-visible ⟺ logged" holds for attachments too.
+ */
+export interface ImagePart {
+  readonly type: "image"
+  readonly mime: string
+  readonly data: string
+}
+
+export type ContentPart = TextPart | ReasoningPart | ToolCallPart | ToolResultPart | ImagePart
 
 export interface Message {
   readonly role: Role

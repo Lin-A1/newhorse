@@ -39,13 +39,25 @@ export const openaiProtocol: Protocol = {
 
       const text = textOfContent(m.content)
       const toolCalls = m.content.filter((p) => p.type === "tool-call")
+      const images = m.role === "user" ? m.content.filter((p): p is Extract<typeof p, { type: "image" }> => p.type === "image") : []
       const message: Record<string, unknown> = {
         role: m.role,
         // Never emit `content: undefined` (a reasoning-only assistant message):
         // lower reasoning text to plain content (model-relative lowering drops
         // the opaque payload) or, when nothing remains, null for an assistant
         // that only produced tool calls, else "" so the field never vanishes.
-        content: text.length > 0 ? text : toolCalls.length > 0 ? null : m.role === "assistant" ? "" : null,
+        // A user message WITH images switches to the content-array form
+        // (text parts stay plain string content for every other message).
+        content:
+          images.length > 0
+            ? [{ type: "text", text }, ...images.map((img) => ({ type: "image_url", image_url: { url: `data:${img.mime};base64,${img.data}` } }))]
+            : text.length > 0
+              ? text
+              : toolCalls.length > 0
+                ? null
+                : m.role === "assistant"
+                  ? ""
+                  : null,
       }
 
       if (m.role === "assistant" && toolCalls.length > 0) {

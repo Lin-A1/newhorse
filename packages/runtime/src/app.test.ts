@@ -571,3 +571,37 @@ describe("durable role + policy restore (log is authoritative)", () => {
     }
   })
 })
+
+describe("image attachments + $ARGUMENTS", () => {
+  it("a prompt with images logs them in Session.Prompted and the projected user message carries them", async () => {
+    const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    const fetch: Fetcher = async () => sse(payload)
+    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", sessionId: "img-1", workspace: "/w", fetch: fetch as never })
+    await app.prompt("看这张图", "user", [{ mime: "image/png", data: "aGk=" }])
+    const log = await app.events.read("img-1")
+    // Images are stored ONCE on the durable admit event; the Prompted marker
+    // stays lean. The projection resolves them.
+    const admitted = log.find((e) => e.type === "Session.PromptAdmitted")
+    expect((admitted?.data as { images?: { mime: string; data: string }[] }).images).toEqual([{ mime: "image/png", data: "aGk=" }])
+    const prompted = log.find((e) => e.type === "Session.Prompted")
+    expect((prompted?.data as { images?: unknown }).images).toBeUndefined()
+    const session = await app.resume()
+    const user = session.messages.find((m) => m.kind === "user")
+    expect((user as { images?: unknown }).images).toEqual([{ mime: "image/png", data: "aGk=" }])
+  })
+
+  it("runCommand expands $ARGUMENTS with the typed argument string", async () => {
+    const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    const fetch: Fetcher = async () => sse(payload)
+    const { PluginRegistry } = await import("@newhorse/plugin")
+    const plugins = new PluginRegistry()
+    plugins.registerDiscovered([
+      { kind: "command", name: "greet", description: "greet someone", run: async () => "你好，$ARGUMENTS！请处理。" },
+    ])
+    const app = await createApp({ provider: { kind: "openai", baseUrl: "https://x", apiKey: "k" }, model: "m", sessionId: "cmd-args", workspace: "/w", plugins: plugins, fetch: fetch as never })
+    expect(await app.runCommand("/greet 张三和李四")).toBe("你好，张三和李四！请处理。")
+    // a body without the placeholder is returned verbatim
+    plugins.registerDiscovered([{ kind: "command", name: "plain", description: "no placeholder", run: async () => "原样返回" }])
+    expect(await app.runCommand("/plain some args")).toBe("原样返回")
+  })
+})

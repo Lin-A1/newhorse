@@ -172,3 +172,26 @@ describe("loadRuntimeSettings (harness floor)", () => {
       await rm(home, { recursive: true, force: true }).catch(() => {})
     }
   })
+
+describe("provider preset field clearing (empty-string semantics)", () => {
+  it("'' on baseUrl/model/budgets CLEARS the stored value; '' on apiKey KEEPS the key", async () => {
+    const home = await mkdtemp(join(tmpdir(), "nh-clear-"))
+    try {
+      await writeAgentHomeConfig(home, { providers: [{ id: "p", name: "P", kind: "openai-compatible", baseUrl: "https://x", apiKey: "sk-keep", model: "old-model", contextWindowTokens: 32000 }] } as never)
+      // The editor sends the full form: budgets cleared to "", key untouched.
+      await writeAgentHomeConfig(home, { providers: [{ id: "p", model: "", contextWindowTokens: "", maxOutputTokens: "", apiKey: "" }] } as never)
+      const cfg = await readAgentHomeConfig(home)
+      const p = (cfg.providers ?? [])[0] as Record<string, unknown>
+      expect(p.model).toBeUndefined() // cleared
+      expect(p.contextWindowTokens).toBeUndefined()
+      expect(p.maxOutputTokens).toBeUndefined()
+      expect(p.baseUrl).toBe("https://x") // untouched (not sent)
+      expect(p.apiKey).toBe("sk-keep") // "" kept the key
+      const s = loadRuntimeSettings({ agentHome: home, env: {} })
+      expect(s.providers?.[0]?.model).toBeUndefined()
+      expect(s.providers?.[0]?.apiKey).toBe("sk-keep")
+    } finally {
+      await rm(home, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+})

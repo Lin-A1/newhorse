@@ -366,3 +366,35 @@ describe("makeLlmClient with injected fetch", () => {
     expect(text.join("")).toBe("ok")
   })
 })
+
+describe("image attachment encoding", () => {
+  const request = {
+    model: "m",
+    messages: [{ role: "user" as const, id: "u1", content: [{ type: "text" as const, text: "看图" }, { type: "image" as const, mime: "image/png", data: "aGk=" }] }],
+  }
+
+  it("anthropic lowers an image part to a base64 source block", () => {
+    const body = anthropicProtocol.encode(request as never) as { messages: Array<{ content: Array<Record<string, unknown>> }> }
+    const block = body.messages[0]!.content.find((b) => b.type === "image") as { source: { type: string; media_type: string; data: string } } | undefined
+    expect(block?.source).toEqual({ type: "base64", media_type: "image/png", data: "aGk=" })
+  })
+
+  it("openai switches an image-bearing user message to content-array form", () => {
+    const body = openaiProtocol.encode(request as never) as { messages: Array<{ role: string; content: unknown }> }
+    const content = body.messages[0]!.content as Array<Record<string, unknown>>
+    expect(content[0]).toEqual({ type: "text", text: "看图" })
+    expect(content[1]).toEqual({ type: "image_url", image_url: { url: "data:image/png;base64,aGk=" } })
+  })
+
+  it("openai keeps text-only user content a plain string (no regression)", () => {
+    const body = openaiProtocol.encode({ model: "m", messages: [{ role: "user", id: "u1", content: [{ type: "text", text: "hi" }] }] } as never) as { messages: Array<{ content: unknown }> }
+    expect(body.messages[0]!.content).toBe("hi")
+  })
+
+  it("openai-responses lowers an image part to input_image", () => {
+    const body = openaiResponsesProtocol.encode(request as never) as { input: Array<{ role: string; content: Array<Record<string, unknown>> }> }
+    const item = body.input.find((i) => i.role === "user")!
+    expect(item.content[0]).toEqual({ type: "input_text", text: "看图" })
+    expect(item.content[1]).toEqual({ type: "input_image", image_url: "data:image/png;base64,aGk=" })
+  })
+})

@@ -8,8 +8,14 @@ import type { ContentPart } from "./llm"
  * Message kinds mirror the durable session events; a MessageAppended event
  * projects one of these rows.
  */
+export interface ImageAttachment {
+  readonly mime: string
+  /** Raw base64 (no data: prefix). */
+  readonly data: string
+}
+
 export type SessionMessage =
-  | { readonly kind: "user"; readonly id: string; readonly seq: number; readonly text: string }
+  | { readonly kind: "user"; readonly id: string; readonly seq: number; readonly text: string; readonly images?: readonly ImageAttachment[] }
   | { readonly kind: "assistant"; readonly id: string; readonly seq: number; readonly content: ContentPart[]; readonly model?: string; readonly provider?: string }
   | { readonly kind: "tool"; readonly id: string; readonly seq: number; readonly callId: string; readonly name: string; readonly output: unknown; readonly isError?: boolean }
   | { readonly kind: "system"; readonly id: string; readonly seq: number; readonly text: string }

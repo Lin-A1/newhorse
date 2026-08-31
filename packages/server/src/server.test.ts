@@ -339,3 +339,43 @@ describe("butler role + policy + commands + fork (client surfaces)", () => {
     }
   })
 })
+
+describe("image attachments over the transport", () => {
+  it("a prompt with images persists them in the durable log and rejects oversized/unknown ones", async () => {
+    const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    handle = await createServer({ port: 0, sessionConfig: () => ({ provider, model: "m", workspace: "/w", fetch: mockFetch(payload) }) })
+    const base = handle.baseUrl
+    const { sessionId } = (await (await fetch(`${base}/v1/session`, { method: "POST", body: JSON.stringify({}) })).json()) as { sessionId: string }
+
+    // A batch containing an unknown-mime image is REJECTED with 400 (naming the
+    // problem), never silently filtered into the append-only log.
+    const mixed = await fetch(`${base}/v1/session/${sessionId}/prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "看图", images: [{ mime: "image/png", data: "aGk=" }, { mime: "application/x-evil", data: "eHg=" }] }),
+    })
+    expect(mixed.status).toBe(400)
+    // non-base64 garbage is rejected too
+    const garbage = await fetch(`${base}/v1/session/${sessionId}/prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "看图", images: [{ mime: "image/png", data: "!!!not-base64!!!" }] }),
+    })
+    expect(garbage.status).toBe(400)
+    // a clean image-only prompt (empty text) is accepted
+    const good = await fetch(`${base}/v1/session/${sessionId}/prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: "", images: [{ mime: "image/png", data: "aGk=" }] }),
+    })
+    await good.text()
+    expect(good.status).toBe(200)
+    const evs = (await (await fetch(`${base}/v1/session/${sessionId}/events`)).json()) as { type: string; data: { prompt?: string; images?: { mime: string }[] } }[]
+    const admitted = evs.filter((e) => e.type === "Session.PromptAdmitted").pop()
+    expect(admitted?.data.images?.map((i) => i.mime)).toEqual(["image/png"])
+    // the image survives re-attach: the projection resolves it from the admit
+    const snap = (await (await fetch(`${base}/v1/session/${sessionId}`)).json()) as { messages?: Array<{ kind: string; images?: unknown }> }
+    const user = (snap.messages ?? []).filter((m) => m.kind === "user").pop()
+    expect(Array.isArray((user as { images?: unknown[] })?.images ?? [])).toBe(true)
+  })
+})

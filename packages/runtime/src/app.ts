@@ -1,4 +1,4 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, stableSessionId, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator, type RunOptions } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, stableSessionId, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator, type RunOptions, type PromptImage } from "@newhorse/core"
 import { join, dirname } from "node:path"
 import { mkdir } from "node:fs/promises"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
@@ -133,7 +133,7 @@ export interface App {
    * `principal` marks who authored the prompt (user from a human TTY, else
    * butler/parent); it drives the caller kind for butler tools (M2b).
    */
-  readonly prompt: (text: string, principal?: "user" | "butler" | "parent") => Promise<PromptResult>
+  readonly prompt: (text: string, principal?: "user" | "butler" | "parent", images?: readonly PromptImage[]) => Promise<PromptResult>
   /** Reconstruct the current session projection from the log. */
   readonly resume: () => Promise<Session>
   /** Query the session registry (observational control surface). */
@@ -485,7 +485,7 @@ export async function createApp(config: AppConfig): Promise<App> {
     sessionId,
     events,
     onEvent,
-    async prompt(text: string, principal?: "user" | "butler" | "parent"): Promise<PromptResult> {
+    async prompt(text: string, principal?: "user" | "butler" | "parent", images?: readonly PromptImage[]): Promise<PromptResult> {
       // Ambient workspace AGENTS.md is a Context Source: discovered from the
       // session location and admitted as model-visible context BEFORE the prompt,
       // per the "model-visible ⟺ logged" rule. It is appended only once: once a
@@ -493,7 +493,7 @@ export async function createApp(config: AppConfig): Promise<App> {
       // a session do not keep re-inserting the same context.
       await ensureSystemContext(events, sessionId, workspace, asButler ? withRoleBody(contextProvider, BUTLER_BODY) : contextProvider)
       const effPrincipal = principal ?? (asButler ? "butler" : "parent")
-      await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: effPrincipal })
+      await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: effPrincipal, ...(images?.length ? { images } : {}) })
 
       // A fresh abort controller per prompt, so interrupt() cancels only this
       // run and a later prompt is unaffected (an AbortSignal cannot be reset).
@@ -624,11 +624,17 @@ export async function createApp(config: AppConfig): Promise<App> {
       if (!trimmed.startsWith("/")) return undefined
       const space = trimmed.indexOf(" ")
       const name = trimmed.slice(1, space === -1 ? undefined : space).trim()
-      const args = (space === -1 ? "" : trimmed.slice(space + 1).trim()).split(/\s+/).filter(Boolean)
+      const rawArgs = space === -1 ? "" : trimmed.slice(space + 1).trim()
+      const args = rawArgs.split(/\s+/).filter(Boolean)
       if (!name) return undefined
       const cmd = pluginRegistry?.get("command", name)
       if (!cmd) return undefined
-      return cmd.run(args)
+      const output = await cmd.run(args)
+      // claude-code convention: `$ARGUMENTS` in the command body expands to the
+      // typed argument string; untouched bodies are returned as-is.
+      const argText = rawArgs
+      if (typeof output === "string" && output.includes("$ARGUMENTS")) return output.replaceAll("$ARGUMENTS", argText)
+      return output
     },
   }
 

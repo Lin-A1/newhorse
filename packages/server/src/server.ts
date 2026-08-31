@@ -124,6 +124,13 @@ export interface ServerHandle {
   readonly stop: () => Promise<void>
 }
 
+/** Image attachment caps: per-image base64 (≈3MB raw, inside Anthropic's
+ *  ~3.75MB base64/image guidance), per-prompt count, and the whole-body read
+ *  bound. Worst case one request ≈ 5×4M base64 ≈ 20MB < the 32MB API ceiling. */
+const MAX_IMAGE_BASE64 = 4_000_000
+const MAX_IMAGES_PER_PROMPT = 5
+const MAX_PROMPT_BODY = 40_000_000
+
 function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false
   let diff = 0
@@ -402,7 +409,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
    *  down cleanly instead of leaving a half-open SSE connection — Bun's
    *  server.stop() would otherwise crash on a pending disconnected stream. */
   let inFlight = 0
-  async function promptStream(app: App, text: string, principal?: "user" | "butler" | "parent", signal?: AbortSignal): Promise<Response> {
+  async function promptStream(app: App, text: string, principal?: "user" | "butler" | "parent", signal?: AbortSignal, images?: { mime: string; data: string }[]): Promise<Response> {
     inFlight++
     const sse = sseStream()
     // Flush headers NOW with an SSE comment line: Bun does not send response
@@ -422,7 +429,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
     const onAbort = (): void => app.interrupt()
     signal?.addEventListener("abort", onAbort, { once: true })
     app
-      .prompt(text, principal)
+      .prompt(text, principal, images)
       .then((result) => {
         sse.emit(`data: ${JSON.stringify({ type: "result", ...result })}\n\n`)
         sse.emit(`data: [DONE]\n\n`)
@@ -487,15 +494,29 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         return json(201, { sessionId: resolved.app.sessionId, messageCount: session.messages.length, headSeq: session.headSeq })
       }
 
-      // POST /v1/session/:id/prompt
+      // POST /v1/session/:id/prompt — {text, principal?, images?: [{mime,data}]}.
+      // Shape + caps are validated here so one bad paste can never poison the
+      // append-only log or balloon a provider request. An image-only prompt
+      // (empty text) is valid.
       if (method === "POST" && parts.length === 4 && parts[3] === "prompt") {
         const found = await findSession(parts[2]!)
         if (found.kind === "missing") return json(404, { error: found.error })
-        const parsed = await readJsonOr400<{ text?: string; principal?: "user" | "butler" | "parent" }>(req)
+        // Bound the buffered read BEFORE parsing: the caps below bound what is
+        // LOGGED, not what a hostile body could make us buffer.
+        const declared = Number(req.headers.get("content-length") ?? 0)
+        if (declared > MAX_PROMPT_BODY) return json(413, { error: "request body too large" })
+        const parsed = await readJsonOr400<{ text?: string; principal?: "user" | "butler" | "parent"; images?: { mime?: string; data?: string }[] }>(req)
         if ("error" in parsed) return json(400, parsed)
-        if (!parsed.text) return json(400, { error: "text is required" })
-        if (found.kind === "remote") return proxyPrompt(found.entry, parts[2]!, JSON.stringify({ text: parsed.text, principal: parsed.principal }), req.signal)
-        return promptStream(found.app, parsed.text, parsed.principal, req.signal)
+        const images: { mime: string; data: string }[] = []
+        for (const img of parsed.images ?? []) {
+          if (images.length >= MAX_IMAGES_PER_PROMPT) return json(400, { error: `too many images (max ${MAX_IMAGES_PER_PROMPT})` })
+          if (!img.mime || !/^image\/(png|jpeg|webp|gif)$/.test(img.mime)) return json(400, { error: `unsupported image type: ${img.mime ?? "(none)"}` })
+          if (!img.data || img.data.length > MAX_IMAGE_BASE64 || !/^[A-Za-z0-9+/]+={0,2}$/.test(img.data) || img.data.length % 4 !== 0) return json(400, { error: "invalid image payload (not base64 or over the size cap)" })
+          images.push({ mime: img.mime, data: img.data })
+        }
+        if (!parsed.text && images.length === 0) return json(400, { error: "text or images required" })
+        if (found.kind === "remote") return proxyPrompt(found.entry, parts[2]!, JSON.stringify({ text: parsed.text ?? "", principal: parsed.principal, ...(images.length ? { images } : {}) }), req.signal)
+        return promptStream(found.app, parsed.text ?? "", parsed.principal, req.signal, images)
       }
 
       // POST /v1/session/:id/steer

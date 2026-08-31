@@ -17,6 +17,9 @@ export class Session {
   #headSeq = -1
   #step = 0
   #interrupted = false
+  /** Images from PromptAdmitted, resolved when their prompt is promoted —
+   *  the base64 is stored once (on the admit event), never duplicated. */
+  #admittedImages = new Map<string, readonly { mime: string; data: string }[]>()
 
   private constructor(id: string, location: string, projectId: string | undefined, createdAt: number) {
     this.#id = id
@@ -51,6 +54,11 @@ export class Session {
     switch (event.type) {
       case "Session.Created":
         break
+      case "Session.PromptAdmitted": {
+        const a = event.data as { id?: string; images?: { mime: string; data: string }[] }
+        if (a.id && a.images?.length) this.#admittedImages.set(a.id, a.images)
+        break
+      }
       case "Session.MessageAppended": {
         const data = event.data as { message?: SessionMessage }
         if (data.message) this.#messages.push({ ...data.message, seq: event.seq })
@@ -62,10 +70,13 @@ export class Session {
         // promotion happened), not the earlier admission seq — otherwise a
         // steer promoted mid-turn would project a seq lower than a prior
         // assistant message, breaking monotonicity for any consumer filtering
-        // by seq.
-        const data = event.data as { id?: string; prompt?: string }
+        // by seq. Attachments ride the same event (model-visible ⟺ logged).
+        const data = event.data as { id?: string; prompt?: string; images?: { mime: string; data: string }[] }
         if (data.id && typeof data.prompt === "string") {
-          this.#messages.push({ kind: "user", id: data.id, seq: event.seq, text: data.prompt })
+          // own data first (legacy logs carried images here), else resolve
+          // from the durable admit event.
+          const images = data.images?.length ? data.images : this.#admittedImages.get(data.id)
+          this.#messages.push({ kind: "user", id: data.id, seq: event.seq, text: data.prompt, ...(images?.length ? { images } : {}) })
         }
         break
       }

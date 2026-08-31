@@ -17,6 +17,11 @@ import type { ContentPart, Message, SessionMessage } from "@newhorse/schema"
  */
 export function toLlmMessages(projected: readonly SessionMessage[], selectedModel: string): Message[] {
   const out: Message[] = []
+  // Images ride only the LAST user turn: they are transient visual context,
+  // not durable history (the log keeps them so the client can still render
+  // them). Without this aging-out, every later request re-uploads every past
+  // image until the provider's request-size ceiling rejects the conversation.
+  const lastUserIndex = projected.reduce((acc, m, i) => (m.kind === "user" ? i : acc), -1)
 
   for (let i = 0; i < projected.length; i++) {
     const m = projected[i]!
@@ -24,7 +29,16 @@ export function toLlmMessages(projected: readonly SessionMessage[], selectedMode
 
     switch (m.kind) {
       case "user":
-        out.push({ role: "user", id: m.id, content: [{ type: "text", text: m.text }] })
+        // An image-only prompt has empty text: an empty text block is a
+        // provider 400 (Anthropic rejects it), so it is emitted only when set.
+        out.push({
+          role: "user",
+          id: m.id,
+          content: [
+            ...(m.text ? [{ type: "text", text: m.text } as ContentPart] : []),
+            ...(i === lastUserIndex ? (m.images ?? []).map((img): ContentPart => ({ type: "image", mime: img.mime, data: img.data })) : []),
+          ],
+        })
         break
 
       case "system": {

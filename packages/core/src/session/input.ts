@@ -26,6 +26,12 @@ export interface SessionInputStore {
   hasPending(sessionId: string, delivery: Delivery): Promise<boolean>
 }
 
+/** An image riding a prompt admission: raw base64, no data: prefix. */
+export interface PromptImage {
+  readonly mime: string
+  readonly data: string
+}
+
 export interface AdmitInput {
   readonly id: string
   readonly sessionId: string
@@ -33,6 +39,8 @@ export interface AdmitInput {
   readonly delivery: Delivery
   /** Who authored the prompt; drives the caller kind for butler tools (M2b). */
   readonly principal?: "user" | "butler" | "parent"
+  /** Optional image attachments; carried verbatim into Session.Prompted. */
+  readonly images?: readonly PromptImage[]
 }
 
 export interface Admission {
@@ -58,6 +66,7 @@ interface Row {
   prompt: string
   delivery: Delivery
   principal?: "user" | "butler" | "parent"
+  images?: readonly PromptImage[]
   admittedSeq: number
   promotedSeq: number | null
 }
@@ -132,9 +141,11 @@ export class MemorySessionInput implements SessionInputStore {
       prompt: input.prompt,
       delivery: input.delivery,
       principal: input.principal ?? "butler",
+      ...(input.images?.length ? { images: input.images } : {}),
     })
     const admittedSeq = event.seq
-    this.#rows.set(input.id, { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, principal: input.principal ?? "butler", admittedSeq, promotedSeq: null })
+    const row: Row = { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, principal: input.principal ?? "butler", admittedSeq, promotedSeq: null, ...(input.images?.length ? { images: input.images } : {}) }
+    this.#rows.set(input.id, row)
     return { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, principal: input.principal ?? "butler", admittedSeq }
   }
 
@@ -143,6 +154,8 @@ export class MemorySessionInput implements SessionInputStore {
     let count = 0
     for (const row of rows) {
       row.promotedSeq = row.admittedSeq
+      // Images are NOT copied here — they stay durable on the PromptAdmitted
+      // event and the fold resolves them by id (the base64 is stored once).
       await this.events.append(sessionId, "Session.Prompted", { id: row.id, sessionId: row.sessionId, prompt: row.prompt, delivery: row.delivery, principal: row.principal ?? "butler", promotedSeq: row.promotedSeq })
       count++
     }
@@ -163,9 +176,10 @@ export class MemorySessionInput implements SessionInputStore {
 
   #apply(event: StoredEvent): void {
     if (event.type === "Session.PromptAdmitted") {
-      const data = event.data as { id?: string; sessionId?: string; prompt?: string; delivery?: Delivery; principal?: "user" | "butler" | "parent" }
-      if (!data.id || !data.sessionId || !data.prompt || !data.delivery) return
-      this.#rows.set(data.id, { id: data.id, sessionId: data.sessionId, prompt: data.prompt, delivery: data.delivery, principal: data.principal ?? "butler", admittedSeq: event.seq, promotedSeq: null })
+      const data = event.data as { id?: string; sessionId?: string; prompt?: string; delivery?: Delivery; principal?: "user" | "butler" | "parent"; images?: readonly PromptImage[] }
+      // prompt may be "" (an image-only prompt); anything missing is corrupt.
+      if (!data.id || !data.sessionId || typeof data.prompt !== "string" || !data.delivery) return
+      this.#rows.set(data.id, { id: data.id, sessionId: data.sessionId, prompt: data.prompt, delivery: data.delivery, principal: data.principal ?? "butler", admittedSeq: event.seq, promotedSeq: null, ...(data.images?.length ? { images: data.images } : {}) })
     } else if (event.type === "Session.Prompted") {
       const data = event.data as { id?: string; delivery?: Delivery }
       const row = data.id ? this.#rows.get(data.id) : undefined
