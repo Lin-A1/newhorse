@@ -36,7 +36,7 @@ interface Store {
   settleApproval: (id: string, allow: boolean) => Promise<void>
 }
 
-export type View = { kind: "home" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "schedules" } | { kind: "memory" } | { kind: "settings" }
+export type View = { kind: "home" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "schedules" } | { kind: "memory" } | { kind: "settings" } | { kind: "dag" } | { kind: "skills" }
 
 const Ctx = createContext<Store | null>(null)
 

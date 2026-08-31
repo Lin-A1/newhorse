@@ -1,6 +1,6 @@
 import { createServer } from "./server"
 import type { SessionCreateRequest } from "./server"
-import { createApp, loadRuntimeSettings, createSqliteSessionDirectory, createApprovalHub, createScheduler, writeAgentHomeConfig, type Schedule } from "@newhorse/runtime"
+import { createApp, loadRuntimeSettings, createSqliteSessionDirectory, createApprovalHub, createScheduler, createDagRunner, writeAgentHomeConfig, type Schedule } from "@newhorse/runtime"
 import { MemoryMemoryStore, SqliteMemoryStore, createEmbeddingProvider } from "@newhorse/memory"
 import { join } from "node:path"
 
@@ -50,6 +50,18 @@ const schedules = createScheduler({
   fire: (s: Schedule) => (admit ? admit(s.sessionId, s.prompt) : Promise.reject(new Error("server not started"))),
 })
 
+// DAG orchestration (编排): durable runtime over the dataDir event store;
+// provider/model resolve fresh per run so settings changes apply.
+const dagRunner = createDagRunner({
+  dataDir: settings.dataDir,
+  getProvider: () => loadRuntimeSettings({ env: process.env }).provider,
+  getDefaultModel: () => loadRuntimeSettings({ env: process.env }).model,
+  getWorkspace: () => loadRuntimeSettings({ env: process.env }).workspace,
+  enableBash: settings.allowBash,
+  memoryStore: settings.memory.on ? memStore : undefined,
+  skillsDir: settings.pluginsDir,
+})
+
 const handle = await createServer({
   host: settings.host,
   port: settings.port,
@@ -58,6 +70,8 @@ const handle = await createServer({
   // auto-denies unanswered ones after its timeout — fail-closed with a window.
   approvals,
   schedules,
+  dagRunner,
+  ...(settings.pluginsDir ? { pluginsDir: settings.pluginsDir } : {}),
   memory: settings.memory.on ? memStore : undefined,
   ...(settings.registry ? { directory, advertiseUrl: settings.advertiseUrl } : {}),
   ...(settings.uiDir ? { uiDir: settings.uiDir } : {}),

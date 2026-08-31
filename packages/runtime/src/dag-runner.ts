@@ -107,6 +107,9 @@ export interface DagDeps {
    * user/butler watching the session sees DAG progress as a checklist.
    */
   readonly todoSessionId?: string
+  /** Caller-supplied fresh-run id (the server endpoint generates one so the
+   *  HTTP response can return it immediately while the graph keeps driving). */
+  readonly dagId?: string
   /** Pluggable scheduling strategy (dispatch order + poll cadence). */
   readonly scheduler?: DagScheduler
 }
@@ -138,7 +141,7 @@ export async function runDag(spec: DAGSpec, deps: DagDeps): Promise<DagOutcome> 
   const topo = validate(spec)
   // Resume mode: reuse the existing aggregate id (do NOT re-declare); fresh
   // run generates one.
-  const dagId = deps.resume?.dagId ?? crypto.randomUUID()
+  const dagId = deps.resume?.dagId ?? deps.dagId ?? crypto.randomUUID()
   const isResume = !!deps.resume
   const concurrency = deps.concurrency ?? 2
   const scheduler = deps.scheduler

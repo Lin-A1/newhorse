@@ -52,6 +52,7 @@ export const ENV = {
   registry: "NEWHORSE_REGISTRY",
   advertiseUrl: "NEWHORSE_ADVERTISE_URL",
   uiDir: "NEWHORSE_UI_DIR",
+  pluginsDir: "NEWHORSE_PLUGINS_DIR",
 } as const
 
 export type ProviderKind = "openai" | "openai-responses" | "anthropic" | "openai-compatible"
@@ -105,6 +106,8 @@ export interface RuntimeSettings {
   readonly advertiseUrl?: string
   /** Directory of the built client UI served on this origin (web 单独启动). */
   readonly uiDir?: string
+  /** Plugin/skills/agents directory (skills 浏览、角色发现、会话工具面). */
+  readonly pluginsDir?: string
 }
 
 export interface ConfigLayers {
@@ -193,7 +196,7 @@ function resolveProvider(env: Record<string, string | undefined>, file: AgentHom
   const kind = (cli?.providerKind ?? str(env, ENV.provider) ?? file.provider?.kind ?? "openai") as ProviderKind
   const defaultBase = kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"
   const baseUrl = cli?.baseUrl ?? str(env, ENV.baseUrl) ?? file.provider?.baseUrl ?? defaultBase
-  const apiKey = cli?.apiKey ?? str(env, ENV.apiKey) ?? file.provider?.apiKey ?? (kind === "anthropic" ? str(env, "ANTHROPIC_API_KEY") : str(env, "OPENAI_API_KEY"))
+  const apiKey = cli?.apiKey ?? str(env, ENV.apiKey) ?? (kind === "anthropic" ? str(env, "ANTHROPIC_API_KEY") : str(env, "OPENAI_API_KEY")) ?? file.provider?.apiKey
   return { kind, baseUrl, ...(apiKey ? { apiKey } : {}) }
 }
 
@@ -249,5 +252,6 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
     ...(str(env, ENV.registry) ? { registry: str(env, ENV.registry) } : {}),
     ...(str(env, ENV.advertiseUrl) ? { advertiseUrl: str(env, ENV.advertiseUrl) } : {}),
     ...(str(env, ENV.uiDir) ? { uiDir: str(env, ENV.uiDir) } : {}),
+    ...(str(env, ENV.pluginsDir) ? { pluginsDir: str(env, ENV.pluginsDir) } : {}),
   }
 }

@@ -1,6 +1,8 @@
 import { createApp, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow, type SessionDirectory, type DirectoryEntry, type SettingsController, type AgentHomeConfig, type ApprovalHub, type Scheduler, type ScheduleInput, type Schedule } from "@newhorse/runtime"
-import { redactSettings, aggregateUsage } from "@newhorse/runtime"
-import { SessionRegistry, SqliteEventStore } from "@newhorse/core"
+import { redactSettings, aggregateUsage, type DagRunner, type DagStatus, createDagRunner } from "@newhorse/runtime"
+import { currentGoal, tokensUsed as foldTokensUsed, currentTodos, validateGoal, projectCompacted } from "@newhorse/core"
+import { discoverSkills, discoverPlugin } from "@newhorse/plugin"
+import { SessionRegistry, SqliteEventStore, type DAGSpec } from "@newhorse/core"
 import { Database } from "bun:sqlite"
 import type { MemoryStore, MemoryRecord } from "@newhorse/memory"
 import { listModels } from "@newhorse/llm"
@@ -79,6 +81,10 @@ export interface ServerConfig {
   readonly modelsFetch?: Fetcher
   /** Shared memory store — client memory browser reads/deletes via /v1/memory. */
   readonly memory?: MemoryStore
+  /** Scheduled + on-demand DAG orchestration (编排). */
+  readonly dagRunner?: DagRunner
+  /** Plugin directory — skills/agents discovery for the capability browser. */
+  readonly pluginsDir?: string
 }
 
 /** One session's create config (POST /v1/session body), transport DTO. */
@@ -222,6 +228,8 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   const approvals = config.approvals
   const schedules = config.schedules
   const memory = config.memory
+  const dagRunner = config.dagRunner
+  const pluginsDir = config.pluginsDir
   const apps = new Map<string, App>()
   /** Sessions this process created (directory-owned; unregistered on stop). */
   const owned = new Set<string>()
@@ -582,6 +590,104 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         if (!memory.delete) return json(501, { error: "memory store does not support delete" })
         await memory.delete(parts[2]!)
         return json(200, { removed: true })
+      }
+
+      // --- 编排 (DAG) ---
+      // POST /v1/dag {spec, workspace?, todoSessionId?} — declare + run (fire-and-forget).
+      if (method === "POST" && parts.length === 2 && parts[1] === "dag") {
+        if (!dagRunner) return json(404, { error: "no dag runner configured" })
+        const parsed = await readJsonOr400<{ spec?: DAGSpec; workspace?: string; todoSessionId?: string }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        if (!parsed.spec || typeof parsed.spec !== "object" || !parsed.spec.nodes || Object.keys(parsed.spec.nodes).length === 0) return json(400, { error: "spec.nodes is required (at least one node)" })
+        try {
+          const { dagId } = await dagRunner.run(parsed.spec, { workspace: parsed.workspace, todoSessionId: parsed.todoSessionId })
+          return json(201, { dagId })
+        } catch (e) {
+          return json(400, { error: e instanceof Error ? e.message : String(e) })
+        }
+      }
+
+      // GET /v1/dags — all declared DAGs (durable fold).
+      if (method === "GET" && parts.length === 2 && parts[1] === "dags") {
+        if (!dagRunner) return json(404, { error: "no dag runner configured" })
+        return json(200, { dags: await dagRunner.list() })
+      }
+
+      // GET /v1/dag/:id — node statuses for one DAG.
+      if (method === "GET" && parts.length === 3 && parts[1] === "dag") {
+        if (!dagRunner) return json(404, { error: "no dag runner configured" })
+        const st = await dagRunner.status(parts[2]!)
+        return st ? json(200, st) : json(404, { error: "unknown dag id" })
+      }
+
+      // GET /v1/session/:id/goal — folded goal + persisted usage.
+      if (method === "GET" && parts.length === 4 && parts[3] === "goal") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        const events = (found.kind === "local" ? await found.app.events.read(parts[2]!) : await (await fetch(`${found.entry.endpoint}/v1/session/${parts[2]!}/events`, { headers: token ? { authorization: `Bearer ${token}` } : {} })).json()) as StoredEvent[]
+        const goal = currentGoal(events)
+        return json(200, { goal: goal ?? null, tokensUsed: foldTokensUsed(events) })
+      }
+
+      // POST /v1/session/:id/goal {objective, tokenBudget?} — durable goal write.
+      if (method === "POST" && parts.length === 4 && parts[3] === "goal") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "goal write on a remote-owned session is not proxied yet" })
+        const parsed = await readJsonOr400<{ objective?: string; tokenBudget?: number }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const valid = validateGoal(parsed.objective, "active", parsed.tokenBudget)
+        if ("error" in valid) return json(400, { error: valid.error })
+        await found.app.events.append(parts[2]!, "Session.GoalUpdated", { sessionId: parts[2]!, objective: valid.objective, status: "active", ...(valid.tokenBudget !== undefined ? { tokenBudget: valid.tokenBudget } : {}), ts: Date.now() })
+        return json(201, { objective: valid.objective, tokenBudget: valid.tokenBudget ?? null })
+      }
+
+      // GET /v1/session/:id/todos — the current durable task list.
+      if (method === "GET" && parts.length === 4 && parts[3] === "todos") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        const events = (found.kind === "local" ? await found.app.events.read(parts[2]!) : await (await fetch(`${found.entry.endpoint}/v1/session/${parts[2]!}/events`, { headers: token ? { authorization: `Bearer ${token}` } : {} })).json()) as StoredEvent[]
+        return json(200, { todos: currentTodos(events) })
+      }
+
+      // GET /v1/session/:id/context — visible context size vs the window.
+      if (method === "GET" && parts.length === 4 && parts[3] === "context") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        const events = (found.kind === "local" ? await found.app.events.read(parts[2]!) : await (await fetch(`${found.entry.endpoint}/v1/session/${parts[2]!}/events`, { headers: token ? { authorization: `Bearer ${token}` } : {} })).json()) as StoredEvent[]
+        const { messages } = projectCompacted(events)
+        const chars = messages.reduce((n, m) => n + JSON.stringify(m).length, 0)
+        const windowTokens = settings?.get().contextWindowTokens
+        return json(200, { chars, estTokens: Math.ceil(chars / 2.5), ...(windowTokens ? { windowTokens, ratio: Math.min(1, Math.ceil(chars / 2.5) / (windowTokens * 0.6)) } : {}) })
+      }
+
+      // POST /v1/memory {content, type?, priority?} — client-side memory write.
+      if (method === "POST" && parts.length === 2 && parts[1] === "memory") {
+        if (!memory) return json(404, { error: "no memory store configured" })
+        const parsed = await readJsonOr400<{ content?: string; type?: string; priority?: number }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        if (!parsed.content?.trim()) return json(400, { error: "content is required" })
+        const rec = await memory.write({ content: parsed.content.trim(), type: (parsed.type as "fact") ?? "fact", priority: parsed.priority ?? 50, sessionId: "client" })
+        return json(201, rec)
+      }
+
+      // GET /v1/skills — the pluginsDir skills catalog (level 1 + body on demand).
+      if (method === "GET" && parts.length === 2 && parts[1] === "skills") {
+        if (!pluginsDir) return json(404, { error: "no pluginsDir configured" })
+        const name = url.searchParams.get("name")
+        const skills = await discoverSkills(pluginsDir)
+        if (name) {
+          const hit = skills.find((sk) => sk.name === name)
+          return hit ? json(200, hit) : json(404, { error: "unknown skill" })
+        }
+        return json(200, { skills: skills.map((sk) => ({ name: sk.name, description: sk.description, path: sk.path })) })
+      }
+
+      // GET /v1/agents — discovered agent roles (name/model/allowedTools).
+      if (method === "GET" && parts.length === 2 && parts[1] === "agents") {
+        if (!pluginsDir) return json(404, { error: "no pluginsDir configured" })
+        const caps = await discoverPlugin(pluginsDir)
+        return json(200, { agents: caps.filter((c) => c.kind === "agent") })
       }
 
       // GET /v1/settings — effective settings, secrets redacted.

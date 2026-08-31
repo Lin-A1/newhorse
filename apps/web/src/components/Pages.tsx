@@ -249,6 +249,19 @@ export function MemoryPage() {
       .then((r) => setRows(r.memories))
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
 
+  const [newText, setNewText] = useState("")
+  const addMemory = async (): Promise<void> => {
+    if (!newText.trim()) return
+    try {
+      await fetch("/v1/memory", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: newText.trim(), type: "fact", priority: 60 }) })
+      setNewText("")
+      showToast("记忆已写入")
+      await refresh(q)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   useEffect(() => {
     void refresh()
   }, [])
@@ -278,6 +291,12 @@ export function MemoryPage() {
             />
             <button className="btn-primary !px-5 text-[13px]" onClick={() => refresh(q)}>
               搜索
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <input className="input-base flex-1" placeholder="手动写入一条记忆…" value={newText} onChange={(e) => setNewText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addMemory()} />
+            <button className="btn-ghost px-3 text-[13px]" onClick={addMemory}>
+              写入
             </button>
           </div>
           {err && <div className="mb-3 rounded-xl border border-bad/25 bg-bad/[0.07] px-3.5 py-2.5 text-xs text-bad">{err}</div>}

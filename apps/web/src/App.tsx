@@ -6,6 +6,7 @@ import { Home } from "./components/Home"
 import { SessionView } from "./components/Session"
 import { UsagePage, SchedulesPage, MemoryPage } from "./components/Pages"
 import { SettingsPage } from "./components/SettingsPage"
+import { DagPage, CapabilitiesPage } from "./components/Orchestration"
 import { StoreProvider, useStore } from "./store"
 import { IconGear, IconTarget } from "./components/icons"
 
@@ -15,7 +16,7 @@ function fmtElapsed(sec: number): string {
   return `${Math.floor(s / 60)} 分 ${s % 60} 秒`
 }
 
-const VIEW_TITLES: Record<string, string> = { home: "newhorse", usage: "用量统计", schedules: "定时任务", memory: "记忆库", settings: "设置" }
+const VIEW_TITLES: Record<string, string> = { home: "newhorse", usage: "用量统计", schedules: "定时任务", memory: "记忆库", settings: "设置", dag: "编排", skills: "能力" }
 
 function Shell() {
   const { view, setView, sessions, refreshSessions, toast, mood, sessionBusy, sessionElapsed, approvals, settleApproval } = useStore()
@@ -95,6 +96,8 @@ function Shell() {
           {view.kind === "schedules" && <SchedulesPage />}
           {view.kind === "memory" && <MemoryPage />}
           {view.kind === "settings" && <SettingsPage />}
+          {view.kind === "dag" && <DagPage />}
+          {view.kind === "skills" && <CapabilitiesPage />}
         </main>
       </div>
 

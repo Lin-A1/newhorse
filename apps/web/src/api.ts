@@ -102,11 +102,29 @@ export const api = {
   removeSchedule: (id: string) => json<{ removed: boolean }>(`/v1/schedules/${id}`, { method: "DELETE" }),
   runSchedule: (id: string) => json<{ triggered: boolean }>(`/v1/schedules/${id}/run`, { body: {} }),
 
+  // --- DAG 编排 ---
+  runDag: (spec: unknown, opts?: { workspace?: string; todoSessionId?: string }) => json<{ dagId: string }>("/v1/dag", { body: { spec, ...opts } }),
+  dags: () => json<{ dags: DagStatus[] }>("/v1/dags"),
+  dagStatus: (id: string) => json<DagStatus>(`/v1/dag/${id}`),
+
+  // --- goal / todos / context ---
+  goal: (id: string) => json<{ goal: { objective: string; status: string; tokenBudget?: number; tokensUsed?: number } | null; tokensUsed: number }>(`/v1/session/${id}/goal`),
+  setGoal: (id: string, objective: string, tokenBudget?: number) => json<{ objective: string }>(`/v1/session/${id}/goal`, { body: { objective, tokenBudget } }),
+  todos: (id: string) => json<{ todos: Array<{ content: string; status: string }> }>(`/v1/session/${id}/todos`),
+  context: (id: string) => json<{ chars: number; estTokens: number; windowTokens?: number; ratio?: number }>(`/v1/session/${id}/context`),
+
+  // --- capabilities ---
+  skills: () => json<{ skills: Array<{ name: string; description?: string; path: string }> }>("/v1/skills"),
+  skillBody: (name: string) => json<{ name: string; body: string }>(`/v1/skills?name=${encodeURIComponent(name)}`),
+  agents: () => json<{ agents: Array<{ name: string; description?: string; model?: string; allowedTools?: string[]; role?: string }> }>("/v1/agents"),
+
   // --- memory ---
   memory: (q = "") => json<{ memories: MemoryRecord[] }>(`/v1/memory?q=${encodeURIComponent(q)}`),
   deleteMemory: (id: string) => json<{ removed: boolean }>(`/v1/memory/${id}`, { method: "DELETE" }),
 }
 
+export interface DagNodeStatus { node: string; state: string; model?: string }
+export interface DagStatus { dagId: string; nodes: DagNodeStatus[]; done: boolean; startedAt?: number }
 export interface Schedule { id: string; sessionId: string; prompt: string; enabled: boolean; intervalMinutes?: number; dailyAt?: string; cron?: string; createdAt: number; lastRunAt?: number; lastResult?: "ok" | "error"; lastError?: string }
 export interface MemoryRecord { id: string; content: string; type: string; priority: number; sessionId?: string; createdAt: number }
 

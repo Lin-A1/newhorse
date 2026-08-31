@@ -26,6 +26,8 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
     { label: "用量统计", Icon: IconChart, target: "usage" },
     { label: "定时任务", Icon: IconClock, target: "schedules" },
     { label: "记忆库", Icon: IconMemory, target: "memory" },
+    { label: "编排", Icon: IconGear, target: "dag" },
+    { label: "能力", Icon: IconGear, target: "skills" },
   ]
 
   return (

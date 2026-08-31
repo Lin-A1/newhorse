@@ -139,7 +139,7 @@ function toolDetail(toolName: string | undefined, body: string | undefined): str
 }
 
 export function SessionView({ id }: { id: string }) {
-  const { refreshSessions, setRunning, setMood, setSessionStatus, approvals, settleApproval } = useStore()
+  const { refreshSessions, setRunning, setMood, setSessionStatus, approvals, settleApproval, showToast } = useStore()
   const [turns, setTurns] = useState<Turn[]>([])
   const [parts, setParts] = useState<Turn[]>([])
   const [busy, setBusy] = useState(false)
@@ -160,7 +160,23 @@ export function SessionView({ id }: { id: string }) {
     setRows(sessions.find((s) => s.sessionId === id))
   }, [sessions, id])
 
+  const [goal, setGoal] = useState<{ objective: string; status: string; tokenBudget?: number; tokensUsed?: number } | null>(null)
+  const [goalOpen, setGoalOpen] = useState(false)
+  const [goalText, setGoalText] = useState("")
+  const [goalBudget, setGoalBudget] = useState("")
+  const [ctx, setCtx] = useState<{ estTokens: number; windowTokens?: number; ratio?: number } | null>(null)
+
   const fold = useCallback((): Promise<void> => api.events(id).then((events) => setTurns(foldTranscript(events))).catch(() => setTurns([])), [id])
+
+  // goal + context meter load/refresh
+  const loadMeta = useCallback((): void => {
+    api.goal(id).then((r) => setGoal(r.goal ? { ...r.goal, tokensUsed: r.tokensUsed } : null)).catch(() => {})
+    api.context(id).then(setCtx).catch(() => {})
+  }, [id])
+
+  useEffect(() => {
+    loadMeta()
+  }, [loadMeta, id])
 
   useEffect(() => {
     setTurns([])
@@ -320,8 +336,84 @@ export function SessionView({ id }: { id: string }) {
 
   const pending = approvals[0]
 
+  const saveGoal = async (): Promise<void> => {
+    if (!goalText.trim()) return
+    try {
+      await api.setGoal(id, goalText.trim(), goalBudget ? Number(goalBudget) : undefined)
+      setGoalOpen(false)
+      loadMeta()
+      showToast("目标已写入（模型可见）")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const exportMd = async (): Promise<void> => {
+    const events = await api.events(id)
+    const lines: string[] = [`# 会话 ${id.slice(0, 8)}`, ""]
+    for (const t of foldTranscript(events)) {
+      const nl = "\n"
+      if (t.kind === "user") lines.push(`**你：** ${t.text}`, "")
+      else if (t.kind === "assistant") lines.push(`**管家：**`, t.text, "")
+      else if (t.kind === "tool") lines.push(`> 工具 ${t.toolName ?? ""}：`, ...t.text.split(nl).map((l) => `> ${l}`), "")
+      else if (t.kind === "todo") lines.push(`**任务清单**`, "", ...t.text.split(nl).map((l) => `- ${l}`), "")
+      else if (t.kind === "goal") lines.push(`**目标：** ${t.text}`, "")
+      else if (t.kind === "note") lines.push(`_(${t.text})_`, "")
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" })
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = `newhorse-${id.slice(0, 8)}.md`
+    a.click()
+    URL.revokeObjectURL(a.href)
+  }
+
   return (
     <div className="flex h-full flex-col">
+      {/* goal + context strip */}
+      <div className="flex items-center gap-2 border-b border-line bg-black/10 px-4 py-1.5 text-[11px]">
+        {goal ? (
+          <button className="flex min-w-0 items-center gap-1.5 text-dim hover:text-fg" onClick={() => setGoalOpen(!goalOpen)} title="查看/编辑目标">
+            <span className="font-medium text-ok">目标</span>
+            <span className="truncate">{goal.objective}</span>
+            {goal.tokenBudget !== undefined && (
+              <span className="tnum shrink-0">
+                {goal.tokensUsed ?? 0}/{goal.tokenBudget}
+              </span>
+            )}
+          </button>
+        ) : (
+          <button className="text-faint hover:text-fg" onClick={() => setGoalOpen(!goalOpen)}>
+            + 设定目标
+          </button>
+        )}
+        {ctx && ctx.windowTokens !== undefined && ctx.ratio !== undefined && (
+          <div className="ml-auto flex items-center gap-1.5" title={`约 ${ctx.estTokens} / ${ctx.windowTokens} tokens`}>
+            <div className="h-1 w-20 overflow-hidden rounded-full bg-white/[0.08]">
+              <div className={`h-full rounded-full ${ctx.ratio > 0.8 ? "bg-bad" : "bg-accent"}`} style={{ width: `${Math.round(ctx.ratio * 100)}%` }} />
+            </div>
+            <span className="tnum text-faint">{Math.round(ctx.ratio * 100)}%</span>
+          </div>
+        )}
+        <button className="ml-auto text-faint hover:text-fg" title="导出会话 Markdown" onClick={() => void exportMd()}>
+          导出
+        </button>
+      </div>
+      {goalOpen && (
+        <div className="nh-rise border-b border-line bg-black/15 p-4 space-y-2.5">
+          <textarea className="input-base resize-none" rows={2} placeholder="目标（模型可见，将引导整个会话）" value={goalText} onChange={(e) => setGoalText(e.target.value)} />
+          <div className="flex items-center gap-2">
+            <input type="number" className="input-base !w-40" placeholder="token 预算（可选）" value={goalBudget} onChange={(e) => setGoalBudget(e.target.value)} />
+            <button className="btn-primary px-3 py-1.5 text-xs" onClick={() => void saveGoal()}>
+              写入目标
+            </button>
+            <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => setGoalOpen(false)}>
+              取消
+            </button>
+          </div>
+          {goal && <div className="text-[11px] text-faint">当前：{goal.objective}（{goal.status}）· 已用 {goal.tokensUsed ?? 0} tokens</div>}
+        </div>
+      )}
       {/* stream — document flow */}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-4 pb-10 pt-6 md:px-6 xl:max-w-[1000px] 2xl:max-w-[1160px]">
