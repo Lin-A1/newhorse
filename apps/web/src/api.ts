@@ -53,10 +53,11 @@ export const api = {
   runCommand: (id: string, text: string) => json<{ output: unknown }>(`/v1/session/${id}/command`, { body: { text } }),
 
   /** Stream one prompt over SSE; onEvent receives each server event. Returns
-   *  the final result payload. The stream ends with [DONE]. */
-  prompt(id: string, text: string, onEvent: (e: Record<string, unknown>) => void, signal?: AbortSignal): Promise<{ finish?: string; error?: string }> {
+   *  the final result payload. The stream ends with [DONE]. Images are raw
+   *  base64 (no data: prefix) — the transport caps count and size. */
+  prompt(id: string, text: string, onEvent: (e: Record<string, unknown>) => void, signal?: AbortSignal, images?: Array<{ mime: string; data: string }>): Promise<{ finish?: string; error?: string }> {
     return new Promise((resolve, reject) => {
-      fetch(BASE + `/v1/session/${id}/prompt`, { method: "POST", headers: headers({ text }), body: JSON.stringify({ text }), signal })
+      fetch(BASE + `/v1/session/${id}/prompt`, { method: "POST", headers: headers({ text }), body: JSON.stringify({ text, ...(images?.length ? { images } : {}) }), signal })
         .then(async (res) => {
           if (!res.ok || !res.body) throw new Error(`${res.status}`)
           const reader = res.body.getReader()
@@ -176,9 +177,10 @@ export function relativeTime(ts: number): string {
 }
 
 /** Fold the durable event log into a displayable transcript. User turns keep
- *  the `seq` of their Prompted event — the fork point for 回退重发. */
-export function foldTranscript(events: StoredEventRow[]): Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; seq?: number }> {
-  type FoldRow = { kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; isError?: boolean; seq?: number }
+ *  the `seq` of their Prompted event — the fork point for 回退重发 — and their
+ *  image attachments for rendering. */
+export function foldTranscript(events: StoredEventRow[]): Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; seq?: number; images?: Array<{ mime: string; data: string }>; note?: "memory" }> {
+  type FoldRow = { kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; isError?: boolean; seq?: number; images?: Array<{ mime: string; data: string }>; note?: "memory" }
   const out: FoldRow[] = []
   // tool-call rows awaiting their result message (results arrive in call order)
   const pendingToolRows: number[] = []
@@ -193,7 +195,8 @@ export function foldTranscript(events: StoredEventRow[]): Array<{ kind: "user" |
     const d = e.data ?? {}
     if (e.type === "Session.Prompted") {
       flush()
-      out.push({ kind: "user", text: String(d.prompt ?? ""), seq: e.seq })
+      const images = (d.images as Array<{ mime: string; data: string }> | undefined)?.filter((img) => img?.mime && img?.data)
+      out.push({ kind: "user", text: String(d.prompt ?? ""), seq: e.seq, ...(images?.length ? { images } : {}) })
     } else if (e.type === "Session.MessageAppended") {
       const m = d.message as { kind?: string; text?: string; content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; model?: string; output?: unknown } | undefined
       if (!m) continue
@@ -240,7 +243,7 @@ export function foldTranscript(events: StoredEventRow[]): Array<{ kind: "user" |
       out.push({ kind: "goal", text: `${String(d.objective ?? "")}（${String(d.status ?? "")}）` })
     } else if (e.type === "Session.MemoryStored") {
       flush()
-      out.push({ kind: "note", text: `记忆已沉淀：${String(d.content ?? "")}` })
+      out.push({ kind: "note", note: "memory", text: String(d.content ?? "") })
     } else if (e.type === "Session.Interrupted") {
       flush()
       out.push({ kind: "note", text: "已中断" })

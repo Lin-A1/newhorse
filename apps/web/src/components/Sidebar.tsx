@@ -19,7 +19,11 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
 
   const groups = useMemo(() => groupSessions(sessions), [sessions])
   const filtered = useMemo(() => {
-    const byWs = workspace.trim() ? groups.map((g) => ({ ...g, rows: g.rows.filter((r) => r.workspace === workspace.trim()) })).filter((g) => g.rows.length > 0) : groups
+    // Windows paths differ by case and slash direction — normalize before
+    // comparing, or a session saved as G:\proj silently misses filter "g:/proj".
+    const norm = (p: string): string => p.trim().toLowerCase().replace(/[\\/]+/g, "/").replace(/\/+$/, "")
+    const ws = norm(workspace)
+    const byWs = ws ? groups.map((g) => ({ ...g, rows: g.rows.filter((r) => norm(r.workspace) === ws) })).filter((g) => g.rows.length > 0) : groups
     if (!filter.trim()) return byWs
     const q = filter.toLowerCase()
     return byWs.map((g) => ({ ...g, rows: g.rows.filter((r: SessionRow) => (r.title ?? r.sessionId).toLowerCase().includes(q)) })).filter((g) => g.rows.length > 0)

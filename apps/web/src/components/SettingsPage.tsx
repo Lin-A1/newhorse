@@ -323,9 +323,14 @@ function ProviderProfiles() {
       baseUrl: draft.baseUrl.trim() || (draft.kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"),
     }
     if (draft.apiKey.trim()) item.apiKey = draft.apiKey.trim() // blank = keep stored key
-    if (draft.model.trim()) item.model = draft.model.trim()
-    if (Number(draft.contextWindowTokens) > 0) item.contextWindowTokens = Number(draft.contextWindowTokens)
-    if (Number(draft.maxOutputTokens) > 0) item.maxOutputTokens = Number(draft.maxOutputTokens)
+    // always sent: "" clears a previously stored value (server-side rule);
+    // budgets are NUMBERS when set — a string would be dropped by the loader's
+    // Number.isFinite guard (silent budget loss).
+    item.model = draft.model.trim()
+    const ctx = Number(draft.contextWindowTokens)
+    item.contextWindowTokens = draft.contextWindowTokens.trim() && Number.isFinite(ctx) ? ctx : ""
+    const out = Number(draft.maxOutputTokens)
+    item.maxOutputTokens = draft.maxOutputTokens.trim() && Number.isFinite(out) ? out : ""
     try {
       await api.putSettings({ providers: [item] })
       await reloadSettings()

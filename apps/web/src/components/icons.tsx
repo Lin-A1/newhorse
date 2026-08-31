@@ -24,6 +24,7 @@ import {
   Monitor,
   Moon,
   Pencil,
+  Paperclip,
   Pause,
   Play,
   Plus,
@@ -89,3 +90,4 @@ export const IconFolder = wrap(Folder)
 export const IconArchive = wrap(Archive)
 export const IconButler = wrap(Crown)
 export const IconShield = wrap(Shield)
+export const IconPaperclip = wrap(Paperclip)

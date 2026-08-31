@@ -6,7 +6,7 @@ import { Markdown } from "./Markdown"
 import { ModelPill } from "./ModelPill"
 import { FileTree } from "./FileTree"
 import { pendingPrefills, takePendingPrefill, takePendingPrompt, useStore } from "../store"
-import { IconSend, IconStop, IconTool, IconCheck, IconSpinner, IconCircle, IconTarget, IconBrain, IconNote, IconChevron, IconFile, IconFolder, IconTerminal, IconPencil, IconSearch, IconCopy, IconButler, IconShield } from "./icons"
+import { IconSend, IconStop, IconTool, IconCheck, IconSpinner, IconCircle, IconTarget, IconBrain, IconNote, IconChevron, IconFile, IconFolder, IconTerminal, IconPencil, IconSearch, IconCopy, IconButler, IconShield, IconPaperclip } from "./icons"
 
 /** pick a semantic icon per tool name (read=file, bash=terminal, edit=pencil…) */
 function toolIcon(name: string | undefined, cls: string): ReactNode {
@@ -28,6 +28,28 @@ export interface Turn {
   isError?: boolean
   /** seq of the user turn's Prompted event — the fork point for 回退重发 */
   seq?: number
+  /** image attachments on a user turn (raw base64, mirrored from the log) */
+  images?: Array<{ mime: string; data: string }>
+  /** structured note subtype ("memory" renders as a Context Card) */
+  note?: "memory"
+}
+
+/** Client-side attachment caps — the server enforces the same numbers. */
+const MAX_IMAGES = 5
+const MAX_IMAGE_BYTES = 4_000_000
+
+/** Read an image file into a raw-base64 attachment (no data: prefix). */
+function fileToAttachment(file: File): Promise<{ mime: string; data: string; name: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (): void => {
+      const url = String(reader.result ?? "")
+      const comma = url.indexOf(",")
+      resolve({ mime: file.type || "image/png", data: comma >= 0 ? url.slice(comma + 1) : url, name: file.name })
+    }
+    reader.onerror = (): void => reject(new Error(`读取 ${file.name} 失败`))
+    reader.readAsDataURL(file)
+  })
 }
 
 const VERBS: Record<string, string> = { read: "读取", Read: "读取", search: "检索", Grep: "检索", write: "写入", Write: "写入", edit: "编辑", Edit: "编辑", bash: "运行", Bash: "运行", webfetch: "抓取", WebFetch: "抓取", skill: "技能", memory_search: "检索记忆", memory_write: "沉淀记忆", todo_write: "整理任务", spawn_agent: "派出子代理" }
@@ -156,6 +178,8 @@ export function SessionView({ id }: { id: string }) {
   const [elapsed, setElapsed] = useState(0)
   const [error, setError] = useState("")
   const [input, setInput] = useState("")
+  const [attachments, setAttachments] = useState<Array<{ mime: string; data: string; name: string }>>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [rows, setRows] = useState<SessionRow | undefined>(undefined)
   const [lastKind, setLastKind] = useState<"text" | "tool" | "thinking" | null>(null)
   const [interrupted, setInterrupted] = useState(false)
@@ -251,11 +275,18 @@ export function SessionView({ id }: { id: string }) {
       }
       if (slashAnchor) setSlashAnchor(null)
     }
+    // a fixed-position anchor goes stale on resize — close rather than misplace
+    const onResize = (): void => {
+      setPolicyAnchor(null)
+      setSlashAnchor(null)
+    }
     document.addEventListener("mousedown", onDown)
     window.addEventListener("keydown", onKey, true)
+    window.addEventListener("resize", onResize)
     return () => {
       document.removeEventListener("mousedown", onDown)
       window.removeEventListener("keydown", onKey, true)
+      window.removeEventListener("resize", onResize)
     }
   }, [policyAnchor, slashAnchor])
   // keep the slash highlight in sync with the filtered list
@@ -348,16 +379,44 @@ export function SessionView({ id }: { id: string }) {
     return () => window.removeEventListener("keydown", onKey)
   }, [id])
 
+  const addAttachments = async (files: Iterable<File | null>): Promise<void> => {
+    const imgs = [...files].filter((f): f is File => !!f && /^image\/(png|jpeg|webp|gif)$/.test(f.type))
+    if (imgs.length === 0) return
+    const room = MAX_IMAGES - attachments.length
+    if (room <= 0) {
+      showToast(`一次最多 ${MAX_IMAGES} 张图片`)
+      return
+    }
+    const accepted = imgs.slice(0, room)
+    if (accepted.length < imgs.length) showToast(`一次最多 ${MAX_IMAGES} 张，已接收前 ${accepted.length} 张`)
+    const tooBig = imgs.find((f) => f.size > MAX_IMAGE_BYTES)
+    if (tooBig) {
+      showToast(`图片过大（${(tooBig.size / 1_000_000).toFixed(1)}MB），单张上限 ${MAX_IMAGE_BYTES / 1_000_000}MB`)
+      return
+    }
+    try {
+      const next = await Promise.all(accepted.map(fileToAttachment))
+      setAttachments((a) => [...a, ...next].slice(0, MAX_IMAGES))
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
   const send = async (initial?: string): Promise<void> => {
     const text = (initial ?? input).trim()
-    if (!text || busyRef.current) return
+    if ((!text && attachments.length === 0) || busyRef.current) return
+    const sending = attachments
     setError("")
     setInterrupted(false)
     setBusy(true)
     busyRef.current = true
     setRunning(true)
+    setAttachments([])
     startedAt.current = Date.now()
     setElapsed(0)
+    // optimistic user turn: attachments visible immediately; the post-run fold
+    // replaces it with the authoritative log projection
+    setTurns((prev) => [...prev, { kind: "user", text, ...(sending.length ? { images: sending.map(({ mime, data }) => ({ mime, data })) } : {}) }])
     const timer = setInterval(() => setElapsed((Date.now() - startedAt.current) / 1000), 200)
     try {
       const controller = new AbortController()
@@ -400,7 +459,7 @@ export function SessionView({ id }: { id: string }) {
             return [...prev.slice(0, idx), next, ...prev.slice(idx + 1)]
           })
         }
-      }, controller.signal)
+      }, controller.signal, sending.length ? sending.map(({ mime, data }) => ({ mime, data })) : undefined)
       if (result.error) setError(prettyError(result.error))
       if (!result.error && !controller.signal.aborted) {
         setJustSettled(true)
@@ -632,12 +691,37 @@ export function SessionView({ id }: { id: string }) {
           </div>
         )}
         <div ref={composerBoxRef} className="panel-strong composer-solid relative overflow-hidden !rounded-[18px]">
+          {/* attachment previews: thumbnail chips with remove, above the toolbar */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pt-2.5">
+              {attachments.map((a, i) => (
+                <div key={i} className="group relative overflow-hidden rounded-lg border border-line">
+                  <img src={`data:${a.mime};base64,${a.data}`} alt={a.name} className="h-12 w-12 object-cover" />
+                  <button
+                    className="absolute right-0.5 top-0.5 hidden h-4 w-4 items-center justify-center rounded-full bg-black/70 text-[9px] text-white group-hover:flex"
+                    title="移除"
+                    onClick={() => setAttachments((arr) => arr.filter((_, j) => j !== i))}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <textarea
             ref={composerRef}
             className="nh-grow max-h-44 min-h-[46px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-sm outline-none placeholder:text-faint"
             rows={1}
-            placeholder={busy ? "运行中…输入追问，Enter 插入（Esc 中断）" : "继续对话…输入 / 可唤起命令"}
+            placeholder={busy ? "运行中…输入追问，Enter 插入（Esc 中断）" : "继续对话…输入 / 可唤起命令，可直接粘贴图片"}
             value={input}
+            onPaste={(e) => {
+              const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith("image/"))
+              if (files.length === 0) return
+              // images-only paste replaces the default; a mixed (text+image)
+              // clipboard keeps the text insertion AND attaches the images
+              if (!e.clipboardData?.getData("text")) e.preventDefault()
+              void addAttachments(files)
+            }}
             onChange={(e) => {
               setInput(e.target.value)
               const el = e.target
@@ -669,6 +753,20 @@ export function SessionView({ id }: { id: string }) {
           />
           {/* bottom toolbar (ZCode-style composer) */}
           <div className="flex items-center gap-2 px-2.5 py-1.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                void addAttachments([...(e.target.files ?? [])])
+                e.target.value = ""
+              }}
+            />
+            <button className="nh-icon-btn" title="添加图片（也可直接粘贴）" aria-label="添加图片" onClick={() => fileInputRef.current?.click()}>
+              <IconPaperclip size={14} />
+            </button>
             <ModelPill compact />
             {/* permission level — a real menu, server-durable per session;
                 portal'd to <body> so the composer's overflow-hidden never clips it */}
@@ -697,7 +795,7 @@ export function SessionView({ id }: { id: string }) {
                 <IconStop size={13} />
               </button>
             ) : (
-              <button className="btn-primary h-8 w-8 shrink-0 !rounded-full !p-0" disabled={!input.trim()} onClick={() => void send()} aria-label="发送">
+              <button className="btn-primary h-8 w-8 shrink-0 !rounded-full !p-0" disabled={!input.trim() && attachments.length === 0} onClick={() => void send()} aria-label="发送">
                 <IconSend size={15} />
               </button>
             )}
@@ -757,7 +855,20 @@ function TurnRow({ t, live, sessionId, showToast, onFork }: { t: Turn; index: nu
   if (t.kind === "user") {
     return (
       <div className="rise group mb-5 flex justify-end items-start gap-1.5">
-        <div className="max-w-[82%] rounded-xl rounded-br-sm border border-line bg-surface2 px-3 py-1.5 text-[13.5px] whitespace-pre-wrap break-words leading-relaxed text-fg">{t.text}</div>
+        <div className="max-w-[82%]">
+          {t.images && t.images.length > 0 && (
+            <div className="mb-1.5 flex flex-wrap justify-end gap-1.5">
+              {t.images.map((img, i) => (
+                <a key={i} href={`data:${img.mime};base64,${img.data}`} target="_blank" rel="noreferrer" title="查看原图">
+                  <img src={`data:${img.mime};base64,${img.data}`} alt="附件" className="max-h-44 rounded-xl border border-line object-cover transition-transform duration-150 hover:scale-[1.02]" />
+                </a>
+              ))}
+            </div>
+          )}
+          {t.text && (
+            <div className="rounded-xl rounded-br-sm border border-line bg-surface2 px-3 py-1.5 text-[13.5px] whitespace-pre-wrap break-words leading-relaxed text-fg">{t.text}</div>
+          )}
+        </div>
         {sessionId && onFork && (
           <button
             className="mt-1 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100 hover:text-accent"
@@ -834,7 +945,11 @@ function TurnRow({ t, live, sessionId, showToast, onFork }: { t: Turn; index: nu
     )
   }
   if (t.kind === "note") {
-    return (
+    // memory writes render as a real Context Card (beautifului style): icon
+    // chip + clamped content that expands on click; other notes stay pills.
+    return t.note === "memory" ? (
+      <NoteCard text={t.text} />
+    ) : (
       <div className="rise mb-3 inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5">
         <IconNote size={12} className="text-faint" />
         <span className="text-[11.5px] text-faint">{t.text}</span>
@@ -866,4 +981,29 @@ declare global {
   interface Window {
     __nhAbort?: AbortController
   }
+}
+
+/** Memory Context Card — a settled memory write shown as its own surface:
+ *  icon chip, two-line clamp, click to expand/collapse the full note. */
+function NoteCard({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    // button may contain only phrasing content — the "divs" are styled spans
+    <button
+      className={`rise mb-3 block w-full text-left transition-colors ${open ? "rounded-xl border border-linestrong bg-surface2/70" : "rounded-xl border border-line bg-surface hover:border-linestrong"}`}
+      onClick={() => setOpen((v) => !v)}
+      title={open ? "收起" : "展开全文"}
+    >
+      <span className="flex items-start gap-2.5 px-3.5 py-2.5">
+        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-line bg-surface2">
+          <IconBrain size={12} className="text-faint" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="mb-0.5 block text-[10px] font-medium uppercase tracking-[0.12em] text-faint">记忆 · 已沉淀到记忆库</span>
+          <span className={`block whitespace-pre-wrap break-words text-[12.5px] leading-relaxed text-dim ${open ? "" : "line-clamp-2"}`}>{text}</span>
+        </span>
+        <IconChevron size={12} className={`mt-1 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`} />
+      </span>
+    </button>
+  )
 }
