@@ -75,18 +75,25 @@ export function ModelPill({ compact }: { compact?: boolean }): React.ReactElemen
 }
 
 /** Session view: transcript + composer, driven by the durable log. */
+type LivePart =
+  | { kind: "text"; text: string }
+  | { kind: "tool"; name: string; input: string; output?: string; isError?: boolean; done: boolean }
+
 export function SessionView({ id, onBack }: { id: string; onBack: () => void }) {
   const { refreshSessions, setRunning } = useStore()
   const [turns, setTurns] = useState<Turn[]>([])
-  const [streaming, setStreaming] = useState("")
+  const [parts, setParts] = useState<LivePart[]>([])
   const [busy, setBusy] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
   const [steerText, setSteerText] = useState("")
   const [error, setError] = useState("")
   const [input, setInput] = useState("")
   const [openTools, setOpenTools] = useState<Set<number>>(new Set())
+  const [liveOpen, setLiveOpen] = useState<Set<number>>(new Set())
   const [rows, setRows] = useState<SessionRow | undefined>(undefined)
   const bottom = useRef<HTMLDivElement>(null)
   const busyRef = useRef(false)
+  const startedAt = useRef(0)
 
   const sessions = useStoreSessions()
   useEffect(() => {
@@ -102,7 +109,7 @@ export function SessionView({ id, onBack }: { id: string; onBack: () => void }) 
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" })
-  }, [turns, streaming])
+  }, [turns, parts])
 
   const send = async (): Promise<void> => {
     const text = input.trim()
@@ -114,14 +121,41 @@ export function SessionView({ id, onBack }: { id: string; onBack: () => void }) 
     try {
       const controller = new AbortController()
       window.__nhAbort = controller
+      startedAt.current = Date.now()
+      setElapsed(0)
+      const timer = setInterval(() => setElapsed((Date.now() - startedAt.current) / 1000), 200)
       const result = await api.prompt(id, text, (e) => {
-        if (e.type === "text") setStreaming((s) => s + String((e as { text?: string }).text ?? ""))
+        if (e.type === "text") {
+          setParts((prev) => {
+            const last = prev[prev.length - 1]
+            if (last && last.kind === "text") return [...prev.slice(0, -1), { kind: "text", text: last.text + String((e as { text?: string }).text ?? "") }]
+            return [...prev, { kind: "text", text: String((e as { text?: string }).text ?? "") }]
+          })
+        } else if (e.type === "tool") {
+          const d = e as { name: string; input: unknown }
+          setParts((prev) => [...prev, { kind: "tool", name: d.name, input: JSON.stringify(d.input ?? {}, null, 2), done: false }])
+        } else if (e.type === "tool-result") {
+          const d = e as { name: string; output: unknown; isError?: boolean }
+          setParts((prev) => {
+            let idx = -1
+            for (let i = prev.length - 1; i >= 0; i--) {
+              const cand = prev[i]
+              if (cand.kind === "tool" && cand.name === d.name && !cand.done) { idx = i; break }
+            }
+            if (idx < 0) return prev
+            const tool = prev[idx] as Extract<LivePart, { kind: "tool" }>
+            void 0
+            const next: LivePart = { ...tool, output: JSON.stringify(d.output ?? {}, null, 2).slice(0, 4000), isError: d.isError, done: true }
+            return [...prev.slice(0, idx), next, ...prev.slice(idx + 1)]
+          })
+        }
       }, controller.signal)
+      clearInterval(timer)
       if (result.error) setError(prettyError(result.error))
     } catch (e) {
       setError(prettyError(e instanceof Error ? e.message : String(e)))
     } finally {
-      setStreaming("")
+      setParts([])
       setInput("")
       await fold()
       await refreshSessions()
@@ -141,6 +175,18 @@ export function SessionView({ id, onBack }: { id: string; onBack: () => void }) 
     await api.steer(id, steerText.trim()).catch((e) => setError(prettyError(e instanceof Error ? e.message : String(e))))
     setSteerText("")
   }
+
+  // Esc interrupts the running turn (codex keybind)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape" && busyRef.current) {
+        window.__nhAbort?.abort()
+        void api.interrupt(id).catch(() => {})
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [id])
 
   const mood: Mood = busy ? "thinking" : "idle"
 
@@ -168,29 +214,57 @@ export function SessionView({ id, onBack }: { id: string; onBack: () => void }) 
           {turns.map((t, i) => (
             <TurnRow key={i} t={t} index={i} openTools={openTools} setOpenTools={setOpenTools} mood={mood} />
           ))}
-          {streaming && (
-            <div className="flex gap-3 justify-start">
+          {parts.map((p, i) => {
+        const last = i === parts.length - 1
+        if (p.kind === "text") {
+          return (
+            <div key={"t" + i} className="flex gap-3 justify-start">
               <div className="mt-0.5 shrink-0">
-                <EmotionBall mood="speaking" size={28} />
+                <EmotionBall mood={busy && last ? "speaking" : mood} size={28} />
               </div>
-              <div className="max-w-[88%] md:max-w-[80%] rounded-2xl rounded-tl-md panel px-4 py-3 text-sm min-w-[80px]">
-                <span className="caret">{streaming}</span>
+              <div className={"max-w-[88%] md:max-w-[80%] rounded-2xl rounded-tl-md panel px-4 py-3 text-sm " + (busy && last ? "caret" : "")}>{p.text}</div>
+            </div>
+          )
+        }
+        const open = liveOpen.has(i)
+        return (
+          <div key={"k" + i} className="flex gap-3 justify-start">
+            <div className="mt-0.5 shrink-0 w-7">
+              <div className="h-7 w-7 rounded-lg bg-white/[0.05] border border-white/[0.07] flex items-center justify-center">
+                {p.done ? <IconCheck size={13} className={p.isError ? "text-red-400" : "text-emerald-400"} /> : <IconSpinner size={13} className="text-amber-300" />}
               </div>
             </div>
-          )}
-          <div ref={bottom} />
+            <div className="flex-1 max-w-[88%] md:max-w-[80%] rounded-xl border border-white/[0.07] bg-black/25 overflow-hidden">
+              <button className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors" onClick={() => setLiveOpen((prev) => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n })}>
+                <IconTool size={12} className="text-slate-500 shrink-0" />
+                <span className="text-[12px] font-medium text-slate-300 shrink-0">{p.name}</span>
+                <span className={"text-[11px] flex-1 " + (p.done ? (p.isError ? "text-red-400" : "text-emerald-500/80") : "shimmer-text")}>{p.done ? (p.isError ? "失败" : "完成") : "运行中…"}</span>
+                <IconChevron size={12} className={"text-slate-600 transition-transform " + (open ? "rotate-90" : "")} />
+              </button>
+              {open && (
+                <div className="border-t border-white/[0.05] px-3.5 py-2.5 space-y-2">
+                  <pre className="text-[11px] leading-relaxed text-slate-400 font-mono overflow-x-auto whitespace-pre-wrap break-all">{p.input}</pre>
+                  {p.output !== undefined && <pre className={"text-[11px] leading-relaxed font-mono overflow-x-auto whitespace-pre-wrap break-all border-t border-white/[0.05] pt-2 " + (p.isError ? "text-red-300" : "text-slate-400")}>{p.output}</pre>}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })}
+      <div ref={bottom} />
         </div>
       </div>
 
       {/* composer */}
       <div className="mx-auto w-full max-w-3xl px-4 md:px-6 pb-5 pt-1 w-full">
         {busy && (
-          <div className="mb-2 flex gap-2">
-            <input className="input-base flex-1" placeholder="运行中… 插入追问（steer）" value={steerText} onChange={(e) => setSteerText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && steer()} />
-            <button className="btn-ghost px-3 text-xs" onClick={steer}>
-              插入
-            </button>
-            <button className="flex items-center gap-1.5 rounded-[14px] bg-red-500/15 border border-red-500/30 px-3 text-xs text-red-300 hover:bg-red-500/25" onClick={stop}>
+          <div className="mb-2 flex items-center gap-2">
+            <span className="pill !text-slate-400">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 pulse-dot" />
+              运行中 {elapsed.toFixed(0)}s
+            </span>
+            <input className="input-base flex-1" placeholder="插入追问（steer），Esc 中断" value={steerText} onChange={(e) => setSteerText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); steer() } }} />
+            <button className="flex items-center gap-1.5 rounded-[14px] bg-red-500/15 border border-red-500/30 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/25" onClick={stop}>
               <IconStop size={12} /> 中断
             </button>
           </div>
@@ -209,6 +283,10 @@ export function SessionView({ id, onBack }: { id: string; onBack: () => void }) 
               }
             }}
           />
+          <div className="mb-1.5 mr-1 hidden sm:flex items-center gap-2 text-[10px] text-slate-600">
+            <span className="flex items-center gap-1"><kbd className="nh-kbd">Enter</kbd> 发送</span>
+            <span className="flex items-center gap-1"><kbd className="nh-kbd">Esc</kbd> 中断</span>
+          </div>
           <button className="btn-primary mb-0.5 mr-0.5 h-8 w-8 !rounded-xl !p-0" disabled={busy || !input.trim()} onClick={send} aria-label="发送">
             <IconSend size={14} />
           </button>
