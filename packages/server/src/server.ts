@@ -93,6 +93,8 @@ export interface SessionCreateRequest {
   readonly workspace?: string
   readonly sessionId?: string
   readonly model?: string
+  /** Create the session as the fixed BUTLER role (coordinator toolset + body). */
+  readonly asButler?: boolean
   /** The create-model's context window in tokens (scales auto-compaction). */
   readonly contextWindowTokens?: number
   /** Output budget per reply in tokens (avoids the anthropic 4096 floor). */
@@ -278,7 +280,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       // stays readable and the conversation can continue after a restart.
       try {
         const db = new Database(join(settings.get().dataDir, "events.db"), { readonly: true })
-        let row: { sessionId: string; workspace: string; model?: string } | undefined
+        let row: { sessionId: string; workspace: string; model?: string; role?: "butler" } | undefined
         try {
           const registry = new SessionRegistry(new SqliteEventStore(db))
           row = (await registry.list()).find((r) => r.sessionId === sessionId)
@@ -286,7 +288,9 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
           db.close()
         }
         if (row) {
-          const resolved = await resolveApp({ sessionId, workspace: row.workspace, model: row.model })
+          // Re-attach keeps the fixed role: a butler session must come back
+          // with its coordinator toolset after a restart, not as a plain chat.
+          const resolved = await resolveApp({ sessionId, workspace: row.workspace, model: row.model, asButler: row.role === "butler" })
           if (resolved?.app) {
             if (directory) {
               directory.register(sessionId, selfUrl())
@@ -697,64 +701,10 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         return json(200, { title })
       }
 
-      // POST /v1/session/:id/fork {atSeq?} — branch at a message boundary:
-      // copies the log prefix (≤ atSeq, default all) into a NEW session id and
-      // returns it. Append-only philosophy: backtrack = fork, never truncate.
-      if (method === "POST" && parts.length === 4 && parts[3] === "fork") {
-        const found = await findSession(parts[2]!)
-        if (found.kind === "missing") return json(404, { error: found.error })
-        if (found.kind === "remote") return json(501, { error: "fork of a remote-owned session is not proxied yet" })
-        const parsed = await readJsonOr400<{ atSeq?: number }>(req)
-        if ("error" in parsed) return json(400, parsed)
-        const source = await found.app.events.read(parts[2]!)
-        const atSeq = parsed.atSeq !== undefined ? parsed.atSeq : Number.MAX_SAFE_INTEGER
-        const prefix = source.filter((e) => e.seq <= atSeq)
-        if (prefix.length === 0) return json(400, { error: "nothing to fork at that seq" })
-        const newId = crypto.randomUUID()
-        for (const e of prefix) {
-          if (e.type === "Session.Created") continue
-          await found.app.events.append(newId, e.type, e.data)
-        }
-        await found.app.events.append(newId, "Session.Created", { id: newId, location: found.app.sessionId ? "" : "", createdAt: Date.now() })
-        return json(201, { sessionId: newId, forkedFrom: parts[2]!, atSeq })
-      }
-
-      // GET /v1/fs?path= — sandboxed one-level listing under the workspace.
-      if (method === "GET" && parts.length === 2 && parts[1] === "fs") {
-        if (!settings) return json(404, { error: "no settings controller configured" })
-        const ws = url.searchParams.get("workspace") ?? settings.get().workspace
-        const rel = url.searchParams.get("path") ?? "."
-        const rootAbs = resolve(ws)
-        const targetAbs = resolve(ws, rel)
-        if (targetAbs !== rootAbs && !targetAbs.startsWith(rootAbs + sep)) return json(403, { error: "path escapes the workspace" })
-        try {
-          const dir = await readdir(targetAbs, { withFileTypes: true })
-          const entries = []
-          for (const d of dir) {
-            if (d.name.startsWith(".") || d.name === "node_modules") continue
-            entries.push({ name: d.name, dir: d.isDirectory() })
-          }
-          return json(200, { path: rel, entries: entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1)) })
-        } catch {
-          return json(200, { path: rel, entries: [] })
-        }
-      }
-
-      // POST /v1/session/:id/title {title} — durable rename (Session.TitleSet).
-      if (method === "POST" && parts.length === 4 && parts[3] === "title") {
-        const found = await findSession(parts[2]!)
-        if (found.kind === "missing") return json(404, { error: found.error })
-        if (found.kind === "remote") return json(501, { error: "rename on a remote-owned session is not proxied yet" })
-        const parsed = await readJsonOr400<{ title?: string }>(req)
-        if ("error" in parsed) return json(400, parsed)
-        const title = parsed.title?.trim()
-        if (!title) return json(400, { error: "title is required" })
-        await found.app.events.append(parts[2]!, "Session.TitleSet", { sessionId: parts[2]!, title, ts: Date.now() })
-        return json(200, { title })
-      }
-
       // POST /v1/session/:id/fork {atSeq?} — branch at a message boundary
-      // (codex backtrack: append-only fork, never truncate).
+      // (codex backtrack: append-only fork, never truncate). The child
+      // re-Creates with the SOURCE's workspace (a fork is the same project —
+      // `location: ""` would leave it working blind) and its fixed role.
       if (method === "POST" && parts.length === 4 && parts[3] === "fork") {
         const found = await findSession(parts[2]!)
         if (found.kind === "missing") return json(404, { error: found.error })
@@ -763,13 +713,37 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         if ("error" in parsed) return json(400, parsed)
         const source = await found.app.events.read(parts[2]!)
         const atSeq = parsed.atSeq !== undefined ? parsed.atSeq : Number.MAX_SAFE_INTEGER
+        const created = source.find((e) => e.type === "Session.Created")
+        const sourceData = (created?.data ?? {}) as { location?: string; role?: "butler" }
         const prefix = source.filter((e) => e.seq <= atSeq && e.type !== "Session.Created")
         if (prefix.length === 0) return json(400, { error: "nothing to fork at that seq" })
         const newId = crypto.randomUUID()
         for (const e of prefix) {
           await found.app.events.append(newId, e.type, e.data)
         }
+        await found.app.events.append(newId, "Session.Created", {
+          id: newId,
+          location: sourceData.location ?? "",
+          createdAt: Date.now(),
+          ...(sourceData.role ? { role: sourceData.role } : {}),
+        })
         return json(201, { sessionId: newId, forkedFrom: parts[2]!, atSeq: Math.min(atSeq, prefix[prefix.length - 1]!.seq) })
+      }
+
+      // GET/POST /v1/session/:id/policy — read or change this session's
+      // permission level (strict | readonly | trusted). The change is durable
+      // (Session.PolicyChanged) and effective from the next prompt.
+      if (parts.length === 4 && parts[3] === "policy" && (method === "GET" || method === "POST")) {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "policy on a remote-owned session is not proxied yet" })
+        if (method === "GET") return json(200, { policy: found.app.policy() })
+        const parsed = await readJsonOr400<{ policy?: string }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const policy = parsed.policy
+        if (policy !== "strict" && policy !== "readonly" && policy !== "trusted") return json(400, { error: "policy must be strict | readonly | trusted" })
+        await found.app.setPolicy(policy)
+        return json(200, { policy })
       }
 
       // GET /v1/fs?path=&workspace= — sandboxed one-level listing.
@@ -810,6 +784,28 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         if (!pluginsDir) return json(404, { error: "no pluginsDir configured" })
         const caps = await discoverPlugin(pluginsDir)
         return json(200, { agents: caps.filter((c) => c.kind === "agent") })
+      }
+
+      // GET /v1/commands — discovered slash commands (name/description only).
+      if (method === "GET" && parts.length === 2 && parts[1] === "commands") {
+        if (!pluginsDir) return json(404, { error: "no pluginsDir configured" })
+        const caps = await discoverPlugin(pluginsDir)
+        return json(200, { commands: caps.filter((c) => c.kind === "command").map((c) => ({ name: c.name, description: c.description })) })
+      }
+
+      // POST /v1/session/:id/command {text} — run a slash line ("/name args")
+      // through the session's command seam. Returns the expansion text (the
+      // client puts it back into the composer); 404 when not a command.
+      if (method === "POST" && parts.length === 4 && parts[3] === "command") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "commands on a remote-owned session are not proxied yet" })
+        const parsed = await readJsonOr400<{ text?: string }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        if (!parsed.text?.trim()) return json(400, { error: "text is required" })
+        const output = await found.app.runCommand(parsed.text)
+        if (output === undefined) return json(404, { error: `unknown command: ${parsed.text.trim().split(/\s+/)[0]}` })
+        return json(200, { output })
       }
 
       // GET /v1/settings — effective settings, secrets redacted.

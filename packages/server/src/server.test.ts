@@ -1,6 +1,9 @@
 import { describe, expect, it, afterEach } from "bun:test"
 import { createServer, type ServerHandle } from "./server"
 import type { AdapterConfig } from "@newhorse/llm"
+import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 /** Mock OpenAI-compatible fetch: one text delta then stop. */
 function sse(payload: string): Response {
@@ -248,5 +251,91 @@ describe("server cross-app effects", () => {
     const evs = await fetch(`${base}/v1/session/svc-b/events`)
     const log = (await evs.json()) as { type: string; data: { prompt?: string } }[]
     expect(log.some((e) => e.type === "Session.PromptAdmitted" && e.data.prompt?.includes("cross-app hello"))).toBe(true)
+  })
+})
+
+describe("butler role + policy + commands + fork (client surfaces)", () => {
+  it("creates a butler session: registry row carries role=butler, system context has the butler body", async () => {
+    const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+    handle = await createServer({ port: 0, sessionConfig: (c) => ({ provider, model: "m", asButler: c.asButler === true, workspace: "/proj", fetch: mockFetch(payload) }) })
+    const base = handle.baseUrl
+    const created = await fetch(`${base}/v1/session`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ asButler: true }) })
+    expect(created.status).toBe(201)
+    const { sessionId } = (await created.json()) as { sessionId: string }
+
+    await fetch(`${base}/v1/session/${sessionId}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) })
+    const evs = (await (await fetch(`${base}/v1/session/${sessionId}/events`)).json()) as { type: string; data: Record<string, unknown> }[]
+    expect(evs.some((e) => e.type === "Session.Created" && (e.data as { role?: string }).role === "butler")).toBe(true)
+    const sys = evs.find((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string; text?: string } }).message?.kind === "system")
+    expect(((sys?.data as { message?: { text?: string } } | undefined)?.message?.text ?? "")).toContain("管家")
+
+    // The durable registry projects the role for the client badge.
+    const list = (await (await fetch(`${base}/v1/sessions`)).json()) as Array<{ sessionId: string; role?: string }>
+    expect(list.find((r) => r.sessionId === sessionId)?.role).toBe("butler")
+  })
+
+  it("policy endpoint reads and changes the session permission level", async () => {
+    handle = await createServer({ port: 0, sessionConfig: () => ({ provider, model: "m", fetch: mockFetch("") }) })
+    const base = handle.baseUrl
+    const { sessionId } = (await (await fetch(`${base}/v1/session`, { method: "POST", body: JSON.stringify({}) })).json()) as { sessionId: string }
+    const before = await fetch(`${base}/v1/session/${sessionId}/policy`)
+    expect(((await before.json()) as { policy: string }).policy).toBe("strict")
+    const put = await fetch(`${base}/v1/session/${sessionId}/policy`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ policy: "readonly" }) })
+    expect(put.status).toBe(200)
+    const after = await fetch(`${base}/v1/session/${sessionId}/policy`)
+    expect(((await after.json()) as { policy: string }).policy).toBe("readonly")
+    const bad = await fetch(`${base}/v1/session/${sessionId}/policy`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ policy: "root" }) })
+    expect(bad.status).toBe(400)
+  })
+
+  it("fork preserves the source workspace and role (a fork is the same project)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-fork-"))
+    try {
+      const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+      // A shared dataDir: every App (source + attach) must see the same log,
+      // which is how real deployments run (SQLite events.db).
+      handle = await createServer({ port: 0, sessionConfig: (c) => ({ provider, model: "m", asButler: c.asButler === true, workspace: "/proj-x", dataDir: dir, fetch: mockFetch(payload) }) })
+      const base = handle.baseUrl
+      const { sessionId } = (await (await fetch(`${base}/v1/session`, { method: "POST", body: JSON.stringify({ asButler: true }) })).json()) as { sessionId: string }
+      // Drain the prompt to completion so the turn's events are durable before
+      // forking (a fork mid-run sees an empty prefix).
+      await (await fetch(`${base}/v1/session/${sessionId}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "turn one" }) })).text()
+
+      const fork = await fetch(`${base}/v1/session/${sessionId}/fork`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) })
+      expect(fork.status).toBe(201)
+      const { sessionId: forkId } = (await fork.json()) as { sessionId: string }
+      // Attach the fork (the client flow: POST /v1/session with the fork id)
+      // before reading events — an unattached fork is not a live App yet.
+      const attach = await fetch(`${base}/v1/session`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId: forkId, asButler: true }) })
+      expect(attach.status).toBe(201)
+      const evs = (await (await fetch(`${base}/v1/session/${forkId}/events`)).json()) as { type: string; data: Record<string, unknown> }[]
+      const created = evs.find((e) => e.type === "Session.Created")
+      expect((created?.data as { location?: string }).location).toBe("/proj-x")
+      expect((created?.data as { role?: string }).role).toBe("butler")
+      expect(evs.some((e) => e.type === "Session.Prompted")).toBe(true)
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+
+  it("GET /v1/commands lists discovered slash commands; POST command expands through the session seam", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-plugins-"))
+    try {
+      await mkdir(join(dir, "commands"), { recursive: true })
+      await writeFile(join(dir, "commands", "review.md"), "---\ndescription: 审查当前改动\n---\n请审查工作区的未提交改动并给出风险清单。", "utf8")
+      const payload = ["data: " + JSON.stringify({ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }) + "\n\n", "data: [DONE]\n\n"].join("")
+      handle = await createServer({ port: 0, pluginsDir: dir, sessionConfig: () => ({ provider, model: "m", pluginsDir: dir, fetch: mockFetch(payload) }) })
+      const base = handle.baseUrl
+      const cmds = (await (await fetch(`${base}/v1/commands`)).json()) as { commands: Array<{ name: string; description?: string }> }
+      expect(cmds.commands.find((c) => c.name === "review")?.description).toBe("审查当前改动")
+
+      const { sessionId } = (await (await fetch(`${base}/v1/session`, { method: "POST", body: JSON.stringify({}) })).json()) as { sessionId: string }
+      const run = await fetch(`${base}/v1/session/${sessionId}/command`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "/review" }) })
+      expect(((await run.json()) as { output: string }).output).toContain("风险清单")
+      const unknown = await fetch(`${base}/v1/session/${sessionId}/command`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "/nope" }) })
+      expect(unknown.status).toBe(404)
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
   })
 })

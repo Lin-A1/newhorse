@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import { readFile, writeFile, mkdir } from "node:fs/promises"
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises"
 import { readFileSync } from "node:fs"
 
 /**
@@ -63,6 +63,23 @@ export interface ProviderSettings {
   readonly apiKey?: string
 }
 
+/**
+ * A named provider preset (ccswitch semantics): one profile = one complete,
+ * switchable configuration. Activating a profile makes IT the file-layer
+ * provider — kind/baseUrl/apiKey/model/window all come from the profile at
+ * once, so "上下文预算" and "模型与供应商" can never drift apart.
+ */
+export interface ProviderProfile {
+  readonly id: string
+  readonly name: string
+  readonly kind: ProviderKind
+  readonly baseUrl: string
+  readonly apiKey?: string
+  readonly model?: string
+  readonly contextWindowTokens?: number
+  readonly maxOutputTokens?: number
+}
+
 export interface MemorySettings {
   readonly on: boolean
   readonly extraction: boolean
@@ -102,6 +119,12 @@ export interface RuntimeSettings {
    * owned by sibling processes. Unset → single-process routing only.
    */
   readonly registry?: string
+  /** The active provider preset's id (ccswitch switch = one field write).
+   *  Unset → the standalone `provider` above is the active configuration. */
+  readonly activeProviderId?: string
+  /** All provider presets stored in the agent-home config (server-side view
+   *  with keys; the client gets a redacted projection via redactSettings). */
+  readonly providers?: readonly ProviderProfile[]
   /** URL peers use to reach this server (default: derived from host:port). */
   readonly advertiseUrl?: string
   /** Directory of the built client UI served on this origin (web 单独启动). */
@@ -128,8 +151,13 @@ const DEFAULT_HOME = () => join(process.env.HOME ?? process.env.USERPROFILE ?? "
  * subset; unknown keys are preserved on write (merge, never clobber), a
  * corrupt/missing file is an empty layer (never fails startup).
  */
-export type AgentHomeConfig = Partial<Pick<RuntimeSettings, "provider" | "model" | "contextWindowTokens" | "maxOutputTokens" | "host" | "port" | "workspace" | "approvalPolicy">> & {
+export type AgentHomeConfig = Partial<Pick<RuntimeSettings, "provider" | "model" | "contextWindowTokens" | "maxOutputTokens" | "host" | "port" | "workspace" | "approvalPolicy" | "activeProviderId">> & {
   readonly memory?: { readonly on?: boolean; readonly extraction?: boolean; readonly vector?: { readonly enabled?: boolean; readonly mode?: "auto" | "brute" | "off" } }
+  /** Upsert-merge of provider presets: items merge PER FIELD by `id`, so a
+   *  client round-trip that omits `apiKey` keeps the stored key. */
+  readonly providers?: readonly (Partial<Omit<ProviderProfile, "id">> & { readonly id: string })[]
+  /** Preset ids to drop; clearing the active one also clears activeProviderId. */
+  readonly providersRemove?: readonly string[]
 }
 
 export const configFilePath = (agentHome: string): string => join(agentHome, "config.json")
@@ -154,12 +182,24 @@ function readAgentHomeConfigSync(agentHome: string): AgentHomeConfig {
   }
 }
 
-/** Merge-write a settings patch into the config file (unknown keys preserved). */
 /** Merge-write a settings patch into the config file (unknown keys preserved).
  *  `provider` merges PER FIELD — a client round-trip sends the redacted view
- *  (no apiKey), which must never wipe the stored key. Client-only display keys
- *  (hasApiKey/apiKeyHint) are stripped before persisting. */
-export async function writeAgentHomeConfig(agentHome: string, patch: AgentHomeConfig): Promise<AgentHomeConfig> {
+ *  (no apiKey), which must never wipe the stored key. `providers` upserts
+ *  per id with the same per-field rule (an empty-string apiKey is treated as
+ *  "keep stored", never a wipe); `providersRemove` drops ids (and the active
+ *  pointer when it referenced a removed preset) but is never persisted itself.
+ *  Writes are serialized (read-modify-write races) and atomic (tmp + rename —
+ *  a crash mid-write must not leave a corrupt file that reads as "no keys"). */
+const configWriteQueue: Promise<unknown> = Promise.resolve()
+
+export function writeAgentHomeConfig(agentHome: string, patch: AgentHomeConfig): Promise<AgentHomeConfig> {
+  const run = configWriteQueue.then(() => writeAgentHomeConfigInner(agentHome, patch))
+  // keep the queue alive when a write fails — the NEXT write must still run
+  void run.catch(() => {})
+  return run
+}
+
+async function writeAgentHomeConfigInner(agentHome: string, patch: AgentHomeConfig): Promise<AgentHomeConfig> {
   const current = await readAgentHomeConfig(agentHome)
   const patchProvider = patch.provider as Record<string, unknown> | undefined
   const mergedProvider = patchProvider
@@ -169,15 +209,56 @@ export async function writeAgentHomeConfig(agentHome: string, patch: AgentHomeCo
     delete mergedProvider.hasApiKey
     delete mergedProvider.apiKeyHint
   }
+  // provider presets: upsert per field by id, then apply removals
+  const stripDisplay = (p: Record<string, unknown>): Record<string, unknown> => {
+    delete p.hasApiKey
+    delete p.apiKeyHint
+    return p
+  }
+  const byId = new Map<string, Record<string, unknown>>((current.providers ?? []).map((p) => [p.id, stripDisplay({ ...p })]))
+  for (const item of patch.providers ?? []) {
+    // An empty-string apiKey means "keep the stored key" (a client cannot know
+    // it to resend it) — the server-side guard, not just client cooperation.
+    const { apiKey: blankKey, ...rest } = item as Record<string, unknown>
+    void blankKey
+    const incoming = (item as Record<string, unknown>).apiKey === "" ? rest : (item as Record<string, unknown>)
+    const prev = byId.get(item.id)
+    byId.set(item.id, stripDisplay({ ...(prev ?? {}), ...incoming }))
+  }
+  const removed = new Set(patch.providersRemove ?? [])
+  for (const id of removed) byId.delete(id)
+  const providers = [...byId.values()] as unknown as Exclude<AgentHomeConfig["providers"], undefined>
+  const activeRemoved = patch.activeProviderId === undefined && current.activeProviderId !== undefined && removed.has(current.activeProviderId)
+  // providersRemove is a write-instruction, not state — never persist it; an
+  // empty preset list is also dropped (absent = no presets, like a fresh file).
+  // "" for activeProviderId means deactivate: clear the pointer, store nothing.
+  const { providersRemove: _drop, ...patchRest } = patch
+  void _drop
+  const clearedActive = patch.activeProviderId === ""
+  const patchRestNoActive = clearedActive
+    ? Object.fromEntries(Object.entries(patchRest).filter(([k]) => k !== "activeProviderId"))
+    : patchRest
+  // When the patch touches the preset set (upsert OR removal), the merged list
+  // must WIN over `current.providers` — otherwise a removal keeps the old list.
+  const touchesProviders = patch.providers !== undefined || removed.size > 0
   const next = {
     ...current,
-    ...patch,
+    ...patchRestNoActive,
     ...(patchProvider ? { provider: mergedProvider as AgentHomeConfig["provider"] } : {}),
+    ...(touchesProviders ? { providers } : {}),
+    ...((activeRemoved || clearedActive) ? { activeProviderId: undefined } : {}),
     memory: patch.memory ? { ...current.memory, ...patch.memory } : current.memory,
-  }
+  } as Record<string, unknown>
+  delete next.providersRemove
+  if (Array.isArray(next.providers) && next.providers.length === 0) delete next.providers
+  if (next.activeProviderId === undefined || next.activeProviderId === "") delete next.activeProviderId
   await mkdir(agentHome, { recursive: true })
-  await writeFile(configFilePath(agentHome), JSON.stringify(next, null, 2) + "\n", "utf8")
-  return next
+  // Atomic write: a crash mid-write leaves config.json.tmp, never a truncated
+  // config.json that would silently read as "no stored keys".
+  const tmpPath = configFilePath(agentHome) + ".tmp"
+  await writeFile(tmpPath, JSON.stringify(next, null, 2) + "\n", "utf8")
+  await rename(tmpPath, configFilePath(agentHome))
+  return next as AgentHomeConfig
 }
 
 function str(env: Record<string, string | undefined>, key: string): string | undefined {
@@ -189,14 +270,24 @@ function flag(env: Record<string, string | undefined>, key: string): boolean {
   return env[key] === "on"
 }
 
+/** An upsert item: a full profile with every field optional except the id. */
+export type ProviderProfilePatch = Partial<Omit<ProviderProfile, "id">> & { readonly id: string }
+
+/** The preset activated by `activeProviderId`, if it still exists. */
+function activeProfile(file: AgentHomeConfig): ProviderProfilePatch | undefined {
+  return file.activeProviderId ? (file.providers ?? []).find((p) => p.id === file.activeProviderId) : undefined
+}
+
 /** Default provider settings per kind (baseUrl/apiKey env fallbacks). The
  *  agent-home config file supplies the same fields when env/cli are silent
- *  (the UI settings page writes the file; env stays the ops override). */
+ *  (the UI settings page writes the file; env stays the ops override). When an
+ *  active preset exists it IS the file-layer provider (ccswitch semantics). */
 function resolveProvider(env: Record<string, string | undefined>, file: AgentHomeConfig, cli?: ConfigLayers["cli"]): ProviderSettings {
-  const kind = (cli?.providerKind ?? str(env, ENV.provider) ?? file.provider?.kind ?? "openai") as ProviderKind
+  const profile = activeProfile(file)
+  const kind = (cli?.providerKind ?? str(env, ENV.provider) ?? profile?.kind ?? file.provider?.kind ?? "openai") as ProviderKind
   const defaultBase = kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"
-  const baseUrl = cli?.baseUrl ?? str(env, ENV.baseUrl) ?? file.provider?.baseUrl ?? defaultBase
-  const apiKey = cli?.apiKey ?? str(env, ENV.apiKey) ?? (kind === "anthropic" ? str(env, "ANTHROPIC_API_KEY") : str(env, "OPENAI_API_KEY")) ?? file.provider?.apiKey
+  const baseUrl = cli?.baseUrl ?? str(env, ENV.baseUrl) ?? profile?.baseUrl ?? file.provider?.baseUrl ?? defaultBase
+  const apiKey = cli?.apiKey ?? str(env, ENV.apiKey) ?? (kind === "anthropic" ? str(env, "ANTHROPIC_API_KEY") : str(env, "OPENAI_API_KEY")) ?? profile?.apiKey ?? file.provider?.apiKey
   return { kind, baseUrl, ...(apiKey ? { apiKey } : {}) }
 }
 
@@ -207,13 +298,32 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
   const env = layers.env
   const agentHome = layers.agentHome ?? str(env, ENV.home) ?? DEFAULT_HOME()
   const file = readAgentHomeConfigSync(agentHome)
+  const profile = activeProfile(file)
   const provider = resolveProvider(env, file, layers.cli)
-  const model = layers.cli?.model ?? str(env, ENV.model) ?? file.model ?? "gpt-4o-mini"
+  // A preset carries its model + budgets, so activating one switches them all
+  // together (the profile sits at the file layer: cli/env still override).
+  const model = layers.cli?.model ?? str(env, ENV.model) ?? profile?.model ?? file.model ?? "gpt-4o-mini"
   const contextWindow = str(env, ENV.contextWindow)
-  const contextWindowTokens = layers.cli?.contextWindowTokens ?? (contextWindow ? Number(contextWindow) : undefined) ?? (file.contextWindowTokens && file.contextWindowTokens > 0 ? file.contextWindowTokens : undefined)
+  const contextWindowTokens = layers.cli?.contextWindowTokens ?? (contextWindow ? Number(contextWindow) : undefined) ?? (profile?.contextWindowTokens && profile.contextWindowTokens > 0 ? profile.contextWindowTokens : undefined) ?? (file.contextWindowTokens && file.contextWindowTokens > 0 ? file.contextWindowTokens : undefined)
   const maxOutput = str(env, ENV.maxOutputTokens)
-  const maxOutputTokens = layers.cli?.maxOutputTokens ?? (maxOutput ? Number(maxOutput) : undefined) ?? (file.maxOutputTokens && file.maxOutputTokens > 0 ? file.maxOutputTokens : undefined)
+  const maxOutputTokens = layers.cli?.maxOutputTokens ?? (maxOutput ? Number(maxOutput) : undefined) ?? (profile?.maxOutputTokens && profile.maxOutputTokens > 0 ? profile.maxOutputTokens : undefined) ?? (file.maxOutputTokens && file.maxOutputTokens > 0 ? file.maxOutputTokens : undefined)
   const dataDir = layers.cli?.dataDir ?? str(env, ENV.dataDir) ?? join(agentHome, "data")
+  // Normalize partial file items into well-formed profiles (name/baseUrl get
+  // honest defaults) so the effective settings always carry complete presets.
+  const providers: ProviderProfile[] = (file.providers ?? []).flatMap((p) => {
+    if (!p.id) return []
+    const kind = (p.kind ?? "openai") as ProviderKind
+    return [{
+      id: p.id,
+      name: p.name ?? p.id,
+      kind,
+      baseUrl: p.baseUrl ?? (kind === "anthropic" ? "https://api.anthropic.com" : "https://api.openai.com"),
+      ...(p.apiKey ? { apiKey: p.apiKey } : {}),
+      ...(p.model ? { model: p.model } : {}),
+      ...(p.contextWindowTokens && p.contextWindowTokens > 0 ? { contextWindowTokens: p.contextWindowTokens } : {}),
+      ...(p.maxOutputTokens && p.maxOutputTokens > 0 ? { maxOutputTokens: p.maxOutputTokens } : {}),
+    }]
+  })
   const memoryOn = flag(env, ENV.memory)
   const vectorOn = flag(env, ENV.memoryVector)
   const vector: MemorySettings["vector"] = {
@@ -250,6 +360,8 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
       },
     },
     ...(str(env, ENV.registry) ? { registry: str(env, ENV.registry) } : {}),
+    ...(file.activeProviderId ? { activeProviderId: file.activeProviderId } : {}),
+    ...(providers.length > 0 ? { providers } : {}),
     ...(str(env, ENV.advertiseUrl) ? { advertiseUrl: str(env, ENV.advertiseUrl) } : {}),
     ...(str(env, ENV.uiDir) ? { uiDir: str(env, ENV.uiDir) } : {}),
     ...(str(env, ENV.pluginsDir) ? { pluginsDir: str(env, ENV.pluginsDir) } : {}),

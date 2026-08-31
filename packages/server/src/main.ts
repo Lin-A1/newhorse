@@ -92,6 +92,7 @@ const handle = await createServer({
     // different providers) — server-level settings are only the default.
     provider: create.provider ?? fresh.provider,
     model: create.model ?? fresh.model,
+    asButler: create.asButler === true,
     contextWindowTokens: create.contextWindowTokens ?? fresh.contextWindowTokens,
     maxOutputTokens: create.maxOutputTokens ?? fresh.maxOutputTokens,
     workspace: create.workspace ?? fresh.workspace,

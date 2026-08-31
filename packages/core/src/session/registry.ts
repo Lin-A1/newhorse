@@ -25,6 +25,9 @@ export interface SessionRow {
   readonly createdAt: number
   readonly updatedAt: number
   readonly archived?: boolean
+  /** Fixed session role (Session.Created): "butler" = the coordinator session
+   *  with the butler toolset; absent = an ordinary session. */
+  readonly role?: "butler"
 }
 
 export type SessionStatus = "created" | "active" | "settled" | "interrupted"
@@ -137,6 +140,7 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
   let parentId: string | undefined
   let title: string | undefined
   let archived = false
+  let role: "butler" | undefined
   let hasCreated = false
 
   for (const event of stored) {
@@ -145,11 +149,12 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
     updatedAt = event.ts ?? updatedAt
     switch (event.type) {
       case "Session.Created": {
-        const d = event.data as { id?: string; location?: string; projectId?: string; createdAt?: number }
+        const d = event.data as { id?: string; location?: string; projectId?: string; createdAt?: number; role?: "butler" }
         sessionId = d.id ?? ""
         workspace = d.location ?? ""
         projectId = d.projectId
         createdAt = d.createdAt ?? 0
+        role = d.role
         hasCreated = true
         status = "created"
         break
@@ -195,7 +200,7 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
   }
 
   if (!hasCreated) return undefined
-  return { sessionId: sessionId || workspace, workspace, projectId, title, status, model, parentId, createdAt, updatedAt, archived }
+  return { sessionId: sessionId || workspace, workspace, projectId, title, status, model, parentId, createdAt, updatedAt, archived, ...(role ? { role } : {}) }
 }
 
 function excerpt(content: readonly unknown[]): string {

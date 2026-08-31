@@ -31,6 +31,15 @@ describe("session registry", () => {
     expect(row?.status).toBe("interrupted")
   })
 
+  it("folds the fixed role from Session.Created (butler); ordinary sessions have none", () => {
+    const row = fold([
+      { aggregate: "session", aggregate_id: "b1", seq: 0, type: "Session.Created", data: { id: "b1", location: "/w", createdAt: 1, role: "butler" } },
+    ])
+    expect(row?.role).toBe("butler")
+    const plain = fold([created("s9", "/w")])
+    expect(plain?.role).toBeUndefined()
+  })
+
   it("lists sessions filtered by workspace and status (lazy hydration)", async () => {
     const events = new MemoryEventStore()
     await events.append("s1", "Session.Created", { id: "s1", location: "/a", createdAt: 1 })

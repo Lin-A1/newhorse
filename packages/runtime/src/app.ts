@@ -15,7 +15,7 @@ import { currentTodos, type TodoItem } from "@newhorse/core"
 import { currentGoal, type GoalState } from "@newhorse/core"
 import { createBuiltinTools, createExecPolicy, rulesFilePath } from "./tools"
 import { allowAllExecPolicy } from "@newhorse/core"
-import { defaultContextProvider, ensureSystemContext, type SessionContextProvider } from "./context"
+import { defaultContextProvider, ensureSystemContext, withRoleBody, BUTLER_BODY, type SessionContextProvider } from "./context"
 import type { ExecPolicy, ExecRule, ApprovalRequest } from "@newhorse/schema"
 
 /**
@@ -211,8 +211,19 @@ export async function createApp(config: AppConfig): Promise<App> {
 
   const sessionId = config.sessionId ?? stableSessionId(config.workspace ?? process.cwd())
   const existing = await events.read(sessionId)
+  // The log is authoritative for the fixed role and the permission level when
+  // a session already exists: re-attaching a butler session (attach-after-fork,
+  // lazy re-attach after restart) must bring its coordinator toolset back, and
+  // a logged Session.PolicyChanged must survive restarts — silently reverting a
+  // readonly session to strict would WIDEN its authority.
+  const loggedCreated = existing.find((e) => e.type === "Session.Created")
+  const asButler = config.asButler === true || (loggedCreated?.data as { role?: string } | undefined)?.role === "butler"
+  const loggedPolicy = [...existing].reverse().find((e) => e.type === "Session.PolicyChanged")?.data as { to?: string } | undefined
+  const restoredPolicy = loggedPolicy?.to === "strict" || loggedPolicy?.to === "readonly" || loggedPolicy?.to === "trusted" ? loggedPolicy.to : undefined
   if (existing.length === 0) {
-    await events.append(sessionId, "Session.Created", { id: sessionId, location: config.workspace ?? process.cwd(), createdAt: Date.now() })
+    // `role` marks the fixed session role (registry fold → client badge); only
+    // emitted for butler so ordinary sessions keep the lean Created payload.
+    await events.append(sessionId, "Session.Created", { id: sessionId, location: config.workspace ?? process.cwd(), createdAt: Date.now(), ...(asButler ? { role: "butler" } : {}) })
   }
 
   const registry = new SessionRegistry(events)
@@ -289,7 +300,7 @@ export async function createApp(config: AppConfig): Promise<App> {
       ts: Date.now(),
     })
   }
-  if (config.asButler) tools.push(...createButlerTools({ registry, appendAudit }))
+  if (asButler) tools.push(...createButlerTools({ registry, appendAudit }))
 
   // First occurrence wins so precedence (explicit > plugin > builtin) is
   // preserved: a later duplicate with the same name never shadows a higher-
@@ -307,7 +318,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   // Approval policy is DYNAMIC: the host may set it (app.setPolicy) and the
   // model may request a change (request_mode tool) — so the tool surface and
   // the floor are computed per-prompt from currentPolicy, never cached.
-  let currentPolicy: "strict" | "trusted" | "readonly" = config.approvalPolicy ?? "strict"
+  let currentPolicy: "strict" | "trusted" | "readonly" = restoredPolicy ?? config.approvalPolicy ?? "strict"
   const applyPolicy = (tools: typeof agentTools, policy: "strict" | "trusted" | "readonly") =>
     policy === "readonly" ? tools.filter((t) => t.sideEffects === false) : tools
 
@@ -365,7 +376,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   // settle, promotes the child's final text into the PARENT's inbox as a
   // synthetic result so the parent's next turn sees it. Without the driver
   // (non-butler) the hub is undefined.
-  const hub = config.asButler
+  const hub = asButler
     ? createSessionHub(
         events,
         () => ({ interrupt: () => {}, prompt: async () => "" }),
@@ -480,8 +491,8 @@ export async function createApp(config: AppConfig): Promise<App> {
       // per the "model-visible ⟺ logged" rule. It is appended only once: once a
       // system message is already in the log we reuse it, so repeated prompts in
       // a session do not keep re-inserting the same context.
-      await ensureSystemContext(events, sessionId, workspace, contextProvider)
-      const effPrincipal = principal ?? (config.asButler ? "butler" : "parent")
+      await ensureSystemContext(events, sessionId, workspace, asButler ? withRoleBody(contextProvider, BUTLER_BODY) : contextProvider)
+      const effPrincipal = principal ?? (asButler ? "butler" : "parent")
       await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: effPrincipal })
 
       // A fresh abort controller per prompt, so interrupt() cancels only this
@@ -495,7 +506,7 @@ export async function createApp(config: AppConfig): Promise<App> {
         abort: () => ctrl.abort(),
         admit: (text) => inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: "butler" }).then(() => {}),
       }) : undefined
-      const caller: Initiator = effPrincipal === "user" ? { kind: "user" } : config.asButler ? { kind: "butler", sessionId } : { kind: "parent", sessionId }
+      const caller: Initiator = effPrincipal === "user" ? { kind: "user" } : asButler ? { kind: "butler", sessionId } : { kind: "parent", sessionId }
       try {
         // Per-prompt tool surface from the CURRENT policy (+ request_mode in
         // readonly so the model can ask to leave plan mode).

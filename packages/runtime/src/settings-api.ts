@@ -1,4 +1,4 @@
-import type { RuntimeSettings, AgentHomeConfig } from "./config"
+import type { ProviderProfile, RuntimeSettings, AgentHomeConfig } from "./config"
 
 /**
  * Settings controller — the server-facing contract for the client's settings
@@ -12,16 +12,26 @@ export interface SettingsController {
   readonly write: (patch: AgentHomeConfig) => Promise<RuntimeSettings>
 }
 
-export interface RedactedSettings extends Omit<RuntimeSettings, "provider" | "token" | "registry" | "advertiseUrl"> {
+/** A client-safe provider preset: presence + hint, never the key itself. */
+export type RedactedProfile = Omit<ProviderProfile, "apiKey"> & { readonly hasApiKey: boolean; readonly apiKeyHint?: string }
+
+export interface RedactedSettings extends Omit<RuntimeSettings, "provider" | "token" | "registry" | "advertiseUrl" | "providers"> {
   provider: Omit<RuntimeSettings["provider"], "apiKey"> & { readonly hasApiKey: boolean; readonly apiKeyHint?: string }
   readonly hasToken: boolean
+  readonly providers?: readonly RedactedProfile[]
+}
+
+const redactProfile = (p: ProviderProfile): RedactedProfile => {
+  const { apiKey, ...rest } = p
+  void apiKey
+  return { ...rest, hasApiKey: !!apiKey, ...(apiKey && apiKey.length > 8 ? { apiKeyHint: `…${apiKey.slice(-4)}` } : {}) }
 }
 
 /** Client-safe view: secrets are never returned, only presence + a hint. */
 export function redactSettings(s: RuntimeSettings): RedactedSettings {
   const { apiKey, ...provider } = s.provider
   void apiKey
-  const { token, registry, advertiseUrl, ...rest } = s
+  const { token, registry, advertiseUrl, providers, ...rest } = s
   void token
   void registry
   void advertiseUrl
@@ -29,5 +39,6 @@ export function redactSettings(s: RuntimeSettings): RedactedSettings {
     ...rest,
     provider: { ...provider, hasApiKey: !!apiKey, ...(apiKey && apiKey.length > 8 ? { apiKeyHint: `…${apiKey.slice(-4)}` } : {}) },
     hasToken: !!s.token,
+    ...(providers && providers.length > 0 ? { providers: providers.map(redactProfile) } : {}),
   }
 }
