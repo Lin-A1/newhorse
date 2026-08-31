@@ -406,8 +406,9 @@ body::before {
   box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
 }
 
-/* solid raised surface for the composer (nothing can bleed through) */
-.composer-solid {
+/* solid raised surface for the composer + popovers (nothing can bleed through) */
+.composer-solid,
+.pop-surface {
   background: var(--surface-solid);
 }
 

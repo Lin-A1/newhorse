@@ -166,6 +166,15 @@ export function SessionView({ id }: { id: string }) {
   const [goalText, setGoalText] = useState("")
   const [goalBudget, setGoalBudget] = useState("")
   const [ctx, setCtx] = useState<{ estTokens: number; windowTokens?: number; ratio?: number } | null>(null)
+  // close the goal form when the composer gets focus (they share vertical space)
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const el = composerRef.current
+    if (!el) return
+    const onFocus = (): void => setGoalOpen(false)
+    el.addEventListener("focus", onFocus)
+    return () => el.removeEventListener("focus", onFocus)
+  }, [])
 
   const fold = useCallback((): Promise<void> => api.events(id).then((events) => setTurns(foldTranscript(events))).catch(() => setTurns([])), [id])
 
@@ -401,7 +410,7 @@ export function SessionView({ id }: { id: string }) {
         </button>
       </div>
       {goalOpen && (
-        <div className="nh-rise border-b border-line bg-black/15 p-4 space-y-2.5">
+        <div className="nh-rise shrink-0 border-b border-line bg-black/15 p-4 space-y-2.5">
           <textarea className="input-base resize-none" rows={2} placeholder="目标（模型可见，将引导整个会话）" value={goalText} onChange={(e) => setGoalText(e.target.value)} />
           <div className="flex items-center gap-2">
             <input type="number" className="input-base !w-40" placeholder="token 预算（可选）" value={goalBudget} onChange={(e) => setGoalBudget(e.target.value)} />
@@ -499,6 +508,7 @@ export function SessionView({ id }: { id: string }) {
         )}
         <div className="panel-strong composer-solid overflow-hidden !rounded-[18px]">
           <textarea
+            ref={composerRef}
             className="nh-grow max-h-44 min-h-[46px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-sm outline-none placeholder:text-faint"
             rows={1}
             placeholder={busy ? "运行中…输入追问，Enter 插入（Esc 中断）" : "继续对话…"}

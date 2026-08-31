@@ -119,6 +119,12 @@ export function SettingsPage() {
                   </div>
                 </Field>
               </div>
+              {!settings.provider.hasApiKey && !keyInput.trim() && (
+                <div className="flex items-center gap-2 rounded-lg border border-warn/30 bg-warn/[0.07] px-3 py-2 text-[12px] text-warn">
+                  <Info size={13} />
+                  尚未设置 API Key——先在上方粘贴一个再保存，模型下拉列表才能拉取。
+                </div>
+              )}
             </Panel>
           )}
 

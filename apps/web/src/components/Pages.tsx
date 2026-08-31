@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { api, prettyTitle } from "../api"
 import { useStore } from "../store"
-import { IconFile } from "./icons"
+import { IconChart, IconFile, IconMemory } from "./icons"
 
 function PageHeader({ title, sub }: { title: string; sub?: string }) {
   return (
@@ -62,8 +62,26 @@ export function UsagePage() {
           <option value={90}>最近 90 天</option>
         </select>
       </div>
-      {err && <div className="mb-3 text-xs text-bad">{err}</div>}
+      {err && <div className="mb-3 rounded-xl border border-bad/25 bg-bad/[0.07] px-3.5 py-2.5 text-xs text-bad">{err}</div>}
 
+      {data && !err && data.sessions === 0 && (
+        <div className="rise panel flex flex-col items-center gap-2.5 px-6 py-14 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface2">
+            <IconChart size={17} className="text-faint" />
+          </div>
+          <div className="text-[14px] font-medium text-fg">还没有用量记录</div>
+          <p className="max-w-sm text-[12.5px] leading-relaxed text-faint">完成一次对话后，这里会显示真实统计：输入 / 输出 tokens、执行步数、每日强度与各模型消耗。</p>
+          <button
+            className="btn-primary mt-1 !px-4 !py-1.5 !text-[13px]"
+            onClick={() => window.dispatchEvent(new CustomEvent("nh-open-settings"))}
+          >
+            先去配置一个供应商
+          </button>
+        </div>
+      )}
+
+      {(!data || data.sessions > 0) && (
+      <>
       <div className="mb-4 grid grid-cols-3 gap-2.5">
         {[
           { label: "输入 tokens", value: fmt(data?.totals.inputTokens ?? 0) },
@@ -113,6 +131,8 @@ export function UsagePage() {
           ))}
         </div>
       </div>
+      </>
+      )}
       </div>
     </div>
   )
@@ -301,7 +321,22 @@ export function MemoryPage() {
           </div>
           {err && <div className="mb-3 rounded-xl border border-bad/25 bg-bad/[0.07] px-3.5 py-2.5 text-xs text-bad">{err}</div>}
           <div className="space-y-2.5">
-            {rows.length === 0 && <div className="text-[13px] text-faint">没有记忆{q ? "命中" : "（会话中模型会自动沉淀）"}</div>}
+            {rows.length === 0 && (
+              <div className="rise panel flex flex-col items-center gap-2.5 px-6 py-12 text-center">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface2">
+                  <IconMemory size={17} className="text-faint" />
+                </div>
+                <div className="text-[14px] font-medium text-fg">{q ? "没有命中" : "记忆库还是空的"}</div>
+                <p className="max-w-sm text-[12.5px] leading-relaxed text-faint">
+                  {q ? "换个关键词试试，或用空白搜索看全部记忆。" : "会话进行时，模型会把重要的结论通过 memory_write 自动沉淀到这里；也可以手动搜索已沉淀的内容。"}
+                </p>
+                {!q && (
+                  <button className="btn-primary mt-1 !px-4 !py-1.5 !text-[13px]" onClick={() => window.dispatchEvent(new CustomEvent("nh-open-settings"))}>
+                    检查记忆设置
+                  </button>
+                )}
+              </div>
+            )}
         {rows.map((m, i) => (
           <div key={m.id} className="rise group overflow-hidden rounded-xl border border-line bg-surface transition-colors hover:bg-surface2" style={{ ["--d" as string]: `${i * 50}ms` }}>
             <div className="flex items-start gap-3 p-4">
