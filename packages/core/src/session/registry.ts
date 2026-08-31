@@ -24,6 +24,7 @@ export interface SessionRow {
   readonly parentId?: string
   readonly createdAt: number
   readonly updatedAt: number
+  readonly archived?: boolean
 }
 
 export type SessionStatus = "created" | "active" | "settled" | "interrupted"
@@ -135,6 +136,7 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
   let model: string | undefined
   let parentId: string | undefined
   let title: string | undefined
+  let archived = false
   let hasCreated = false
 
   for (const event of stored) {
@@ -179,6 +181,10 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
         if (status === "created") status = "active"
         break
       }
+      case "Session.Archived": {
+        archived = (event.data as { archived?: boolean }).archived ?? true
+        break
+      }
       case "Session.TitleSet": {
         title = (event.data as { title?: string }).title
         break
@@ -189,7 +195,7 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
   }
 
   if (!hasCreated) return undefined
-  return { sessionId: sessionId || workspace, workspace, projectId, title, status, model, parentId, createdAt, updatedAt }
+  return { sessionId: sessionId || workspace, workspace, projectId, title, status, model, parentId, createdAt, updatedAt, archived }
 }
 
 function excerpt(content: readonly unknown[]): string {

@@ -36,7 +36,7 @@ interface Store {
   settleApproval: (id: string, allow: boolean) => Promise<void>
 }
 
-export type View = { kind: "home" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "schedules" } | { kind: "memory" } | { kind: "settings" } | { kind: "dag" } | { kind: "skills" }
+export type View = { kind: "home" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "schedules" } | { kind: "memory" } | { kind: "settings" }
 
 const Ctx = createContext<Store | null>(null)
 
@@ -77,7 +77,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const refreshSessions = useCallback((): Promise<void> => api.sessions().then(setSessions).catch(() => {}), [])
+  const refreshSessions = useCallback((): Promise<void> => api.sessions().then((rs) => setSessions((rs as any[]).filter((r) => !r.archived))).catch(() => {}), [])
   const reloadSettings = useCallback((): Promise<void> => api.settings().then(setSettings).catch(() => {}), [])
 
   useEffect(() => {

@@ -114,6 +114,7 @@ export const api = {
   context: (id: string) => json<{ chars: number; estTokens: number; windowTokens?: number; ratio?: number }>(`/v1/session/${id}/context`),
 
   // --- session management ---
+  archiveSession: (id: string) => json<{ archived: boolean }>(`/v1/session/${id}/archive`, { body: { archived: true } }),
   forkSession: (id: string, atSeq?: number) => json<{ sessionId: string; forkedFrom: string }>(`/v1/session/${id}/fork`, { body: atSeq !== undefined ? { atSeq } : {} }),
   setTitle: (id: string, title: string) => json<{ title: string }>(`/v1/session/${id}/title`, { body: { title } }),
   fs: (workspace?: string, path?: string) => json<{ path: string; entries: Array<{ name: string; dir: boolean }> }>(`/v1/fs?${workspace ? `workspace=${encodeURIComponent(workspace)}&` : ""}${path ? `path=${encodeURIComponent(path)}` : ""}`),

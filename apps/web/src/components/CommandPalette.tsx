@@ -33,8 +33,6 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       { id: "usage", label: "用量统计", hint: "热力图与模型分布", action: () => { setView({ kind: "usage" }); onClose() } },
       { id: "schedules", label: "定时任务", hint: "到点发提示词", action: () => { setView({ kind: "schedules" }); onClose() } },
       { label: "记忆库", id: "memory", hint: "语义+关键词检索", action: () => { setView({ kind: "memory" }); onClose() } },
-      { id: "dag", label: "编排", hint: "DAG 声明式调度", action: () => { setView({ kind: "dag" }); onClose() } },
-      { id: "skills", label: "能力", hint: "技能与代理角色", action: () => { setView({ kind: "skills" }); onClose() } },
       { id: "settings", label: "设置", hint: "供应商/预算/权限/局域网", action: () => { setView({ kind: "settings" }); onClose() } },
     ]
     // model switch entries

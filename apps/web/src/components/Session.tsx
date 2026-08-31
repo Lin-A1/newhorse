@@ -498,11 +498,11 @@ export function SessionView({ id }: { id: string }) {
         )}
         <div className="panel-strong composer-solid overflow-hidden !rounded-[18px] transition-shadow focus-within:!border-linestrong">
           <textarea
-            className="max-h-44 min-h-[46px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-sm outline-none placeholder:text-faint"
+            className="nh-grow max-h-44 min-h-[46px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-sm outline-none placeholder:text-faint"
             rows={1}
             placeholder={busy ? "运行中…输入追问，Enter 插入（Esc 中断）" : "继续对话…"}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { setInput(e.target.value); e.target.style.height = "46px"; e.target.style.height = e.target.scrollHeight + "px" }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()

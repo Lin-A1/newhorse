@@ -672,6 +672,18 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         return json(201, rec)
       }
 
+      // POST /v1/session/:id/archive {archived} — archive/unarchive a session.
+      if (method === "POST" && parts.length === 4 && parts[3] === "archive") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "archive on a remote-owned session is not proxied yet" })
+        const parsed = await readJsonOr400<{ archived?: boolean }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const archived = parsed.archived !== false
+        await found.app.events.append(parts[2]!, "Session.Archived", { sessionId: parts[2]!, archived, ts: Date.now() })
+        return json(200, { archived })
+      }
+
       // POST /v1/session/:id/title {title} — durable rename (Session.TitleSet).
       if (method === "POST" && parts.length === 4 && parts[3] === "title") {
         const found = await findSession(parts[2]!)

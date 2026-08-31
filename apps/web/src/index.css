@@ -623,3 +623,9 @@ body::before {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* textarea auto-grow */
+.nh-grow {
+  overflow-y: hidden;
+  transition: height 0.1s ease;
+}
