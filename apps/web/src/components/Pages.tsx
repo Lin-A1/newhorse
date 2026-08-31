@@ -194,7 +194,7 @@ export function SchedulesPage() {
               <div className="text-sm text-slate-200 whitespace-pre-wrap">{s.prompt}</div>
               <div className="text-[11px] text-slate-500 mt-1">
                 {s.intervalMinutes ? `每 ${s.intervalMinutes} 分钟` : s.dailyAt ? `每天 ${s.dailyAt}` : `cron: ${s.cron}`} · 会话 {s.sessionId.slice(0, 8)}
-                {s.lastRunAt ? ` · 上次 ${new Date(s.lastRunAt).toLocaleString()} ${s.lastResult === "ok" ? "✅" : "❌"}` : " · 未运行过"}
+                {s.lastRunAt ? ` · 上次 ${new Date(s.lastRunAt).toLocaleString()} ${s.lastResult === "ok" ? "成功" : "失败"}` : " · 未运行过"}
                 {s.lastError ? ` · ${s.lastError}` : ""}
               </div>
             </div>

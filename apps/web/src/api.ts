@@ -144,19 +144,19 @@ export function foldTranscript(events: Array<{ type: string; data: Record<string
     } else if (e.type === "Session.TodoUpdated") {
       flush()
       const todos = (d.todos as Array<{ content: string; status: string }>) ?? []
-      out.push({ kind: "todo", text: todos.map((t) => `${t.status === "completed" ? "☑" : t.status === "in_progress" ? "▶" : "☐"} ${t.content}`).join("\n") })
+      out.push({ kind: "todo", text: todos.map((t) => `${t.status === "completed" ? "[done]" : t.status === "in_progress" ? "[now]" : "[ ]"} ${t.content}`).join("\n") })
     } else if (e.type === "Session.GoalUpdated") {
       flush()
-      out.push({ kind: "goal", text: `🎯 ${String(d.objective ?? "")}（${String(d.status ?? "")}）` })
+      out.push({ kind: "goal", text: `${String(d.objective ?? "")}（${String(d.status ?? "")}）` })
     } else if (e.type === "Session.MemoryStored") {
       flush()
-      out.push({ kind: "note", text: `🧠 记忆：${String(d.content ?? "")}` })
+      out.push({ kind: "note", text: `记忆已沉淀：${String(d.content ?? "")}` })
     } else if (e.type === "Session.Interrupted") {
       flush()
-      out.push({ kind: "note", text: "⛔ 已中断" })
+      out.push({ kind: "note", text: "已中断" })
     } else if (e.type === "Session.Compacted") {
       flush()
-      out.push({ kind: "note", text: `📦 上下文已压缩` })
+      out.push({ kind: "note", text: "上下文已压缩" })
     }
   }
   flush()
