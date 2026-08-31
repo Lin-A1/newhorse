@@ -7,6 +7,12 @@ import type { EffectiveSettingsView } from "./types"
  * the active view, the running flag (drives the ball/mood), and a settings
  * reload trigger after writes.
  */
+interface Approval {
+  id: string
+  kind: string
+  target: string
+}
+
 interface Store {
   sessions: SessionRow[]
   refreshSessions: () => Promise<void>
@@ -18,6 +24,8 @@ interface Store {
   setRunning: (r: boolean) => void
   toast: string | null
   showToast: (t: string) => void
+  approvals: Approval[]
+  settleApproval: (id: string, allow: boolean) => Promise<void>
 }
 
 export type View = { kind: "home" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "schedules" } | { kind: "memory" }
@@ -36,6 +44,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [view, setView] = useState<View>({ kind: "home" })
   const [running, setRunning] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [approvals, setApprovals] = useState<Approval[]>([])
+
+  useEffect(() => {
+    let alive = true
+    const tick = (): void => {
+      api
+        .approvals()
+        .then((r) => alive && setApprovals(r.approvals))
+        .catch(() => {})
+    }
+    tick()
+    const t = setInterval(tick, 2000)
+    return () => {
+      alive = false
+      clearInterval(t)
+    }
+  }, [])
 
   const refreshSessions = useCallback((): Promise<void> => api.sessions().then(setSessions).catch(() => {}), [])
   const reloadSettings = useCallback((): Promise<void> => api.settings().then(setSettings).catch(() => {}), [])
@@ -50,7 +75,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => setToast((cur) => (cur === t ? null : cur)), 2600)
   }, [])
 
-  return <Ctx.Provider value={{ sessions, refreshSessions, settings, reloadSettings, view, setView, running, setRunning, toast, showToast }}>{children}</Ctx.Provider>
+  const settleApproval = useCallback(
+    async (id: string, allow: boolean): Promise<void> => {
+      await api.approve(id, allow)
+      setApprovals((a) => a.filter((x) => x.id !== id))
+    },
+    [],
+  )
+
+  return <Ctx.Provider value={{ sessions, refreshSessions, settings, reloadSettings, view, setView, running, setRunning, toast, showToast, approvals, settleApproval }}>{children}</Ctx.Provider>
 }
 
 export function openSession(id: string): void {

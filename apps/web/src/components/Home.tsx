@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { api } from "../api"
 import { EmotionBall } from "./EmotionBall"
-import { ModelPill } from "./Session"
+import { ModelPill } from "./ModelPill"
 import { IconSend } from "./icons"
 import { useStore } from "../store"
 

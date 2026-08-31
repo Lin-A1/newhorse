@@ -111,8 +111,8 @@ export interface Schedule { id: string; sessionId: string; prompt: string; enabl
 export interface MemoryRecord { id: string; content: string; type: string; priority: number; sessionId?: string; createdAt: number }
 
 /** Fold the durable event log into a displayable transcript. */
-export function foldTranscript(events: Array<{ type: string; data: Record<string, unknown> }>): Array<{ kind: "user" | "assistant" | "tool" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string }> {
-  const out: Array<{ kind: "user" | "assistant" | "tool" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string }> = []
+export function foldTranscript(events: Array<{ type: string; data: Record<string, unknown> }>): Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string }> {
+  const out: Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string }> = []
   let assistant = ""
   const flush = (): void => {
     if (assistant) {
@@ -131,6 +131,10 @@ export function foldTranscript(events: Array<{ type: string; data: Record<string
       if (m.kind === "assistant" && Array.isArray(m.content)) {
         for (const p of m.content) {
           if (p.type === "text" && p.text) assistant += p.text
+          if ((p.type === "thinking" || p.type === "reasoning") && p.text) {
+            flush()
+            out.push({ kind: "thinking", text: p.text })
+          }
           if (p.type === "tool-call") {
             flush()
             out.push({ kind: "tool", toolName: p.name, text: JSON.stringify(p.input ?? {}).slice(0, 400) })
