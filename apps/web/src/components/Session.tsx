@@ -139,7 +139,8 @@ function toolDetail(toolName: string | undefined, body: string | undefined): str
 }
 
 export function SessionView({ id }: { id: string }) {
-  const { refreshSessions, setRunning, setMood, setSessionStatus, approvals, settleApproval, showToast } = useStore()
+  const { refreshSessions, setRunning, setMood, setSessionStatus, approvals, settleApproval, showToast, settings } = useStore()
+  const policy = settings?.approvalPolicy ?? "strict"
   const [turns, setTurns] = useState<Turn[]>([])
   const [parts, setParts] = useState<Turn[]>([])
   const [busy, setBusy] = useState(false)
@@ -496,13 +497,18 @@ export function SessionView({ id }: { id: string }) {
             </button>
           </div>
         )}
-        <div className="panel-strong composer-solid overflow-hidden !rounded-[18px] transition-shadow focus-within:!border-linestrong">
+        <div className="panel-strong composer-solid overflow-hidden !rounded-[18px]">
           <textarea
             className="nh-grow max-h-44 min-h-[46px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3 text-sm outline-none placeholder:text-faint"
             rows={1}
             placeholder={busy ? "运行中…输入追问，Enter 插入（Esc 中断）" : "继续对话…"}
             value={input}
-            onChange={(e) => { setInput(e.target.value); e.target.style.height = "46px"; e.target.style.height = e.target.scrollHeight + "px" }}
+            onChange={(e) => {
+              setInput(e.target.value)
+              const el = e.target
+              el.style.height = "auto"
+              el.style.height = Math.min(el.scrollHeight, 176) + "px"
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault()
@@ -512,8 +518,18 @@ export function SessionView({ id }: { id: string }) {
             }}
           />
           {/* bottom toolbar (ZCode-style composer) */}
-          <div className="flex items-center gap-2 border-t border-line px-2.5 py-1.5">
+          <div className="flex items-center gap-2 px-2.5 py-1.5">
             <ModelPill compact />
+            {policy === "readonly" && (
+              <span className="pill !border-warn/25 !bg-warn/10 !text-[10.5px] !text-warn" title="计划模式：仅可读，模型无法执行写入操作">
+                只读
+              </span>
+            )}
+            {policy === "trusted" && (
+              <span className="pill !border-ok/25 !bg-ok/10 !text-[10.5px] !text-ok" title="完全访问：跳过审批">
+                完全访问
+              </span>
+            )}
             {!busy && (
               <span className="hidden items-center gap-2 text-[10px] text-faint lg:flex">
                 <span className="flex items-center gap-1"><kbd className="nh-kbd">Enter</kbd> 发送</span>
