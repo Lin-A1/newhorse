@@ -133,3 +133,9 @@ export const IconX = ({ size = 14, className }: IconProps) => (
     <path d="M6 6l12 12M18 6 6 18" />
   </svg>
 )
+
+export const IconChevron = ({ size = 14, className }: IconProps) => (
+  <svg {...base(size)} className={className}>
+    <path d="M9 6l6 6-6 6" />
+  </svg>
+)

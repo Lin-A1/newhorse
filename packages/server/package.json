@@ -12,7 +12,8 @@
     "@newhorse/runtime": "workspace:*",
     "@newhorse/schema": "workspace:*",
     "@newhorse/llm": "workspace:*",
-    "@newhorse/memory": "workspace:*"
+    "@newhorse/memory": "workspace:*",
+    "@newhorse/core": "workspace:*"
   },
   "bin": {
     "newhorse-server": "./src/main.ts"

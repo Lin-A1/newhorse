@@ -83,6 +83,7 @@
         "newhorse-server": "./src/main.ts",
       },
       "dependencies": {
+        "@newhorse/core": "workspace:*",
         "@newhorse/llm": "workspace:*",
         "@newhorse/memory": "workspace:*",
         "@newhorse/runtime": "workspace:*",

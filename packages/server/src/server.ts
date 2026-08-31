@@ -1,5 +1,7 @@
 import { createApp, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow, type SessionDirectory, type DirectoryEntry, type SettingsController, type AgentHomeConfig, type ApprovalHub, type Scheduler, type ScheduleInput, type Schedule } from "@newhorse/runtime"
 import { redactSettings, aggregateUsage } from "@newhorse/runtime"
+import { SessionRegistry, SqliteEventStore } from "@newhorse/core"
+import { Database } from "bun:sqlite"
 import type { MemoryStore, MemoryRecord } from "@newhorse/memory"
 import { listModels } from "@newhorse/llm"
 import type { AdapterConfig, Fetcher } from "@newhorse/llm"
@@ -261,6 +263,33 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         }
       }
     }
+    if (settings) {
+      // Lazy re-attach: the session exists in the DURABLE registry but no App
+      // is attached yet (server restart). Rebuild it from the row so history
+      // stays readable and the conversation can continue after a restart.
+      try {
+        const db = new Database(join(settings.get().dataDir, "events.db"), { readonly: true })
+        let row: { sessionId: string; workspace: string; model?: string } | undefined
+        try {
+          const registry = new SessionRegistry(new SqliteEventStore(db))
+          row = (await registry.list()).find((r) => r.sessionId === sessionId)
+        } finally {
+          db.close()
+        }
+        if (row) {
+          const resolved = await resolveApp({ sessionId, workspace: row.workspace, model: row.model })
+          if (resolved?.app) {
+            if (directory) {
+              directory.register(sessionId, selfUrl())
+              owned.add(sessionId)
+            }
+            return { kind: "local", app: resolved.app }
+          }
+        }
+      } catch {
+        // registry unavailable — fall through to the resolver/miss
+      }
+    }
     if (sessionResolver) {
       // A host-provided resolver may lazily re-attach sessions (from disk,
       // from another node, etc.) — cache the result to avoid repeated resolution.
@@ -492,14 +521,29 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         return json(200, { self: selfUrl(), live: directory?.entries() ?? [] })
       }
 
-      // GET /v1/sessions
+      // GET /v1/sessions — the DURABLE registry (survives restarts) when a
+      // settings surface gives us the dataDir; otherwise the in-memory apps.
       if (method === "GET" && parts.length === 2 && parts[1] === "sessions") {
         const ws = url.searchParams.get("workspace") ?? undefined
         const st = url.searchParams.get("status") ?? undefined
         const query: RegistryQuery = ws || st ? { ...(ws ? { workspace: ws } : {}), ...(st ? { status: st as RegistryQuery["status"] } : {}) } : {}
+        if (settings) {
+          try {
+            const db = new Database(join(settings.get().dataDir, "events.db"), { readonly: true })
+            try {
+              const store = new SqliteEventStore(db)
+              const registry = new SessionRegistry(store)
+              const rows = await registry.list(query)
+              return json(200, rows)
+            } finally {
+              db.close()
+            }
+          } catch {
+            // no events.db yet — fall through to the in-memory view
+          }
+        }
         const rows: SessionRow[] = []
         for (const app of apps.values()) rows.push(...(await app.listSessions(query)))
-        // de-dup by sessionId (same session can appear once per App but Apps are 1:1)
         const seen = new Set<string>()
         return json(200, rows.filter((r) => !seen.has(r.sessionId) && seen.add(r.sessionId)))
       }
