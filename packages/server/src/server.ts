@@ -9,6 +9,7 @@ import { listModels } from "@newhorse/llm"
 import type { AdapterConfig, Fetcher } from "@newhorse/llm"
 import type { StoredEvent, ApprovalRequest } from "@newhorse/schema"
 import { join, resolve, sep } from "node:path"
+import { readdir } from "node:fs/promises"
 
 /**
  * Runtime server (Phase 1): transport-only HTTP + SSE boundary over `createApp`.
@@ -669,6 +670,115 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         if (!parsed.content?.trim()) return json(400, { error: "content is required" })
         const rec = await memory.write({ content: parsed.content.trim(), type: (parsed.type as "fact") ?? "fact", priority: parsed.priority ?? 50, sessionId: "client" })
         return json(201, rec)
+      }
+
+      // POST /v1/session/:id/title {title} — durable rename (Session.TitleSet).
+      if (method === "POST" && parts.length === 4 && parts[3] === "title") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "rename on a remote-owned session is not proxied yet" })
+        const parsed = await readJsonOr400<{ title?: string }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const title = parsed.title?.trim()
+        if (!title) return json(400, { error: "title is required" })
+        await found.app.events.append(parts[2]!, "Session.TitleSet", { sessionId: parts[2]!, title, ts: Date.now() })
+        return json(200, { title })
+      }
+
+      // POST /v1/session/:id/fork {atSeq?} — branch at a message boundary:
+      // copies the log prefix (≤ atSeq, default all) into a NEW session id and
+      // returns it. Append-only philosophy: backtrack = fork, never truncate.
+      if (method === "POST" && parts.length === 4 && parts[3] === "fork") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "fork of a remote-owned session is not proxied yet" })
+        const parsed = await readJsonOr400<{ atSeq?: number }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const source = await found.app.events.read(parts[2]!)
+        const atSeq = parsed.atSeq !== undefined ? parsed.atSeq : Number.MAX_SAFE_INTEGER
+        const prefix = source.filter((e) => e.seq <= atSeq)
+        if (prefix.length === 0) return json(400, { error: "nothing to fork at that seq" })
+        const newId = crypto.randomUUID()
+        for (const e of prefix) {
+          if (e.type === "Session.Created") continue
+          await found.app.events.append(newId, e.type, e.data)
+        }
+        await found.app.events.append(newId, "Session.Created", { id: newId, location: found.app.sessionId ? "" : "", createdAt: Date.now() })
+        return json(201, { sessionId: newId, forkedFrom: parts[2]!, atSeq })
+      }
+
+      // GET /v1/fs?path= — sandboxed one-level listing under the workspace.
+      if (method === "GET" && parts.length === 2 && parts[1] === "fs") {
+        if (!settings) return json(404, { error: "no settings controller configured" })
+        const ws = url.searchParams.get("workspace") ?? settings.get().workspace
+        const rel = url.searchParams.get("path") ?? "."
+        const rootAbs = resolve(ws)
+        const targetAbs = resolve(ws, rel)
+        if (targetAbs !== rootAbs && !targetAbs.startsWith(rootAbs + sep)) return json(403, { error: "path escapes the workspace" })
+        try {
+          const dir = await readdir(targetAbs, { withFileTypes: true })
+          const entries = []
+          for (const d of dir) {
+            if (d.name.startsWith(".") || d.name === "node_modules") continue
+            entries.push({ name: d.name, dir: d.isDirectory() })
+          }
+          return json(200, { path: rel, entries: entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1)) })
+        } catch {
+          return json(200, { path: rel, entries: [] })
+        }
+      }
+
+      // POST /v1/session/:id/title {title} — durable rename (Session.TitleSet).
+      if (method === "POST" && parts.length === 4 && parts[3] === "title") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "rename on a remote-owned session is not proxied yet" })
+        const parsed = await readJsonOr400<{ title?: string }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const title = parsed.title?.trim()
+        if (!title) return json(400, { error: "title is required" })
+        await found.app.events.append(parts[2]!, "Session.TitleSet", { sessionId: parts[2]!, title, ts: Date.now() })
+        return json(200, { title })
+      }
+
+      // POST /v1/session/:id/fork {atSeq?} — branch at a message boundary
+      // (codex backtrack: append-only fork, never truncate).
+      if (method === "POST" && parts.length === 4 && parts[3] === "fork") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "fork of a remote-owned session is not proxied yet" })
+        const parsed = await readJsonOr400<{ atSeq?: number }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        const source = await found.app.events.read(parts[2]!)
+        const atSeq = parsed.atSeq !== undefined ? parsed.atSeq : Number.MAX_SAFE_INTEGER
+        const prefix = source.filter((e) => e.seq <= atSeq && e.type !== "Session.Created")
+        if (prefix.length === 0) return json(400, { error: "nothing to fork at that seq" })
+        const newId = crypto.randomUUID()
+        for (const e of prefix) {
+          await found.app.events.append(newId, e.type, e.data)
+        }
+        return json(201, { sessionId: newId, forkedFrom: parts[2]!, atSeq: Math.min(atSeq, prefix[prefix.length - 1]!.seq) })
+      }
+
+      // GET /v1/fs?path=&workspace= — sandboxed one-level listing.
+      if (method === "GET" && parts.length === 2 && parts[1] === "fs") {
+        if (!settings) return json(404, { error: "no settings controller configured" })
+        const ws = url.searchParams.get("workspace") ?? settings.get().workspace
+        const rel = url.searchParams.get("path") ?? "."
+        const rootAbs = resolve(ws)
+        const targetAbs = resolve(ws, rel)
+        if (targetAbs !== rootAbs && !targetAbs.startsWith(rootAbs + sep)) return json(403, { error: "path escapes the workspace" })
+        try {
+          const dir = await readdir(targetAbs, { withFileTypes: true })
+          const entries = []
+          for (const d of dir) {
+            if (d.name.startsWith(".") || d.name === "node_modules") continue
+            entries.push({ name: d.name, dir: d.isDirectory() })
+          }
+          return json(200, { path: rel, entries: entries.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name) : a.dir ? -1 : 1)) })
+        } catch {
+          return json(200, { path: rel, entries: [] })
+        }
       }
 
       // GET /v1/skills — the pluginsDir skills catalog (level 1 + body on demand).

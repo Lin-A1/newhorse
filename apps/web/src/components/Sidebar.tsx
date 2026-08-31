@@ -33,7 +33,7 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-2.5 px-4 pt-4 pb-3">
-        <EmotionBall mood={mood} size={34} />
+        <EmotionBall mood={mood} size={34} interactive />
         <div>
           <div className="text-[14px] font-semibold tracking-tight text-fg">newhorse</div>
           <div className="text-[10.5px] text-faint">agent runtime</div>

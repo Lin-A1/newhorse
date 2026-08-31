@@ -54,7 +54,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
               </g>
             </svg>
             <div className="hero-float">
-              <EmotionBall mood={mood} size={108} />
+              <EmotionBall mood={mood} size={108} interactive />
             </div>
           </div>
           <div className="rise" style={{ ["--d" as string]: "60ms" }}>

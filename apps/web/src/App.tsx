@@ -7,6 +7,7 @@ import { SessionView } from "./components/Session"
 import { UsagePage, SchedulesPage, MemoryPage } from "./components/Pages"
 import { SettingsPage } from "./components/SettingsPage"
 import { DagPage, CapabilitiesPage } from "./components/Orchestration"
+import { CommandPalette } from "./components/CommandPalette"
 import { StoreProvider, useStore } from "./store"
 import { IconGear, IconTarget } from "./components/icons"
 
@@ -21,6 +22,7 @@ const VIEW_TITLES: Record<string, string> = { home: "newhorse", usage: "用量�
 function Shell() {
   const { view, setView, sessions, refreshSessions, toast, mood, sessionBusy, sessionElapsed, approvals, settleApproval } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   // legacy dispatchers (error tray, memory CTA) route to the settings page
   useEffect(() => {
@@ -83,6 +85,9 @@ function Shell() {
               {approvals.length} 待审批
             </div>
           )}
+          <button className={`btn-ghost !rounded-lg !p-2 ${paletteOpen ? "!border-accent/40 !text-accent" : ""}`} onClick={() => setPaletteOpen(true)} aria-label="命令面板" title="Ctrl+K">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+          </button>
           <button className={`btn-ghost !rounded-lg !p-2 ${view.kind === "settings" ? "!border-accent/40 !text-accent" : ""}`} onClick={() => setView({ kind: "settings" })} aria-label="设置">
             <IconGear size={15} />
           </button>

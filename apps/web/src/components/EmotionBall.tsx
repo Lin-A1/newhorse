@@ -42,10 +42,13 @@ function capsuleD(w: number, h: number): string {
   return `M ${x + r} ${y} L ${x + w - r} ${y} A ${r} ${r} 0 0 1 ${x + w} ${y + r} L ${x + w} ${y + hh - r} A ${r} ${r} 0 0 1 ${x + w - r} ${y + hh} L ${x + r} ${y + hh} A ${r} ${r} 0 0 1 ${x} ${y + hh - r} L ${x} ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} Z`
 }
 
-export function EmotionBall({ mood = "idle", size = 44, burstKey = 0 }: { mood?: Mood; size?: number; burstKey?: number }) {
+export function EmotionBall({ mood = "idle", size = 44, burstKey = 0, interactive = false }: { mood?: Mood; size?: number; burstKey?: number; interactive?: boolean }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "")
   const gradId = `nhBody${uid}`
   const gRef = useRef<SVGGElement>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  // gaze target: normalized mouse offset from ball center (-1..1 per axis)
+  const gaze = useRef({ x: 0, y: 0 })
   const bodyRef = useRef<SVGCircleElement>(null)
   const e1Ref = useRef<SVGPathElement>(null)
   const e2Ref = useRef<SVGPathElement>(null)
@@ -63,10 +66,15 @@ export function EmotionBall({ mood = "idle", size = 44, burstKey = 0 }: { mood?:
 
   useEffect(() => {
     let start = 0
+    let lastFrame = 0
     const confetti: Array<{ x: number; y: number; vx: number; vy: number; born: number; color: string; star: boolean }> = []
 
     const loop = (ts: number): void => {
       if (!start) start = ts
+      // throttle to ~20fps — enough for smooth motion at ball size, without
+      // starving Playwright actionability checks or the main thread
+      if (ts - lastFrame < 50) { raf.current = requestAnimationFrame(loop); return }
+      lastFrame = ts
       const t = (ts - start) / 1000
       const st = styleRef.current
       const g = gRef.current
@@ -110,8 +118,12 @@ export function EmotionBall({ mood = "idle", size = 44, burstKey = 0 }: { mood?:
       const blinkCycle = (t % 3.6) < 0.13 ? Math.sin(((t % 3.6) / 0.13) * Math.PI) : 1
       const openness = mood === "interrupted" ? 0.5 : 1 - blinkCycle * 0.95
       const pulse = mood === "speaking" ? 1 + Math.sin(t * 9.2) * 0.1 : 1
-      const gx = mood === "thinking" ? Math.sin(t * 2.4) * 4.5 : mood === "busy" ? Math.sin(t * 5.2) * 3 : mood === "searching" ? Math.sin(t * 9) * 5.5 : 0
-      const gy = mood === "thinking" ? -3 + Math.sin(t * 3.1) * 1.2 : mood === "busy" ? Math.sin(t * 7) * 2 : mood === "waiting" ? Math.sin(t * 2.9) * 3 : 0
+      const gx = interactive
+        ? gaze.current.x * 3.5
+        : mood === "thinking" ? Math.sin(t * 2.4) * 4.5 : mood === "busy" ? Math.sin(t * 5.2) * 3 : mood === "searching" ? Math.sin(t * 9) * 5.5 : 0
+      const gy = interactive
+        ? gaze.current.y * 2.5
+        : mood === "thinking" ? -3 + Math.sin(t * 3.1) * 1.2 : mood === "busy" ? Math.sin(t * 7) * 2 : mood === "waiting" ? Math.sin(t * 2.9) * 3 : 0
       const eyeY = st.eyeDy + gy
       const gap = st.gap / 2
       if (e1gRef.current) e1gRef.current.setAttribute("transform", `translate(${(gx - gap).toFixed(2)},${(eyeY + gy).toFixed(2)}) rotate(${st.rot})`)
@@ -178,7 +190,39 @@ export function EmotionBall({ mood = "idle", size = 44, burstKey = 0 }: { mood?:
   }, [burstKey])
 
   return (
-    <svg width={size} height={size} viewBox="-26 -26 52 52" style={{ overflow: "visible" }} aria-label={`assistant ${mood}`}>
+    <svg
+      ref={svgRef}
+      width={size}
+      height={size}
+      viewBox="-26 -26 52 52"
+      style={{ overflow: "visible" }}
+      aria-label={`assistant ${mood}`}
+      onMouseMove={interactive ? (e) => {
+        const rect = svgRef.current?.getBoundingClientRect()
+        if (!rect) return
+        gaze.current = {
+          x: Math.max(-1, Math.min(1, ((e.clientX - rect.left) / rect.width - 0.5) * 2)),
+          y: Math.max(-1, Math.min(1, ((e.clientY - rect.top) / rect.height - 0.5) * 2)),
+        }
+      } : undefined}
+      onClick={interactive ? () => {
+        // click → confetti ring (emotion-ball signature)
+        const conf = confettiRef.current
+        if (!conf) return
+        const colors = ["#7d9bff", "#a78bfa", "#f4c34e", "#34d399", "#fb7185"]
+        let html = ""
+        for (let i = 0; i < 18; i++) {
+          const a = (i / 18) * Math.PI * 2
+          const speed = 120 + Math.random() * 80
+          const x = Math.cos(a) * 6
+          const y = Math.sin(a) * 6
+          const color = colors[i % colors.length]
+          html += `<rect transform="translate(${x.toFixed(1)},${y.toFixed(1)}) rotate(${(a * 57.3).toFixed(0)})" x="-2" y="-1" width="4" height="2" rx="0.8" fill="${color}"><animateTransform attributeName="transform" type="translate" from="${x.toFixed(1)},${y.toFixed(1)}" to="${(Math.cos(a) * 24).toFixed(1)},${(Math.sin(a) * 24).toFixed(1)}" dur="0.6s" fill="freeze" additive="replace"/><animate attributeName="opacity" from="1" to="0" dur="0.6s" fill="freeze"/></rect>`
+        }
+        conf.innerHTML = html
+        setTimeout(() => { if (conf) conf.innerHTML = "" }, 700)
+      } : undefined}
+    >
       <defs>
         <radialGradient id={gradId} cx="36%" cy="30%" r="80%">
           <stop offset="0%" stopColor="#ffffff" />

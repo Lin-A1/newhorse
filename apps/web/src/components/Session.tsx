@@ -429,7 +429,7 @@ export function SessionView({ id }: { id: string }) {
             </div>
           )}
           {turns.map((t, i) => (
-            <TurnRow key={i} t={t} index={i} />
+            <TurnRow key={i} t={t} index={i} sessionId={id} showToast={showToast} />
           ))}
           {/* ZCode-style work separator between the user's message and the run */}
           {busy && (
@@ -440,7 +440,7 @@ export function SessionView({ id }: { id: string }) {
             </div>
           )}
           {parts.map((t, i) => (
-            <TurnRow key={"live" + i} t={t} index={1000 + i} live />
+            <TurnRow key={"live" + i} t={t} index={1000 + i} live sessionId={id} showToast={showToast} />
           ))}
           {busy && parts.every((p) => p.kind !== "tool" && p.kind !== "thinking") && (
             <div className="mb-2 flex items-center gap-2.5 px-2 py-1.5 text-dim">
@@ -537,11 +537,26 @@ export function SessionView({ id }: { id: string }) {
 }
 
 /** Single transcript row — document flow (assistant has NO bubble). */
-function TurnRow({ t, live }: { t: Turn; index: number; live?: boolean }) {
+function TurnRow({ t, live, sessionId, showToast }: { t: Turn; index: number; live?: boolean; sessionId?: string; showToast?: (msg: string) => void }) {
   if (t.kind === "user") {
     return (
-      <div className="rise mb-5 flex justify-end">
+      <div className="rise group mb-5 flex justify-end items-start gap-1.5">
         <div className="max-w-[82%] rounded-xl rounded-br-sm border border-line bg-surface2 px-3 py-1.5 text-[13.5px] whitespace-pre-wrap break-words leading-relaxed text-fg">{t.text}</div>
+        {sessionId && (
+          <button
+            className="mt-1 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100 hover:text-accent"
+            title="从此分叉（回溯重发）"
+            onClick={() => {
+              api.forkSession(sessionId).then((r) => {
+                localStorage.setItem("NEWHORSE_CURRENT_SESSION", r.sessionId)
+                if (showToast) showToast(`已分叉 ${r.sessionId.slice(0, 8)}`)
+                window.dispatchEvent(new CustomEvent("nh-session-updated", { detail: r.sessionId }))
+              }).catch((e) => { if (showToast) showToast(e instanceof Error ? e.message : String(e)) })
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 3v12a3 3 0 0 0 3 3h9M15 6l3 3-3 3"/></svg>
+          </button>
+        )}
       </div>
     )
   }

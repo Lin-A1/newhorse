@@ -113,6 +113,11 @@ export const api = {
   todos: (id: string) => json<{ todos: Array<{ content: string; status: string }> }>(`/v1/session/${id}/todos`),
   context: (id: string) => json<{ chars: number; estTokens: number; windowTokens?: number; ratio?: number }>(`/v1/session/${id}/context`),
 
+  // --- session management ---
+  forkSession: (id: string, atSeq?: number) => json<{ sessionId: string; forkedFrom: string }>(`/v1/session/${id}/fork`, { body: atSeq !== undefined ? { atSeq } : {} }),
+  setTitle: (id: string, title: string) => json<{ title: string }>(`/v1/session/${id}/title`, { body: { title } }),
+  fs: (workspace?: string, path?: string) => json<{ path: string; entries: Array<{ name: string; dir: boolean }> }>(`/v1/fs?${workspace ? `workspace=${encodeURIComponent(workspace)}&` : ""}${path ? `path=${encodeURIComponent(path)}` : ""}`),
+
   // --- capabilities ---
   skills: () => json<{ skills: Array<{ name: string; description?: string; path: string }> }>("/v1/skills"),
   skillBody: (name: string) => json<{ name: string; body: string }>(`/v1/skills?name=${encodeURIComponent(name)}`),

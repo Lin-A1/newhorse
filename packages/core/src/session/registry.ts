@@ -171,11 +171,16 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
         const d = event.data as { message?: SessionMessage }
         // Only touch updatedAt; MessageAppended carries no turn boundary, so we
         // never guess "a turn ended" from it.
+        if (d.message?.kind === "user" && !title && d.message.text !== undefined) title = excerpt([d.message.text])
         if (d.message?.kind === "assistant") {
           if (d.message.model) model = d.message.model
           if (!title) title = excerpt(d.message.content)
         }
         if (status === "created") status = "active"
+        break
+      }
+      case "Session.TitleSet": {
+        title = (event.data as { title?: string }).title
         break
       }
       default:
