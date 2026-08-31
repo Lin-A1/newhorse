@@ -10,7 +10,6 @@ type SectionId = "model" | "budget" | "memory" | "network" | "appearance" | "abo
 
 const SECTIONS: Array<{ id: SectionId; label: string; Icon: LucideIcon }> = [
   { id: "model", label: "模型与供应商", Icon: Cpu },
-  { id: "budget", label: "上下文预算", Icon: SlidersHorizontal },
   { id: "memory", label: "记忆与权限", Icon: ShieldCheck },
   { id: "network", label: "局域网访问", Icon: IconGlobe },
   { id: "appearance", label: "外观", Icon: Palette },
@@ -125,11 +124,6 @@ export function SettingsPage() {
                   尚未设置 API Key——先在上方粘贴一个再保存，模型下拉列表才能拉取。
                 </div>
               )}
-            </Panel>
-          )}
-
-          {section === "budget" && (
-            <Panel title="上下文预算" desc="压缩触发与折叠尾部随窗口自动缩放；不填则用保守默认值。">
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="上下文窗口（tokens）">
                   <input type="number" className="input-base" defaultValue={settings.contextWindowTokens ?? ""} placeholder="如 128000" onBlur={(e) => patch({ contextWindowTokens: Number(e.target.value) || undefined })} />
@@ -138,8 +132,10 @@ export function SettingsPage() {
                   <input type="number" className="input-base" defaultValue={settings.maxOutputTokens ?? ""} placeholder="如 16384" onBlur={(e) => patch({ maxOutputTokens: Number(e.target.value) || undefined })} />
                 </Field>
               </div>
+              <div className="text-[11px] text-faint">压缩触发与折叠尾部随窗口自动缩放。</div>
             </Panel>
           )}
+
 
           {section === "memory" && (
             <Panel title="记忆与权限" desc="记忆在会话中自动沉淀；权限决定工具是否需要审批。">
