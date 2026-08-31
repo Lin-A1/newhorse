@@ -44,17 +44,20 @@ export async function aggregateUsage(dbPath: string, days = 30, now = Date.now()
     const rows = db
       .query("SELECT aggregate_id, data, created_at FROM event WHERE type = ? AND created_at IS NOT NULL AND created_at >= ? ORDER BY created_at ASC")
       .all("Session.StepEnded", cutoff) as { aggregate_id: string; data: string; created_at: number }[]
-    // Session models for attribution (assistant messages carry the model that
-    // produced them; the last one wins per session).
+    // Session models + createdAt fallback for attribution and time mapping.
     const sessionModels = new Map<string, string>()
+    const sessionCreated = new Map<string, number>()
     const modelRows = db
-      .query(`SELECT aggregate_id, data FROM event WHERE type IN ('Session.MessageAppended', 'Session.AgentSet') ORDER BY aggregate_id, seq ASC`)
-      .all() as { aggregate_id: string; data: string }[]
+      .query(`SELECT aggregate_id, data, created_at FROM event WHERE type IN ('Session.MessageAppended', 'Session.AgentSet', 'Session.Created') ORDER BY aggregate_id, seq ASC`)
+      .all() as { aggregate_id: string; data: string; created_at: number | null }[]
     for (const r of modelRows) {
       try {
-        const d = JSON.parse(r.data) as { message?: { kind?: string; model?: string }; model?: string }
+        const d = JSON.parse(r.data) as { message?: { kind?: string; model?: string }; model?: string; createdAt?: number }
         const model = d.message?.model ?? d.model
         if (model) sessionModels.set(r.aggregate_id, model)
+        // Session.Created carries createdAt in data — use as fallback for sessions
+        // whose StepEnded events lack created_at (legacy rows).
+        if (d.createdAt && !sessionCreated.has(r.aggregate_id)) sessionCreated.set(r.aggregate_id, d.createdAt)
       } catch {
         // A corrupt row never breaks the aggregate.
       }
@@ -71,7 +74,11 @@ export async function aggregateUsage(dbPath: string, days = 30, now = Date.now()
         continue
       }
       const usage = data.usage ?? {}
-      const day = dayKey(r.created_at)
+      // created_at present → use it; legacy NULL → fall back to the session's
+      // Created.createdAt (better than silently dropping the data).
+      const ts = r.created_at ?? sessionCreated.get(r.aggregate_id) ?? 0
+      if (ts === 0) continue
+      const day = dayKey(ts)
       const model = sessionModels.get(r.aggregate_id) ?? "unknown"
       const prev = byDay.get(day) ?? { day, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0, cost: 0, steps: 0, byModel: {} }
       const bm = prev.byModel[model] ?? { inputTokens: 0, outputTokens: 0 }
