@@ -4,6 +4,8 @@
  * lives in localStorage (NEWHORSE_TOKEN) — set once in the settings page.
  */
 
+import type { EffectiveSettingsView } from "./types"
+
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? ""
 
 function headers(jsonBody?: unknown): Record<string, string> {
@@ -82,8 +84,8 @@ export const api = {
   },
 
   // --- settings / models ---
-  settings: () => json<Record<string, never>>("/v1/settings"),
-  putSettings: (patch: unknown) => json<Record<string, never>>("/v1/settings", { method: "PUT", body: patch }),
+  settings: () => json<EffectiveSettingsView>("/v1/settings"),
+  putSettings: (patch: unknown) => json<EffectiveSettingsView>("/v1/settings", { method: "PUT", body: patch }),
   models: () => json<{ models: string[] }>("/v1/models"),
 
   // --- approvals ---

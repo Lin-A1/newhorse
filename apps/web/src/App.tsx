@@ -1,16 +1,38 @@
-import { HashRouter, Routes, Route, NavLink } from "react-router-dom"
 import { useEffect, useState } from "react"
-import { ChatPage } from "./components/ChatPage"
-import { UsagePage, SchedulesPage } from "./components/Pages"
-import { MemoryPage } from "./components/MemoryPage"
-import { SettingsPage } from "./components/SettingsPage"
+import { api } from "./api"
 import { EmotionBall, type Mood } from "./components/EmotionBall"
-import { IconChat, IconChart, IconClock, IconMemory, IconGear, IconCheck, IconX } from "./components/icons"
-import { api, type SessionRow } from "./api"
+import { Sidebar } from "./components/Sidebar"
+import { Home } from "./components/Home"
+import { SessionView } from "./components/Session"
+import { UsagePage, SchedulesPage, MemoryPage } from "./components/Pages"
+import { SettingsDialog } from "./components/SettingsDialog"
+import { StoreProvider, useStore } from "./store"
 
-/** Global approval watcher: polls pending approvals while any page is open
- *  and renders the settle dialog (the engine auto-denies after 2 minutes). */
-function useApprovals(): { approvals: Array<{ id: string; kind: string; target: string }>; settle: (id: string, allow: boolean) => Promise<void> } {
+function Shell() {
+  const { view, setView, running, sessions, refreshSessions, toast } = useStore()
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [mood, setMood] = useState<Mood>("idle")
+
+  useEffect(() => {
+    const onOpen = (): void => setSettingsOpen(true)
+    window.addEventListener("nh-open-settings", onOpen)
+    return () => window.removeEventListener("nh-open-settings", onOpen)
+  }, [])
+
+  useEffect(() => {
+    setMood(running ? "thinking" : "idle")
+  }, [running])
+
+  useEffect(() => {
+    const onUpdated = (): void => {
+      void refreshSessions()
+    }
+    window.addEventListener("nh-session-updated", onUpdated)
+    return () => window.removeEventListener("nh-session-updated", onUpdated)
+  }, [refreshSessions])
+
+  // approvals watcher (poll) — drives the badge + opens the dialog
   const [approvals, setApprovals] = useState<Array<{ id: string; kind: string; target: string }>>([])
   useEffect(() => {
     let alive = true
@@ -18,7 +40,7 @@ function useApprovals(): { approvals: Array<{ id: string; kind: string; target: 
       api
         .approvals()
         .then((r) => alive && setApprovals(r.approvals))
-        .catch(() => alive && setApprovals([]))
+        .catch(() => {})
     }
     tick()
     const t = setInterval(tick, 2000)
@@ -31,119 +53,95 @@ function useApprovals(): { approvals: Array<{ id: string; kind: string; target: 
     await api.approve(id, allow)
     setApprovals((a) => a.filter((x) => x.id !== id))
   }
-  return { approvals, settle }
-}
-
-const NAV = [
-  { to: "/", label: "会话", Icon: IconChat },
-  { to: "/usage", label: "用量", Icon: IconChart },
-  { to: "/schedules", label: "定时", Icon: IconClock },
-  { to: "/memory", label: "记忆", Icon: IconMemory },
-  { to: "/settings", label: "设置", Icon: IconGear },
-]
-
-export function App() {
-  const { approvals, settle } = useApprovals()
-  const [running, setRunning] = useState(false)
-  const [sessions, setSessions] = useState<SessionRow[]>([])
-
-  useEffect(() => {
-    api.sessions().then(setSessions).catch(() => {})
-  }, [])
-
-  const mood: Mood = approvals.length > 0 ? "thinking" : running ? "thinking" : "idle"
   const approval = approvals[0]
 
+  const title = view.kind === "session" ? (sessions.find((s) => s.sessionId === view.id)?.title ?? view.id.slice(0, 8)) : view.kind === "usage" ? "用量统计" : view.kind === "schedules" ? "定时任务" : view.kind === "memory" ? "记忆库" : "newhorse"
+
   return (
-    <HashRouter>
-      <div className="flex h-full">
-        {/* Desktop sidebar */}
-        <aside className="hidden md:flex md:flex-col w-56 shrink-0 border-r border-white/[0.06] bg-black/20 p-3 gap-1">
-          <div className="flex items-center gap-2.5 px-2 py-4">
-            <EmotionBall mood={mood} size={42} />
-            <div>
-              <div className="font-semibold text-slate-100 tracking-tight">newhorse</div>
-              <div className="text-[11px] text-slate-500">agent runtime</div>
-            </div>
+    <div className="flex h-full">
+      {/* Sidebar (desktop) */}
+      <aside className="hidden md:block md:w-64 md:shrink-0 md:border-r md:border-white/[0.06]">
+        <Sidebar mood={mood} />
+      </aside>
+
+      {/* Sidebar (mobile drawer) */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 flex md:hidden">
+          <div className="w-72 border-r border-white/[0.08] bg-[#0b0e16]" onClick={() => setSidebarOpen(false)}>
+            <Sidebar mood={mood} onClose={() => setSidebarOpen(false)} />
           </div>
-          {NAV.map(({ to, label, Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm transition-colors ${
-                  isActive ? "bg-white/[0.07] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]" : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200"
-                }`
-              }
-            >
-              <Icon size={17} className="opacity-80" />
-              {label}
-            </NavLink>
-          ))}
-          <div className="mt-auto px-3 pb-1 text-[11px] text-slate-600 flex items-center gap-1.5">
-            <span className={`inline-block h-1.5 w-1.5 rounded-full ${running ? "bg-emerald-400 nh-pulse" : "bg-slate-600"}`} />
-            {running ? "运行中" : "空闲"} · {sessions.length} 会话
-          </div>
-        </aside>
-
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Mobile top bar */}
-          <header className="md:hidden flex items-center gap-2.5 px-3 py-2.5 border-b border-white/[0.06] bg-black/25">
-            <EmotionBall mood={mood} size={30} />
-            <span className="font-semibold tracking-tight">newhorse</span>
-            {approval && (
-              <span className="ml-auto text-[11px] rounded-full bg-accent/15 text-accent px-2 py-0.5 border border-accent/25">
-                {approvals.length} 待审批
-              </span>
-            )}
-          </header>
-
-          <main className="flex-1 min-h-0 pb-14 md:pb-0">
-            <Routes>
-              <Route path="/" element={<ChatPage onRunning={setRunning} />} />
-              <Route path="/usage" element={<UsagePage />} />
-              <Route path="/schedules" element={<SchedulesPage />} />
-              <Route path="/memory" element={<MemoryPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </main>
-
-          {/* Mobile bottom nav */}
-          <nav className="md:hidden fixed bottom-0 inset-x-0 flex bg-black/40 backdrop-blur-md border-t border-white/[0.06]">
-            {NAV.map(({ to, label, Icon }) => (
-              <NavLink key={to} to={to} className={({ isActive }) => `flex-1 py-2 text-center text-[10px] ${isActive ? "text-accent" : "text-slate-500"}`}>
-                <Icon size={17} className="mx-auto mb-0.5" />
-                {label}
-              </NavLink>
-            ))}
-          </nav>
+          <div className="flex-1 bg-black/60" onClick={() => setSidebarOpen(false)} />
         </div>
+      )}
 
-        {/* Approval dialog */}
-        {approval && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-            <div className="w-full max-w-md nh-card bg-ink-800/90 p-5 nh-rise">
-              <div className="flex items-center gap-3 mb-4">
-                <EmotionBall mood="thinking" size={38} />
-                <div>
-                  <div className="font-semibold text-slate-100">需要你的批准</div>
-                  <div className="text-[11px] text-slate-500">超时将自动拒绝</div>
-                </div>
-              </div>
-              <div className="text-[11px] text-slate-500 mb-1.5">类型：{approval.kind}</div>
-              <pre className="text-sm bg-black/30 rounded-xl p-3 overflow-auto max-h-40 whitespace-pre-wrap break-all border border-white/[0.05]">{approval.target}</pre>
-              <div className="flex gap-2 mt-4">
-                <button className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-red-500/15 border border-red-500/30 hover:bg-red-500/25 py-2 text-sm font-medium text-red-300" onClick={() => settle(approval.id, false)}>
-                  <IconX size={14} /> 拒绝
-                </button>
-                <button className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500/90 hover:bg-emerald-400 py-2 text-sm font-medium text-ink-950" onClick={() => settle(approval.id, true)}>
-                  <IconCheck size={14} /> 允许
-                </button>
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Top bar */}
+        <header className="flex items-center gap-3 border-b border-white/[0.06] bg-black/15 px-4 py-2.5">
+          <button className="btn-ghost !p-1.5 md:hidden" onClick={() => setSidebarOpen(true)} aria-label="菜单">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
+          </button>
+          <EmotionBall mood={mood} size={26} />
+          <div className="truncate text-[13px] font-medium text-slate-200">{title}</div>
+          {approval && (
+            <button className="ml-auto rounded-full border border-accent/30 bg-accent/15 px-2.5 py-0.5 text-[11px] text-accent" onClick={() => undefined}>
+              {approvals.length} 待审批
+            </button>
+          )}
+        </header>
+
+        {/* Main */}
+        <main className="min-h-0 flex-1 overflow-hidden">
+          {view.kind === "home" && <Home onCreated={(id) => setView({ kind: "session", id })} />}
+          {view.kind === "session" && <SessionView id={view.id} onBack={() => setView({ kind: "home" })} />}
+          {view.kind === "usage" && <UsagePage />}
+          {view.kind === "schedules" && <SchedulesPage />}
+          {view.kind === "memory" && <MemoryPage />}
+        </main>
+      </div>
+
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+
+      {/* approval dialog */}
+      {approval && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="nh-rise w-full max-w-md rounded-2xl border border-white/[0.09] bg-[#0e111a] p-5 shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+            <div className="mb-4 flex items-center gap-3">
+              <EmotionBall mood="thinking" size={38} />
+              <div>
+                <div className="text-[14px] font-semibold text-slate-100">需要你的批准</div>
+                <div className="text-[11px] text-slate-500">超时将自动拒绝</div>
               </div>
             </div>
+            <div className="mb-1.5 text-[11px] text-slate-500">类型：{approval.kind}</div>
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-white/[0.05] bg-black/30 p-3 text-sm text-slate-300">{approval.target}</pre>
+            <div className="mt-4 flex gap-2">
+              <button className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/15 py-2 text-sm font-medium text-red-300 hover:bg-red-500/25" onClick={() => settle(approval.id, false)}>
+                拒绝
+              </button>
+              <button className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-500/90 py-2 text-sm font-medium text-ink-950 hover:bg-emerald-400" onClick={() => settle(approval.id, true)}>
+                允许
+              </button>
+            </div>
           </div>
-        )}
-      </div>
-    </HashRouter>
+        </div>
+      )}
+
+      {/* toast */}
+      {toast && (
+        <div className="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rise">
+          <div className="rounded-xl border border-white/[0.1] bg-[#161a24] px-4 py-2.5 text-[13px] text-slate-200 shadow-[0_16px_44px_rgba(0,0,0,0.5)]">{toast}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function App() {
+  return (
+    <StoreProvider>
+      <Shell />
+    </StoreProvider>
   )
 }
