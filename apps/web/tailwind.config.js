@@ -5,10 +5,28 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: { 950: "#0b0f19", 900: "#101623", 800: "#161e30", 700: "#1e2941", 600: "#2a3653" },
-        accent: { DEFAULT: "#6d8bff", soft: "#8ea5ff" },
+        /* semantic, theme-driven (see index.css :root / [data-theme="light"]) */
+        fg: "var(--txt)",
+        dim: "var(--txt-dim)",
+        faint: "var(--txt-faint)",
+        surface: "var(--panel)",
+        surface2: "var(--panel-strong)",
+        line: "var(--line)",
+        linestrong: "var(--line-strong)",
+        chrome: "var(--chrome)",
+        scrim: "var(--scrim)",
+        inset: "var(--inset)",
+        accent: { DEFAULT: "rgb(var(--accent-rgb) / <alpha-value>)", strong: "rgb(var(--accent-strong-rgb) / <alpha-value>)", 2: "rgb(var(--accent-2-rgb) / <alpha-value>)", soft: "var(--accent-soft)" },
+        ok: "rgb(var(--ok-rgb) / <alpha-value>)",
+        warn: "rgb(var(--warn-rgb) / <alpha-value>)",
+        bad: "rgb(var(--bad-rgb) / <alpha-value>)",
       },
-      boxShadow: { card: "0 1px 0 rgba(255,255,255,.04) inset, 0 8px 24px rgba(0,0,0,.35)" },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        raise: "var(--shadow-raise)",
+        modal: "var(--shadow-modal)",
+        glow: "0 0 24px var(--accent-glow)",
+      },
     },
   },
   plugins: [],

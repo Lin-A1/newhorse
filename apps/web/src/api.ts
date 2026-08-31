@@ -110,9 +110,41 @@ export const api = {
 export interface Schedule { id: string; sessionId: string; prompt: string; enabled: boolean; intervalMinutes?: number; dailyAt?: string; cron?: string; createdAt: number; lastRunAt?: number; lastResult?: "ok" | "error"; lastError?: string }
 export interface MemoryRecord { id: string; content: string; type: string; priority: number; sessionId?: string; createdAt: number }
 
+/** Make a raw/first-message title safe to show: strip markdown, collapse
+ *  whitespace, clip. Registry titles can still be raw assistant markdown. */
+export function prettyTitle(title: string | undefined, fallback: string, max = 26): string {
+  if (!title) return fallback
+  const clean = title
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/[#*`>~]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+  if (!clean) return fallback
+  return clean.length > max ? clean.slice(0, max) + "…" : clean
+}
+
+/** Compact relative time for session lists: 刚刚 / N 分钟前 / HH:mm / 昨天 / M月D日 */
+export function relativeTime(ts: number): string {
+  if (!(ts > 1000)) return "—"
+  const diff = Date.now() - ts
+  if (diff < 60_000) return "刚刚"
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  const d = new Date(ts)
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  if (sameDay) return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+  const yesterday = new Date(now.getTime() - 86_400_000)
+  if (d.toDateString() === yesterday.toDateString()) return "昨天"
+  return `${d.getMonth() + 1}月${d.getDate()}日`
+}
+
 /** Fold the durable event log into a displayable transcript. */
 export function foldTranscript(events: Array<{ type: string; data: Record<string, unknown> }>): Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string }> {
-  const out: Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string }> = []
+  type FoldRow = { kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; isError?: boolean }
+  const out: FoldRow[] = []
+  // tool-call rows awaiting their result message (results arrive in call order)
+  const pendingToolRows: number[] = []
   let assistant = ""
   const flush = (): void => {
     if (assistant) {
@@ -126,7 +158,7 @@ export function foldTranscript(events: Array<{ type: string; data: Record<string
       flush()
       out.push({ kind: "user", text: String(d.prompt ?? "") })
     } else if (e.type === "Session.MessageAppended") {
-      const m = d.message as { kind?: string; text?: string; content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; model?: string } | undefined
+      const m = d.message as { kind?: string; text?: string; content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; model?: string; output?: unknown } | undefined
       if (!m) continue
       if (m.kind === "assistant" && Array.isArray(m.content)) {
         for (const p of m.content) {
@@ -138,12 +170,27 @@ export function foldTranscript(events: Array<{ type: string; data: Record<string
           if (p.type === "tool-call") {
             flush()
             out.push({ kind: "tool", toolName: p.name, text: JSON.stringify(p.input ?? {}).slice(0, 400) })
+            pendingToolRows.push(out.length - 1)
           }
         }
       } else if (m.kind === "tool") {
         flush()
-        const content = m.content as Array<{ type?: string; text?: string }> | undefined
-        out.push({ kind: "tool", text: (content ?? []).map((c) => c.text ?? "").join(" ").slice(0, 400) })
+        // the runtime writes tool results as a flat `m.output` object (may be
+        // missing/empty); some providers fold them as content blocks — handle both
+        const raw =
+          m.output !== undefined
+            ? typeof m.output === "string"
+              ? m.output
+              : JSON.stringify(m.output, null, 2)
+            : (m.content as Array<{ type?: string; text?: string }> | undefined)?.map((c) => c.text ?? "").join("\n")
+        const resultText = (raw ?? "").slice(0, 4000)
+        const payloadError = /[{[]\s*"error"\s*:/i.test(resultText.slice(0, 200)) || (m.output as { error?: unknown } | undefined)?.error !== undefined
+        // attach the result to its call row (expand to see output); fall back to a standalone row
+        const idx = pendingToolRows.shift()
+        if (idx !== undefined && out[idx]?.kind === "tool") {
+          out[idx]!.text = resultText
+          if (payloadError) out[idx]!.isError = true
+        } else out.push({ kind: "tool", text: resultText, ...(payloadError ? { isError: true } : {}) })
       }
     } else if (e.type === "Session.ToolSettled" || e.type === "Session.ToolEnded") {
       // results already folded via tool messages where present

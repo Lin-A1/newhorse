@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react"
 import { api, type SessionRow } from "./api"
+import type { Mood } from "./components/EmotionBall"
 import type { EffectiveSettingsView } from "./types"
 
 /**
@@ -22,13 +23,20 @@ interface Store {
   setView: (v: View) => void
   running: boolean
   setRunning: (r: boolean) => void
+  /** live ball mood (driven by the active session; idle elsewhere) */
+  mood: Mood
+  setMood: (m: Mood) => void
+  /** live status of the active session (for the global top bar) */
+  sessionBusy: boolean
+  sessionElapsed: number
+  setSessionStatus: (busy: boolean, elapsed?: number) => void
   toast: string | null
   showToast: (t: string) => void
   approvals: Approval[]
   settleApproval: (id: string, allow: boolean) => Promise<void>
 }
 
-export type View = { kind: "home" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "schedules" } | { kind: "memory" }
+export type View = { kind: "home" } | { kind: "session"; id: string } | { kind: "usage" } | { kind: "schedules" } | { kind: "memory" } | { kind: "settings" }
 
 const Ctx = createContext<Store | null>(null)
 
@@ -43,6 +51,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<EffectiveSettingsView | null>(null)
   const [view, setView] = useState<View>({ kind: "home" })
   const [running, setRunning] = useState(false)
+  const [mood, setMood] = useState<Mood>("idle")
+  const [sessionBusy, setSessionBusy] = useState(false)
+  const [sessionElapsed, setSessionElapsed] = useState(0)
+  const setSessionStatus = useCallback((busy: boolean, elapsed = 0): void => {
+    setSessionBusy(busy)
+    setSessionElapsed(elapsed)
+  }, [])
   const [toast, setToast] = useState<string | null>(null)
   const [approvals, setApprovals] = useState<Approval[]>([])
 
@@ -83,13 +98,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [],
   )
 
-  return <Ctx.Provider value={{ sessions, refreshSessions, settings, reloadSettings, view, setView, running, setRunning, toast, showToast, approvals, settleApproval }}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={{ sessions, refreshSessions, settings, reloadSettings, view, setView, running, setRunning, mood, setMood, sessionBusy, sessionElapsed, setSessionStatus, toast, showToast, approvals, settleApproval }}>{children}</Ctx.Provider>
 }
 
 export function openSession(id: string): void {
   localStorage.setItem(CURRENT_KEY, id)
 }
 export const CURRENT_KEY = "NEWHORSE_CURRENT_SESSION"
+
+/**
+ * One-shot handoff from the Home hero: it creates the session and stashes the
+ * first prompt here; the newly-mounted SessionView consumes it and drives the
+ * run itself (so busy/streaming/mood all go through the normal live path).
+ */
+export const pendingPrompts = new Map<string, string>()
+
+export function takePendingPrompt(id: string): string | undefined {
+  const p = pendingPrompts.get(id)
+  if (p !== undefined) pendingPrompts.delete(id)
+  return p
+}
 
 /** Group sessions by recency for the sidebar. */
 export function groupSessions(rows: SessionRow[]): Array<{ label: string; rows: SessionRow[] }> {
