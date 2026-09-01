@@ -224,9 +224,9 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
                       }}
                       className={`group relative mb-0.5 w-full rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${active ? "bg-surface2 text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" : "text-dim hover:bg-surface2 hover:text-fg"}`}
                     >
-                      <span className={`absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-gradient-to-b from-accent to-accent-2 transition-all duration-200 ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`} />
+                      <span className={`absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent transition-all duration-200 ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`} />
                       <div className="flex items-center gap-1.5">
-                        {r.role === "butler" && <span className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-1.5 py-px text-[9px] font-medium text-accent">管家</span>}
+                        {r.role === "butler" && <span className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-1.5 py-px text-[9px] font-medium text-accent">头马</span>}
                         <span className="min-w-0 flex-1 truncate text-[12.5px] leading-5">{prettyTitle(r.title, r.sessionId.slice(0, 8))}</span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-faint">

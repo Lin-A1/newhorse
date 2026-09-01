@@ -9,14 +9,14 @@ import { pendingPrompts, useStore } from "../store"
 const SUGGESTIONS = ["读取当前仓库结构并总结", "帮我写一个周报草稿", "检查最近改动的代码质量", "给这个项目写一份 README"]
 
 /** Home hero: ball + composer + suggestions + recent sessions. The composer
- *  has a 管家 toggle — on = the session is created as the fixed BUTLER role
+ *  has a 头马 (lead-horse orchestrator) toggle — on = the session is created as the fixed BUTLER role
  *  (coordinator toolset: spawn_agent / wait / interrupt, audited). */
 export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const { sessions, mood, showToast, settings } = useStore()
   const noKey = !!settings && !settings.provider.hasApiKey && !(settings.providers ?? []).some((p) => p.hasApiKey)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
-  const [butler, setButler] = useState(false)
+  const [butler, setButler] = useState(true)
   const recent = sessions.slice(0, 4)
 
   const send = async (): Promise<void> => {
@@ -46,7 +46,7 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
           </div>
           <div className="rise" style={{ ["--d" as string]: "60ms" }}>
             <h1 className="text-[24px] font-semibold tracking-tight text-fg">有什么可以帮你？</h1>
-            <p className="mt-1.5 text-[13px] text-faint">{butler ? "管家模式：把任务拆给子代理并行干，结果汇总给你" : "把任务交给管家，它会自己读文件、跑工具、记重点"}</p>
+            <p className="mt-1.5 text-[13px] text-faint">{butler ? "头马模式：拆解任务、派出子代理并行推进，结果汇总给你" : "头马会自己读文件、跑工具、调度马群；需要纯对话可关闭"}</p>
           </div>
           <div className="panel-strong composer-solid rise w-full overflow-hidden !rounded-[18px] transition-shadow" style={{ ["--d" as string]: "120ms" }}>
             <textarea
@@ -66,12 +66,12 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
               <ModelPill compact />
               <button
                 className={`pill transition-colors ${butler ? "!border-accent/40 !bg-accent/10 !text-accent" : "hover:border-linestrong hover:!text-fg"}`}
-                title="管家模式：创建的会话是固定「管家」角色，可派出/等待/中断子代理"
+                title="头马：newhorse 的领队会话——拆解任务并调度子代理（马群），可关闭为纯对话"
                 onClick={() => setButler((v) => !v)}
                 aria-pressed={butler}
               >
                 <IconButler size={11} />
-                管家
+                头马
               </button>
               <span className="flex-1" />
               <button className="btn-primary h-8 w-8 shrink-0 !rounded-full !p-0" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送">

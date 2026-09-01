@@ -39,7 +39,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         void refreshSessions()
         setView({ kind: "session", id: r.sessionId })
         onClose()
-        showToast("管家会话已创建")
+        showToast("头马会话已创建")
       })
       .catch((e) => showToast(e instanceof Error ? e.message : String(e)))
   }
@@ -47,7 +47,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const commands = useMemo<Command[]>(() => {
     const cmds: Command[] = [
       { id: "new", label: "新会话", hint: "创建并切换", kbd: "Ctrl+N", action: () => { localStorage.removeItem("NEWHORSE_CURRENT_SESSION"); setView({ kind: "home" }); onClose() } },
-      { id: "new-butler", label: "新建管家会话", hint: "固定调度角色 · 可派子代理", action: newButler },
+      { id: "new-butler", label: "新建头马会话", hint: "固定调度角色 · 可派子代理", action: newButler },
       { id: "usage", label: "用量统计", hint: "热力图与模型分布", action: () => { setView({ kind: "usage" }); onClose() } },
       { id: "schedules", label: "定时任务", hint: "到点发提示词", action: () => { setView({ kind: "schedules" }); onClose() } },
       { id: "memory", label: "记忆库", hint: "语义+关键词检索", action: () => { setView({ kind: "memory" }); onClose() } },
@@ -71,7 +71,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     }
     // session entries
     for (const s of sessions.slice(0, 20)) {
-      cmds.push({ id: `sess-${s.sessionId}`, label: (s.role === "butler" ? "[管家] " : "") + (s.title || s.sessionId.slice(0, 12)), hint: s.updatedAt > 1000 ? new Date(s.updatedAt).toLocaleString() : "", action: () => { localStorage.setItem("NEWHORSE_CURRENT_SESSION", s.sessionId); setView({ kind: "session", id: s.sessionId }); onClose() } })
+      cmds.push({ id: `sess-${s.sessionId}`, label: (s.role === "butler" ? "[头马] " : "") + (s.title || s.sessionId.slice(0, 12)), hint: s.updatedAt > 1000 ? new Date(s.updatedAt).toLocaleString() : "", action: () => { localStorage.setItem("NEWHORSE_CURRENT_SESSION", s.sessionId); setView({ kind: "session", id: s.sessionId }); onClose() } })
     }
     return cmds
     // eslint-disable-next-line react-hooks/exhaustive-deps
