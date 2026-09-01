@@ -226,7 +226,7 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
                     >
                       <span className={`absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-accent transition-all duration-200 ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`} />
                       <div className="flex items-center gap-1.5">
-                        {r.role === "butler" && <span className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-1.5 py-px text-[9px] font-medium text-accent">头马</span>}
+                        {r.role === "butler" && <span className="shrink-0 rounded-full border border-line bg-surface2 p-px"><EmotionBall mood="idle" size={14} /></span>}
                         <span className="min-w-0 flex-1 truncate text-[12.5px] leading-5">{prettyTitle(r.title, r.sessionId.slice(0, 8))}</span>
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-faint">

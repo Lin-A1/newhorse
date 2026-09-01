@@ -596,7 +596,7 @@ export function SessionView({ id }: { id: string }) {
     for (const t of foldTranscript(events)) {
       const nl = "\n"
       if (t.kind === "user") lines.push(`**你：** ${t.text}`, "")
-      else if (t.kind === "assistant") lines.push(`**头马：**`, t.text, "")
+      else if (t.kind === "assistant") lines.push(`**newhorse：**`, t.text, "")
       else if (t.kind === "tool") lines.push(`> 工具 ${t.toolName ?? ""}：`, ...t.text.split(nl).map((l) => `> ${l}`), "")
       else if (t.kind === "todo") lines.push(`**任务清单**`, "", ...t.text.split(nl).map((l) => `- ${l}`), "")
       else if (t.kind === "goal") lines.push(`**目标：** ${t.text}`, "")
@@ -615,9 +615,9 @@ export function SessionView({ id }: { id: string }) {
       {/* goal + context meta bar: goal on the left, session tools on the right */}
       <div className="flex items-center gap-2 border-b border-line bg-surface2/60 px-4 py-1.5 text-[11px]">
         {rows?.role === "butler" && (
-          <span className="pill shrink-0 !border-accent/30 !bg-accent/10 !py-0 !text-[10px] !text-accent" title="固定头马角色：拆解任务、派出子代理（马群）、汇总结果；动作全部审计">
-            <IconButler size={10} />
-            头马
+          <span className="pill shrink-0 !border-accent/30 !bg-accent/10 !py-0 !text-[10px] !text-accent" title="newhorse 常驻会话：拆解任务、调度子代理；动作全部审计">
+            <EmotionBall mood="idle" size={12} />
+            newhorse
           </span>
         )}
         {goal ? (
@@ -691,12 +691,9 @@ export function SessionView({ id }: { id: string }) {
         <div className="mx-auto w-full max-w-3xl px-4 pb-10 pt-6 md:px-6 xl:max-w-[1000px] 2xl:max-w-[1160px]">
           {turns.length === 0 && parts.length === 0 && !busy && (
             <div className="fade flex flex-col items-center gap-4 py-16 text-center">
-              <div className="hero-float">
-                <EmotionBall mood="idle" size={72} />
-              </div>
               <div>
                 <div className="text-[14px] font-medium text-dim">这个会话还没有内容</div>
-                <div className="mt-1 text-[12px] text-faint">在下方输入任务，头马会自己读文件、跑工具、调度马群</div>
+                <div className="mt-1 text-[12px] text-faint">在下方输入任务，newhorse 会自己读文件、跑工具、调度子代理</div>
               </div>
               <div className="mt-2 flex max-w-md flex-wrap justify-center gap-2">
                 {["梳理这个项目的目录结构", "给当前改动写一次提交信息", "检查最近的改动有没有遗漏"].map((hint) => (

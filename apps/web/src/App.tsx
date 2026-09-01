@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import { prettyTitle } from "./api"
-import { EmotionBall } from "./components/EmotionBall"
 import { Sidebar } from "./components/Sidebar"
 import { Home } from "./components/Home"
 import { SessionView } from "./components/Session"
@@ -93,7 +92,6 @@ function Shell() {
               <path d="M4 7h16M4 12h16M4 17h16" />
             </svg>
           </button>
-          <EmotionBall mood={mood} size={28} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-medium leading-tight text-fg">{title}</div>
           </div>
