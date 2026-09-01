@@ -13,25 +13,41 @@
 - 引擎人格正文（`runtime/context.ts` BUTLER_BODY）无自造名号，直接以 newhorse 自称并陈述职责。
 - 事件/schema 键 `role: "butler"`、传输参数 `asButler` 保持不变（持久化兼容）。
 
-## 2. 配色 = opencode oc-2 实际值（从源码提取，不自造）
+## 2. 配色与组件 = 对齐参考实现（ZCode 安装包 × opencode oc-2，不自造）
 
-用户明确反馈：拒绝天蓝、拒绝自造"蜜桃"，要 opencode 一样的配色。以下取自 `opencode/packages/ui/src/theme/themes/oc-2.json`：
+用户最终拍板：**整个前端推倒重做，直接抄参考项目的代码与风格**，基准为 D 盘安装的 ZCode（Electron 包解包提取其 renderer 样式表）与 G:/temp/opencode 的 oc-2 主题。以下取值全部从源码提取：
 
-| 角色 | 暗色（默认） | 浅色 | oc-2 出处 |
+| 角色 | 暗色（默认） | 浅色 | 出处 |
 |---|---|---|---|
-| 背景 | `#161616`（grey-1100） | `#f7f7f7` | grey-1100 / light bg |
-| 最深层（chrome） | `#080808`（grey-1200） | — | grey-1200 |
-| 面板 | `#1c1c1c`（surface-base） | — | surface-base |
-| 边框 | `#282828` / 强 `#3a3a3a` | — | border-weak-base / grey-800 |
-| 正文 | `#ededed`（strong）/ `#a0a0a0`（base）/ `#707070`（weak） | 深灰墨 | text-strong/base/weak |
-| 交互（按钮/链接/选中） | `#034cff` interactive | 同 | palette.interactive |
-| 品牌标记（头像/身份点缀） | `#fab283` primary | `#dcde8d` primary | palette.primary |
+| 背景 | `#161616` | `#f8f8f8` | ZCode `--color-background` |
+| 面板/页头 | `#202020` | `#ffffff` | ZCode `--color-header` |
+| 侧栏 | `#111111` | `#f2f2f3` | ZCode sidebar（neutral-950 方向） |
+| 边框 | 白 8% / 强 16% | 黑 8% / 强 16% | ZCode `--color-border`（white-alpha） |
+| 正文梯 | `#ededed` / `#a0a0a0` / `#707070` / `#505050` | `#171717` / `#6f6f6f` / `#8f8f8f` / `#c7c7c7` | oc-2 text-strong/base/weak/weaker |
+| 品牌/交互 | `#0ea5e9`（sky-500） | `#0a0a0a`（黑） | ZCode `--color-brand`（dark sky / light black） |
+| 出错 | `#fc533a` | `#e5484d` | oc-2 error |
 
-- 语义：**蓝=可交互**，**蜜桃/淡绿=品牌与身份**，灰阶=一切结构。不再自造色。
-- 克制原则：按钮纯色无渐变无辉光；无装饰性动画；点阵背景已移除。
+- **trajectory 五色**（ZCode 语义）：用户蓝 `#60a5fa`、助手青 `#2dd4bf`、推理紫 `#a78bfa`、工具调用橙 `#f59e0b`、工具结果天蓝 `#38bdf8`——每类转录行用对应色的竖标标记。
+- 形状语言：紧圆角（4/6/8/10px）、14px UI 基准、mono 字体承载元信息（ZCode `--ui-font-size` 体系）。
+- 封面背景：呼吸星尘 + 半调点阵（中性白/灰，**不是**上游的紫色系）。
 
-## 3. 禁止事项
+## 3. 情绪球 = aora-bot emotion-ball 原样移植（vendored）
+
+封面与头像的"球"来自 `github.com/sam70361/aora-bot` 的 emotion-ball（引擎 + 25 组眼环数据 + 40 套表情配置 + 首屏粒子），以 vendored 模块整体移植到 `apps/web/src/lib/emotion-ball/`，仅做模块化包装：
+
+- 许可：引擎与表情数据为社区许可（**非商业免费**，商业授权另行）；视觉形象限个人学习研究。文件头已保留来源与许可标注。
+- 状态映射（`EmotionBall.tsx` 的 mood → 表情 ID）：启动 `05`、待机 `02`、等待输入 `35`、思考中 `30`（常驻环带）、检索 `40`、回复 `39`、完成 `33`（甩彩带+撒花）、出错 `34`（闪红）、睡眠 `00`（zzz）。
+- 出现位置：封面主球（可注视鼠标/点击自旋）、侧栏品牌位、常驻会话行、会话页头部头像——球只作会话头像/应用 logo，不散布。
+
+## 4. 工作区与常驻会话是一等概念
+
+- 侧栏顶部是**工作区身份块**（文件夹名 + 全路径 + 切换菜单），当前工作区标记「当前」。
+- 工作区下的**常驻 newhorse 会话**置顶固定显示（迷你球头像 + "常驻会话"副标题）：引擎按工作区派生稳定会话 id，`POST /v1/session` 不带 sessionId 即幂等返回同一会话——常驻会话永不消失、无需创建。
+- 封面 composer 直接把任务发进当前工作区的常驻会话（封面即入口，不是死页）。
+
+## 5. 禁止事项
 
 - **禁止 emoji**（情绪球是唯一"脸"，且只作头像/logo）。
 - 禁止把引擎键名（butler/dag 等）直接暴露成 UI 文案。
 - 禁止自造人设名（管家/头马均已被否）。
+- 禁止再自造配色/自绘组件——改风格先回到本文列出的参考源码。

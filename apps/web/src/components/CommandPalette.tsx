@@ -1,134 +1,122 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useStore } from "../store"
+import { useNavigate } from "react-router-dom"
+import { ArrowRight, Cog, Database, FolderClosed, MessageSquare, Plus, Timer, TrendingUp } from "lucide-react"
 import { api } from "../api"
-import { IconButler } from "./icons"
+import { useApp, wsName } from "./App"
 
-interface Command {
-  id: string
+/**
+ * Global palette (Ctrl+K): navigate, switch workspace, jump to sessions.
+ * Pure client-side commands — the runtime's slash commands run inside a
+ * session, not here.
+ */
+
+interface Item {
+  key: string
+  icon: React.ReactNode
   label: string
   hint?: string
-  kbd?: string
-  action: () => void
+  run: () => void
 }
 
-/** Ctrl+K command palette (opencode signature interaction). Themed via the
- *  design tokens so light mode reads correctly too. */
-export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { sessions, settings, setView, refreshSessions, showToast, reloadSettings } = useStore()
-  const [query, setQuery] = useState("")
-  const [selected, setSelected] = useState(0)
-  const [models, setModels] = useState<string[]>([])
+export function CommandPalette({ onClose }: { onClose: () => void }): React.ReactElement {
+  const navigate = useNavigate()
+  const { sessions, workspace, setWorkspace } = useApp()
+  const workspacesOf = useMemo(() => [...new Set(sessions.map((s) => s.workspace).filter(Boolean))], [sessions])
+  const [q, setQ] = useState("")
+  const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (open) {
-      setQuery("")
-      setSelected(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
-      void api.models().then((r) => setModels(r.models)).catch(() => setModels([]))
-    }
-  }, [open])
+  useEffect(() => inputRef.current?.focus(), [])
 
-  const newButler = (): void => {
-    localStorage.removeItem("NEWHORSE_CURRENT_SESSION")
-    const ws = localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace || undefined
-    void api
-      .createSession(undefined, ws, true)
-      .then((r) => {
-        localStorage.setItem("NEWHORSE_CURRENT_SESSION", r.sessionId)
-        void refreshSessions()
-        setView({ kind: "session", id: r.sessionId })
-        onClose()
-        showToast("newhorse 会话已创建")
-      })
-      .catch((e) => showToast(e instanceof Error ? e.message : String(e)))
-  }
-
-  const commands = useMemo<Command[]>(() => {
-    const cmds: Command[] = [
-      { id: "new", label: "新会话", hint: "创建并切换", kbd: "Ctrl+N", action: () => { localStorage.removeItem("NEWHORSE_CURRENT_SESSION"); setView({ kind: "home" }); onClose() } },
-      { id: "new-butler", label: "新建 newhorse 会话", hint: "固定调度角色 · 可派子代理", action: newButler },
-      { id: "usage", label: "用量统计", hint: "热力图与模型分布", action: () => { setView({ kind: "usage" }); onClose() } },
-      { id: "schedules", label: "定时任务", hint: "到点发提示词", action: () => { setView({ kind: "schedules" }); onClose() } },
-      { id: "memory", label: "记忆库", hint: "语义+关键词检索", action: () => { setView({ kind: "memory" }); onClose() } },
-      { id: "settings", label: "设置", hint: "供应商档案/预算/权限/局域网", action: () => { setView({ kind: "settings" }); onClose() } },
+  const items = useMemo<Item[]>(() => {
+    const base: Item[] = [
+      { key: "home", icon: <ArrowRight size={13} />, label: "回到封面", hint: "Home", run: () => navigate("/") },
+      {
+        key: "new",
+        icon: <Plus size={13} />,
+        label: "打开当前工作区的常驻会话",
+        hint: workspace ? wsName(workspace) : undefined,
+        run: () => api.createSession(undefined, workspace || undefined).then((r) => navigate(`/s/${r.sessionId}`)).catch(() => {}),
+      },
+      { key: "usage", icon: <TrendingUp size={13} />, label: "用量", run: () => navigate("/usage") },
+      { key: "memory", icon: <Database size={13} />, label: "记忆", run: () => navigate("/memory") },
+      { key: "schedules", icon: <Timer size={13} />, label: "定时任务", run: () => navigate("/schedules") },
+      { key: "settings", icon: <Cog size={13} />, label: "设置", run: () => navigate("/settings") },
     ]
-    // provider presets (ccswitch): one entry per profile
-    for (const p of settings?.providers ?? []) {
-      cmds.push({
-        id: `prov-${p.id}`,
-        label: `切换供应商 → ${p.name}`,
-        hint: p.id === settings?.activeProviderId ? "使用中" : p.model ?? p.kind,
-        action: () => {
-          api.putSettings({ activeProviderId: p.id }).then(reloadSettings).then(() => showToast(`供应商已切换为 ${p.name}`)).catch(() => showToast("切换失败"))
-          onClose()
-        },
-      })
-    }
-    // model switch entries
-    for (const m of models) {
-      cmds.push({ id: `model-${m}`, label: `切换模型 → ${m}`, hint: "新会话生效", action: () => { api.putSettings({ model: m }).then(reloadSettings).then(() => showToast(`已切换为 ${m}`)).catch(() => showToast("切换失败")); onClose() } })
-    }
-    // session entries
-    for (const s of sessions.slice(0, 20)) {
-      cmds.push({ id: `sess-${s.sessionId}`, label: (s.role === "butler" ? "[newhorse] " : "") + (s.title || s.sessionId.slice(0, 12)), hint: s.updatedAt > 1000 ? new Date(s.updatedAt).toLocaleString() : "", action: () => { localStorage.setItem("NEWHORSE_CURRENT_SESSION", s.sessionId); setView({ kind: "session", id: s.sessionId }); onClose() } })
-    }
-    return cmds
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, sessions, settings, setView, onClose, reloadSettings, showToast])
+    const wsItems: Item[] = workspacesOf.map((ws) => ({
+      key: `ws-${ws}`,
+      icon: <FolderClosed size={13} />,
+      label: `工作区:${wsName(ws)}`,
+      hint: ws,
+      run: () => setWorkspace(ws),
+    }))
+    const sessionItems: Item[] = sessions
+      .filter((s) => !s.archived)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, 12)
+      .map((s) => ({
+        key: `s-${s.sessionId}`,
+        icon: <MessageSquare size={13} />,
+        label: s.title ?? "未命名会话",
+        hint: s.workspace ? wsName(s.workspace) : undefined,
+        run: () => navigate(`/s/${s.sessionId}`),
+      }))
+    return [...base, ...wsItems, ...sessionItems]
+  }, [sessions, workspacesOf, workspace, setWorkspace, navigate])
 
   const filtered = useMemo(() => {
-    if (!query.trim()) return commands
-    const q = query.toLowerCase()
-    return commands.filter((c) => c.label.toLowerCase().includes(q) || (c.hint ?? "").toLowerCase().includes(q))
-  }, [commands, query])
+    const needle = q.trim().toLowerCase()
+    if (!needle) return items
+    return items.filter((it) => (it.label + " " + (it.hint ?? "")).toLowerCase().includes(needle))
+  }, [items, q])
 
-  useEffect(() => setSelected(0), [query])
+  useEffect(() => setSel(0), [q])
 
-  useEffect(() => {
-    if (!open) return
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") { e.preventDefault(); onClose() }
-      if (e.key === "ArrowDown") { e.preventDefault(); setSelected((s) => Math.min(s + 1, filtered.length - 1)) }
-      if (e.key === "ArrowUp") { e.preventDefault(); setSelected((s) => Math.max(s - 1, 0)) }
-      if (e.key === "Enter" && filtered[selected]) { e.preventDefault(); filtered[selected]!.action() }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, filtered, selected, onClose])
-
-  if (!open) return null
+  const commit = (it: Item | undefined): void => {
+    if (!it) return
+    it.run()
+    onClose()
+  }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-scrim pt-[16vh] backdrop-blur-sm" onClick={onClose}>
-      <div className="rise w-full max-w-lg overflow-hidden rounded-2xl border border-linestrong bg-surface2 shadow-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center gap-2.5 border-b border-line px-4 py-3">
-          <span className="tnum shrink-0 text-[11px] font-medium text-faint">Ctrl K</span>
-          <input
-            ref={inputRef}
-            className="flex-1 bg-transparent text-sm text-fg outline-none placeholder:text-faint"
-            placeholder="输入命令或搜索会话…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <kbd className="nh-kbd">Esc</kbd>
-        </div>
-        <div className="max-h-[360px] overflow-y-auto py-1">
-          {filtered.length === 0 && <div className="px-4 py-4 text-[13px] text-faint">没有匹配项</div>}
-          {filtered.map((c, i) => (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 pt-[16vh]" onClick={onClose}>
+      <div className="menu pop-in w-[540px] overflow-hidden !p-0" onClick={(e) => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          className="w-full border-b border-line bg-transparent px-4 py-3.5 text-sm outline-none placeholder:text-ghost"
+          placeholder="搜索会话、工作区、页面…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              e.preventDefault()
+              setSel((v) => Math.min(v + 1, filtered.length - 1))
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault()
+              setSel((v) => Math.max(v - 1, 0))
+            } else if (e.key === "Enter") {
+              e.preventDefault()
+              commit(filtered[sel])
+            }
+          }}
+        />
+        <div className="max-h-[320px] overflow-y-auto p-1.5">
+          {filtered.length === 0 && <div className="px-3 py-6 text-center text-sm text-ghost">没有匹配项</div>}
+          {filtered.map((it, i) => (
             <button
-              key={c.id}
-              className={`flex w-full items-center gap-3 px-4 py-2 text-left text-[13px] transition-colors ${i === selected ? "bg-surface text-fg" : "text-dim hover:bg-surface"}`}
-              onClick={() => c.action()}
-              onMouseEnter={() => setSelected(i)}
+              key={it.key}
+              className={"menu-item " + (i === sel ? "bg-sel text-fg" : "")}
+              onMouseEnter={() => setSel(i)}
+              onClick={() => commit(it)}
             >
-              {c.id === "new-butler" ? <IconButler size={13} className="shrink-0 text-accent" /> : null}
-              <span className="min-w-0 flex-1 truncate">{c.label}</span>
-              {c.hint && <span className="max-w-[180px] truncate text-[11px] text-faint">{c.hint}</span>}
-              {c.kbd && <kbd className="nh-kbd shrink-0">{c.kbd}</kbd>}
+              <span className="flex-none text-faint">{it.icon}</span>
+              <span className="min-w-0 flex-1 truncate">{it.label}</span>
+              {it.hint && <span className="max-w-[180px] flex-none truncate font-mono text-2xs text-ghost">{it.hint}</span>}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-2 border-t border-line px-4 py-2 font-mono text-2xs text-ghost">
+          <span className="kbd">↑↓</span> 选择 <span className="kbd">Enter</span> 确认 <span className="kbd">Esc</span> 关闭
         </div>
       </div>
     </div>

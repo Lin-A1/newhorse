@@ -1,129 +1,164 @@
-import { useState } from "react"
-import { Sparkles as IconSparkle, ChevronRight as IconChevronRight } from "lucide-react"
+import { useMemo, useRef, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { ArrowUp, Paperclip, X } from "lucide-react"
 import { api, prettyTitle, relativeTime } from "../api"
-import { EmotionBall } from "./EmotionBall"
-import { ModelPill } from "./ModelPill"
-import { IconSend, IconArrowUpRight, IconButler } from "./icons"
-import { pendingPrompts, useStore } from "../store"
+import { useApp, wsName } from "./App"
+import { EmotionBall, HeroParticles, type BallMood } from "./EmotionBall"
 
-const SUGGESTIONS = ["读取当前仓库结构并总结", "帮我写一个周报草稿", "检查最近改动的代码质量", "给这个项目写一份 README"]
+/**
+ * Cover: the resident newhorse session front and center. The expressive ball
+ * (vendored emotion-ball engine) reacts to pointer and boot state; the
+ * composer sends straight into the workspace's persistent session, so the
+ * cover is never a dead end — one keystroke lands in an ongoing conversation.
+ */
 
-/** Home hero: ball + composer + suggestions + recent sessions. The composer
- *  has a newhorse toggle (the ever-present orchestrator session) — on = the session is created as the fixed BUTLER role
- *  (coordinator toolset: spawn_agent / wait / interrupt, audited). */
-export function Home({ onCreated }: { onCreated: (id: string) => void }) {
-  const { sessions, mood, showToast, settings } = useStore()
-  const noKey = !!settings && !settings.provider.hasApiKey && !(settings.providers ?? []).some((p) => p.hasApiKey)
+const SUGGESTIONS = ["读取当前仓库结构并总结", "检查最近变动的代码质量", "给这个项目写一份 README", "帮我写一个周报草稿"]
+
+export function Home(): React.ReactElement {
+  const navigate = useNavigate()
+  const { workspace, sessions, resident } = useApp()
   const [text, setText] = useState("")
-  const [busy, setBusy] = useState(false)
-  const [butler, setButler] = useState(true)
-  const recent = sessions.slice(0, 4)
+  const [images, setImages] = useState<Array<{ mime: string; data: string; url: string }>>([])
+  const [sending, setSending] = useState(false)
+  const [booted, setBooted] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
 
-  const send = async (): Promise<void> => {
-    const body = text.trim()
-    if (!body || busy) return
-    setBusy(true)
-    try {
-      const ws = localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace || undefined
-      const created = await api.createSession(undefined, ws, butler)
-      // Hand the first prompt to the session view so it drives the live stream.
-      pendingPrompts.set(created.sessionId, body)
-      onCreated(created.sessionId)
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : String(e))
-      setBusy(false)
+  // boot: health round-trip gates the ball's wake animation
+  useMemo(() => {
+    api.health().then(() => setBooted(true)).catch(() => setBooted(true))
+  }, [])
+
+  const mood: BallMood = !booted ? "boot" : sending ? "thinking" : resident && resident.status === "active" ? "working" : "listening"
+
+  const recent = useMemo(
+    () =>
+      sessions
+        .filter((s) => !s.archived && !s.parentId)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 4),
+    [sessions],
+  )
+
+  const addFiles = async (files: FileList | File[]): Promise<void> => {
+    for (const f of Array.from(files)) {
+      if (!f.type.startsWith("image/")) continue
+      const buf = await f.arrayBuffer()
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)))
+      setImages((v) => [...v, { mime: f.type, data: b64, url: `data:${f.type};base64,${b64}` }])
     }
   }
 
+  const send = (raw?: string): void => {
+    const t = (raw ?? text).trim()
+    if ((!t && !images.length) || sending) return
+    setSending(true)
+    api
+      .createSession(undefined, workspace || undefined)
+      .then((r) => {
+        navigate(`/s/${r.sessionId}`, { state: { prompt: t, images: images.map(({ mime, data }) => ({ mime, data })) } })
+      })
+      .catch(() => setSending(false))
+  }
+
   return (
-    <div className="h-full overflow-y-auto">
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center px-4 py-12">
-        <div className="fade flex w-full flex-col items-center gap-5 text-center">
-          <div className="rise" style={{ ["--d" as string]: "60ms" }}>
-            <h1 className="text-[24px] font-semibold tracking-tight text-fg">有什么可以帮你？</h1>
-            <p className="mt-1.5 text-[13px] text-faint">{butler ? "newhorse 会话：读文件、跑工具，把大任务拆给子代理并行推进" : "普通模式：直接对话，不挂调度工具集"}</p>
-          </div>
-          <div className="panel-strong composer-solid rise w-full overflow-hidden !rounded-[18px] transition-shadow" style={{ ["--d" as string]: "120ms" }}>
-            <textarea
-              className="max-h-44 min-h-[52px] w-full resize-none bg-transparent px-3.5 pb-1 pt-3.5 text-[14px] outline-none placeholder:text-faint"
-              rows={2}
-              placeholder="描述一个任务…"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault()
-                  void send()
-                }
-              }}
-            />
-            <div className="flex items-center gap-2 border-t border-line px-2.5 py-1.5">
-              <ModelPill compact />
-              <button
-                className={`pill transition-colors ${butler ? "!border-accent/40 !bg-accent/10 !text-accent" : "hover:border-linestrong hover:!text-fg"}`}
-                title="newhorse 常驻会话：默认带调度工具集，可关闭为纯对话"
-                onClick={() => setButler((v) => !v)}
-                aria-pressed={butler}
-              >
-                <EmotionBall mood={mood} size={12} />
-                newhorse
-              </button>
-              <span className="flex-1" />
-              <button className="btn-primary h-8 w-8 shrink-0 !rounded-full !p-0" disabled={busy || !text.trim()} onClick={() => void send()} aria-label="发送">
-                <IconSend size={15} />
-              </button>
-            </div>
-          </div>
-          {noKey && (
-            <div className="rise flex w-full items-center gap-2.5 rounded-xl border border-warn/25 bg-warn/[0.07] px-4 py-3 text-left" style={{ ["--d" as string]: "150ms" }}>
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-warn/15 text-[11px] font-bold text-warn">1</span>
-              <span className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-dim">
-                还没有配置模型供应商——配置 Key 后才能开始对话。
-              </span>
-              <button className="btn-primary shrink-0 !px-3 !py-1.5 !text-[11.5px]" onClick={() => window.dispatchEvent(new CustomEvent("nh-open-settings"))}>
-                去配置
-              </button>
+    <div className="relative flex h-full flex-col overflow-y-auto">
+      <HeroParticles className="pointer-events-none absolute inset-0 h-full w-full opacity-70" />
+      <div className="relative z-10 mx-auto flex w-full max-w-[640px] flex-1 flex-col items-center px-6 pb-10 pt-[9vh]">
+        <EmotionBall mood={mood} size={176} interactive className="drop-shadow-[0_18px_50px_rgba(0,0,0,0.45)]" />
+
+        <h1 className="mt-6 text-[22px] font-semibold tracking-tight">有什么可以帮你?</h1>
+        <p className="mt-1.5 text-sm text-faint">
+          把任务交给 <span className="font-medium text-dim">newhorse</span>
+          {workspace ? (
+            <>
+              ,它会在这个工作区里读文件、跑工具、记重点
+            </>
+          ) : (
+            ",它会自己读文件、跑工具、记重点"
+          )}
+        </p>
+
+        <div className="composer mt-7 w-full">
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3.5 pt-3">
+              {images.map((img, i) => (
+                <div key={i} className="group relative h-14 w-14 overflow-hidden rounded-md border border-line">
+                  <img src={img.url} className="h-full w-full object-cover" alt="" />
+                  <button
+                    className="absolute inset-y-0 right-0 hidden items-center justify-center bg-black/55 text-white group-hover:flex"
+                    onClick={() => setImages((v) => v.filter((_, j) => j !== i))}
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ))}
             </div>
           )}
-          <div className="rise flex flex-wrap justify-center gap-2" style={{ ["--d" as string]: "180ms" }}>
-            {SUGGESTIONS.map((sg) => (
-              <button
-                key={sg}
-                className="group flex items-center gap-1.5 rounded-full border border-linestrong bg-surface2 px-3.5 py-2 text-[12.5px] text-dim shadow-[inset_0_1px_0_rgba(127,127,127,0.07)] transition-all duration-150 hover:-translate-y-0.5 hover:border-linestrong hover:bg-surface hover:text-fg"
-                onClick={() => setText(sg)}
-              >
-                <IconSparkle size={13} className="text-faint" />
-                {sg}
-                <IconArrowUpRight size={12} className="opacity-0 transition-opacity group-hover:opacity-70" />
+          <textarea
+            value={text}
+            rows={2}
+            placeholder={workspace ? `描述一个任务,直接发给 ${wsName(workspace)} 的常驻会话…` : "描述一个任务…"}
+            onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const files = [...e.clipboardData.items].filter((it) => it.kind === "file").map((it) => it.getAsFile() as File)
+              if (files.length) void addFiles(files)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                send()
+              }
+            }}
+          />
+          <div className="flex items-center gap-2 px-3 pb-2.5">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) void addFiles(e.target.files)
+                e.target.value = ""
+              }}
+            />
+            <button className="icon-btn !h-7 !w-7" title="附加图片" onClick={() => fileRef.current?.click()}>
+              <Paperclip size={14} />
+            </button>
+            <div className="ml-auto flex items-center gap-2">
+              {workspace && <span className="chip !py-0.5">{wsName(workspace)}</span>}
+              <button className="send-btn" disabled={(!text.trim() && !images.length) || sending} onClick={() => send()}>
+                <ArrowUp size={15} />
               </button>
-            ))}
+            </div>
           </div>
         </div>
 
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+          {SUGGESTIONS.map((s) => (
+            <button key={s} className="suggest" onClick={() => send(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+
         {recent.length > 0 && (
-          <div className="rise mt-14 w-full" style={{ ["--d" as string]: "240ms" }}>
-            <div className="mb-3 flex items-center gap-2 px-1">
-              <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-faint">最近会话</span>
-              <span className="h-px flex-1 bg-gradient-to-r from-line to-transparent" />
+          <div className="mt-12 w-full">
+            <div className="mb-3 flex items-center gap-3">
+              <span className="label">最近会话</span>
+              <span className="h-px flex-1 bg-line" />
             </div>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {recent.map((s, i) => (
+            <div className="grid grid-cols-2 gap-2.5">
+              {recent.map((s) => (
                 <button
                   key={s.sessionId}
-                  className="panel rise group relative overflow-hidden p-3.5 text-left hover:-translate-y-0.5 hover:!border-linestrong hover:!bg-surface hover:shadow-raise"
-                  style={{ ["--d" as string]: `${280 + i * 60}ms` }}
-                  onClick={() => onCreated(s.sessionId)}
+                  className="card group px-4 py-3.5 text-left transition-colors hover:border-linestrong"
+                  onClick={() => navigate(`/s/${s.sessionId}`)}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="line-clamp-2 min-w-0 flex-1 text-[13px] font-medium leading-snug text-fg">{prettyTitle(s.title, s.sessionId.slice(0, 8), 40)}</div>
-                    <IconChevronRight size={14} className="mt-0.5 shrink-0 text-faint opacity-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
-                  </div>
-                  <div className="mt-2 flex items-center gap-2 text-[11px] text-faint">
-                    <span className={`inline-block h-1.5 w-1.5 rounded-full ${s.status === "active" ? "bg-ok" : "bg-faint"}`} />
-                    <span className="tnum">{relativeTime(s.updatedAt)}</span>
-                    {s.model && (
-                      <span className="pill !px-2 !py-0 !text-[10px]">{s.model.split("/").pop()}</span>
-                    )}
+                  <div className="truncate text-[13px] font-medium leading-snug">{prettyTitle(s.title, "未命名会话", 30)}</div>
+                  <div className="mt-2 flex items-center gap-2 font-mono text-2xs text-ghost">
+                    <span>{relativeTime(s.updatedAt)}</span>
+                    {s.model && <span className="chip !py-0 !text-2xs">{s.model}</span>}
                   </div>
                 </button>
               ))}

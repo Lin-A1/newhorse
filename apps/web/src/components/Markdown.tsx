@@ -1,12 +1,11 @@
 import React, { useState } from "react"
-import { IconCopy, IconCheck } from "./icons"
 
 /**
  * Minimal markdown renderer for assistant turns — headings, fenced code
  * (header + copy + line numbers + diff tint), blockquotes, lists, bold,
  * inline code, links. React-element output (no HTML injection).
  */
-export function Markdown({ text }: { text: string }): React.ReactElement {
+export function Markdown({ text, streaming }: { text: string; streaming?: boolean }): React.ReactElement {
   const blocks: React.ReactElement[] = []
   const lines = text.split("\n")
   let i = 0
@@ -62,10 +61,11 @@ export function Markdown({ text }: { text: string }): React.ReactElement {
     }
     blocks.push(<p key={key++}>{inline(buf.join("\n"))}</p>)
   }
+  if (streaming) blocks.push(<span key="caret" className="stream-caret" />)
   return <div className="md">{blocks}</div>
 }
 
-function CodeBlock({ lang, code }: { lang: string; code: string }) {
+function CodeBlock({ lang, code }: { lang: string; code: string }): React.ReactElement {
   const [copied, setCopied] = useState(false)
   const copy = (): void => {
     const done = (): void => {
@@ -99,8 +99,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
       <div className="codeblock-bar">
         <span>{lang || "code"}</span>
         <button className="codeblock-copy" onClick={copy}>
-          {copied ? <IconCheck size={11} className="text-ok" /> : <IconCopy size={11} />}
-          {copied ? "已复制" : "复制"}
+          {copied ? "copied" : "copy"}
         </button>
       </div>
       <div className="codeblock-body">
