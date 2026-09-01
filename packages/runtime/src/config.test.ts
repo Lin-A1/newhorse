@@ -5,14 +5,28 @@ import { join } from "node:path"
 import { loadRuntimeSettings, writeAgentHomeConfig, readAgentHomeConfig } from "./config"
 
 describe("loadRuntimeSettings (harness floor)", () => {
-  it("defaults: home ~/.newhorse, dataDir under it, openai provider, port 3927", () => {
-    const s = loadRuntimeSettings({ env: {} })
+  it("defaults: home ~/.newhorse, dataDir under it, openai provider, port 3927", async () => {
+    // Isolate the agent home via the documented redirect: DEFAULT_HOME() reads
+    // process.env directly, so HOME alone cannot isolate — and without
+    // isolation this test flips whenever the operator's real ~/.newhorse/
+    // config.json changes (e.g. their active provider). A temp home still
+    // ends with ".newhorse" (the assertion below is suffix-based).
+    const home = await mkdtemp(join(tmpdir(), "nh-defaults-"))
+    const s = loadRuntimeSettings({ env: { AGENT_RUNTIME_HOME: join(home, ".newhorse") } })
+    try {
+      await assertDefaults(s)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  })
+
+  function assertDefaults(s: ReturnType<typeof loadRuntimeSettings>): void {
     expect(s.agentHome.endsWith(".newhorse")).toBe(true)
     expect(s.dataDir.endsWith("data")).toBe(true)
     expect(s.provider.kind).toBe("openai")
     expect(s.port).toBe(3927)
     expect(s.memory.on).toBe(false)
-  })
+  }
 
   it("env overrides defaults; AGENT_RUNTIME_HOME redirects the home", () => {
     const s = loadRuntimeSettings({ env: { AGENT_RUNTIME_HOME: "/custom/home", NEWHORSE_PROVIDER: "anthropic", NEWHORSE_MODEL: "m1", NEWHORSE_MEMORY: "on", NEWHORSE_MEMORY_VECTOR: "on" } })

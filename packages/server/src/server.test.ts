@@ -267,7 +267,7 @@ describe("butler role + policy + commands + fork (client surfaces)", () => {
     const evs = (await (await fetch(`${base}/v1/session/${sessionId}/events`)).json()) as { type: string; data: Record<string, unknown> }[]
     expect(evs.some((e) => e.type === "Session.Created" && (e.data as { role?: string }).role === "butler")).toBe(true)
     const sys = evs.find((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string; text?: string } }).message?.kind === "system")
-    expect(((sys?.data as { message?: { text?: string } } | undefined)?.message?.text ?? "")).toContain("管家")
+    expect(((sys?.data as { message?: { text?: string } } | undefined)?.message?.text ?? "")).toContain("newhorse——用户的常驻主会话")
 
     // The durable registry projects the role for the client badge.
     const list = (await (await fetch(`${base}/v1/sessions`)).json()) as Array<{ sessionId: string; role?: string }>

@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer"
 import type { ContentPart, Message, SessionMessage } from "@newhorse/schema"
 
 /**
@@ -39,10 +40,14 @@ export function toLlmMessages(
         // provider 400 (Anthropic rejects it), so it is emitted only when set.
         // Images come from the legacy inline shape OR the pre-hydrated
         // attachment map (refs ride only the last user turn — same aging rule).
-        const hydrated: Array<{ type: "image"; mime: string; data: string }> = (m.images ?? []).map((img) => ({ type: "image" as const, mime: img.mime, data: img.data }))
-        if (i === lastUserIndex) {
-          for (const img of attachmentImages?.get(m.id) ?? []) hydrated.push({ type: "image", mime: img.mime, data: img.data })
-        }
+        // Aging rule: inline AND hydrated attachment images ride ONLY the last
+        // user turn — older turns drop them (request-size bound).
+        const hydrated: Array<{ type: "image"; mime: string; data: string }> = i === lastUserIndex
+          ? [
+              ...(m.images ?? []).map((img) => ({ type: "image" as const, mime: img.mime, data: img.data })),
+              ...(attachmentImages?.get(m.id) ?? []).map((img) => ({ type: "image" as const, mime: img.mime, data: img.data })),
+            ]
+          : []
         out.push({
           role: "user",
           id: m.id,

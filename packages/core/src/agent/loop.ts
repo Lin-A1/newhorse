@@ -350,7 +350,9 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
       durationMs: Math.round(performance.now() - streamStart),
       finish,
       ...(usage !== undefined ? { usage } : {}),
-      promptChars: JSON.stringify(request.messages).length,
+      // Cheap scale proxy WITHOUT serializing image base64 (a 20MiB image must
+      // not allocate a ~27MB string on every call): sum text-ish field sizes.
+      promptChars: request.messages.reduce((n, m) => n + m.content.reduce((k, part) => k + (typeof (part as { text?: string }).text === "string" ? ((part as { text?: string }).text ?? "").length : 0), 0), 0),
       outputChars,
       toolCalls: assistantParts.filter((p): p is ToolCallPart => p.type === "tool-call").length,
       ...(providerError !== undefined ? { error: providerError } : {}),

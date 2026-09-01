@@ -8,7 +8,7 @@ import { listModels } from "@newhorse/llm"
 import type { AdapterConfig, Fetcher } from "@newhorse/llm"
 import type { StoredEvent, ApprovalRequest } from "@newhorse/schema"
 import { join, resolve, sep } from "node:path"
-import { readdir } from "node:fs/promises"
+import { readdir, realpath } from "node:fs/promises"
 import { Buffer } from "node:buffer"
 
 /**
@@ -92,6 +92,10 @@ export interface ServerConfig {
   /** Inbound channels (webhook-first; docs/agent-runtime-integrations.md §6).
    *  Absent → /v1/channel/* routes return 404. */
   readonly channels?: readonly ChannelConfig[]
+  /** Transport-level extra tools (e.g. mounted MCP servers) merged ADDITIVELY
+   *  into every session's AppConfig.tools — first same-name occurrence wins,
+   *  builtins/plugins keep their precedence (runtime toolset rules). */
+  readonly tools?: import("@newhorse/core").Tool[]
 }
 
 /** One session's create config (POST /v1/session body), transport DTO. */
@@ -248,6 +252,7 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   const pluginsDir = config.pluginsDir
   const agentHome = config.agentHome
   const channels = config.channels
+  const serverTools = config.tools
   const apps = new Map<string, App>()
   /** Sessions this process created (directory-owned; unregistered on stop). */
   const owned = new Set<string>()
@@ -393,7 +398,10 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
     const base = await sessionConfig({ ...create })
     // sessionId must be pinned, else createApp derives a workspace-stable id
     // that differs from the one the caller will use in paths.
-    const app = await createApp({ ...base, sessionId: id, onApprove: config.onApprove ?? config.approvals?.gate })
+    // Transport-level extra tools (mounted MCP servers) merge ADDITIVELY after
+    // the session factory's own tools — runtime precedence (first same-name
+    // occurrence wins, builtins last) resolves collisions deterministically.
+    const app = await createApp({ ...base, sessionId: id, onApprove: config.onApprove ?? config.approvals?.gate, ...(serverTools?.length ? { tools: [...(base.tools ?? []), ...serverTools] } : {}) })
     if (directory) {
       // Register cross-process ownership. register returns the PREVIOUS row:
       // a foreign FRESH row means a sibling owns this id and our pre-check
@@ -566,6 +574,8 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
       if (method === "POST" && parts.length === 4 && parts[1] === "channel" && parts[3] === "inbound") {
         const cfg = channels?.find((c) => c.id === parts[2]!)
         if (!cfg) return json(404, { error: `unknown channel "${parts[2]}"` })
+        const declared = Number(req.headers.get("content-length") ?? 0)
+        if (declared > MAX_PROMPT_BODY) return json(413, { error: "request body too large" })
         const parsed = await readJsonOr400<{ text?: string; userId?: string }>(req)
         if ("error" in parsed) return json(400, parsed)
         try {
@@ -577,6 +587,9 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
               const resolved = await resolveApp({ sessionId })
               if (!resolved) throw new Error("no sessionConfig provided; cannot create session")
               if (resolved.conflict) throw new Error(`session "${sessionId}" is owned by ${resolved.conflict.endpoint}`)
+              // One runSession loop per log: an overlapping inbound (webhook
+              // redelivery) is rejected, not queued — the caller retries.
+              if (resolved.app.isBusy()) throw new Error("session busy")
               const run = await resolved.app.prompt(text, "user")
               const session = await resolved.app.resume()
               const lastAssistant = [...session.messages].reverse().find((m) => m.kind === "assistant")
@@ -656,7 +669,9 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         if (found.app.attachments) {
           const store = found.app.attachments
           events = await Promise.all(events.map(async (e) => {
-            if (e.type !== "Session.PromptAdmitted" && e.type !== "Session.Prompted") return e
+            // Only PromptAdmitted carries refs (Prompted resolves by id at fold
+            // time and never duplicates them).
+            if (e.type !== "Session.PromptAdmitted") return e
             const refs = (e.data as { attachments?: Array<{ sha256: string; mime: string }> }).attachments
             if (!refs?.length) return e
             const images: Array<{ mime: string; data: string }> = []
@@ -887,7 +902,17 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         const rootAbs = resolve(ws)
         const targetAbs = resolve(ws, rel)
         if (targetAbs !== rootAbs && !targetAbs.startsWith(rootAbs + sep)) return json(403, { error: "path escapes the workspace" })
-        const file = Bun.file(targetAbs)
+        // Symlink re-check (docs §3 invariant): resolve() never canonicalizes
+        // links, so a workspace-internal symlink pointing OUT would read
+        // arbitrary files. Canonicalize and re-test before touching content.
+        let targetAbs2 = targetAbs
+        try {
+          targetAbs2 = await realpath(targetAbs)
+        } catch {
+          return json(404, { error: "file not found" })
+        }
+        if (targetAbs2 !== rootAbs && !targetAbs2.startsWith(rootAbs + sep)) return json(403, { error: "path escapes the workspace" })
+        const file = Bun.file(targetAbs2)
         let stat: { size: number; isDirectory(): boolean }
         try {
           stat = await file.stat()

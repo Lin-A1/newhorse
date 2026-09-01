@@ -62,12 +62,13 @@ export async function handleChannelInbound(deps: ChannelDeps, req: ChannelInboun
     const body = JSON.stringify({ channelId: config.id, sessionId, prompt: text, reply: result.reply, finish: result.finish })
     const signature = config.secret ? "sha256=" + createHmac("sha256", config.secret).update(body).digest("hex") : undefined
     try {
-      await (deps.fetchImpl ?? fetch)(config.webhookUrl, {
+      const res = await (deps.fetchImpl ?? fetch)(config.webhookUrl, {
         method: "POST",
         headers: { "content-type": "application/json", ...(signature ? { "x-newhorse-signature": signature } : {}) },
         body,
         signal: AbortSignal.timeout(5_000),
       })
+      if (!res.ok) console.error(`[channel:${config.id}] webhook responded ${res.status} — delivery NOT confirmed`)
     } catch (err) {
       // The channel is a SIDE channel: a dead webhook must never corrupt the
       // settled turn — warn and move on.

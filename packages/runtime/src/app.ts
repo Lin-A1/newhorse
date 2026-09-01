@@ -130,6 +130,11 @@ export interface App {
   /** Content-addressed attachment store for this session's data dir (absent
    *  when the host runs without a dataDir — the legacy inline path applies). */
   readonly attachments?: AttachmentStore
+  /** Whether a prompt turn is currently in flight. Transports use it to guard
+   *  concurrent admission from external surfaces (channels): two runSession
+   *  loops on one log would double-promote inbox rows and orphan the abort
+   *  controller. */
+  readonly isBusy: () => boolean
   /** Subscribe to live session events; returns an unsubscribe function. */
   readonly onEvent: (listener: (event: AppEvent) => void) => () => void
   /**
@@ -526,6 +531,7 @@ export async function createApp(config: AppConfig): Promise<App> {
   }
 
   let current: AbortController | undefined
+  let inFlight = false
 
   // Model-io trace: every LLM call this session makes is appended as a durable
   // Session.ModelCalled event (source-tagged), so /events + usage folding see
@@ -575,6 +581,7 @@ export async function createApp(config: AppConfig): Promise<App> {
       // run and a later prompt is unaffected (an AbortSignal cannot be reset).
       const ctrl = new AbortController()
       current = ctrl
+      inFlight = true
       // Live-session registration (M4 session manager): the butler hub can now
       // interrupt THIS session (abort) and send it a steer (admit) — so
       // `send_to_session`/`interrupt` from another butler tool are REAL.
@@ -619,7 +626,7 @@ export async function createApp(config: AppConfig): Promise<App> {
               durationMs: Math.round(performance.now() - started),
               promptChars: headText.length,
               outputChars: text.length,
-            }).catch(() => {})
+            })
             return text
           },
           toolCtx: hub ? {
@@ -667,8 +674,10 @@ export async function createApp(config: AppConfig): Promise<App> {
       } finally {
         unregisterLive?.()
         if (current === ctrl) current = undefined
+        inFlight = false
       }
     },
+    isBusy: () => inFlight,
     async resume(): Promise<Session> {
       return Session.replay(await events.read(sessionId))
     },

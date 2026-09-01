@@ -13,6 +13,12 @@ import { HttpTransport } from "./http"
  * creation. `dispose()` closes every transport (host shutdown path).
  */
 
+/**
+ * Structural guarantee: runtime's McpServerSettings (the config-file mirror)
+ * must stay assignable to this richer interface — the host passes its parsed
+ * settings straight into createMcpTools. Breakage here is a type error in
+ * @newhorse/runtime's settings tests, not a silent drift.
+ */
 export interface McpServerConfig {
   readonly enabled?: boolean
   /** stdio server: command + args + extra env. */
@@ -62,9 +68,17 @@ export async function createMcpTools(configs: Record<string, McpServerConfig>, f
       }
       await transport.start()
       transports.push(transport)
-      const listed = await transport.request<{ tools?: McpToolDef[] }>("tools/list", {})
       const allow = cfg.allowedTools ? new Set(cfg.allowedTools) : undefined
-      for (const def of listed.tools ?? []) {
+      const defs: McpToolDef[] = []
+      // Follow pagination: servers with >1 page of tools silently truncate
+      // otherwise, and a truncated surface looks like "the tool is missing".
+      let cursor: string | undefined
+      do {
+        const page = await transport.request<{ tools?: McpToolDef[]; nextCursor?: string }>("tools/list", ...(cursor ? [{ cursor } as Record<string, unknown>] : []))
+        defs.push(...(page.tools ?? []))
+        cursor = page.nextCursor
+      } while (cursor)
+      for (const def of defs) {
         if (allow && !allow.has(def.name)) continue
         tools.push({
           name: `mcp__${name}__${def.name}`,

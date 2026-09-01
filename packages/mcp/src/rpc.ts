@@ -15,12 +15,14 @@ export class RpcError extends Error {
 
 export class RpcClient {
   private nextId = 1
-  private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
+  // Key is `number | string`: OUR ids are numeric, but a wire id arriving from
+  // a spec-legal server that mints string ids must still settle its call.
+  private readonly pending = new Map<number | string, { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>()
 
   constructor(private readonly timeoutMs: number) {}
 
   /** Resolve (or fail) one pending call by wire id. Returns true when handled. */
-  settle(id: number, message: { result?: unknown; error?: { code: number; message: string } }): boolean {
+  settle(id: number | string, message: { result?: unknown; error?: { code: number; message: string } }): boolean {
     const entry = this.pending.get(id)
     if (!entry) return false
     clearTimeout(entry.timer)
@@ -62,10 +64,10 @@ export class RpcClient {
 }
 
 /** Parse one wire message; returns null when it is not a response payload. */
-export function parseMessage(line: string): { id?: number; result?: unknown; error?: { code: number; message: string } } | null {
+export function parseMessage(line: string): { id: number | string; result?: unknown; error?: { code: number; message: string } } | null {
   try {
     const msg = JSON.parse(line) as { id?: number | string; result?: unknown; error?: { code: number; message: string } }
-    if (msg.id === undefined || typeof msg.id !== "number") return null
+    if (msg.id === undefined || (typeof msg.id !== "number" && typeof msg.id !== "string")) return null
     return { id: msg.id, result: msg.result, error: msg.error }
   } catch {
     return null

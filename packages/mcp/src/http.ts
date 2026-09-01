@@ -10,6 +10,7 @@ import { RpcClient, parseMessage } from "./rpc"
 export class HttpTransport {
   private rpc: RpcClient
   private sessionId: string | undefined
+  private readonly activeReaders = new Set<ReadableStreamDefaultReader<Uint8Array>>()
 
   constructor(
     private readonly url: string,
@@ -46,26 +47,30 @@ export class HttpTransport {
     if (!res.ok) throw new Error(`mcp http ${res.status} ${await res.text().catch(() => "")}`.slice(0, 300))
     const contentType = res.headers.get("content-type") ?? ""
     if (contentType.includes("text/event-stream")) {
-      // Read frames until one parses to a response for this body's id.
-      let settle!: (raw: string) => void
-      const done = new Promise<unknown>((resolve, reject) => {
-        settle = (raw: string): void => {
+      // Read frames until one parses to a response for this body's id, then
+      // CANCEL the reader — an unclosed streamable reply must not keep a
+      // reader (and the socket) alive for the process lifetime.
+      const reader = res.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>
+      this.activeReaders.add(reader)
+      const done = new Promise<unknown>((resolve) => {
+        const settle = (raw: string): void => {
           const msg = parseMessage(raw)
           if (msg?.id === undefined) return
           if (!this.rpc.settle(msg.id, msg)) return
+          this.activeReaders.delete(reader)
+          void reader.cancel().catch(() => {})
           resolve(undefined)
         }
+        void this.readSse(reader, settle)
       })
-      void this.readSse(res, settle)
-      return { settle, done }
+      return { settle: (): void => undefined, done }
     }
     const raw = await res.text()
     return { settle: (): void => undefined, done: Promise.resolve(raw) }
   }
 
-  private async readSse(res: Response, settle: (raw: string) => void): Promise<void> {
+  private async readSse(reader: ReadableStreamDefaultReader<Uint8Array>, settle: (raw: string) => void): Promise<void> {
     const decoder = new TextDecoder()
-    const reader = res.body!.getReader()
     let buffer = ""
     for (;;) {
       const { done, value } = await reader.read()
@@ -106,5 +111,7 @@ export class HttpTransport {
 
   async close(): Promise<void> {
     this.rpc.drain(`mcp server "${this.label}" is shutting down`)
+    for (const reader of this.activeReaders) void reader.cancel().catch(() => {})
+    this.activeReaders.clear()
   }
 }
