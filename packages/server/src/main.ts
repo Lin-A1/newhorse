@@ -1,6 +1,7 @@
 import { createServer } from "./server"
 import type { SessionCreateRequest } from "./server"
 import { createApp, loadRuntimeSettings, createSqliteSessionDirectory, createApprovalHub, createScheduler, createDagRunner, writeAgentHomeConfig, type Schedule } from "@newhorse/runtime"
+import { createMcpTools } from "@newhorse/mcp"
 import { MemoryMemoryStore, SqliteMemoryStore, createEmbeddingProvider } from "@newhorse/memory"
 import { join } from "node:path"
 
@@ -62,6 +63,12 @@ const dagRunner = createDagRunner({
   skillsDir: settings.pluginsDir,
 })
 
+// MCP client seam (docs/agent-runtime-integrations.md §1): configured servers
+// mount once at startup and their tools ride EVERY session via AppConfig.tools
+// (additive to builtins/plugins; first same-name wins). Fail-soft per server.
+const mcp = settings.mcpServers && Object.keys(settings.mcpServers).length > 0 ? await createMcpTools(settings.mcpServers) : undefined
+if (mcp) console.log(`  mcp       : ${mcp.tools.length} tool(s) from ${Object.keys(settings.mcpServers ?? {}).length} server(s)`)
+
 const handle = await createServer({
   host: settings.host,
   port: settings.port,
@@ -72,6 +79,9 @@ const handle = await createServer({
   schedules,
   dagRunner,
   ...(settings.pluginsDir ? { pluginsDir: settings.pluginsDir } : {}),
+  agentHome: settings.agentHome,
+  ...(settings.channels?.length ? { channels: settings.channels } : {}),
+  ...(mcp?.tools.length ? { tools: mcp.tools } : {}),
   memory: settings.memory.on ? memStore : undefined,
   ...(settings.registry ? { directory, advertiseUrl: settings.advertiseUrl } : {}),
   ...(settings.uiDir ? { uiDir: settings.uiDir } : {}),
@@ -132,4 +142,11 @@ console.log(`  dataDir   : ${settings.dataDir}`)
 console.log(`  memory    : ${settings.memory.on ? `on${settings.memory.vector.enabled ? " + semantic" : ""}${settings.memory.extraction ? " + extraction" : ""}` : "off"}`)
 console.log(`  bash      : ${settings.allowBash ? "on" : "off"}  plugin code: ${settings.allowPluginCode ? "trusted" : "off"}`)
 console.log(`  token     : ${settings.token ? "required" : "loopback-only"}`)
+
+// MCP transports own child processes/sockets — close them on shutdown.
+for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  process.on(sig, () => {
+    void (mcp?.dispose() ?? Promise.resolve()).finally(() => process.exit(0))
+  })
+}
 void createApp

@@ -1,4 +1,6 @@
 import { join } from "node:path"
+import type { McpServerConfig } from "@newhorse/mcp"
+import type { ChannelConfig } from "./channel"
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises"
 import { readFileSync } from "node:fs"
 
@@ -125,6 +127,11 @@ export interface RuntimeSettings {
   /** All provider presets stored in the agent-home config (server-side view
    *  with keys; the client gets a redacted projection via redactSettings). */
   readonly providers?: readonly ProviderProfile[]
+  /** Inbound channels (webhook-first, docs/agent-runtime-integrations.md §6). */
+  readonly channels?: readonly ChannelConfig[]
+  /** External MCP servers mounted into the tool seam at startup
+   *  (docs/agent-runtime-integrations.md §1). */
+  readonly mcpServers?: Record<string, McpServerConfig>
   /** URL peers use to reach this server (default: derived from host:port). */
   readonly advertiseUrl?: string
   /** Directory of the built client UI served on this origin (web 单独启动). */
@@ -151,7 +158,7 @@ const DEFAULT_HOME = () => join(process.env.HOME ?? process.env.USERPROFILE ?? "
  * subset; unknown keys are preserved on write (merge, never clobber), a
  * corrupt/missing file is an empty layer (never fails startup).
  */
-export type AgentHomeConfig = Partial<Pick<RuntimeSettings, "provider" | "model" | "contextWindowTokens" | "maxOutputTokens" | "host" | "port" | "workspace" | "approvalPolicy" | "activeProviderId">> & {
+export type AgentHomeConfig = Partial<Pick<RuntimeSettings, "provider" | "model" | "contextWindowTokens" | "maxOutputTokens" | "host" | "port" | "workspace" | "approvalPolicy" | "activeProviderId" | "channels" | "mcpServers">> & {
   readonly memory?: {
     readonly on?: boolean
     readonly extraction?: boolean

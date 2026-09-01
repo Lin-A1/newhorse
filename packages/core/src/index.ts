@@ -1,4 +1,5 @@
 export * from "./seam"
+export * from "./attachments"
 export * from "./session"
 export * from "./agent"
 export { stableSessionId } from "./session/id"

@@ -10,9 +10,10 @@
   },
   "dependencies": {
     "@newhorse/core": "workspace:*",
-    "@newhorse/schema": "workspace:*",
     "@newhorse/llm": "workspace:*",
+    "@newhorse/mcp": "workspace:*",
+    "@newhorse/memory": "workspace:*",
     "@newhorse/plugin": "workspace:*",
-    "@newhorse/memory": "workspace:*"
+    "@newhorse/schema": "workspace:*"
   }
 }

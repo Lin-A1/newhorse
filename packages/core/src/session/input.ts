@@ -39,8 +39,12 @@ export interface AdmitInput {
   readonly delivery: Delivery
   /** Who authored the prompt; drives the caller kind for butler tools (M2b). */
   readonly principal?: "user" | "butler" | "parent"
-  /** Optional image attachments; carried verbatim into Session.Prompted. */
+  /** Optional image attachments; carried verbatim into Session.Prompted.
+   *  Legacy inline form — new admissions prefer content-addressed refs. */
   readonly images?: readonly PromptImage[]
+  /** Content-addressed image references (docs/agent-runtime-integrations.md §5).
+   *  Carried into Session.PromptAdmitted; bytes live in the attachment store. */
+  readonly attachments?: readonly import("@newhorse/schema").AttachmentRef[]
 }
 
 export interface Admission {
@@ -67,6 +71,7 @@ interface Row {
   delivery: Delivery
   principal?: "user" | "butler" | "parent"
   images?: readonly PromptImage[]
+  attachments?: readonly import("@newhorse/schema").AttachmentRef[]
   admittedSeq: number
   promotedSeq: number | null
 }
@@ -142,9 +147,10 @@ export class MemorySessionInput implements SessionInputStore {
       delivery: input.delivery,
       principal: input.principal ?? "butler",
       ...(input.images?.length ? { images: input.images } : {}),
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     })
     const admittedSeq = event.seq
-    const row: Row = { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, principal: input.principal ?? "butler", admittedSeq, promotedSeq: null, ...(input.images?.length ? { images: input.images } : {}) }
+    const row: Row = { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, principal: input.principal ?? "butler", admittedSeq, promotedSeq: null, ...(input.images?.length ? { images: input.images } : {}), ...(input.attachments?.length ? { attachments: input.attachments } : {}) }
     this.#rows.set(input.id, row)
     return { id: input.id, sessionId: input.sessionId, prompt: input.prompt, delivery: input.delivery, principal: input.principal ?? "butler", admittedSeq }
   }
@@ -176,10 +182,10 @@ export class MemorySessionInput implements SessionInputStore {
 
   #apply(event: StoredEvent): void {
     if (event.type === "Session.PromptAdmitted") {
-      const data = event.data as { id?: string; sessionId?: string; prompt?: string; delivery?: Delivery; principal?: "user" | "butler" | "parent"; images?: readonly PromptImage[] }
+      const data = event.data as { id?: string; sessionId?: string; prompt?: string; delivery?: Delivery; principal?: "user" | "butler" | "parent"; images?: readonly PromptImage[]; attachments?: readonly import("@newhorse/schema").AttachmentRef[] }
       // prompt may be "" (an image-only prompt); anything missing is corrupt.
       if (!data.id || !data.sessionId || typeof data.prompt !== "string" || !data.delivery) return
-      this.#rows.set(data.id, { id: data.id, sessionId: data.sessionId, prompt: data.prompt, delivery: data.delivery, principal: data.principal ?? "butler", admittedSeq: event.seq, promotedSeq: null, ...(data.images?.length ? { images: data.images } : {}) })
+      this.#rows.set(data.id, { id: data.id, sessionId: data.sessionId, prompt: data.prompt, delivery: data.delivery, principal: data.principal ?? "butler", admittedSeq: event.seq, promotedSeq: null, ...(data.images?.length ? { images: data.images } : {}), ...(data.attachments?.length ? { attachments: data.attachments } : {}) })
     } else if (event.type === "Session.Prompted") {
       const data = event.data as { id?: string; delivery?: Delivery }
       const row = data.id ? this.#rows.get(data.id) : undefined

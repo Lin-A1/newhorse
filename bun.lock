@@ -37,6 +37,13 @@
         "@newhorse/schema": "workspace:*",
       },
     },
+    "packages/mcp": {
+      "name": "@newhorse/mcp",
+      "version": "0.0.0",
+      "dependencies": {
+        "@newhorse/core": "workspace:*",
+      },
+    },
     "packages/memory": {
       "name": "@newhorse/memory",
       "version": "0.0.0",
@@ -60,6 +67,7 @@
       "dependencies": {
         "@newhorse/core": "workspace:*",
         "@newhorse/llm": "workspace:*",
+        "@newhorse/mcp": "workspace:*",
         "@newhorse/memory": "workspace:*",
         "@newhorse/plugin": "workspace:*",
         "@newhorse/schema": "workspace:*",
@@ -97,6 +105,8 @@
     "@newhorse/core": ["@newhorse/core@workspace:packages/core"],
 
     "@newhorse/llm": ["@newhorse/llm@workspace:packages/llm"],
+
+    "@newhorse/mcp": ["@newhorse/mcp@workspace:packages/mcp"],
 
     "@newhorse/memory": ["@newhorse/memory@workspace:packages/memory"],
 

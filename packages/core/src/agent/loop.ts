@@ -1,7 +1,7 @@
 import type { LLMEvent, LLMRequest, SessionMessage, ContentPart, ToolCallPart } from "@newhorse/schema"
 import type { TurnRuntime, Agent, Tool, ToolCall, ToolResult, ToolCtx, Initiator } from "./runner"
 import { Session } from "../session/session"
-import { toLlmMessages } from "../session/messages"
+import { toLlmMessages, resolveAttachmentImages } from "../session/messages"
 import { projectCompacted, compactSession } from "./compaction"
 import { currentGoal } from "./goal"
 import { denyAllExecPolicy } from "./execpolicy"
@@ -34,6 +34,23 @@ export type LoopEvent =
 export type HookEvent = "stop" | "pre-tool-use"
 export type HookVerdict = { readonly decision: "allow" | "block"; readonly reason?: string }
 
+/** One completed model call (per provider turn). Metadata only — never request
+ *  or response bodies, so a trace stays cheap to keep and safe to expose. */
+export interface ModelCallInfo {
+  readonly model: string
+  /** Wall time of the streaming call in milliseconds. */
+  readonly durationMs: number
+  readonly finish: "tool" | "stop" | "length" | "content-filter" | "error"
+  /** Provider usage payload as reported by the protocol (opaque, pass-through). */
+  readonly usage?: unknown
+  /** Serialized request size in characters (not bytes) — a cheap scale proxy. */
+  readonly promptChars: number
+  /** Assistant output size in characters (text + reasoning deltas). */
+  readonly outputChars: number
+  readonly toolCalls: number
+  readonly error?: string
+}
+
 export interface RunOptions {
   readonly agent: Agent
   readonly sessionId: string
@@ -63,6 +80,12 @@ export interface RunOptions {
   /** Optional LLM summarizer used by compaction (head text -> summary). The
    * runtime injects it from its LLM client; absent = cheap local marker. */
   readonly compactSummarize?: (headText: string) => Promise<string>
+  /**
+   * Observability seam: invoked once per completed provider turn with call
+   * metadata (model-io trace). A throwing callback propagates like a failed
+   * StepEnded append — the caller owns whether a broken trace sink is fatal.
+   */
+  readonly onModelCall?: (info: ModelCallInfo) => void | Promise<void>
   /** Goal budget enforcement: when an ACTIVE goal's tokenBudget is exceeded by
    * the aggregated persisted usage, pause the run durably (finish="length",
    * goal status -> blocked). Default on. */
@@ -147,7 +170,10 @@ export async function runSession(runtime: TurnRuntime, opts: RunOptions): Promis
     // in) — this is what actually bounds the request window; the full log stays
     // durable. The boundary is read from the store so the projection is exact.
     const { messages: visibleMessages } = projectCompacted(await runtime.events.read(opts.sessionId))
-    const messages = toLlmMessages(visibleMessages, opts.agent.model)
+    // Content-addressed attachment refs hydrate ONLY on the last user turn
+    // (same aging rule as inline images) before the request is built.
+    const attachmentImages = await resolveAttachmentImages(visibleMessages, runtime.attachments)
+    const messages = toLlmMessages(visibleMessages, opts.agent.model, attachmentImages)
     if (messages.length === 0) {
       // Nothing promoted and no history yet — drain is done.
       break
@@ -236,7 +262,9 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
   let finish: "tool" | "stop" | "length" | "content-filter" | "error" = "stop"
   let usage: unknown
 
+  const streamStart = performance.now()
   const stream = await runtime.llm.stream(request, opts.signal)
+  let providerError: string | undefined
   try {
     for await (const event of stream) {
       switch (event.type) {
@@ -285,6 +313,7 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
           // smoke tests key off finish to decide success.
           finish = "error"
           needsContinuation = false
+          providerError = event.message
           opts.onEvent?.({ type: "error", code: event.code, message: event.message })
           break
       }
@@ -307,6 +336,26 @@ async function runTurn(runtime: TurnRuntime, opts: RunOptions, request: LLMReque
 
   // Archive the assistant message (text + tool calls) to the log.
   await appendMessage(runtime, opts.sessionId, { kind: "assistant", id: assistantId, seq: 0, content: assistantParts, model: opts.agent.model })
+
+  // Model-io trace (per completed provider call). Fires BEFORE tool execution —
+  // it describes the MODEL call, not the turn. Tool-call parts count toward
+  // toolCalls; text+reasoning deltas count toward outputChars.
+  if (opts.onModelCall) {
+    let outputChars = 0
+    for (const p of assistantParts) {
+      if (p.type === "text" || p.type === "reasoning") outputChars += p.text.length
+    }
+    await opts.onModelCall({
+      model: opts.agent.model,
+      durationMs: Math.round(performance.now() - streamStart),
+      finish,
+      ...(usage !== undefined ? { usage } : {}),
+      promptChars: JSON.stringify(request.messages).length,
+      outputChars,
+      toolCalls: assistantParts.filter((p): p is ToolCallPart => p.type === "tool-call").length,
+      ...(providerError !== undefined ? { error: providerError } : {}),
+    })
+  }
 
   // Execute ANY tool call present this turn, regardless of finish_reason — a
   // provider may emit tool_calls alongside a "stop"/"length" finish, and we must

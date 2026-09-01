@@ -10,6 +10,8 @@ export * from "./approvals"
 export * from "./settings-api"
 export * from "./scheduler"
 export * from "./usage"
+export * from "./catalog"
+export * from "./channel"
 export * from "./tools"
 export * from "./tools/path"
 // Console surface types used by transports (re-exported from core so a

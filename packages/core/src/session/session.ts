@@ -20,6 +20,7 @@ export class Session {
   /** Images from PromptAdmitted, resolved when their prompt is promoted —
    *  the base64 is stored once (on the admit event), never duplicated. */
   #admittedImages = new Map<string, readonly { mime: string; data: string }[]>()
+  #admittedAttachments = new Map<string, readonly import("@newhorse/schema").AttachmentRef[]>()
 
   private constructor(id: string, location: string, projectId: string | undefined, createdAt: number) {
     this.#id = id
@@ -55,8 +56,9 @@ export class Session {
       case "Session.Created":
         break
       case "Session.PromptAdmitted": {
-        const a = event.data as { id?: string; images?: { mime: string; data: string }[] }
+        const a = event.data as { id?: string; images?: { mime: string; data: string }[]; attachments?: import("@newhorse/schema").AttachmentRef[] }
         if (a.id && a.images?.length) this.#admittedImages.set(a.id, a.images)
+        if (a.id && a.attachments?.length) this.#admittedAttachments.set(a.id, a.attachments)
         break
       }
       case "Session.MessageAppended": {
@@ -71,12 +73,21 @@ export class Session {
         // steer promoted mid-turn would project a seq lower than a prior
         // assistant message, breaking monotonicity for any consumer filtering
         // by seq. Attachments ride the same event (model-visible ⟺ logged).
-        const data = event.data as { id?: string; prompt?: string; images?: { mime: string; data: string }[] }
+        const data = event.data as { id?: string; prompt?: string; images?: { mime: string; data: string }[]; attachments?: import("@newhorse/schema").AttachmentRef[] }
         if (data.id && typeof data.prompt === "string") {
           // own data first (legacy logs carried images here), else resolve
-          // from the durable admit event.
+          // from the durable admit event. Attachment REFS resolve the same way;
+          // hydration to bytes happens at lowering (attachment store lookup).
           const images = data.images?.length ? data.images : this.#admittedImages.get(data.id)
-          this.#messages.push({ kind: "user", id: data.id, seq: event.seq, text: data.prompt, ...(images?.length ? { images } : {}) })
+          const attachments = data.attachments?.length ? data.attachments : this.#admittedAttachments.get(data.id)
+          this.#messages.push({
+            kind: "user",
+            id: data.id,
+            seq: event.seq,
+            text: data.prompt,
+            ...(images?.length ? { images } : {}),
+            ...(attachments?.length ? { attachments } : {}),
+          })
         }
         break
       }

@@ -10,6 +10,31 @@ function sse(payload: string): Response {
 }
 
 describe("runtime app", () => {
+  it("appends a Session.ModelCalled trace per provider call", async () => {
+    const payload = [
+      'data: ' + JSON.stringify({ choices: [{ delta: { role: 'assistant', content: 'Hey' }, finish_reason: null }] }) + '\n\n',
+      'data: ' + JSON.stringify({ choices: [{ delta: { content: '' }, finish_reason: 'stop' }] }) + '\n\n',
+      'data: [DONE]\n\n',
+    ].join('')
+    const app = await createApp({
+      provider: { kind: "openai", baseUrl: "https://api.example.com", apiKey: "k" },
+      model: "test-model",
+      workspace: "/proj",
+      fetch: (async () => sse(payload)) as never,
+    })
+
+    await app.prompt("hi")
+    const events = await app.events.read(app.sessionId)
+    const traces = events.filter((e) => e.type === "Session.ModelCalled")
+    expect(traces.length).toBe(1)
+    const data = traces[0]!.data as { source: string; model: string; finish: string; promptChars: number; outputChars: number }
+    expect(data.source).toBe("turn")
+    expect(data.model).toBe("test-model")
+    expect(data.finish).toBe("stop")
+    expect(data.promptChars).toBeGreaterThan(0)
+    expect(data.outputChars).toBe(3)
+  })
+
   it("runs a single prompt through admission → turn → history", async () => {
     const payload = [
       "data: " + JSON.stringify({ choices: [{ delta: { role: "assistant", content: "Hello" }, finish_reason: null }] }) + "\n\n",
@@ -505,7 +530,7 @@ describe("butler fixed session role", () => {
     expect(log.some((e) => e.type === "Session.Created" && (e.data as { role?: string }).role === "butler")).toBe(true)
     const system = log.find((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string; text?: string } }).message?.kind === "system")
     const sysText = (system?.data as { message?: { text?: string } } | undefined)?.message?.text ?? ""
-    expect(sysText).toContain("管家")
+    expect(sysText).toContain("newhorse——用户的常驻主会话")
     expect(sysText).toContain("spawn_agent")
     expect(sysText).toContain("Workdir: /w")
 
@@ -514,7 +539,7 @@ describe("butler fixed session role", () => {
     const plainLog = await plain.events.read("plain-1")
     expect(plainLog.some((e) => e.type === "Session.Created" && (e.data as { role?: string }).role === "butler")).toBe(false)
     const plainSys = (plainLog.find((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string; text?: string } }).message?.kind === "system")?.data as { message?: { text?: string } } | undefined)?.message?.text ?? ""
-    expect(plainSys).not.toContain("管家")
+    expect(plainSys).not.toContain("newhorse——用户的常驻主会话")
   })
 
   it("a butler session carries the butler toolset (spawn_agent etc.)", async () => {
@@ -565,7 +590,7 @@ describe("durable role + policy restore (log is authoritative)", () => {
       await plain.prompt("again")
       const log = await plain.events.read("role-1")
       const system = log.find((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string; text?: string } }).message?.kind === "system")
-      expect(((system?.data as { message?: { text?: string } } | undefined)?.message?.text ?? "")).toContain("管家")
+      expect(((system?.data as { message?: { text?: string } } | undefined)?.message?.text ?? "")).toContain("newhorse——用户的常驻主会话")
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
     }

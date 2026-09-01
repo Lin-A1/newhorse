@@ -12,7 +12,8 @@
       "packages/cli",
       "packages/memory",
       "packages/server",
-      "packages/sdk"
+      "packages/sdk",
+      "packages/mcp"
     ]
   },
   "scripts": {

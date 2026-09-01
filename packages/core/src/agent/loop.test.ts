@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { MemoryEventStore } from "../session/store"
 import { MemorySessionInput } from "../session/input"
 import { Session, asSessionMessage } from "../session/session"
-import { runSession, compactLimit } from "./loop"
+import { runSession, compactLimit, type ModelCallInfo } from "./loop"
 import type { TurnRuntime, Agent, Tool } from "./runner"
 import type { LLMEvent, LLMRequest } from "@newhorse/schema"
 
@@ -286,4 +286,58 @@ it("compactLimit derives window-fraction budgets with explicit precedence", asyn
   expect(compactLimit({ contextWindowTokens: 10_000 })).toBe(15_000) // 10000×2.5×0.6
   expect(compactLimit({ contextWindowTokens: 10_000, charsPerToken: 4 })).toBe(24_000)
   expect(compactLimit({ contextWindowTokens: 10_000, compactThreshold: 999 })).toBe(999)
+})
+
+it("emits a model-io trace per completed provider call", async () => {
+  const llm: TurnRuntime["llm"] = { id: "t", stream: async () => eventsOf([{ type: "text.delta", text: "hi" }, { type: "step-finish", finish: "stop", usage: { inputTokens: 3, outputTokens: 2 } } as LLMEvent]) }
+  const { runtime, resolveTool } = makeRuntime(llm)
+  await runtime.events.append("s1", "Session.Created", { id: "s1", location: "/proj", createdAt: 1 })
+  await runtime.inbox.admit({ id: "m1", sessionId: "s1", prompt: "hello", delivery: "steer" })
+
+  const calls: ModelCallInfo[] = []
+  await runSession(runtime, { agent, sessionId: "s1", resolveTool, onModelCall: async (info) => { calls.push(info) } })
+
+  expect(calls.length).toBe(1)
+  expect(calls[0]!.model).toBe("test-model")
+  expect(calls[0]!.finish).toBe("stop")
+  expect(calls[0]!.outputChars).toBe(2)
+  expect(calls[0]!.promptChars).toBeGreaterThan(0)
+  expect(calls[0]!.toolCalls).toBe(0)
+  expect(calls[0]!.durationMs).toBeGreaterThanOrEqual(0)
+  expect(calls[0]!.usage).toEqual({ inputTokens: 3, outputTokens: 2 })
+})
+
+it("model-io trace reports provider errors", async () => {
+  const calls: ModelCallInfo[] = []
+  const llm: TurnRuntime["llm"] = {
+    id: "t",
+    stream: async () => eventsOf([{ type: "provider-error", code: "http", message: "boom" } as LLMEvent]),
+  }
+  const { runtime, resolveTool } = makeRuntime(llm)
+  await runtime.events.append("s2", "Session.Created", { id: "s2", location: "/proj", createdAt: 1 })
+  await runtime.inbox.admit({ id: "m2", sessionId: "s2", prompt: "go", delivery: "steer" })
+
+  await runSession(runtime, { agent, sessionId: "s2", resolveTool, onModelCall: async (info) => { calls.push(info) } })
+  expect(calls.length).toBe(1)
+  expect(calls[0]!.finish).toBe("error")
+  expect(calls[0]!.error).toBe("boom")
+})
+
+it("model-io trace counts tool calls", async () => {
+  const calls: ModelCallInfo[] = []
+  const tool: Tool = { name: "echo", description: "echo", inputSchema: { type: "object" }, execute: async () => "ok" }
+  const llm: TurnRuntime["llm"] = {
+    id: "t",
+    stream: async () => eventsOf([
+      { type: "tool-call", id: "c1", name: "echo", input: {} } as LLMEvent,
+      { type: "step-finish", finish: "tool" } as LLMEvent,
+    ]),
+  }
+  const { runtime, resolveTool } = makeRuntime(llm, [tool])
+  await runtime.events.append("s3", "Session.Created", { id: "s3", location: "/proj", createdAt: 1 })
+  await runtime.inbox.admit({ id: "m3", sessionId: "s3", prompt: "go", delivery: "steer" })
+
+  await runSession(runtime, { agent, sessionId: "s3", resolveTool, onModelCall: async (info) => { calls.push(info) } })
+  expect(calls[0]!.finish).toBe("tool")
+  expect(calls[0]!.toolCalls).toBe(1)
 })

@@ -14,8 +14,17 @@ export interface ImageAttachment {
   readonly data: string
 }
 
+/** A content-addressed attachment REFERENCE: the log carries this, the bytes
+ *  live in the attachment store (docs/agent-runtime-integrations.md §5). */
+export interface AttachmentRef {
+  readonly sha256: string
+  readonly mime: string
+  /** Source byte count at admission time (budget accounting). */
+  readonly bytes: number
+}
+
 export type SessionMessage =
-  | { readonly kind: "user"; readonly id: string; readonly seq: number; readonly text: string; readonly images?: readonly ImageAttachment[] }
+  | { readonly kind: "user"; readonly id: string; readonly seq: number; readonly text: string; readonly images?: readonly ImageAttachment[]; readonly attachments?: readonly AttachmentRef[] }
   | { readonly kind: "assistant"; readonly id: string; readonly seq: number; readonly content: ContentPart[]; readonly model?: string; readonly provider?: string }
   | { readonly kind: "tool"; readonly id: string; readonly seq: number; readonly callId: string; readonly name: string; readonly output: unknown; readonly isError?: boolean }
   | { readonly kind: "system"; readonly id: string; readonly seq: number; readonly text: string }

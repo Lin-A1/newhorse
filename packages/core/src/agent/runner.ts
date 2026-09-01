@@ -91,4 +91,7 @@ export interface TurnRuntime {
   readonly events: EventStore
   readonly inbox: SessionInputStore
   readonly llm: LlmClient
+  /** Content-addressed attachment store (optional). When present, admission
+   *  refs on user turns hydrate into image parts at request lowering. */
+  readonly attachments?: import("../attachments").AttachmentStore
 }

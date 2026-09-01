@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "providers": [
+    {
+      "id": "example-provider",
+      "name": "Example Provider (copy to <agentHome>/model-catalog.json and edit)",
+      "endpoints": {
+        "baseURL": "https://api.example.com",
+        "paths": {
+          "anthropic": "/anthropic/v1/messages",
+          "openai-compatible": "/v1/chat/completions"
+        }
+      },
+      "defaultKind": "anthropic",
+      "models": [
+        {
+          "id": "example-large",
+          "name": "Example Large",
+          "kinds": ["anthropic", "openai-compatible"],
+          "modalities": { "input": ["text", "image"], "output": ["text"] },
+          "contextWindowTokens": 200000,
+          "maxOutputTokens": 8192,
+          "reasoning": { "defaultLevel": "high", "levels": { "low": {}, "high": {} } }
+        },
+        {
+          "id": "example-mini",
+          "name": "Example Mini",
+          "kinds": ["openai-compatible"],
+          "modalities": { "input": ["text"], "output": ["text"] },
+          "contextWindowTokens": 32768,
+          "maxOutputTokens": 4096
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,4 @@
-import { createApp, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow, type SessionDirectory, type DirectoryEntry, type SettingsController, type AgentHomeConfig, type ApprovalHub, type Scheduler, type ScheduleInput, type Schedule } from "@newhorse/runtime"
-import { redactSettings, aggregateUsage, type DagRunner, type DagStatus, createDagRunner } from "@newhorse/runtime"
+import { createApp, redactSettings, aggregateUsage, loadModelCatalog, createDagRunner, handleChannelInbound, channelSessionId, type App, type AppConfig, type PromptResult, type SessionRow, type RegistryQuery, type AuditEventRow, type SessionDirectory, type DirectoryEntry, type SettingsController, type AgentHomeConfig, type ApprovalHub, type Scheduler, type ScheduleInput, type Schedule, type DagRunner, type DagStatus, type ChannelConfig } from "@newhorse/runtime"
 import { currentGoal, tokensUsed as foldTokensUsed, currentTodos, validateGoal, projectCompacted } from "@newhorse/core"
 import { discoverSkills, discoverPlugin } from "@newhorse/plugin"
 import { SessionRegistry, SqliteEventStore, type DAGSpec } from "@newhorse/core"
@@ -10,6 +9,7 @@ import type { AdapterConfig, Fetcher } from "@newhorse/llm"
 import type { StoredEvent, ApprovalRequest } from "@newhorse/schema"
 import { join, resolve, sep } from "node:path"
 import { readdir } from "node:fs/promises"
+import { Buffer } from "node:buffer"
 
 /**
  * Runtime server (Phase 1): transport-only HTTP + SSE boundary over `createApp`.
@@ -86,6 +86,12 @@ export interface ServerConfig {
   readonly dagRunner?: DagRunner
   /** Plugin directory — skills/agents discovery for the capability browser. */
   readonly pluginsDir?: string
+  /** Agent home directory — where the optional model-catalog.json lives
+   *  (GET /v1/models/catalog serves it; absent → catalog endpoint returns null). */
+  readonly agentHome?: string
+  /** Inbound channels (webhook-first; docs/agent-runtime-integrations.md §6).
+   *  Absent → /v1/channel/* routes return 404. */
+  readonly channels?: readonly ChannelConfig[]
 }
 
 /** One session's create config (POST /v1/session body), transport DTO. */
@@ -240,6 +246,8 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
   const memory = config.memory
   const dagRunner = config.dagRunner
   const pluginsDir = config.pluginsDir
+  const agentHome = config.agentHome
+  const channels = config.channels
   const apps = new Map<string, App>()
   /** Sessions this process created (directory-owned; unregistered on stop). */
   const owned = new Set<string>()
@@ -540,6 +548,53 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         return json(200, { interrupted: true })
       }
 
+      // GET /v1/models/catalog — the model capability catalog (reference data
+      // for the client's model-config UI: pick a model → budgets autofill).
+      // Reference-only: routing reads AgentHomeConfig, never this file.
+      // NOTE: must sit ABOVE the catch-all "GET /v1/session/:id" route (that
+      // route matches any 3-segment GET path).
+      if (method === "GET" && parts.length === 3 && parts[1] === "models" && parts[2] === "catalog") {
+        const catalog = agentHome ? await loadModelCatalog(agentHome) : null
+        return json(200, { catalog })
+      }
+
+      // POST /v1/channel/:id/inbound — an external channel message becomes an
+      // ordinary prompt on the channel's bound (resident) session. Same durable
+      // admission path as human prompts; the settled reply is POSTed to the
+      // channel webhook when configured (side channel — failures never
+      // corrupt the settled turn).
+      if (method === "POST" && parts.length === 4 && parts[1] === "channel" && parts[3] === "inbound") {
+        const cfg = channels?.find((c) => c.id === parts[2]!)
+        if (!cfg) return json(404, { error: `unknown channel "${parts[2]}"` })
+        const parsed = await readJsonOr400<{ text?: string; userId?: string }>(req)
+        if ("error" in parsed) return json(400, parsed)
+        try {
+          const result = await handleChannelInbound({
+            config: cfg,
+            prompt: async (sessionId, text) => {
+              // Resolve-or-create through the SAME path as POST /v1/session
+              // (cross-process split-brain guard included).
+              const resolved = await resolveApp({ sessionId })
+              if (!resolved) throw new Error("no sessionConfig provided; cannot create session")
+              if (resolved.conflict) throw new Error(`session "${sessionId}" is owned by ${resolved.conflict.endpoint}`)
+              const run = await resolved.app.prompt(text, "user")
+              const session = await resolved.app.resume()
+              const lastAssistant = [...session.messages].reverse().find((m) => m.kind === "assistant")
+              const reply = lastAssistant && lastAssistant.kind === "assistant"
+                ? lastAssistant.content.filter((p) => p.type === "text").map((p) => (p as { text?: string }).text ?? "").join("")
+                : ""
+              return { finish: run.finish, reply }
+            },
+            fetchImpl: config.modelsFetch ?? fetch,
+          }, { text: parsed.text ?? "", userId: parsed.userId })
+          return json(200, result)
+        } catch (e) {
+          const message = e instanceof Error ? e.message : String(e)
+          if (message.includes("disabled")) return json(409, { error: message })
+          return json(400, { error: message })
+        }
+      }
+
       // GET /v1/session/:id
       if (method === "GET" && parts.length === 3) {
         const found = await findSession(parts[2]!)
@@ -595,7 +650,23 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         const found = await findSession(parts[2]!)
         if (found.kind === "missing") return json(404, { error: found.error })
         if (found.kind === "remote") return proxyJson(found.entry, `/v1/session/${parts[2]!}/events`)
-        const events: StoredEvent[] = await found.app.events.read(parts[2]!)
+        let events: StoredEvent[] = await found.app.events.read(parts[2]!)
+        // Attachment-ref hydration (docs §5): the log stores sha256 refs; the
+        // API response re-materializes `images` so clients keep one shape.
+        if (found.app.attachments) {
+          const store = found.app.attachments
+          events = await Promise.all(events.map(async (e) => {
+            if (e.type !== "Session.PromptAdmitted" && e.type !== "Session.Prompted") return e
+            const refs = (e.data as { attachments?: Array<{ sha256: string; mime: string }> }).attachments
+            if (!refs?.length) return e
+            const images: Array<{ mime: string; data: string }> = []
+            for (const ref of refs) {
+              const stored = await store.get(ref.sha256)
+              if (stored) images.push({ mime: ref.mime, data: Buffer.from(stored.bytes).toString("base64") })
+            }
+            return { ...e, data: { ...e.data, images } }
+          }))
+        }
         return json(200, events)
       }
 
@@ -801,6 +872,42 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         } catch {
           return json(200, { path: rel, entries: [] })
         }
+      }
+
+      // GET /v1/file?workspace=&path= — sandboxed READ-ONLY file content.
+      // Text files (no NUL byte in the first 8KB) return utf8 inline; anything
+      // else returns base64. Reads are capped at 2MB — an oversized file
+      // returns its first 2MB with truncated:true so a preview pane never
+      // needs a second response shape. Mirrors the /v1/fs sandbox check.
+      if (method === "GET" && parts.length === 2 && parts[1] === "file") {
+        if (!settings) return json(404, { error: "no settings controller configured" })
+        const ws = url.searchParams.get("workspace") ?? settings.get().workspace
+        const rel = url.searchParams.get("path") ?? ""
+        if (!rel) return json(400, { error: "path is required" })
+        const rootAbs = resolve(ws)
+        const targetAbs = resolve(ws, rel)
+        if (targetAbs !== rootAbs && !targetAbs.startsWith(rootAbs + sep)) return json(403, { error: "path escapes the workspace" })
+        const file = Bun.file(targetAbs)
+        let stat: { size: number; isDirectory(): boolean }
+        try {
+          stat = await file.stat()
+        } catch {
+          return json(404, { error: "file not found" })
+        }
+        if (stat.isDirectory()) return json(403, { error: "path is a directory" })
+        const MAX = 2_000_000
+        const bytes = new Uint8Array(await file.slice(0, MAX).arrayBuffer())
+        const truncated = stat.size > MAX
+        const sniffEnd = Math.min(bytes.length, 8000)
+        let binary = false
+        for (let i = 0; i < sniffEnd; i++) {
+          if (bytes[i] === 0) {
+            binary = true
+            break
+          }
+        }
+        const content = binary ? Buffer.from(bytes).toString("base64") : new TextDecoder().decode(bytes)
+        return json(200, { path: rel, size: stat.size, encoding: binary ? "base64" : "utf8", content, ...(truncated ? { truncated: true } : {}) })
       }
 
       // GET /v1/skills — the pluginsDir skills catalog (level 1 + body on demand).

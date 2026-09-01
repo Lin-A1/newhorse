@@ -1,5 +1,6 @@
-import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, stableSessionId, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator, type RunOptions, type PromptImage } from "@newhorse/core"
+import { MemoryEventStore, MemorySessionInput, Session, SqliteEventStore, SessionRegistry, runSession, stableSessionId, createAttachmentStore, base64ToBytes, type Agent, type TurnRuntime, type Tool, type EventStore, type LoopEvent, type SessionRow, type RegistryQuery, type AuditEventRow, type Initiator, type RunOptions, type PromptImage, type AttachmentStore } from "@newhorse/core"
 import { join, dirname } from "node:path"
+import type { AttachmentRef } from "@newhorse/schema"
 import { mkdir } from "node:fs/promises"
 import { makeLlmClient, type AdapterConfig, type Fetcher } from "@newhorse/llm"
 import { PluginRegistry, discoverPlugin } from "@newhorse/plugin"
@@ -126,6 +127,9 @@ export type AppEvent = LoopEvent
 export interface App {
   readonly sessionId: string
   readonly events: EventStore
+  /** Content-addressed attachment store for this session's data dir (absent
+   *  when the host runs without a dataDir — the legacy inline path applies). */
+  readonly attachments?: AttachmentStore
   /** Subscribe to live session events; returns an unsubscribe function. */
   readonly onEvent: (listener: (event: AppEvent) => void) => () => void
   /**
@@ -160,6 +164,45 @@ export interface App {
    * (Session.PolicyChanged) and effective from the next prompt.
    */
   readonly setPolicy: (policy: "strict" | "trusted" | "readonly") => Promise<void>
+}
+
+/** Per-prompt image budget gates (deterministic; docs §5):
+ *  - one image ≤ 20MiB source bytes — over → explicit admission error;
+ *  - ≤ 5 images per prompt — extras are evicted oldest-position first;
+ *  - ≤ 25MiB total per prompt — evicted from the OLDEST position until it
+ *    fits, each eviction noted in the prompt text (the model sees what it
+ *    did not get). Same input always evicts the same images. */
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024
+const MAX_IMAGES_PER_PROMPT = 5
+const MAX_TOTAL_IMAGE_BYTES = 25 * 1024 * 1024
+
+async function preparePromptImages(
+  text: string,
+  images: readonly PromptImage[],
+  store: AttachmentStore,
+): Promise<{ prompt: string; attachments: readonly AttachmentRef[] }> {
+  const stored: Array<{ ref: AttachmentRef; omit?: string }> = []
+  for (const img of images) {
+    const bytes = base64ToBytes(img.data)
+    if (!bytes) throw new Error(`invalid image payload for ${img.mime} (not base64)`)
+    if (bytes.length > MAX_IMAGE_BYTES) throw new Error(`image too large: ${img.mime} is ${bytes.length} bytes (max ${MAX_IMAGE_BYTES})`)
+    stored.push({ ref: { ...(await store.put(bytes, img.mime)), bytes: bytes.length } })
+  }
+  const omitted: string[] = []
+  while (stored.length > MAX_IMAGES_PER_PROMPT) {
+    const dropped = stored.shift()!
+    omitted.push(dropped.ref.sha256.slice(0, 8))
+  }
+  let total = stored.reduce((sum, s) => sum + s.ref.bytes, 0)
+  while (total > MAX_TOTAL_IMAGE_BYTES && stored.length > 0) {
+    const dropped = stored.shift()!
+    total -= dropped.ref.bytes
+    omitted.push(dropped.ref.sha256.slice(0, 8))
+  }
+  const prompt = stored.length < (images.length ? images.length : 0) && omitted.length > 0
+    ? `${text}\n[images omitted (over budget): ${omitted.join(", ")}]`
+    : text
+  return { prompt, attachments: stored.map((s) => s.ref) }
 }
 
 /** Structured outcome of a prompt run (a shell renders this, not a string). */
@@ -206,8 +249,11 @@ export async function createApp(config: AppConfig): Promise<App> {
   const inbox = new MemorySessionInput(events)
   await inbox.hydrate()
 
+  // Content-addressed attachment store: only when the host provides a dataDir
+  // (an ephemeral/no-disk embedding keeps the legacy inline-image path).
+  const attachmentStore: AttachmentStore | undefined = config.dataDir ? createAttachmentStore(join(config.dataDir, "attachments", "v1")) : undefined
   const llm = makeLlmClient(config.provider, config.fetch)
-  const runtime: TurnRuntime = { events, inbox, llm }
+  const runtime: TurnRuntime = { events, inbox, llm, ...(attachmentStore ? { attachments: attachmentStore } : {}) }
 
   const sessionId = config.sessionId ?? stableSessionId(config.workspace ?? process.cwd())
   const existing = await events.read(sessionId)
@@ -481,9 +527,20 @@ export async function createApp(config: AppConfig): Promise<App> {
 
   let current: AbortController | undefined
 
+  // Model-io trace: every LLM call this session makes is appended as a durable
+  // Session.ModelCalled event (source-tagged), so /events + usage folding see
+  // the full call surface. Bodies are never logged — counts and metadata only.
+  const traceModelCall = async (
+    source: "turn" | "compaction" | "extraction",
+    info: { model: string; durationMs: number; finish?: string; usage?: unknown; promptChars: number; outputChars: number; error?: string },
+  ): Promise<void> => {
+    await events.append(sessionId, "Session.ModelCalled", { sessionId, source, ...info, ts: Date.now() } as Record<string, unknown>)
+  }
+
   const app: App = {
     sessionId,
     events,
+    ...(attachmentStore ? { attachments: attachmentStore } : {}),
     onEvent,
     async prompt(text: string, principal?: "user" | "butler" | "parent", images?: readonly PromptImage[]): Promise<PromptResult> {
       // Ambient workspace AGENTS.md is a Context Source: discovered from the
@@ -493,7 +550,26 @@ export async function createApp(config: AppConfig): Promise<App> {
       // a session do not keep re-inserting the same context.
       await ensureSystemContext(events, sessionId, workspace, asButler ? withRoleBody(contextProvider, BUTLER_BODY) : contextProvider)
       const effPrincipal = principal ?? (asButler ? "butler" : "parent")
-      await inbox.admit({ id: crypto.randomUUID(), sessionId, prompt: text, delivery: "steer", principal: effPrincipal, ...(images?.length ? { images } : {}) })
+      // Attachment pipeline wave 1 (docs/agent-runtime-integrations.md §5):
+      // bytes go to the content-addressed store ONCE, the log carries refs.
+      // Budget gates run here (admission time) and are DETERMINISTIC: same
+      // input always evicts the same images, oldest position first.
+      let promptText = text
+      let admittedAttachments: readonly AttachmentRef[] | undefined
+      if (images?.length && attachmentStore) {
+        const prepared = await preparePromptImages(text, images, attachmentStore)
+        promptText = prepared.prompt
+        admittedAttachments = prepared.attachments
+      }
+      await inbox.admit({
+        id: crypto.randomUUID(),
+        sessionId,
+        prompt: promptText,
+        delivery: "steer",
+        principal: effPrincipal,
+        ...(admittedAttachments?.length ? { attachments: admittedAttachments } : {}),
+        ...(!admittedAttachments?.length && images?.length ? { images } : {}), // no store configured → legacy inline path
+      })
 
       // A fresh abort controller per prompt, so interrupt() cancels only this
       // run and a later prompt is unaffected (an AbortSignal cannot be reset).
@@ -523,10 +599,12 @@ export async function createApp(config: AppConfig): Promise<App> {
           runHooks: makeHookRunner(pluginRegistry),
           contextWindowTokens: config.contextWindowTokens,
           maxOutputTokens: config.maxOutputTokens,
+          onModelCall: (info) => traceModelCall("turn", info),
           compactSummarize: async (headText) => {
             // The app's own LLM summarizes the folded head (provider-agnostic —
             // any LlmClient). A failure/timeout inside compactSession falls
             // back to the local marker; here we only convert the stream to text.
+            const started = performance.now()
             const stream = await llm.stream({ model: config.model, messages: [
               { role: "system", content: [{ type: "text", text: "Summarize the conversation head in under 200 words. Capture the objective, decisions made, and current state. Output only the summary." }] },
               { role: "user", content: [{ type: "text", text: headText }] },
@@ -535,7 +613,14 @@ export async function createApp(config: AppConfig): Promise<App> {
             for await (const ev of stream) {
               if (ev.type === "text.delta") out += ev.text
             }
-            return out.trim()
+            const text = out.trim()
+            await traceModelCall("compaction", {
+              model: config.model,
+              durationMs: Math.round(performance.now() - started),
+              promptChars: headText.length,
+              outputChars: text.length,
+            }).catch(() => {})
+            return text
           },
           toolCtx: hub ? {
             registry,

@@ -15,7 +15,13 @@ import type { ContentPart, Message, SessionMessage } from "@newhorse/schema"
  * Without this, one model's thinking format gets fed to another (a common
  * cross-model failure).
  */
-export function toLlmMessages(projected: readonly SessionMessage[], selectedModel: string): Message[] {
+export function toLlmMessages(
+  projected: readonly SessionMessage[],
+  selectedModel: string,
+  /** Pre-hydrated attachment images keyed by user-message id (see
+   *  resolveAttachmentImages). Absent → content-addressed refs are skipped. */
+  attachmentImages?: ReadonlyMap<string, readonly import("@newhorse/schema").ImageAttachment[]>,
+): Message[] {
   const out: Message[] = []
   // Images ride only the LAST user turn: they are transient visual context,
   // not durable history (the log keeps them so the client can still render
@@ -28,18 +34,25 @@ export function toLlmMessages(projected: readonly SessionMessage[], selectedMode
     const loweredAs = m.kind === "assistant" && !!m.model && m.model !== selectedModel
 
     switch (m.kind) {
-      case "user":
+      case "user": {
         // An image-only prompt has empty text: an empty text block is a
         // provider 400 (Anthropic rejects it), so it is emitted only when set.
+        // Images come from the legacy inline shape OR the pre-hydrated
+        // attachment map (refs ride only the last user turn — same aging rule).
+        const hydrated: Array<{ type: "image"; mime: string; data: string }> = (m.images ?? []).map((img) => ({ type: "image" as const, mime: img.mime, data: img.data }))
+        if (i === lastUserIndex) {
+          for (const img of attachmentImages?.get(m.id) ?? []) hydrated.push({ type: "image", mime: img.mime, data: img.data })
+        }
         out.push({
           role: "user",
           id: m.id,
           content: [
             ...(m.text ? [{ type: "text", text: m.text } as ContentPart] : []),
-            ...(i === lastUserIndex ? (m.images ?? []).map((img): ContentPart => ({ type: "image", mime: img.mime, data: img.data })) : []),
+            ...hydrated,
           ],
         })
         break
+      }
 
       case "system": {
         // System context (e.g. ambient AGENTS.md) stays a system-role message so
@@ -82,4 +95,27 @@ function lowerParts(content: ContentPart[], lowered: boolean): ContentPart[] {
   // On a model switch, provider-native reasoning payload is dropped and the
   // reasoning text degrades to an ordinary text part.
   return content.map((p): ContentPart => (p.type === "reasoning" && p.payload ? { type: "reasoning", text: p.text } : p))
+}
+
+/**
+ * Pre-hydrate content-addressed attachment refs for the LAST user message into
+ * inline image attachments (keyed by message id), ready for toLlmMessages.
+ * Missing store objects resolve to nothing — a ref whose bytes are gone lowers
+ * as text-only rather than failing the turn (the store is append-only, so this
+ * is a should-never-happen guard, not a license to GC).
+ */
+export async function resolveAttachmentImages(
+  projected: readonly SessionMessage[],
+  attachments?: { readonly get: (sha256: string) => Promise<{ mime: string; bytes: Uint8Array } | null> },
+): Promise<ReadonlyMap<string, readonly import("@newhorse/schema").ImageAttachment[]>> {
+  if (!attachments) return new Map()
+  const lastUserIndex = projected.reduce((acc, m, i) => (m.kind === "user" ? i : acc), -1)
+  const m = projected[lastUserIndex]
+  if (!m || m.kind !== "user" || !m.attachments?.length) return new Map()
+  const images: import("@newhorse/schema").ImageAttachment[] = []
+  for (const ref of m.attachments) {
+    const stored = await attachments.get(ref.sha256)
+    if (stored) images.push({ mime: ref.mime, data: Buffer.from(stored.bytes).toString("base64") })
+  }
+  return new Map([[m.id, images]])
 }

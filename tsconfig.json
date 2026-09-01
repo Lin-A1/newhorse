@@ -12,6 +12,9 @@
       "@newhorse/core": [
         "./packages/core/src/index.ts"
       ],
+      "@newhorse/mcp": [
+        "./packages/mcp/src/index.ts"
+      ],
       "@newhorse/schema": [
         "./packages/schema/src/index.ts"
       ],
