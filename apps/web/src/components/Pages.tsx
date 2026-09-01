@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { api, prettyTitle, relativeTime, type MemoryRecord, type UsageSummary } from "../api"
 import { useStore } from "../store"
-import { IconChart, IconFile, IconMemory } from "./icons"
+import { IconChart, IconClock, IconFile, IconMemory } from "./icons"
 
 function PageHeader({ title, sub }: { title: string; sub?: string }) {
   return (
@@ -113,7 +113,7 @@ export function UsagePage() {
         </div>
         <div className="mt-3 flex items-center gap-1.5 text-[10.5px] text-faint">
           少
-          {[0.1, 0.32, 0.55, 0.8, 1].map((o) => (
+          {[0.12, 0.34, 0.56, 0.78, 1].map((o) => (
             <div key={o} className="h-[12px] w-[12px] rounded-[3px]" style={{ backgroundColor: `rgb(var(--accent-rgb) / ${o})` }} />
           ))}
           多
@@ -173,6 +173,7 @@ export function SchedulesPage() {
   const [sessions, setSessions] = useState<Array<{ sessionId: string; title?: string }>>([])
   const [form, setForm] = useState({ sessionId: "", prompt: "", mode: "daily" as "interval" | "daily" | "cron", intervalMinutes: 60, dailyAt: "09:00", cron: "0 9 * * *" })
   const [err, setErr] = useState("")
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const refresh = (): Promise<void> =>
     api
@@ -253,31 +254,60 @@ export function SchedulesPage() {
       </div>
 
       <div className="space-y-2.5">
-        {rows.length === 0 && <div className="text-[13px] text-faint">还没有定时任务</div>}
-        {rows.map((s, i) => (
-          <div key={s.id} className="panel rise flex items-start gap-3 p-4 hover:!border-linestrong" style={{ ["--d" as string]: `${i * 60}ms` }}>
-            <div className="min-w-0 flex-1">
-              <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-fg">{s.prompt}</div>
-              <div className="tnum mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
-                <span className={`pill !py-0 !text-[10px] ${s.enabled ? "!border-ok/25 !text-ok" : "!text-faint"}`}>{s.enabled ? "启用中" : "已暂停"}</span>
-                <span>{s.intervalMinutes ? `每 ${s.intervalMinutes} 分钟` : s.dailyAt ? `每天 ${s.dailyAt}` : `cron: ${s.cron}`}</span>
-                <span className="text-faint">·</span>
-                <span>会话 {s.sessionId.slice(0, 8)}</span>
-                {s.lastRunAt && <span className={s.lastResult === "ok" ? "text-ok/80" : "text-bad/80"}>{` · 上次 ${new Date(s.lastRunAt).toLocaleString()} ${s.lastResult === "ok" ? "成功" : "失败"}`}</span>}
-                {s.lastError ? <span className="text-bad/80">{` · ${s.lastError}`}</span> : null}
+        {rows.length === 0 && (
+          <div className="rise panel flex flex-col items-center gap-2.5 px-6 py-12 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface2">
+              <IconClock size={17} className="text-faint" />
+            </div>
+            <div className="text-[14px] font-medium text-fg">还没有定时任务</div>
+            <p className="max-w-sm text-[12.5px] leading-relaxed text-faint">在上方创建一条：到点把提示词作为用户消息发进目标会话（比如每天早上汇报仓库状态）。</p>
+          </div>
+        )}
+        {rows.map((s, i) => {
+          const target = sessions.find((x) => x.sessionId === s.sessionId)
+          const confirmKey = `sched-${s.id}`
+          const confirming = confirmKey === confirmDelete
+          return (
+            <div key={s.id} className="panel rise flex items-start gap-3 p-4 hover:!border-linestrong" style={{ ["--d" as string]: `${i * 60}ms` }}>
+              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-line bg-surface2">
+                <IconClock size={13} className={s.enabled ? "text-accent" : "text-faint"} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-fg">{s.prompt}</div>
+                <div className="tnum mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-faint">
+                  <span className={`pill !py-0 !text-[10px] ${s.enabled ? "!border-ok/25 !bg-ok/10 !text-ok" : "!text-faint"}`}>{s.enabled ? "启用中" : "已暂停"}</span>
+                  <span className="rounded border border-line bg-surface2 px-1.5 py-px">{s.intervalMinutes ? `每 ${s.intervalMinutes} 分钟` : s.dailyAt ? `每天 ${s.dailyAt}` : `cron: ${s.cron}`}</span>
+                  <span className="text-faint">→</span>
+                  <span className="truncate">{target ? prettyTitle(target.title, target.sessionId.slice(0, 8)) : s.sessionId.slice(0, 8)}</span>
+                  {s.lastRunAt && <span className={s.lastResult === "ok" ? "text-ok/80" : "text-bad/80"}>{` · 上次 ${new Date(s.lastRunAt).toLocaleString()} ${s.lastResult === "ok" ? "成功" : "失败"}`}</span>}
+                  {s.lastError ? <span className="text-bad/80">{` · ${s.lastError}`}</span> : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                <button className="btn-ghost !rounded-lg !px-2.5 !py-1 !text-[11px]" onClick={() => api.runSchedule(s.id).then(refresh).then(() => showToast("已手动触发"))}>
+                  运行
+                </button>
+                <button className="btn-ghost !rounded-lg !px-2.5 !py-1 !text-[11px]" onClick={() => api.updateSchedule(s.id, { enabled: !s.enabled }).then(refresh)}>
+                  {s.enabled ? "暂停" : "启用"}
+                </button>
+                <button
+                  className={confirming ? "btn-danger !rounded-lg !px-2.5 !py-1 !text-[11px]" : "btn-ghost !rounded-lg !px-2.5 !py-1 !text-[11px] hover:!text-bad"}
+                  onClick={() => {
+                    if (!confirming) {
+                      setConfirmDelete(confirmKey)
+                      setTimeout(() => setConfirmDelete((c) => (c === confirmKey ? null : c)), 2500)
+                      return
+                    }
+                    setConfirmDelete(null)
+                    api.removeSchedule(s.id).then(refresh).then(() => showToast("已删除"))
+                  }}
+                >
+                  {confirming ? "确认删除" : "删除"}
+                </button>
               </div>
             </div>
-            <button className="btn-ghost !rounded-lg !px-2.5 !py-1 !text-[11px]" onClick={() => api.runSchedule(s.id).then(refresh)}>
-              运行
-            </button>
-            <button className="btn-ghost !rounded-lg !px-2.5 !py-1 !text-[11px]" onClick={() => api.updateSchedule(s.id, { enabled: !s.enabled }).then(refresh)}>
-              {s.enabled ? "暂停" : "启用"}
-            </button>
-            <button className="btn-danger !rounded-lg !px-2.5 !py-1 !text-[11px]" onClick={() => api.removeSchedule(s.id).then(refresh)}>
-              删除
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
       </div>
     </div>

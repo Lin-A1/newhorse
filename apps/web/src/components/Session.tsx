@@ -525,6 +525,9 @@ export function SessionView({ id }: { id: string }) {
       clearInterval(timer)
       setParts([])
       setInput("")
+      // reset the imperative auto-grow height (an empty composer must not
+      // stay tall after send)
+      if (composerRef.current) composerRef.current.style.height = "auto"
       await fold()
       await refreshSessions()
       setBusy(false)
@@ -899,7 +902,8 @@ export function SessionView({ id }: { id: string }) {
               }
             }}
           />
-          {/* bottom toolbar (ZCode-style composer) */}
+          {/* bottom toolbar: left = attach, right = model + permission + send
+              (user: the model list belongs on the right, like codex) */}
           <div className="flex items-center gap-2 px-2.5 py-1.5">
             <input
               ref={fileInputRef}
@@ -915,6 +919,7 @@ export function SessionView({ id }: { id: string }) {
             <button className="nh-icon-btn" title="添加图片（也可直接粘贴）" aria-label="添加图片" onClick={() => fileInputRef.current?.click()}>
               <IconPaperclip size={14} />
             </button>
+            <span className="flex-1" />
             <ModelPill compact />
             {/* permission level — a real menu, server-durable per session;
                 portal'd to <body> so the composer's overflow-hidden never clips it */}
@@ -937,7 +942,6 @@ export function SessionView({ id }: { id: string }) {
                 <span className="flex items-center gap-1"><kbd className="nh-kbd">Enter</kbd> 发送</span>
               </span>
             )}
-            <span className="flex-1" />
             {busy ? (
               <button className="btn-danger flex h-8 w-8 shrink-0 items-center justify-center !rounded-full !p-0" onClick={() => void stop()} aria-label="中断">
                 <IconStop size={13} />

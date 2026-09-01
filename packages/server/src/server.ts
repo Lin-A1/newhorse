@@ -697,6 +697,21 @@ export async function createServer(config: ServerConfig): Promise<ServerHandle> 
         return json(201, rec)
       }
 
+      // DELETE /v1/session/:id — hard delete (user-requested; archive is the
+      // soft path). Owner-only: remote-owned sessions are not proxied. The
+      // aggregate's whole event stream is removed from the store.
+      if (method === "DELETE" && parts.length === 3 && parts[1] === "session") {
+        const found = await findSession(parts[2]!)
+        if (found.kind === "missing") return json(404, { error: found.error })
+        if (found.kind === "remote") return json(501, { error: "delete on a remote-owned session is not proxied yet" })
+        found.app.interrupt()
+        await found.app.events.delete(parts[2]!)
+        apps.delete(parts[2]!)
+        directory?.unregister(parts[2]!)
+        owned.delete(parts[2]!)
+        return json(200, { deleted: true })
+      }
+
       // POST /v1/session/:id/archive {archived} — archive/unarchive a session.
       if (method === "POST" && parts.length === 4 && parts[3] === "archive") {
         const found = await findSession(parts[2]!)

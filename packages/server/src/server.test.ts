@@ -379,3 +379,25 @@ describe("image attachments over the transport", () => {
     expect(Array.isArray((user as { images?: unknown[] })?.images ?? [])).toBe(true)
   })
 })
+
+describe("DELETE /v1/session/:id (hard delete)", () => {
+  it("removes the aggregate from the store and detaches the app", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-del-"))
+    try {
+      handle = await createServer({ port: 0, sessionConfig: () => ({ provider, model: "m", dataDir: dir, fetch: mockFetch("") }) })
+      const base = handle.baseUrl
+      const { sessionId } = (await (await fetch(`${base}/v1/session`, { method: "POST", body: JSON.stringify({}) })).json()) as { sessionId: string }
+      const del = await fetch(`${base}/v1/session/${sessionId}`, { method: "DELETE" })
+      expect(del.status).toBe(200)
+      expect(((await del.json()) as { deleted: boolean }).deleted).toBe(true)
+      // gone from the durable registry (the events.db rows are removed)
+      const rows = (await (await fetch(`${base}/v1/sessions`)).json()) as Array<{ sessionId: string }>
+      expect(rows.find((r) => r.sessionId === sessionId)).toBeUndefined()
+      // and a subsequent prompt 404s
+      const gone = await fetch(`${base}/v1/session/${sessionId}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "x" }) })
+      expect(gone.status).toBe(404)
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+})

@@ -6,7 +6,7 @@ import { cycleTheme, getThemePref, type ThemePref } from "../theme"
 import { Globe as IconGlobe, Sun as IconSun, Moon as IconMoon, Monitor as IconMonitor } from "lucide-react"
 import { IconActivity, IconCheck, IconPencil, IconPlay, IconPlus, IconTrash } from "./icons"
 
-type SectionId = "model" | "budget" | "memory" | "policy" | "network" | "appearance" | "about"
+type SectionId = "model" | "memory" | "policy" | "network" | "appearance" | "about"
 
 const SECTIONS: Array<{ id: SectionId; label: string; Icon: LucideIcon }> = [
   { id: "model", label: "模型与供应商", Icon: Cpu },

@@ -39,27 +39,9 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col items-center justify-center px-4 py-12">
         <div className="fade flex w-full flex-col items-center gap-5 text-center">
-          <div className="rise relative flex items-center justify-center" style={{ width: 190, height: 190 }}>
-            <svg className="hero-orbit" width="184" height="184" viewBox="0 0 184 184">
-              <defs>
-                <linearGradient id="orbitA" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.0" />
-                  <stop offset="50%" stopColor="#a78bfa" stopOpacity="0.6" />
-                  <stop offset="100%" stopColor="#b8a8ff" stopOpacity="0.0" />
-                </linearGradient>
-              </defs>
-              <g className="hero-rot">
-                <circle cx="92" cy="92" r="86" fill="none" stroke="url(#orbitA)" strokeWidth="1.3" strokeDasharray="2 14" strokeLinecap="round" />
-                <circle cx="178" cy="92" r="2.6" fill="#a78bfa" />
-              </g>
-            </svg>
-            <svg className="hero-orbit" width="152" height="152" viewBox="0 0 152 152">
-              <g className="hero-rot rev">
-                <circle cx="76" cy="76" r="70" fill="none" stroke="rgba(255,255,255,0.13)" strokeWidth="1" strokeDasharray="0.5 12" strokeLinecap="round" />
-              </g>
-            </svg>
+          <div className="rise relative flex items-center justify-center" style={{ width: 150, height: 150 }}>
             <div className="hero-float">
-              <EmotionBall mood={mood} size={108} interactive />
+              <EmotionBall mood={mood} size={104} interactive />
             </div>
           </div>
           <div className="rise" style={{ ["--d" as string]: "60ms" }}>

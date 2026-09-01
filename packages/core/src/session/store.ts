@@ -16,6 +16,12 @@ export interface EventStore {
   latestSeq(aggregate_id: string): Promise<number>
   /** Distinct aggregate ids known to this store (for inbox/registry hydration). */
   aggregateIds(): Promise<string[]>
+  /**
+   * Remove an aggregate's whole stream (user-requested session deletion —
+   * codex/opencode both offer hard delete; archive stays the soft path).
+   * Deleting a missing aggregate is a no-op, never a throw.
+   */
+  delete(aggregate_id: string): Promise<void>
 }
 
 /** In-memory event store, for tests and the M1 single-process runtime. */
@@ -41,5 +47,9 @@ export class MemoryEventStore implements EventStore {
 
   async aggregateIds(): Promise<string[]> {
     return [...this.#events.keys()]
+  }
+
+  async delete(aggregate_id: string): Promise<void> {
+    this.#events.delete(aggregate_id)
   }
 }

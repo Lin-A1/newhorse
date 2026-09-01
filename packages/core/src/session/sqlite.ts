@@ -97,6 +97,11 @@ export class SqliteEventStore implements EventStore {
     return rows.map((r) => r.aggregate_id)
   }
 
+  async delete(aggregate_id: string): Promise<void> {
+    this.#db?.prepare("DELETE FROM event WHERE aggregate_id = ?").run(aggregate_id)
+    this.#db?.prepare("DELETE FROM event_sequence WHERE aggregate_id = ?").run(aggregate_id)
+  }
+
   #nextSeq(aggregate_id: string): number {
     // Atomic per-aggregate increment: a single INSERT ... ON CONFLICT that bumps
     // `seq` and returns it, so the read + write never interleave and two different

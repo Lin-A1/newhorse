@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { EmotionBall, type Mood } from "./EmotionBall"
 import { useStore, type View } from "../store"
 import { api, prettyTitle, relativeTime, type SessionRow } from "../api"
 import { cycleTheme, getThemePref, type ThemePref } from "../theme"
-import { IconArchive, IconChart, IconCheck, IconChevron, IconClock, IconFolder, IconGear, IconMemory, IconPencil, IconPlus, IconSearch, IconSun, IconMoon, IconMonitor } from "./icons"
+import { IconArchive, IconChart, IconCheck, IconChevron, IconClock, IconFolder, IconGear, IconMemory, IconPencil, IconPlus, IconSearch, IconSun, IconMoon, IconMonitor, IconTrash } from "./icons"
 
 /**
  * Sessions-first sidebar. Sessions are PARTITIONED BY WORKSPACE (opencode's
@@ -14,6 +14,12 @@ import { IconArchive, IconChart, IconCheck, IconChevron, IconClock, IconFolder, 
  */
 export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void }) {
   const { sessions, settings, refreshSessions, view, setView, showToast, running } = useStore()
+  const [archived, setArchived] = useState<SessionRow[]>([])
+  const [archOpen, setArchOpen] = useState(false)
+  useEffect(() => {
+    // the main list is archived-filtered; fetch the full registry for the tail group
+    api.sessions().then((rs) => setArchived(rs.filter((r) => r.archived))).catch(() => {})
+  }, [sessions])
   const [filter, setFilter] = useState("")
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameText, setRenameText] = useState("")
@@ -80,7 +86,34 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
     try {
       await api.archiveSession(id)
       await refreshSessions()
-      showToast("已归档（可在事件日志中恢复）")
+      showToast("已归档")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const unarchive = async (id: string): Promise<void> => {
+    try {
+      await api.unarchiveSession(id)
+      await refreshSessions()
+      showToast("已恢复")
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  /** Two-step delete: first click arms the row (2.5s), second confirms. */
+  const [armDelete, setArmDelete] = useState<string | null>(null)
+  const del = async (id: string): Promise<void> => {
+    try {
+      await api.deleteSession(id)
+      setArmDelete(null)
+      await refreshSessions()
+      if (view.kind === "session" && view.id === id) {
+        localStorage.removeItem("NEWHORSE_CURRENT_SESSION")
+        go({ kind: "home" })
+      }
+      showToast("已删除（不可恢复）")
     } catch (e) {
       showToast(e instanceof Error ? e.message : String(e))
     }
@@ -248,6 +281,41 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
           </div>
         )}
       </div>
+
+      {/* archived tail group (collapsible) — restore or delete from here */}
+      {archived.length > 0 && (
+        <div className="mx-2.5 mb-2.5">
+          <button className="flex w-full items-center gap-1.5 rounded-lg px-2 pb-1 pt-1 text-left" onClick={() => setArchOpen(!archOpen)}>
+            <IconChevron size={10} className={`shrink-0 text-faint transition-transform ${archOpen ? "rotate-90" : ""}`} />
+            <IconArchive size={12} className="shrink-0 text-faint" />
+            <span className="min-w-0 flex-1 truncate text-[11px] text-faint">已归档</span>
+            <span className="tnum shrink-0 text-[10px] text-faint">{archived.length}</span>
+          </button>
+          {archOpen &&
+            archived.map((r) => (
+              <div key={r.sessionId} className="mb-0.5 flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-dim">
+                <span className="min-w-0 flex-1 truncate text-[12px]">{prettyTitle(r.title, r.sessionId.slice(0, 8))}</span>
+                <span role="button" className="shrink-0 rounded p-0.5 text-faint hover:text-fg" title="恢复" onClick={() => void unarchive(r.sessionId)}>
+                  <IconArchive size={11} />
+                </span>
+                <span
+                  role="button"
+                  className={`shrink-0 rounded p-0.5 ${armDelete === r.sessionId ? "bg-bad/15 text-bad" : "text-faint hover:text-bad"}`}
+                  title={armDelete === r.sessionId ? "再次点击确认删除" : "删除"}
+                  onClick={() => {
+                    if (armDelete === r.sessionId) void del(r.sessionId)
+                    else {
+                      setArmDelete(r.sessionId)
+                      setTimeout(() => setArmDelete((c) => (c === r.sessionId ? null : c)), 2500)
+                    }
+                  }}
+                >
+                  <IconTrash size={11} />
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
 
       {/* getting-started card (opencode): shown while no provider key is set */}
       {settings && !settings.provider.hasApiKey && !(settings.providers ?? []).some((p) => p.hasApiKey) && (
