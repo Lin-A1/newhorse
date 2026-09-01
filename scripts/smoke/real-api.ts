@@ -223,6 +223,22 @@ if (!skipLlm) {  const compatUrl = arg("openaiCompatUrl", "")
   }
 }
 
+// S9: image attachment over the REAL provider. An 8x8 solid-red PNG; the model
+// can only answer from the pixels, so a color answer proves the canonical
+// image part actually reaches the provider (anthropic base64 source block).
+if (!skipLlm) {
+  const RED_8X8 = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFklEQVR4nGP8z8Dwn4GBgYGJgYGBAQAkAwP/uIbL9gAAAABJRU5ErkJggg=="
+  const app = await createApp({ provider, model })
+  const textsAll: string[] = []
+  const off = app.onEvent((e) => {
+    if (e.type === "text") textsAll.push(e.text)
+  })
+  const r = await app.prompt("这张图片的主色调是什么？只回答颜色名。", "user", [{ mime: "image/png", data: RED_8X8 }])
+  off()
+  const answer = textsAll.join("")
+  ok("S9 image attachment (real provider)", r.finish === "stop" && /红|red/i.test(answer), `finish=${r.finish} answer=${answer.slice(0, 40)}`)
+}
+
 console.log(results.join("\n"))
 if (results.some((r) => r.startsWith("FAIL"))) {
   console.error("SMOKE: FAILURES PRESENT")

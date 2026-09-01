@@ -89,3 +89,23 @@ describe(".ts tool loading (trust switch)", () => {
     }
   })
 })
+
+describe("command body extraction", () => {
+  it("expansion is the body after frontmatter — config never leaks into the prompt", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-cmds-"))
+    try {
+      await mkdir(join(dir, "commands"), { recursive: true })
+      await writeFile(join(dir, "commands", "greet.md"), "---\ndescription: 打招呼\n---\n你好，$ARGUMENTS！", "utf8")
+      await writeFile(join(dir, "commands", "bare.md"), "无 frontmatter 的正文", "utf8")
+      const caps = await discoverPlugin(dir)
+      const greet = caps.find((c) => c.name === "greet") as { run: () => Promise<string> }
+      const bare = caps.find((c) => c.name === "bare") as { run: () => Promise<string> }
+      const out = await greet.run()
+      expect(out).toBe("你好，$ARGUMENTS！")
+      expect(out.startsWith("---")).toBe(false)
+      expect(await bare.run()).toBe("无 frontmatter 的正文")
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+})

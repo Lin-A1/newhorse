@@ -111,6 +111,7 @@ cd apps/web && npm run build         # web dist
 cd apps/desktop && npm run build:sidecar && npx tauri build   # NSIS installer
 ANTHROPIC_API_KEY=... bun run scripts/smoke/real-api.ts --baseUrl https://api.minimaxi.com/anthropic --model MiniMax-M2
 bun run scripts/smoke/cross-process.ts   # no key needed
+bun run scripts/smoke/client-surfaces.ts # no key needed — images/$ARGUMENTS/presets/policy/fork over the transport
 ```
 
 ## Where things live

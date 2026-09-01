@@ -158,7 +158,15 @@ async function readCommand(dir: string, file: string): Promise<Capability | unde
   if (!text) return undefined
   const fm = parseFrontmatter(text)
   const name = fm.name ?? baseSlug(file)
-  return { kind: "command", name, description: fm.description, run: async () => text }
+  // The expansion is the BODY (markdown after the frontmatter), never the raw
+  // file — frontmatter is config, not prompt text.
+  let body = text.trim()
+  if (body.startsWith("---")) {
+    const end = body.indexOf("---", 3)
+    body = end >= 0 ? body.slice(end + 3).trim() : ""
+  }
+  if (!body) return undefined
+  return { kind: "command", name, description: fm.description, run: async () => body }
 }
 
 async function readHooks(dir: string): Promise<Capability[]> {

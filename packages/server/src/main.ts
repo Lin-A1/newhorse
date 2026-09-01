@@ -99,6 +99,10 @@ const handle = await createServer({
     dataDir: create.dataDir ?? fresh.dataDir,
     enableBash: fresh.allowBash,
     allowPluginCode: fresh.allowPluginCode,
+    // Sessions must discover plugin tools/commands/agents too — the
+    // server-level pluginsDir only powers the catalog endpoints; without
+    // this the skill/command seams exist but no session can consume them.
+    ...(fresh.pluginsDir ? { pluginsDir: fresh.pluginsDir } : {}),
     memoryStore: fresh.memory.on ? memStore : undefined,
     memoryExtract: fresh.memory.extraction ? { enabled: true } : undefined,
     ...(fresh.memory.vector.enabled
