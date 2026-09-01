@@ -18,6 +18,7 @@
 5. **封面球要高表现力**：会眨眼、眼神跟随鼠标、不同状态不同表情（见 §4）。
 6. **工作区与常驻会话必须是一等概念**：侧栏顶部工作区身份块；每个工作区一个**常驻 newhorse 会话**置顶（引擎按工作区派生稳定 id，见 §5.2）；封面 composer 直接把任务发进常驻会话。
 7. **功能上也要补全，对齐 ZCode**——视觉和功能是同一档要求，不把“简约”当砍功能的借口。逐项清单见 §1.5。
+8. **布局要宽幅，反“居中窄柱”通病**。AI 生成 UI 的常见毛病：所有内容挤在中间一条 max-w 窄柱里，两侧留白吃掉约 2/3 屏幕，观感涣散。ZCode 的版式是全宽利用：主内容占满剩余空间，阅读列只是其中一段，右侧分摊给上下文 / 文件 / 子智能体面板。硬性要求：会话页 = 宽转录区 + 可收起右侧面板；列表 / 表格 / 设置类页面用全宽网格或两栏；**任何页面禁止“内容只占屏幕三分之一”的版式**；窄列只允许出现在纯阅读场景且宽度 ≥ 72ch。
 
 ## 1.5 功能补全清单（对齐 ZCode，逐项验收）
 
@@ -39,7 +40,7 @@ ZCode（D 盘安装包）的产品功能面，逐项映射到我们引擎已有�
 | 9 | 斜杠命令 + 全局命令面板 | /v1/commands、/v1/session/:id/command | 输入框支持 / 命令；Ctrl+K 面板 |
 | 10 | skills 目录（元数据→按需加载正文） | /v1/skills[?name=] | 列表 + 点开看正文 |
 | 11 | agent 角色目录 | /v1/agents | 列表（角色/工具白名单/模型） |
-| 12 | 模型与供应商管理（预设切换/模型列表/预算） | /v1/settings、/v1/models | ccswitch 式预设卡 + 原子切换 + 预算字段 |
+| 12 | 模型与供应商管理（预设切换/模型列表/预算） | /v1/settings、/v1/models | **UI 基准 = cc-switch 的预设卡与一键切换 + opencode 设置页的组织**（ZCode 的模型配置被用户点名不行）；原子切换语义见 §5.1 settings 合并 |
 | 13 | 用量分析（热力图/排行/成本） | /v1/usage | 统计卡 + 热力 + 会话排行（点击跳会话） |
 | 14 | 定时任务（自动化） | /v1/schedules 全套 | 启停开关/立即执行/节奏/两步删除 |
 | 15 | 记忆（列表/搜索/删除/写入） | /v1/memory | 搜索 + 条目卡 + 删除 |
@@ -74,14 +75,21 @@ ZCode（D 盘安装包）的产品功能面，逐项映射到我们引擎已有�
 
 ## 3. 参考源码（先读再动手；G:/temp 是临时目录，可能已清，附重建命令）
 
+**参考分工（用户点名，别用反）**：布局 / 功能面 / 交互密度 = **ZCode**；**模型与供应商配置页 = cc-switch + opencode 设置**（ZCode 的模型配置被用户点名做得不行）；文本梯 / diff / 错误色 = **oc-2**；球 = **aora-bot**；图像发送纪律 = **dsh 调研**。
+
 | 来源 | 本地路径 | 用途 |
 |---|---|---|
-| **ZCode 安装包（首选基准）** | `D:\ZCode`（Electron 应用）。解包：`npx @electron/asar extract D:\ZCode\resources\app.asar G:/temp/zcode-src`，样式表在 `out/renderer/assets/styles-*.css` | 设计 token。已提取的关键值：暗背景 `#161616`、面板 `#202020`、侧栏 neutral-950 方向、边框=白 8%/强 16%、`--color-brand` 浅色=`#000` / 深色=sky-500 `#0ea5e9`、圆角 4/6/8/10px、`--ui-font-size:14px`、trajectory 五色（user `#60a5fa` / assistant `#2dd4bf` / reasoning `#a78bfa` / tool `#f59e0b` / tool-result `#38bdf8`） |
+| **ZCode 安装包（首选基准）** | `D:\ZCode`（**桌面端 Electron 应用**）。解包：`npx @electron/asar extract D:\ZCode\resources\app.asar G:/temp/zcode-src`，样式表在 `out/renderer/assets/styles-*.css` | 设计 token 与版式基准。注意解包的是**桌面端**：功能面含桌面专属（内置浏览器面板、窗口菜单、应用更新器）——web 端取其功能语义与布局密度，桌面专属能力在 Tauri 阶段用系统能力对齐。已提取的关键值：暗背景 `#161616`、面板 `#202020`、侧栏 neutral-950 方向、边框=白 8%/强 16%、`--color-brand` 浅色=`#000` / 深色=sky-500 `#0ea5e9`、圆角 4/6/8/10px、`--ui-font-size:14px`、trajectory 五色（user `#60a5fa` / assistant `#2dd4bf` / reasoning `#a78bfa` / tool `#f59e0b` / tool-result `#38bdf8`） |
 | **opencode** | `G:/temp/opencode`（github.com/sst/opencode，可重克隆） | 主题 `packages/ui/src/theme/themes/oc-2.json`：文本四梯 `#EDEDED/#A0A0A0/#707070/#505050`、error `#fc533a`、diffAdd/Delete；IA 参考：侧栏状态点（工作中琥珀脉动/错误红）、todo dock 在 composer 上方、Context 页统计网格 |
 | **codex** | `G:/temp/codex`（github.com/openai/codex，可重克隆） | 克制气质参考（TUI 单色 + 极少 accent） |
 | **beautifului** | `G:/temp/beautifului-src`（github.com/TurboKach/ai-native-react-components，可重克隆） | 组件源码可整段抄（prompt-bar / tool-chips / approval-card / task-rows / records-table 等 19 件 + atoms），CSS 变量体系在 `app/globals.css`。注意它假设 Tailwind v4 + `glimm`/`liveline` npm 包；用 Tailwind 3.4 时需转换映射 |
 | **emotion-ball** | `G:/temp/aora-bot/emotion-ball`（github.com/sam70361/aora-bot，可重克隆） | 球的全部源码（见 §4） |
 | **dsh-hub 调研** | `G:/temp/dsh-hub/docs/dsh-image-pipeline-wiki.md`（github.com/Lin-A1/dsh-hub，可重克隆） | 图像管线深度调研（dsh 三级流水线 + opencode/Codex/Claude Code 四方对比）；§5.5 图像契约的客户端纪律出自这里 |
+| **deepseek-harness（dsh 本体）** | `G:/temp/deepseek-harness`（github.com/deepseek-ai/DeepSeek-Harness 类，可重克隆） | 上面那份调研的实物源码：`packages/attachment/*`（内容寻址入库、投影缓存）与 `packages/llm/llm-deepseek/*`（Files API、预算闸门）；引擎侧演进图像管线时对照 |
+| **cc-switch** | `D:\CC Switch`（已安装，可直接把玩）+ `G:/temp/cc-switch`（源码） | **模型与供应商配置的 UI 基准**（用户点名 ZCode 这块不行）：预设卡片、一键原子切换、表单组织 |
+| **open-code-review** | `G:/temp/open-code-review` | 代码审查结果的呈现参考（改动报告卡、逐文件视图） |
+| **agent-browser** | `G:/temp/agent-browser`（vercel-labs） | 浏览器自动化 CLI；“内置浏览器”暂缓项若立项，交互参考它 |
+| **DeskAware** | `G:/temp/DeskAware` | Windows 桌面上下文感知守护（屏幕/窗口/通知采集喂本地 AI）；远期集成方向，当前不进清单 |
 
 已验证可用的深浅两套 token 之前写在旧 `apps/web/src/index.css`：`git show ff81b663f:apps/web/src/index.css` 可直接取回——**这是历史里少数值得直接复用的部分**。
 
@@ -203,7 +211,7 @@ AGENT_RUNTIME_HOME=G:/temp/nh-dev-home NEWHORSE_PORT=3931 NEWHORSE_UI_DIR=<dist>
 
 ## 7. 验收标准（Definition of Done）
 
-1. 深浅两主题都成立，色值全部来自 §3 提取表，页面上找不到第四种自造色。
+1. 深浅两主题都成立，色值全部来自 §3 提取表，页面上找不到第四种自造色；**版式全宽利用，不存在“居中窄柱只占 1/3 屏幕”的页面（§1.8）**。
 2. 封面：球（注视鼠标/多表情）+ composer + 建议任务 + 最近会话；发送直达常驻会话。
 3. 会话页：折叠转录（trajectory 角色色竖标）、todo dock、审批卡、steer、回退 fork、策略切换、图片附加。
 4. 侧栏：工作区身份块 + 常驻会话置顶 + 按工作区分组 + 归档组 + 状态点。
