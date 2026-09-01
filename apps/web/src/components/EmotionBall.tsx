@@ -62,7 +62,7 @@ export function EmotionBall({ mood = "idle", size = 44, burstKey = 0, interactiv
 
   const styleRef = useRef(STYLES[mood])
   styleRef.current = STYLES[mood]
-  const colors = ["#7d9bff", "#a78bfa", "#f4c34e", "#34d399", "#fb7185"]
+  const colors = ["#a78bfa", "#f4c34e", "#34d399", "#fb7185", "#b8a8ff"]
 
   useEffect(() => {
     let start = 0
@@ -209,7 +209,7 @@ export function EmotionBall({ mood = "idle", size = 44, burstKey = 0, interactiv
         // click → confetti ring (emotion-ball signature)
         const conf = confettiRef.current
         if (!conf) return
-        const colors = ["#7d9bff", "#a78bfa", "#f4c34e", "#34d399", "#fb7185"]
+        const colors = ["#a78bfa", "#f4c34e", "#34d399", "#fb7185", "#b8a8ff"]
         let html = ""
         for (let i = 0; i < 18; i++) {
           const a = (i / 18) * Math.PI * 2

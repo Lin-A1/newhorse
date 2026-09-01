@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── design tokens — dark (beautifului palette: neutral charcoal + sky-blue accent) ── */
+/* ── design tokens — dark (neutral charcoal + violet accent; the user rejected sky blue) ── */
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -17,15 +17,15 @@
   --chrome: #1c1d1f;
   --scrim: rgba(0, 0, 0, 0.65);
   --inset: #1f2022;
-  --accent: #3d9aff;
-  --accent-rgb: 61 154 255;
-  --accent-strong: #2e86e8;
-  --accent-strong-rgb: 46 134 232;
-  --accent-2: #7ec0ff;
-  --accent-2-rgb: 126 192 255;
-  --accent-soft: rgba(61, 154, 255, 0.14);
-  --accent-glow: rgba(61, 154, 255, 0.25);
-  --accent-ink: #0b0e12;
+  --accent: #8b7cf7;
+  --accent-rgb: 139 124 247;
+  --accent-strong: #7a68f0;
+  --accent-strong-rgb: 122 104 240;
+  --accent-2: #b8a8ff;
+  --accent-2-rgb: 184 168 255;
+  --accent-soft: rgba(139, 124, 247, 0.16);
+  --accent-glow: rgba(139, 124, 247, 0.3);
+  --accent-ink: #ffffff;
   --ok: #3cbb72;
   --ok-rgb: 60 187 114;
   --warn: #f68f3c;
@@ -58,14 +58,14 @@
   --chrome: rgba(255, 255, 255, 0.85);
   --scrim: rgba(25, 28, 34, 0.32);
   --inset: #f7f8f9;
-  --accent: #0285ff;
-  --accent-rgb: 2 133 255;
-  --accent-strong: #0070dd;
-  --accent-strong-rgb: 0 112 221;
-  --accent-2: #4da3ff;
-  --accent-2-rgb: 77 163 255;
-  --accent-soft: rgba(2, 133, 255, 0.08);
-  --accent-glow: rgba(2, 133, 255, 0.2);
+  --accent: #7c66f2;
+  --accent-rgb: 124 102 242;
+  --accent-strong: #6a55e8;
+  --accent-strong-rgb: 106 85 232;
+  --accent-2: #a493ff;
+  --accent-2-rgb: 164 147 255;
+  --accent-soft: rgba(124, 102, 242, 0.1);
+  --accent-glow: rgba(124, 102, 242, 0.22);
   --accent-ink: #ffffff;
   --ok: #199a4d;
   --ok-rgb: 25 154 77;

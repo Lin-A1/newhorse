@@ -4,6 +4,7 @@
  */
 import type { ComponentType } from "react"
 import {
+  Activity,
   Archive,
   ArrowLeft,
   ArrowUp,
@@ -91,3 +92,4 @@ export const IconArchive = wrap(Archive)
 export const IconButler = wrap(Crown)
 export const IconShield = wrap(Shield)
 export const IconPaperclip = wrap(Paperclip)
+export const IconActivity = wrap(Activity)

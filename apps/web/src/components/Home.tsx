@@ -42,14 +42,14 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
             <svg className="hero-orbit" width="184" height="184" viewBox="0 0 184 184">
               <defs>
                 <linearGradient id="orbitA" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stopColor="#7d9bff" stopOpacity="0.0" />
-                  <stop offset="50%" stopColor="#7d9bff" stopOpacity="0.6" />
-                  <stop offset="100%" stopColor="#b18cf7" stopOpacity="0.0" />
+                  <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.0" />
+                  <stop offset="50%" stopColor="#a78bfa" stopOpacity="0.6" />
+                  <stop offset="100%" stopColor="#b8a8ff" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
               <g className="hero-rot">
                 <circle cx="92" cy="92" r="86" fill="none" stroke="url(#orbitA)" strokeWidth="1.3" strokeDasharray="2 14" strokeLinecap="round" />
-                <circle cx="178" cy="92" r="2.6" fill="#9db2ff" />
+                <circle cx="178" cy="92" r="2.6" fill="#a78bfa" />
               </g>
             </svg>
             <svg className="hero-orbit" width="152" height="152" viewBox="0 0 152 152">

@@ -231,6 +231,23 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
         )}
       </div>
 
+      {/* getting-started card (opencode): shown while no provider key is set */}
+      {settings && !settings.provider.hasApiKey && !(settings.providers ?? []).some((p) => p.hasApiKey) && (
+        <div className="mx-2.5 mb-2.5 rounded-xl border border-accent/25 bg-accent/[0.06] p-3">
+          <div className="text-[12px] font-medium text-fg">开始使用</div>
+          <div className="mt-0.5 text-[11px] leading-relaxed text-faint">newhorse 需要一个模型供应商。配置 Key 后即可开始对话，也可以先把常用供应商存成档案一键切换。</div>
+          <button
+            className="btn-primary mt-2 w-full !py-1.5 !text-[11.5px]"
+            onClick={() => {
+              go({ kind: "settings" })
+              window.dispatchEvent(new CustomEvent("nh-settings-section", { detail: "model" }))
+            }}
+          >
+            连接供应商
+          </button>
+        </div>
+      )}
+
       <div className="space-y-0.5 border-t border-line p-2.5">
         {utilities.map(({ label, Icon, target }) => (
           <button

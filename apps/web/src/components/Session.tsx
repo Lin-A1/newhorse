@@ -4,6 +4,7 @@ import { api, foldFileChanges, foldTranscript, type FileChange, type SessionRow,
 import { EmotionBall } from "./EmotionBall"
 import { Markdown } from "./Markdown"
 import { ModelPill } from "./ModelPill"
+import { ContextPanel, type ContextStats } from "./ContextPanel"
 import { FileChanges } from "./FileChanges"
 import { FileTree } from "./FileTree"
 import { pendingPrefills, pendingPrompts, takePendingPrefill, takePendingPrompt, useStore } from "../store"
@@ -171,7 +172,7 @@ export function SessionView({ id }: { id: string }) {
   const { refreshSessions, setRunning, setMood, setSessionStatus, approvals, settleApproval, showToast, settings, setView } = useStore()
   const [policy, setPolicyState] = useState<"strict" | "readonly" | "trusted">("strict")
   const [policyAnchor, setPolicyAnchor] = useState<{ left: number; bottom: number } | null>(null)
-  const [panel, setPanel] = useState<"tree" | "changes" | null>(null)
+  const [panel, setPanel] = useState<"tree" | "changes" | "context" | null>(null)
   const [commands, setCommands] = useState<Array<{ name: string; description?: string }>>([])
   const [cmdSelected, setCmdSelected] = useState(0)
   const [slashAnchor, setSlashAnchor] = useState<{ left: number; bottom: number; width: number } | null>(null)
@@ -199,6 +200,8 @@ export function SessionView({ id }: { id: string }) {
   }, [sessions, id])
 
   const [goal, setGoal] = useState<{ objective: string; status: string; tokenBudget?: number; tokensUsed?: number } | null>(null)
+  const [todos, setTodos] = useState<Array<{ content: string; status: string }>>([])
+  const [dockOpen, setDockOpen] = useState(true)
   const [goalOpen, setGoalOpen] = useState(false)
   const [goalText, setGoalText] = useState("")
   const [goalBudget, setGoalBudget] = useState("")
@@ -221,15 +224,39 @@ export function SessionView({ id }: { id: string }) {
     setTurns([])
   }), [id])
   const fileChanges = useMemo(() => foldFileChanges(events), [events])
+  const systemPrompt = useMemo(() => {
+    const sys = events.find((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string } }).message?.kind === "system")
+    return (sys?.data as { message?: { text?: string } } | undefined)?.message?.text
+  }, [events])
   const tokensUsed = useMemo(
     () => events.reduce((n, e) => (e.type === "Session.StepEnded" ? n + ((e.data?.usage as { inputTokens?: number; outputTokens?: number } | undefined)?.inputTokens ?? 0) + ((e.data?.usage as { outputTokens?: number } | undefined)?.outputTokens ?? 0) : n), 0),
     [events],
   )
 
+  const contextStats: ContextStats = useMemo(() => {
+    const users = events.filter((e) => e.type === "Session.Prompted").length
+    const assistants = events.filter((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string } }).message?.kind === "assistant").length
+    const tools = events.filter((e) => e.type === "Session.MessageAppended" && (e.data as { message?: { kind?: string } }).message?.kind === "tool").length
+    return {
+      messages: users + assistants + tools,
+      userMessages: users,
+      assistantMessages: assistants,
+      toolMessages: tools,
+      model: rows?.model ?? settings?.model,
+      windowTokens: ctx?.windowTokens,
+      estTokens: ctx?.estTokens ?? 0,
+      ratio: ctx?.ratio,
+      tokensUsed,
+      goalBudget: goal?.tokenBudget,
+      goalUsed: goal?.tokensUsed,
+    }
+  }, [events, rows?.model, settings?.model, ctx, tokensUsed, goal])
+
   // goal + context meter load/refresh
   const loadMeta = useCallback((): void => {
     api.goal(id).then((r) => setGoal(r.goal ? { ...r.goal, tokensUsed: r.tokensUsed } : null)).catch(() => {})
     api.context(id).then(setCtx).catch(() => {})
+    api.todos(id).then((r) => setTodos(r.todos)).catch(() => setTodos([]))
   }, [id])
 
   // per-session permission level (分级 harness) — server is authoritative
@@ -626,6 +653,9 @@ export function SessionView({ id }: { id: string }) {
         <button className={`shrink-0 transition-colors ${panel === "tree" ? "text-accent" : "text-faint hover:text-fg"}`} title="工作区文件树" onClick={() => setPanel((v) => (v === "tree" ? null : "tree"))}>
           <IconFolder size={12} />
         </button>
+        <button className={`tnum shrink-0 transition-colors ${panel === "context" ? "bg-surface2 text-accent" : "text-faint hover:bg-surface2 hover:text-fg"}`} title="会话上下文：统计 / 构成 / 系统提示词" onClick={() => setPanel((v) => (v === "context" ? null : "context"))}>
+          上下文
+        </button>
         {tokensUsed > 0 && (
           <span className="tnum shrink-0 text-faint" title="本会话累计输入+输出 tokens（事件日志折叠）">
             {tokensUsed >= 10_000 ? `${(tokensUsed / 1000).toFixed(1)}k` : tokensUsed} tok
@@ -679,7 +709,7 @@ export function SessionView({ id }: { id: string }) {
             </div>
           )}
           {turns.map((t, i) => (
-            <TurnRow key={i} t={t} index={i} sessionId={id} showToast={showToast} onFork={(tt) => void forkAndRewind(tt)} onRegenerate={(tt) => void forkFromTurn(tt, "regenerate")} />
+            <TurnRow key={i} t={t} index={i} hide={t.kind === "todo"} sessionId={id} showToast={showToast} onFork={(tt) => void forkAndRewind(tt)} onRegenerate={(tt) => void forkFromTurn(tt, "regenerate")} />
           ))}
           {/* ZCode-style work separator between the user's message and the run */}
           {busy && (
@@ -719,6 +749,41 @@ export function SessionView({ id }: { id: string }) {
 
       {/* composer dock */}
       <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-5 pt-1 md:px-6 xl:max-w-[1000px] 2xl:max-w-[1160px]">
+        {/* todo dock (opencode): the checklist lives above the composer, not
+            in the transcript; progress {done}/{total} with in-progress pulse */}
+        {todos.length > 0 && !busy && (
+          <div className="dock-tray rise mb-1.5" data-nh-popover>
+            <button className="flex w-full items-center gap-2 px-3 py-2 text-left" onClick={() => setDockOpen(!dockOpen)}>
+              <span className="tnum rounded-md bg-ok/15 px-1.5 py-0.5 text-[10.5px] font-medium text-ok">
+                {todos.filter((t) => t.status === "completed").length}/{todos.length}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-fg">{todos.find((t) => t.status === "in_progress")?.content ?? "任务清单"}</span>
+              <IconChevron size={12} className={`shrink-0 text-faint transition-transform ${dockOpen ? "rotate-90" : ""}`} />
+            </button>
+            {dockOpen && (
+              <div className="border-t border-line/60 px-2 pb-1.5 pt-0.5">
+                {todos.map((t, i) => {
+                  const done = t.status === "completed"
+                  const now = t.status === "in_progress"
+                  return (
+                    <div key={i} className={`flex h-8 items-center gap-2.5 rounded-lg px-1.5 text-[12.5px] ${done ? "text-faint" : now ? "text-fg" : "text-dim"}`}>
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center">
+                        {done ? (
+                          <span className="flex h-[16px] w-[16px] items-center justify-center rounded-full bg-ok/15 text-ok"><IconCheck size={10} /></span>
+                        ) : now ? (
+                          <span className="h-1.5 w-1.5 rounded-full bg-warn pulse-dot" />
+                        ) : (
+                          <IconCircle size={12} className="text-faint" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{t.content}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
         {pending && (
           <div className="dock-tray rise rounded-b-none rounded-t-[20px] p-3.5" data-nh-popover>
             <div className="mb-2 flex items-center gap-2">
@@ -888,6 +953,7 @@ export function SessionView({ id }: { id: string }) {
       </div>
       {/* file tree — inside the body row, right of the transcript */}
       {panel === "tree" && <FileTree workspace={localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace} onPick={(p) => setInput((v) => (v ? `${v} ${p}` : p))} onClose={() => setPanel(null)} />}
+      {panel === "context" && <ContextPanel events={events} stats={contextStats} systemPrompt={systemPrompt} onClose={() => setPanel(null)} />}
       {panel === "changes" && <FileChanges changes={fileChanges} onClose={() => setPanel(null)} />}
       </div>
       {/* portal'd popovers (composer overflow-hidden can never clip them) */}
@@ -935,7 +1001,8 @@ export function SessionView({ id }: { id: string }) {
 }
 
 /** Single transcript row — document flow (assistant has NO bubble). */
-function TurnRow({ t, live, sessionId, showToast, onFork, onRegenerate }: { t: Turn; index: number; live?: boolean; sessionId?: string; showToast?: (msg: string) => void; onFork?: (t: Turn) => void; onRegenerate?: (t: Turn) => void }) {
+function TurnRow({ t, live, sessionId, showToast, onFork, onRegenerate, hide }: { t: Turn; index: number; live?: boolean; sessionId?: string; showToast?: (msg: string) => void; onFork?: (t: Turn) => void; onRegenerate?: (t: Turn) => void; hide?: boolean }) {
+  if (hide) return null
   if (t.kind === "user") {
     return (
       <div className="rise group mb-5 flex justify-end items-start gap-1.5">

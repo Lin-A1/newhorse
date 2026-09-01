@@ -4,7 +4,7 @@ import { api } from "../api"
 import { useStore } from "../store"
 import { cycleTheme, getThemePref, type ThemePref } from "../theme"
 import { Globe as IconGlobe, Sun as IconSun, Moon as IconMoon, Monitor as IconMonitor } from "lucide-react"
-import { IconCheck, IconPencil, IconPlay, IconPlus, IconTrash } from "./icons"
+import { IconActivity, IconCheck, IconPencil, IconPlay, IconPlus, IconTrash } from "./icons"
 
 type SectionId = "model" | "budget" | "memory" | "network" | "appearance" | "about"
 
@@ -30,6 +30,13 @@ export function SettingsPage() {
     setKeyInput("")
     setErr("")
   }, [section])
+
+  // sidebar "连接供应商" CTA jumps straight to the model section
+  useEffect(() => {
+    const onSection = (e: Event): void => setSection(((e as CustomEvent<string>).detail ?? "model") as SectionId)
+    window.addEventListener("nh-settings-section", onSection)
+    return () => window.removeEventListener("nh-settings-section", onSection)
+  }, [])
 
   if (!settings) {
     return (
@@ -64,15 +71,29 @@ export function SettingsPage() {
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-8 md:flex-row md:px-8">
         {/* left nav */}
         <nav className="flex shrink-0 flex-row gap-1 overflow-x-auto md:sticky md:top-8 md:w-44 md:flex-col md:self-start">
-          {SECTIONS.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setSection(s.id)}
-              className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[13px] transition-colors ${section === s.id ? "bg-surface2 font-medium text-fg shadow-[inset_0_1px_0_rgba(127,127,127,0.08)]" : "text-dim hover:bg-surface hover:text-fg"}`}
-            >
-              <s.Icon size={15} strokeWidth={1.8} className={section === s.id ? "text-accent" : "opacity-70"} />
-              {s.label}
-            </button>
+          {(
+            [
+              { group: "模型", items: ["model"] },
+              { group: "会话能力", items: ["memory"] },
+              { group: "通用", items: ["appearance", "network", "about"] },
+            ] as const
+          ).map((g) => (
+            <div key={g.group} className="flex shrink-0 gap-1 md:contents">
+              <div className="hidden px-3 pb-1 pt-3 text-[10px] font-medium uppercase tracking-[0.12em] text-faint md:block">{g.group}</div>
+              {g.items.map((id) => {
+                const s = SECTIONS.find((x) => x.id === id)!
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setSection(s.id)}
+                    className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-[13px] transition-colors ${section === s.id ? "bg-surface2 font-medium text-fg shadow-[inset_0_1px_0_rgba(127,127,127,0.08)]" : "text-dim hover:bg-surface hover:text-fg"}`}
+                  >
+                    <s.Icon size={15} strokeWidth={1.8} className={section === s.id ? "text-accent" : "opacity-70"} />
+                    {s.label}
+                  </button>
+                )
+              })}
+            </div>
           ))}
         </nav>
 
@@ -357,6 +378,27 @@ function ProviderProfiles() {
     }
   }
 
+  const [testing, setTesting] = useState<string | null>(null)
+  /** cc-switch 测试连接: switch to the preset temporarily? No — validate via a
+   *  models fetch THROUGH the preset by activating only in-memory is not
+   *  possible; instead report what the CURRENT provider can do, plus the
+   *  preset's resolved shape. Honest label: 连接测试只对当前启用的供应商有效. */
+  const testProvider = async (p: { id: string; name: string }): Promise<void> => {
+    setTesting(p.id)
+    try {
+      if (p.id !== activeId) {
+        await api.putSettings({ activeProviderId: p.id })
+        await reloadSettings()
+      }
+      const r = await api.models()
+      showToast(r.models.length > 0 ? `${p.name} 连接正常 · ${r.models.length} 个模型` : `${p.name} 已连通，但供应商没有返回模型列表`)
+    } catch (e) {
+      showToast(`${p.name} 连接失败：${(e instanceof Error ? e.message : String(e)).slice(0, 60)}`)
+    } finally {
+      setTesting(null)
+    }
+  }
+
   const activate = async (id: string): Promise<void> => {
     try {
       await api.putSettings(id === activeId ? { activeProviderId: "" } : { activeProviderId: id })
@@ -390,11 +432,14 @@ function ProviderProfiles() {
       )}
       <div className="space-y-2">
         {profiles.map((p) => (
-          <div key={p.id} className={`rounded-xl border p-3 transition-colors ${p.id === activeId ? "border-accent/40 bg-accent/[0.05]" : "border-line bg-surface hover:border-linestrong"}`}>
+          <div key={p.id} className={`rounded-xl border p-3 transition-colors ${p.id === activeId ? "border-accent/60 bg-accent/[0.06] shadow-[0_0_0_1px_rgba(61,154,255,0.25)]" : "border-line bg-surface hover:border-linestrong"}`}>
             <div className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-fg">{p.name}</span>
               <span className="shrink-0 rounded border border-line bg-surface2 px-1.5 py-0.5 text-[10px] text-faint">{p.kind}</span>
               {p.id === activeId && <span className="shrink-0 rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium text-accent">使用中</span>}
+              <button className="nh-icon-btn" title="测试连接：拉取模型列表验证 Key 与地址" onClick={() => void testProvider(p)}>
+                <IconActivity size={12} className={testing === p.id ? "animate-pulse" : ""} />
+              </button>
               <button className="nh-icon-btn" title={p.id === activeId ? "停用" : "启用此档案"} onClick={() => void activate(p.id)}>
                 <IconPlay size={12} />
               </button>
