@@ -91,6 +91,15 @@ ZCode（D 盘安装包）的产品功能面，逐项映射到我们引擎已有�
 | **agent-browser** | `G:/temp/agent-browser`（vercel-labs） | 浏览器自动化 CLI；“内置浏览器”暂缓项若立项，交互参考它 |
 | **DeskAware** | `G:/temp/DeskAware` | Windows 桌面上下文感知守护（屏幕/窗口/通知采集喂本地 AI）；远期集成方向，当前不进清单 |
 
+### 3.1 ZCode 内置工具盘点（供工具行分类与权限文案参考）
+
+来源：`resources/glm/zcode.cjs`（12.5MB 单文件 agent 核心，与 Claude Code 同构——工具描述逐字一致）。解包产物在 `G:/temp/zcode-src`。
+
+- **核心工具 17 个**：`Read`（默认 2000 行）/ `Write` / `Edit`（精确串替换）/ `NotebookEdit`；`Bash`（cwd 持久）/ `BashOutput` / `KillShell`（后台任务三件套）；`Glob` / `Grep`（后端=vendored ripgrep，另有 ugrep）；`Task`（子代理分型）/ `TodoWrite`；`WebFetch` / `WebSearch`（域名过滤）；`AskUserQuestion` / `EnterPlanMode` / `ExitPlanMode` / `Skill`。
+- **桌面壳扩展**：`get_dir_structure`（先浅后深展开，默认深 3 最大 8——文件树懒加载的交互范本）、`view_file_in_detail`（带行号片段，默认约 220 行——控上下文开销）；`resources/tools/` 内 vendored 原生辅助：ripgrep / ugrep / cua-helper。
+- **插件 = 能力装载层**（核心保持最小）：browser-use、computer-use、document-skills（docx/pdf/pptx/xlsx）、skill-creator、android/ios-simulator、restore-legacy-sessions。
+- **UI 映射要求**：工具 chip 按类别套 trajectory 五色（文件类=用户蓝、执行类=tool 橙、搜索类=reasoning 紫、编排/代理类=assistant 青）；图标按工具名前缀映射。权限四档措辞可参考（newhorse 是三档语义，取近似档）："Ask before each file changes." / "Edit selected files or relevant workspace files automatically." / "Inspect the code and present a plan before editing." / "Edit and run commands with fewer confirmations."
+
 已验证可用的深浅两套 token 之前写在旧 `apps/web/src/index.css`：`git show ff81b663f:apps/web/src/index.css` 可直接取回——**这是历史里少数值得直接复用的部分**。
 
 ## 4. 情绪球（封面的表现力担当）
