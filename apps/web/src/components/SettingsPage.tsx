@@ -1,16 +1,17 @@
 import { useEffect, useState } from "react"
-import { Cpu, Info, Palette, ShieldCheck, SlidersHorizontal, type LucideIcon } from "lucide-react"
+import { Brain, Cpu, Info, Palette, ShieldCheck, SlidersHorizontal, type LucideIcon } from "lucide-react"
 import { api } from "../api"
 import { useStore } from "../store"
 import { cycleTheme, getThemePref, type ThemePref } from "../theme"
 import { Globe as IconGlobe, Sun as IconSun, Moon as IconMoon, Monitor as IconMonitor } from "lucide-react"
 import { IconActivity, IconCheck, IconPencil, IconPlay, IconPlus, IconTrash } from "./icons"
 
-type SectionId = "model" | "budget" | "memory" | "network" | "appearance" | "about"
+type SectionId = "model" | "budget" | "memory" | "policy" | "network" | "appearance" | "about"
 
 const SECTIONS: Array<{ id: SectionId; label: string; Icon: LucideIcon }> = [
   { id: "model", label: "模型与供应商", Icon: Cpu },
-  { id: "memory", label: "记忆与权限", Icon: ShieldCheck },
+  { id: "memory", label: "记忆", Icon: Brain },
+  { id: "policy", label: "权限分级", Icon: ShieldCheck },
   { id: "network", label: "局域网访问", Icon: IconGlobe },
   { id: "appearance", label: "外观", Icon: Palette },
   { id: "about", label: "关于", Icon: Info },
@@ -74,7 +75,7 @@ export function SettingsPage() {
           {(
             [
               { group: "模型", items: ["model"] },
-              { group: "会话能力", items: ["memory"] },
+              { group: "会话能力", items: ["memory", "policy"] },
               { group: "通用", items: ["appearance", "network", "about"] },
             ] as const
           ).map((g) => (
@@ -165,18 +166,72 @@ export function SettingsPage() {
 
 
           {section === "memory" && (
-            <Panel title="记忆与权限" desc="记忆在会话中自动沉淀；权限决定工具是否需要审批。">
+            <Panel title="记忆" desc="记忆在会话中自动沉淀；语义检索让旧结论能被新任务找回。">
               <div className="grid gap-2.5 md:grid-cols-2">
                 <Toggle label="记忆" on={settings.memory.on} onToggle={(v) => patch({ memory: { ...settings.memory, on: v } })} />
                 <Toggle label="自动沉淀（提取管线）" on={settings.memory.extraction} onToggle={(v) => patch({ memory: { ...settings.memory, on: v || settings.memory.on, extraction: v } })} />
                 <Toggle label="语义检索（向量）" on={settings.memory.vector.enabled} onToggle={(v) => patch({ memory: { ...settings.memory, on: settings.memory.on, vector: { ...settings.memory.vector, enabled: v } } })} />
-                <Field label="权限级别">
-                  <select className="input-base" value={settings.approvalPolicy} onChange={(e) => patch({ approvalPolicy: e.target.value })}>
-                    <option value="strict">strict（默认审批）</option>
-                    <option value="readonly">readonly（计划模式）</option>
-                    <option value="trusted">trusted（完全访问）</option>
+                <Field label="向量索引">
+                  <select
+                    className="input-base"
+                    value={settings.memory.vector.mode}
+                    onChange={(e) => patch({ memory: { ...settings.memory, on: settings.memory.on, vector: { ...settings.memory.vector, mode: e.target.value } } })}
+                  >
+                    <option value="auto">auto（sqlite-vec，不可用则内存索引）</option>
+                    <option value="brute">brute（内存暴力扫描）</option>
+                    <option value="off">off（仅关键词 FTS）</option>
                   </select>
                 </Field>
+              </div>
+              {/* embedding endpoint: makes semantic memory configurable from the UI */}
+              <div className="mt-3 rounded-xl border border-line bg-surface2/50 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-faint">嵌入模型（Embedding）</span>
+                  {settings.memory.vector.embedding.hasApiKey && <span className="text-[10.5px] text-ok">Key 已设置 {settings.memory.vector.embedding.apiKeyHint ?? ""}</span>}
+                </div>
+                <div className="grid gap-2.5 md:grid-cols-2">
+                  <Field label="Base URL">
+                    <input
+                      className="input-base"
+                      defaultValue={settings.memory.vector.embedding.baseUrl}
+                      placeholder="https://api.minimaxi.com"
+                      onBlur={(e) => e.target.value !== settings.memory.vector.embedding.baseUrl && patch({ memory: { ...settings.memory, vector: { ...settings.memory.vector, embedding: { ...settings.memory.vector.embedding, baseUrl: e.target.value } } } })}
+                    />
+                  </Field>
+                  <Field label="模型">
+                    <input
+                      className="input-base"
+                      defaultValue={settings.memory.vector.embedding.model}
+                      placeholder="embo-01"
+                      onBlur={(e) => e.target.value !== settings.memory.vector.embedding.model && patch({ memory: { ...settings.memory, vector: { ...settings.memory.vector, embedding: { ...settings.memory.vector.embedding, model: e.target.value } } } })}
+                    />
+                  </Field>
+                </div>
+                <Field label="API Key（留空保持已存的）">
+                  <input
+                    className="input-base"
+                    type="password"
+                    placeholder="粘贴嵌入服务的 Key"
+                    autoComplete="off"
+                    onBlur={(e) => e.target.value.trim() && patch({ memory: { ...settings.memory, vector: { ...settings.memory.vector, embedding: { ...settings.memory.vector.embedding, apiKey: e.target.value.trim() } } } })}
+                  />
+                </Field>
+                <div className="mt-1 text-[11px] text-faint">更换嵌入模型会重建向量索引；语义检索关闭时这些字段不生效。</div>
+              </div>
+            </Panel>
+          )}
+
+          {section === "policy" && (
+            <Panel title="权限分级" desc="默认审批=危险操作弹窗；只读=计划模式；完全访问=跳过审批。可按会话临时切换。">
+              <Field label="新会话的默认权限级别">
+                <select className="input-base" value={settings.approvalPolicy} onChange={(e) => patch({ approvalPolicy: e.target.value })}>
+                  <option value="strict">strict（默认审批）</option>
+                  <option value="readonly">readonly（计划模式）</option>
+                  <option value="trusted">trusted（完全访问）</option>
+                </select>
+              </Field>
+              <div className="text-[11px] text-faint">
+                参照 codex 的三档预设：只读（读文件，写/联网需批准）→ 默认（工作区内写+命令，联网需批准）→ 完全访问。单会话可在会话底部权限胶囊临时切换，写入事件日志。
               </div>
             </Panel>
           )}

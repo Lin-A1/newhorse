@@ -15,10 +15,19 @@ export interface SettingsController {
 /** A client-safe provider preset: presence + hint, never the key itself. */
 export type RedactedProfile = Omit<ProviderProfile, "apiKey"> & { readonly hasApiKey: boolean; readonly apiKeyHint?: string }
 
-export interface RedactedSettings extends Omit<RuntimeSettings, "provider" | "token" | "registry" | "advertiseUrl" | "providers"> {
+export interface RedactedSettings extends Omit<RuntimeSettings, "provider" | "token" | "registry" | "advertiseUrl" | "providers" | "memory"> {
   provider: Omit<RuntimeSettings["provider"], "apiKey"> & { readonly hasApiKey: boolean; readonly apiKeyHint?: string }
   readonly hasToken: boolean
   readonly providers?: readonly RedactedProfile[]
+  readonly memory: {
+    on: boolean
+    extraction: boolean
+    vector: {
+      enabled: boolean
+      mode: "auto" | "brute" | "off"
+      embedding: { kind: "minimax" | "openai-compatible"; baseUrl: string; model: string; apiKey: string; hasApiKey?: boolean; apiKeyHint?: string }
+    }
+  }
 }
 
 const redactProfile = (p: ProviderProfile): RedactedProfile => {
@@ -35,8 +44,22 @@ export function redactSettings(s: RuntimeSettings): RedactedSettings {
   void token
   void registry
   void advertiseUrl
+  // The embedding endpoint key is a secret too — redact to presence + hint.
+  const embedKey = s.memory.vector.embedding.apiKey
+  const memory: RedactedSettings["memory"] = {
+    ...s.memory,
+    vector: {
+      ...s.memory.vector,
+      embedding: {
+        ...s.memory.vector.embedding,
+        apiKey: "",
+        ...(embedKey ? { hasApiKey: true, ...(embedKey.length > 8 ? { apiKeyHint: `…${embedKey.slice(-4)}` } : {}) } : {}),
+      },
+    },
+  }
   return {
     ...rest,
+    memory,
     provider: { ...provider, hasApiKey: !!apiKey, ...(apiKey && apiKey.length > 8 ? { apiKeyHint: `…${apiKey.slice(-4)}` } : {}) },
     hasToken: !!s.token,
     ...(providers && providers.length > 0 ? { providers: providers.map(redactProfile) } : {}),

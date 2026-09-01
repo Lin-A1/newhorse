@@ -98,12 +98,30 @@ describe("command body extraction", () => {
       await writeFile(join(dir, "commands", "greet.md"), "---\ndescription: 打招呼\n---\n你好，$ARGUMENTS！", "utf8")
       await writeFile(join(dir, "commands", "bare.md"), "无 frontmatter 的正文", "utf8")
       const caps = await discoverPlugin(dir)
-      const greet = caps.find((c) => c.name === "greet") as { run: () => Promise<string> }
-      const bare = caps.find((c) => c.name === "bare") as { run: () => Promise<string> }
-      const out = await greet.run()
+      const isCommand = (name: string) => (c: (typeof caps)[number]): c is Extract<(typeof caps)[number], { kind: "command" }> => c.kind === "command" && c.name === name
+      const greet = caps.find(isCommand("greet"))
+      const bare = caps.find(isCommand("bare"))
+      if (!greet || !bare) throw new Error("commands not discovered")
+      const out = (await greet.run([])) as string
       expect(out).toBe("你好，$ARGUMENTS！")
       expect(out.startsWith("---")).toBe(false)
-      expect(await bare.run()).toBe("无 frontmatter 的正文")
+      expect((await bare.run([])) as string).toBe("无 frontmatter 的正文")
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+})
+
+describe("command body extraction", () => {
+  it("runs with args and preserves the body verbatim", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "nh-cmds2-"))
+    try {
+      await mkdir(join(dir, "commands"), { recursive: true })
+      await writeFile(join(dir, "commands", "echo.md"), "正文 $ARGUMENTS 结束", "utf8")
+      const caps = await discoverPlugin(dir)
+      const echo = caps.find((c): c is Extract<(typeof caps)[number], { kind: "command" }> => c.kind === "command" && c.name === "echo")
+      if (!echo) throw new Error("not discovered")
+      expect((await echo.run(["a b"])) as string).toBe("正文 $ARGUMENTS 结束")
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
     }

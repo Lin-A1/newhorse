@@ -106,7 +106,7 @@ export const api = {
   approve: (id: string, allow: boolean) => json<{ settled: boolean }>(`/v1/approvals/${id}`, { body: { allow } }),
 
   // --- usage ---
-  usage: (days = 30) => json<{ days: Array<{ day: string; inputTokens: number; outputTokens: number; steps: number; byModel: Record<string, { inputTokens: number; outputTokens: number }> }>; totals: { inputTokens: number; outputTokens: number; steps: number }; sessions: number }>(`/v1/usage?days=${days}`),
+  usage: (days = 30) => json<UsageSummary>(`/v1/usage?days=${days}`),
 
   // --- schedules ---
   schedules: () => json<{ schedules: Schedule[] }>("/v1/schedules"),
@@ -146,6 +146,13 @@ export interface DagNodeStatus { node: string; state: string; model?: string }
 export interface DagStatus { dagId: string; nodes: DagNodeStatus[]; done: boolean; startedAt?: number }
 export interface Schedule { id: string; sessionId: string; prompt: string; enabled: boolean; intervalMinutes?: number; dailyAt?: string; cron?: string; createdAt: number; lastRunAt?: number; lastResult?: "ok" | "error"; lastError?: string }
 export interface MemoryRecord { id: string; content: string; type: string; priority: number; sessionId?: string; createdAt: number }
+
+export interface UsageSummary {
+  days: Array<{ day: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number; cost: number; steps: number; byModel: Record<string, { inputTokens: number; outputTokens: number }> }>
+  totals: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number; cost: number; steps: number }
+  sessions: number
+  sessionRows: Array<{ sessionId: string; model?: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number; cost: number; steps: number; lastActivity: number }>
+}
 
 /** Make a raw/first-message title safe to show: strip markdown, collapse
  *  whitespace, clip. Registry titles can still be raw assistant markdown. */

@@ -25,10 +25,25 @@ export interface UsagePoint {
   readonly byModel: Record<string, { inputTokens: number; outputTokens: number }>
 }
 
+export interface SessionUsageRow {
+  readonly sessionId: string
+  readonly model?: string
+  readonly inputTokens: number
+  readonly outputTokens: number
+  readonly cacheReadTokens: number
+  readonly cacheWriteTokens: number
+  readonly reasoningTokens: number
+  readonly cost: number
+  readonly steps: number
+  readonly lastActivity: number
+}
+
 export interface UsageSummary {
   readonly days: UsagePoint[]
-  readonly totals: { inputTokens: number; outputTokens: number; steps: number }
+  readonly totals: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number; cost: number; steps: number }
   readonly sessions: number
+  /** Per-session usage rows (desc by output tokens) — the 会话排行 table. */
+  readonly sessionRows: SessionUsageRow[]
 }
 
 function dayKey(ms: number): string {
@@ -64,8 +79,9 @@ export async function aggregateUsage(dbPath: string, days = 30, now = Date.now()
     }
 
     const byDay = new Map<string, UsagePoint>()
-    const totals = { inputTokens: 0, outputTokens: 0, steps: 0 }
-    const touchedSessions = new Set<string>()
+    const totals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0, cost: 0, steps: 0 }
+    type Acc = { -readonly [K in keyof SessionUsageRow]: SessionUsageRow[K] }
+    const perSession = new Map<string, Acc>()
     for (const r of rows) {
       let data: { usage?: { inputTokens?: number; outputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number; reasoningTokens?: number; cost?: number } }
       try {
@@ -96,10 +112,36 @@ export async function aggregateUsage(dbPath: string, days = 30, now = Date.now()
       byDay.set(day, point)
       totals.inputTokens += usage.inputTokens ?? 0
       totals.outputTokens += usage.outputTokens ?? 0
+      totals.cacheReadTokens += usage.cacheReadTokens ?? 0
+      totals.cacheWriteTokens += usage.cacheWriteTokens ?? 0
+      totals.reasoningTokens += usage.reasoningTokens ?? 0
+      totals.cost += usage.cost ?? 0
       totals.steps += 1
-      touchedSessions.add(r.aggregate_id)
+      // per-session row (会话排行): fold in place
+      const ps: Acc = perSession.get(r.aggregate_id) ?? {
+        sessionId: r.aggregate_id,
+        model: sessionModels.get(r.aggregate_id),
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        cost: 0,
+        steps: 0,
+        lastActivity: 0,
+      }
+      ps.inputTokens += usage.inputTokens ?? 0
+      ps.outputTokens += usage.outputTokens ?? 0
+      ps.cacheReadTokens += usage.cacheReadTokens ?? 0
+      ps.cacheWriteTokens += usage.cacheWriteTokens ?? 0
+      ps.reasoningTokens += usage.reasoningTokens ?? 0
+      ps.cost += usage.cost ?? 0
+      ps.steps += 1
+      ps.lastActivity = Math.max(ps.lastActivity, ts)
+      perSession.set(r.aggregate_id, ps)
     }
-    return { days: [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)), totals, sessions: touchedSessions.size }
+    const sessionRows: SessionUsageRow[] = [...perSession.values()].sort((a, b) => b.outputTokens - a.outputTokens)
+    return { days: [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)), totals, sessions: sessionRows.length, sessionRows }
   } finally {
     db.close()
   }

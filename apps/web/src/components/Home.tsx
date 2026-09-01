@@ -13,6 +13,7 @@ const SUGGESTIONS = ["读取当前仓库结构并总结", "帮我写一个周报
  *  (coordinator toolset: spawn_agent / wait / interrupt, audited). */
 export function Home({ onCreated }: { onCreated: (id: string) => void }) {
   const { sessions, mood, showToast, settings } = useStore()
+  const noKey = !!settings && !settings.provider.hasApiKey && !(settings.providers ?? []).some((p) => p.hasApiKey)
   const [text, setText] = useState("")
   const [busy, setBusy] = useState(false)
   const [butler, setButler] = useState(false)
@@ -96,6 +97,17 @@ export function Home({ onCreated }: { onCreated: (id: string) => void }) {
               </button>
             </div>
           </div>
+          {noKey && (
+            <div className="rise flex w-full items-center gap-2.5 rounded-xl border border-warn/25 bg-warn/[0.07] px-4 py-3 text-left" style={{ ["--d" as string]: "150ms" }}>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-warn/15 text-[11px] font-bold text-warn">1</span>
+              <span className="min-w-0 flex-1 text-[12.5px] leading-relaxed text-dim">
+                还没有配置模型供应商——配置 Key 后才能开始对话。
+              </span>
+              <button className="btn-primary shrink-0 !px-3 !py-1.5 !text-[11.5px]" onClick={() => window.dispatchEvent(new CustomEvent("nh-open-settings"))}>
+                去配置
+              </button>
+            </div>
+          )}
           <div className="rise flex flex-wrap justify-center gap-2" style={{ ["--d" as string]: "180ms" }}>
             {SUGGESTIONS.map((sg) => (
               <button

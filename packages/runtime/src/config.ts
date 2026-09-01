@@ -152,7 +152,17 @@ const DEFAULT_HOME = () => join(process.env.HOME ?? process.env.USERPROFILE ?? "
  * corrupt/missing file is an empty layer (never fails startup).
  */
 export type AgentHomeConfig = Partial<Pick<RuntimeSettings, "provider" | "model" | "contextWindowTokens" | "maxOutputTokens" | "host" | "port" | "workspace" | "approvalPolicy" | "activeProviderId">> & {
-  readonly memory?: { readonly on?: boolean; readonly extraction?: boolean; readonly vector?: { readonly enabled?: boolean; readonly mode?: "auto" | "brute" | "off" } }
+  readonly memory?: {
+    readonly on?: boolean
+    readonly extraction?: boolean
+    readonly vector?: {
+      readonly enabled?: boolean
+      readonly mode?: "auto" | "brute" | "off"
+      /** Embedding endpoint config — same shape as RuntimeSettings; an absent
+       *  field falls back to the built-in default, env stays the ops override. */
+      readonly embedding?: { readonly kind?: "minimax" | "openai-compatible"; readonly baseUrl?: string; readonly apiKey?: string; readonly model?: string }
+    }
+  }
   /** Upsert-merge of provider presets: items merge PER FIELD by `id`, so a
    *  client round-trip that omits `apiKey` keeps the stored key. */
   readonly providers?: readonly (Partial<Omit<ProviderProfile, "id">> & { readonly id: string })[]
@@ -262,7 +272,7 @@ async function writeAgentHomeConfigInner(agentHome: string, patch: AgentHomeConf
     ...(patchProvider ? { provider: mergedProvider as AgentHomeConfig["provider"] } : {}),
     ...(touchesProviders ? { providers } : {}),
     ...((activeRemoved || clearedActive) ? { activeProviderId: undefined } : {}),
-    memory: patch.memory ? { ...current.memory, ...patch.memory } : current.memory,
+    memory: mergeMemory(current.memory, patch.memory),
   } as Record<string, unknown>
   delete next.providersRemove
   if (Array.isArray(next.providers) && next.providers.length === 0) delete next.providers
@@ -274,6 +284,32 @@ async function writeAgentHomeConfigInner(agentHome: string, patch: AgentHomeConf
   await writeFile(tmpPath, JSON.stringify(next, null, 2) + "\n", "utf8")
   await rename(tmpPath, configFilePath(agentHome))
   return next as AgentHomeConfig
+}
+
+/** Field-level merge of the memory subtree (the config file is the source of
+ *  truth). The client round-trips the REDACTED view, so an empty-string
+ *  embedding apiKey means "keep stored" — never wipe it — and display-only
+ *  junk (hasApiKey/apiKeyHint) is dropped. */
+function mergeMemory(current: AgentHomeConfig["memory"], patch: AgentHomeConfig["memory"]): AgentHomeConfig["memory"] {
+  if (!patch) return current
+  const cv = current?.vector
+  const pv = patch.vector
+  const ce = cv?.embedding
+  const pe = pv?.embedding
+  return {
+    on: patch.on ?? current?.on ?? false,
+    extraction: patch.extraction ?? current?.extraction ?? false,
+    vector: {
+      enabled: pv?.enabled ?? cv?.enabled ?? false,
+      mode: pv?.mode ?? cv?.mode ?? "auto",
+      embedding: {
+        kind: pe?.kind ?? ce?.kind ?? "minimax",
+        baseUrl: pe?.baseUrl || ce?.baseUrl || "https://api.minimaxi.com",
+        apiKey: pe?.apiKey && pe.apiKey !== "" ? pe.apiKey : ce?.apiKey ?? "",
+        model: pe?.model || ce?.model || "embo-01",
+      },
+    },
+  }
 }
 
 function str(env: Record<string, string | undefined>, key: string): string | undefined {
@@ -344,14 +380,15 @@ export function loadRuntimeSettings(layers: ConfigLayers): RuntimeSettings {
   })
   const memoryOn = flag(env, ENV.memory)
   const vectorOn = flag(env, ENV.memoryVector)
+  const fileEmbedding = file.memory?.vector?.embedding
   const vector: MemorySettings["vector"] = {
     enabled: vectorOn,
     mode: (str(env, ENV.memoryVectorMode) ?? "auto") as "auto" | "brute" | "off",
     embedding: {
-      kind: (str(env, ENV.embeddingKind) ?? "minimax") as "minimax" | "openai-compatible",
-      baseUrl: str(env, ENV.embeddingBaseUrl) ?? "https://api.minimaxi.com",
-      apiKey: str(env, ENV.embeddingApiKey) ?? str(env, ENV.apiKey) ?? "",
-      model: str(env, ENV.embeddingModel) ?? "embo-01",
+      kind: (str(env, ENV.embeddingKind) ?? fileEmbedding?.kind ?? "minimax") as "minimax" | "openai-compatible",
+      baseUrl: str(env, ENV.embeddingBaseUrl) ?? fileEmbedding?.baseUrl ?? "https://api.minimaxi.com",
+      apiKey: str(env, ENV.embeddingApiKey) ?? str(env, ENV.apiKey) ?? fileEmbedding?.apiKey ?? "",
+      model: str(env, ENV.embeddingModel) ?? fileEmbedding?.model ?? "embo-01",
     },
   }
   return {

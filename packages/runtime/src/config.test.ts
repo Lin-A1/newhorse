@@ -195,3 +195,46 @@ describe("provider preset field clearing (empty-string semantics)", () => {
     }
   })
 })
+
+describe("embedding config (file layer)", () => {
+  it("memory.vector.embedding persists in the agent-home config; env overrides; the key never reaches the redacted view", async () => {
+    const home = await mkdtemp(join(tmpdir(), "nh-emb-"))
+    try {
+      await writeAgentHomeConfig(home, { memory: { on: true, vector: { enabled: true, embedding: { kind: "openai-compatible", baseUrl: "https://emb.example/v1", apiKey: "sk-emb", model: "text-embed-3" } } } } as never)
+      const s = loadRuntimeSettings({ agentHome: home, env: {} })
+      expect(s.memory.vector.enabled).toBe(true)
+      expect(s.memory.vector.embedding.baseUrl).toBe("https://emb.example/v1")
+      expect(s.memory.vector.embedding.apiKey).toBe("sk-emb")
+      expect(s.memory.vector.embedding.model).toBe("text-embed-3")
+      // env stays the ops override
+      const s2 = loadRuntimeSettings({ agentHome: home, env: { NEWHORSE_EMBEDDING_MODEL: "override-emb" } })
+      expect(s2.memory.vector.embedding.model).toBe("override-emb")
+      // redaction: the key never reaches the client view
+      const { redactSettings } = await import("./settings-api")
+      const view = redactSettings(s)
+      expect(view.memory.vector.embedding.apiKey).toBe("")
+      expect(view.memory.vector.embedding.hasApiKey).toBe(true)
+    } finally {
+      await rm(home, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+})
+
+describe("embedding round-trip (redacted client)", () => {
+  it("an empty-string embedding apiKey KEEPS the stored key; junk display fields never persist", async () => {
+    const home = await mkdtemp(join(tmpdir(), "nh-emb2-"))
+    try {
+      await writeAgentHomeConfig(home, { memory: { on: true, vector: { enabled: true, embedding: { kind: "openai-compatible", baseUrl: "https://emb.example/v1", apiKey: "sk-keep", model: "m-1" } } } } as never)
+      // the client PUTs the redacted view back (apiKey "" + hasApiKey junk)
+      await writeAgentHomeConfig(home, { memory: { on: true, vector: { enabled: true, mode: "auto", embedding: { kind: "openai-compatible", baseUrl: "https://emb.example/v1", apiKey: "", model: "m-1", hasApiKey: true, apiKeyHint: "…keep" } } } } as never)
+      const cfg = await readAgentHomeConfig(home)
+      const emb = (cfg.memory?.vector as { embedding?: Record<string, unknown> } | undefined)?.embedding ?? {}
+      expect(emb.apiKey).toBe("sk-keep")
+      expect(emb.hasApiKey).toBeUndefined()
+      expect(emb.apiKeyHint).toBeUndefined()
+      expect(cfg.memory?.vector?.embedding?.model).toBe("m-1")
+    } finally {
+      await rm(home, { recursive: true, force: true }).catch(() => {})
+    }
+  })
+})

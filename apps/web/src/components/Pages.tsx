@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { api, prettyTitle } from "../api"
+import { api, prettyTitle, relativeTime, type MemoryRecord, type UsageSummary } from "../api"
 import { useStore } from "../store"
 import { IconChart, IconFile, IconMemory } from "./icons"
 
@@ -18,9 +18,9 @@ function fmt(n: number): string {
 
 /** Usage: per-day intensity grid + totals + per-model bars. */
 export function UsagePage() {
-  const { showToast } = useStore()
+  const { showToast, setView, sessions } = useStore()
   const [days, setDays] = useState(30)
-  const [data, setData] = useState<Awaited<ReturnType<typeof api.usage>> | null>(null)
+  const [data, setData] = useState<UsageSummary | null>(null)
   const [err, setErr] = useState("")
 
   useEffect(() => {
@@ -82,15 +82,19 @@ export function UsagePage() {
 
       {(!data || data.sessions > 0) && (
       <>
-      <div className="mb-4 grid grid-cols-3 gap-2.5">
+      <div className="mb-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         {[
           { label: "输入 tokens", value: fmt(data?.totals.inputTokens ?? 0) },
           { label: "输出 tokens", value: fmt(data?.totals.outputTokens ?? 0) },
-          { label: "步数 / 会话", value: `${data?.totals.steps ?? 0} / ${data?.sessions ?? 0}` },
+          { label: "缓存读 / 写", value: `${fmt(data?.totals.cacheReadTokens ?? 0)} / ${fmt(data?.totals.cacheWriteTokens ?? 0)}` },
+          { label: "推理 tokens", value: fmt(data?.totals.reasoningTokens ?? 0) },
+          { label: "成本", value: (data?.totals.cost ?? 0) > 0 ? `$${(data!.totals.cost).toFixed(2)}` : "—" },
+          { label: "步数", value: fmt(data?.totals.steps ?? 0) },
+          { label: "活跃会话", value: fmt(data?.sessions ?? 0) },
         ].map((c, i) => (
-          <div key={c.label} className="panel rise p-4 hover:!border-linestrong" style={{ ["--d" as string]: `${i * 70}ms` }}>
+          <div key={c.label} className="panel rise p-4 hover:!border-linestrong" style={{ ["--d" as string]: `${i * 50}ms` }}>
             <div className="text-[11px] text-faint">{c.label}</div>
-            <div className="tnum mt-1 text-[22px] font-semibold tracking-tight text-fg">{c.value}</div>
+            <div className="tnum mt-1 text-[20px] font-semibold tracking-tight text-fg">{c.value}</div>
           </div>
         ))}
       </div>
@@ -115,6 +119,30 @@ export function UsagePage() {
           多
         </div>
       </div>
+
+      {data && data.sessionRows.length > 0 && (
+        <div className="panel rise mb-4 p-4" style={{ ["--d" as string]: "250ms" }}>
+          <div className="mb-2.5 text-[11px] font-medium uppercase tracking-[0.12em] text-faint">会话排行 · 按输出 tokens</div>
+          <div className="space-y-1">
+            {data.sessionRows.slice(0, 8).map((r) => (
+              <button
+                key={r.sessionId}
+                className="flex w-full items-center gap-2.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-left transition-colors hover:border-linestrong hover:bg-surface2"
+                onClick={() => {
+                  localStorage.setItem("NEWHORSE_CURRENT_SESSION", r.sessionId)
+                  setView({ kind: "session", id: r.sessionId })
+                }}
+              >
+                <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">{prettyTitle(sessions.find((x) => x.sessionId === r.sessionId)?.title, r.sessionId.slice(0, 8))}</span>
+                {r.model && <span className="shrink-0 text-[10.5px] text-faint">{r.model.split("/").pop()}</span>}
+                <span className="tnum shrink-0 text-[11px] text-faint">in {fmt(r.inputTokens)}</span>
+                <span className="tnum shrink-0 text-[11px] text-accent">out {fmt(r.outputTokens)}</span>
+                <span className="tnum shrink-0 text-[10.5px] text-faint">{relativeTime(r.lastActivity)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="panel rise p-4" style={{ ["--d" as string]: "280ms" }}>
         <div className="mb-2.5 text-[11px] font-medium uppercase tracking-[0.12em] text-faint">按模型</div>
@@ -259,7 +287,7 @@ export function SchedulesPage() {
 /** Memory browser. */
 export function MemoryPage() {
   const { showToast } = useStore()
-  const [rows, setRows] = useState<Array<{ id: string; content: string; type: string; priority: number; createdAt: number }>>([])
+  const [rows, setRows] = useState<MemoryRecord[]>([])
   const [q, setQ] = useState("")
   const [err, setErr] = useState("")
 
@@ -290,7 +318,7 @@ export function MemoryPage() {
 
   return (
     <div className="h-full overflow-y-auto"><div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-8 xl:max-w-[1000px] 2xl:max-w-[1160px]">
-      <PageHeader title="记忆库" sub="语义 + 关键词混合检索的持久记忆" />
+      <PageHeader title="记忆库" sub={`语义 + 关键词混合检索的持久记忆${rows.length > 0 ? ` · ${rows.length} 条` : ""}`} />
       {disabled ? (
         <div className="rise panel flex flex-col items-center gap-2.5 px-6 py-14 text-center">
           <div className="text-[14px] font-medium text-dim">记忆功能未开启</div>
@@ -344,6 +372,12 @@ export function MemoryPage() {
                 <IconFile size={13} className="text-faint" />
               </span>
               <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center gap-1.5">
+                  <span className="rounded border border-line bg-surface2 px-1.5 py-px text-[9.5px] text-faint">{m.type}</span>
+                  {m.priority >= 80 && <span className="rounded border border-bad/25 bg-bad/[0.08] px-1.5 py-px text-[9.5px] text-bad">高优先</span>}
+                  {m.sessionId && <span className="tnum rounded border border-line bg-surface2 px-1.5 py-px text-[9.5px] text-faint">来自 {m.sessionId.slice(0, 8)}</span>}
+                  {m.createdAt > 0 && <span className="tnum text-[9.5px] text-faint">{relativeTime(m.createdAt)}</span>}
+                </div>
                 <div className="text-[13px] leading-relaxed text-fg">{m.content}</div>
               </div>
               <button

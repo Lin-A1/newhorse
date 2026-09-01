@@ -21,7 +21,15 @@ export interface EffectiveSettingsView {
   port: number
   workspace: string
   approvalPolicy: string
-  memory: { on: boolean; extraction: boolean; vector: { enabled: boolean; mode: string } }
+  memory: {
+    on: boolean
+    extraction: boolean
+    vector: {
+      enabled: boolean
+      mode: string
+      embedding: { kind: string; baseUrl: string; model: string; apiKey: string; hasApiKey?: boolean; apiKeyHint?: string }
+    }
+  }
   allowBash: boolean
   allowPluginCode: boolean
   hasToken: boolean
