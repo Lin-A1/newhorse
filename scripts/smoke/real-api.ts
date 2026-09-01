@@ -2,6 +2,9 @@
  * Real-API smoke tests. Run with a live key:
  *   ANTHROPIC_API_KEY=... bun run scripts/smoke/real-api.ts --baseUrl https://api.minimaxi.com/anthropic --model MiniMax-M2
  *
+ * Text-only provider (endpoint rejects image input):
+ *   ... --skipImage
+ *
  * Keyless subset (vector mechanism only, no LLM key needed):
  *   bun run scripts/smoke/real-api.ts --only vector --embeddingUrl http://127.0.0.1:PORT
  *   (with a key and no --embeddingUrl, S8 uses real MiniMax embo-01)
@@ -18,6 +21,7 @@ function arg(name: string, fallback: string): string {
 }
 
 const only = arg("only", "all") // "all" (default) | "vector"
+const skipImage = args.includes("--skipImage") // providers whose endpoint rejects image input (e.g. text-only models)
 const skipLlm = only === "vector"
 const baseUrl = arg("baseUrl", "https://api.minimaxi.com/anthropic")
 const model = arg("model", "MiniMax-M2")
@@ -226,7 +230,7 @@ if (!skipLlm) {  const compatUrl = arg("openaiCompatUrl", "")
 // S9: image attachment over the REAL provider. An 8x8 solid-red PNG; the model
 // can only answer from the pixels, so a color answer proves the canonical
 // image part actually reaches the provider (anthropic base64 source block).
-if (!skipLlm) {
+if (!skipLlm && !skipImage) {
   const RED_8X8 = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFklEQVR4nGP8z8Dwn4GBgYGJgYGBAQAkAwP/uIbL9gAAAABJRU5ErkJggg=="
   const app = await createApp({ provider, model })
   const textsAll: string[] = []
