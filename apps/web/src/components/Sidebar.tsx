@@ -1,45 +1,66 @@
 import { useMemo, useState } from "react"
 import { EmotionBall, type Mood } from "./EmotionBall"
-import { groupSessions, useStore, type View } from "../store"
+import { useStore, type View } from "../store"
 import { api, prettyTitle, relativeTime, type SessionRow } from "../api"
 import { cycleTheme, getThemePref, type ThemePref } from "../theme"
-import { IconArchive, IconChart, IconCheck, IconClock, IconFolder, IconGear, IconMemory, IconPencil, IconPlus, IconSearch, IconSun, IconMoon, IconMonitor, IconX } from "./icons"
+import { IconArchive, IconChart, IconCheck, IconChevron, IconClock, IconFolder, IconGear, IconMemory, IconPencil, IconPlus, IconSearch, IconSun, IconMoon, IconMonitor } from "./icons"
 
-/** Sessions-first sidebar (grouped by recency) + utility navigation.
- *  Row hover reveals rename/archive; the workspace chip filters the list and
- *  becomes the default workspace for NEW sessions. */
+/**
+ * Sessions-first sidebar. Sessions are PARTITIONED BY WORKSPACE (opencode's
+ * project-first IA): each distinct workspace is a collapsible section with a
+ * project-name header; inside, sessions sort by recency. A single workspace
+ * collapses to the plain recency list (no noise). A workspace header's hover
+ * action sets it as the default for NEW sessions; the search spans all groups.
+ */
 export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void }) {
   const { sessions, settings, refreshSessions, view, setView, showToast, running } = useStore()
   const [filter, setFilter] = useState("")
-  const [workspace, setWorkspace] = useState(() => localStorage.getItem("NEWHORSE_WORKSPACE") ?? "")
-  const [wsOpen, setWsOpen] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameText, setRenameText] = useState("")
   const [themePref, setThemePref] = useState<ThemePref>(getThemePref())
 
-  const groups = useMemo(() => groupSessions(sessions), [sessions])
-  const filtered = useMemo(() => {
-    // Windows paths differ by case and slash direction — normalize before
-    // comparing, or a session saved as G:\proj silently misses filter "g:/proj".
-    const norm = (p: string): string => p.trim().toLowerCase().replace(/[\\/]+/g, "/").replace(/\/+$/, "")
-    const ws = norm(workspace)
-    const byWs = ws ? groups.map((g) => ({ ...g, rows: g.rows.filter((r) => norm(r.workspace) === ws) })).filter((g) => g.rows.length > 0) : groups
-    if (!filter.trim()) return byWs
-    const q = filter.toLowerCase()
-    return byWs.map((g) => ({ ...g, rows: g.rows.filter((r: SessionRow) => (r.title ?? r.sessionId).toLowerCase().includes(q)) })).filter((g) => g.rows.length > 0)
-  }, [groups, filter, workspace])
+  // Windows paths differ by case and slash direction — normalize before
+  // comparing, or a session saved as G:\proj would split from "g:/proj".
+  const norm = (p: string): string => p.trim().toLowerCase().replace(/[\\/]+/g, "/").replace(/\/+$/, "")
+  const baseName = (p: string): string => {
+    const trimmed = p.replace(/[\\/]+$/, "")
+    const idx = Math.max(trimmed.lastIndexOf("\\"), trimmed.lastIndexOf("/"))
+    return idx >= 0 ? trimmed.slice(idx + 1) || trimmed : trimmed || "（未知）"
+  }
+
+  /** Distinct workspaces, most-recent-activity first; rows inside sort the
+   *  same way. `raw` keeps one representative original path (for new-session
+   *  defaults and tooltips). */
+  const workspaces = useMemo(() => {
+    const map = new Map<string, { key: string; raw: string; name: string; rows: SessionRow[] }>()
+    for (const r of [...sessions].sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt))) {
+      const key = norm(r.workspace || "")
+      const hit = map.get(key)
+      if (hit) hit.rows.push(r)
+      else map.set(key, { key, raw: r.workspace, name: key ? baseName(r.workspace) : "未分区", rows: [r] })
+    }
+    return [...map.values()]
+  }, [sessions])
+  const partitioned = workspaces.length > 1
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
+
+  const matches = (r: SessionRow, query: string): boolean => (r.title ?? r.sessionId).toLowerCase().includes(query) || baseName(r.workspace).toLowerCase().includes(query)
+  const query = filter.trim().toLowerCase()
+  const visibleWorkspaces = useMemo(
+    () => workspaces.map((w) => ({ ...w, rows: query ? w.rows.filter((r) => matches(r, query)) : w.rows })).filter((w) => w.rows.length > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [workspaces, query],
+  )
+  const defaultWs = norm(localStorage.getItem("NEWHORSE_WORKSPACE") ?? "")
+  const setDefaultWs = (raw: string): void => {
+    localStorage.setItem("NEWHORSE_WORKSPACE", raw)
+    showToast(`新会话默认工作区：${baseName(raw)}`)
+    setCollapsed(new Set())
+  }
 
   const go = (v: View): void => {
     setView(v)
     onClose?.()
-  }
-
-  const saveWorkspace = (): void => {
-    const ws = workspace.trim()
-    if (ws) localStorage.setItem("NEWHORSE_WORKSPACE", ws)
-    else localStorage.removeItem("NEWHORSE_WORKSPACE")
-    setWsOpen(false)
-    showToast(ws ? `工作区：${ws}` : "已清除工作区过滤")
   }
 
   const commitRename = async (id: string): Promise<void> => {
@@ -94,45 +115,6 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
           新会话
           <kbd className="nh-kbd ml-auto opacity-0 transition-opacity group-hover:opacity-100">Ctrl N</kbd>
         </button>
-        {/* workspace chip: filters the list + defaults NEW sessions */}
-        <button className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] text-faint transition-colors hover:bg-surface2 hover:text-fg" onClick={() => setWsOpen(!wsOpen)} title="工作区：过滤会话并作为新会话的默认目录">
-          <IconFolder size={13} className={workspace.trim() ? "text-accent" : ""} />
-          <span className="min-w-0 flex-1 truncate text-left">{workspace.trim() || "全部工作区"}</span>
-          {workspace.trim() && (
-            <span
-              className="shrink-0 rounded p-0.5 opacity-0 transition-opacity hover:text-bad group-hover:opacity-70"
-              title="清除工作区过滤"
-              onClick={(e) => {
-                e.stopPropagation()
-                setWorkspace("")
-                localStorage.removeItem("NEWHORSE_WORKSPACE")
-              }}
-            >
-              <IconX size={11} />
-            </span>
-          )}
-        </button>
-        {wsOpen && (
-          <div className="pop-in mb-1.5 space-y-1.5 rounded-xl border border-linestrong bg-surface2 p-2 shadow-card" data-nh-popover>
-            <input
-              className="input-base !py-1.5 font-mono text-[11.5px]"
-              placeholder="绝对路径，如 G:\proj（空 = 全部）"
-              value={workspace}
-              onChange={(e) => setWorkspace(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") saveWorkspace()
-                if (e.key === "Escape") setWsOpen(false)
-              }}
-              autoFocus
-            />
-            <div className="flex items-center justify-between text-[10.5px] text-faint">
-              <span>服务端默认：{settings?.workspace ? settings.workspace.split(/[\\/]/).slice(-1)[0] : "—"}</span>
-              <button className="flex items-center gap-1 rounded-md border border-line bg-surface px-1.5 py-0.5 text-fg hover:border-linestrong" onClick={saveWorkspace}>
-                <IconCheck size={10} /> 应用
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="px-2.5 pb-2">
@@ -143,80 +125,116 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-2">
-        {filtered.map((g) => (
-          <div key={g.label} className="mb-3">
-            <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-[0.12em] text-faint">{g.label}</div>
-            {g.rows.map((r) => {
-              const active = view.kind === "session" && view.id === r.sessionId
-              if (renaming === r.sessionId) {
-                return (
-                  <div key={r.sessionId} className="mb-0.5 rounded-lg border border-accent/40 bg-surface2 px-2 py-1.5">
-                    <input
-                      className="input-base !py-1 text-xs"
-                      value={renameText}
-                      onChange={(e) => setRenameText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") void commitRename(r.sessionId)
-                        if (e.key === "Escape") setRenaming(null)
-                      }}
-                      autoFocus
-                    />
-                  </div>
-                )
-              }
-              return (
-                <button
-                  key={r.sessionId}
-                  onClick={() => {
-                    localStorage.setItem("NEWHORSE_CURRENT_SESSION", r.sessionId)
-                    go({ kind: "session", id: r.sessionId })
-                    void api.events(r.sessionId).catch(() => {})
+        {visibleWorkspaces.map((w) => {
+          const open = !collapsed.has(w.key)
+          const isDefault = w.key !== "" && w.key === defaultWs
+          return (
+            <div key={w.key || "(none)"} className="mb-2.5">
+              {/* workspace header — always shown; click toggles when partitioned */}
+              <button
+                className="group flex w-full items-center gap-1.5 rounded-lg px-2 pb-1 pt-1.5 text-left"
+                title={w.raw || "会话没有记录工作区"}
+                onClick={() => {
+                  if (!partitioned) return
+                  setCollapsed((c) => {
+                    const next = new Set(c)
+                    if (next.has(w.key)) next.delete(w.key)
+                    else next.add(w.key)
+                    return next
+                  })
+                }}
+              >
+                {partitioned ? <IconChevron size={10} className={`shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`} /> : <span className="w-[10px] shrink-0" />}
+                <IconFolder size={12} className={`shrink-0 ${isDefault ? "text-accent" : "text-faint"}`} />
+                <span className={`min-w-0 flex-1 truncate text-[11px] font-medium ${partitioned ? "text-dim" : "text-faint"}`}>{w.name}</span>
+                <span className="tnum shrink-0 text-[10px] text-faint">{w.rows.length}</span>
+                {/* hover: set as the default workspace for NEW sessions */}
+                <span
+                  role="button"
+                  className={`shrink-0 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 ${isDefault ? "text-accent" : "text-faint hover:text-fg"}`}
+                  title={isDefault ? "新会话默认工作区" : "设为新会话默认工作区"}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (w.key) setDefaultWs(w.raw)
+                    else showToast("该会话没有工作区信息")
                   }}
-                  className={`group relative mb-0.5 w-full rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${active ? "bg-surface2 text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" : "text-dim hover:bg-surface2 hover:text-fg"}`}
                 >
-                  <span className={`absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-gradient-to-b from-accent to-accent-2 transition-all duration-200 ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`} />
-                  <div className="flex items-center gap-1.5">
-                    {r.role === "butler" && <span className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-1.5 py-px text-[9px] font-medium text-accent">管家</span>}
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] leading-5">{prettyTitle(r.title, r.sessionId.slice(0, 8))}</span>
-                  </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-faint">
-                    <span className={`inline-block h-1 w-1 rounded-full ${r.status === "active" ? "bg-ok shadow-[0_0_5px_rgba(52,211,153,0.8)]" : "bg-faint"}`} />
-                    <span className="tnum">{relativeTime(r.updatedAt)}</span>
-                    {r.model && <span className="truncate">{r.model.split("/").pop()}</span>}
-                    {r.tokensUsed ? <span className="tnum shrink-0">{r.tokensUsed >= 1000 ? `${(r.tokensUsed / 1000).toFixed(1)}k` : r.tokensUsed} tok</span> : null}
-                    {/* hover actions — stopPropagation keeps the row unopened */}
-                    <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                      <span
-                        role="button"
-                        className="rounded p-0.5 hover:text-fg"
-                        title="重命名"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setRenameText(r.title ?? "")
-                          setRenaming(r.sessionId)
-                        }}
-                      >
-                        <IconPencil size={11} />
-                      </span>
-                      <span
-                        role="button"
-                        className="rounded p-0.5 hover:text-warn"
-                        title="归档"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void archive(r.sessionId)
-                        }}
-                      >
-                        <IconArchive size={11} />
-                      </span>
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        ))}
-        {filtered.length === 0 && (
+                  {isDefault ? <IconCheck size={11} /> : <IconPlus size={11} />}
+                </span>
+              </button>
+              {(open || !partitioned) &&
+                w.rows.map((r) => {
+                  const active = view.kind === "session" && view.id === r.sessionId
+                  if (renaming === r.sessionId) {
+                    return (
+                      <div key={r.sessionId} className="mb-0.5 rounded-lg border border-accent/40 bg-surface2 px-2 py-1.5">
+                        <input
+                          className="input-base !py-1 text-xs"
+                          value={renameText}
+                          onChange={(e) => setRenameText(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void commitRename(r.sessionId)
+                            if (e.key === "Escape") setRenaming(null)
+                          }}
+                          autoFocus
+                        />
+                      </div>
+                    )
+                  }
+                  return (
+                    <button
+                      key={r.sessionId}
+                      onClick={() => {
+                        localStorage.setItem("NEWHORSE_CURRENT_SESSION", r.sessionId)
+                        go({ kind: "session", id: r.sessionId })
+                        void api.events(r.sessionId).catch(() => {})
+                      }}
+                      className={`group relative mb-0.5 w-full rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${active ? "bg-surface2 text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]" : "text-dim hover:bg-surface2 hover:text-fg"}`}
+                    >
+                      <span className={`absolute left-0 top-1/2 h-4 w-[2.5px] -translate-y-1/2 rounded-full bg-gradient-to-b from-accent to-accent-2 transition-all duration-200 ${active ? "opacity-100" : "opacity-0 group-hover:opacity-40"}`} />
+                      <div className="flex items-center gap-1.5">
+                        {r.role === "butler" && <span className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-1.5 py-px text-[9px] font-medium text-accent">管家</span>}
+                        <span className="min-w-0 flex-1 truncate text-[12.5px] leading-5">{prettyTitle(r.title, r.sessionId.slice(0, 8))}</span>
+                      </div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[10.5px] text-faint">
+                        <span className={`inline-block h-1 w-1 rounded-full ${r.status === "active" ? "bg-ok shadow-[0_0_5px_rgba(52,211,153,0.8)]" : "bg-faint"}`} />
+                        <span className="tnum">{relativeTime(r.updatedAt)}</span>
+                        {r.model && <span className="truncate">{r.model.split("/").pop()}</span>}
+                        {r.tokensUsed ? <span className="tnum shrink-0">{r.tokensUsed >= 1000 ? `${(r.tokensUsed / 1000).toFixed(1)}k` : r.tokensUsed} tok</span> : null}
+                        {/* hover actions — stopPropagation keeps the row unopened */}
+                        <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                          <span
+                            role="button"
+                            className="rounded p-0.5 hover:text-fg"
+                            title="重命名"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setRenameText(r.title ?? "")
+                              setRenaming(r.sessionId)
+                            }}
+                          >
+                            <IconPencil size={11} />
+                          </span>
+                          <span
+                            role="button"
+                            className="rounded p-0.5 hover:text-warn"
+                            title="归档"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void archive(r.sessionId)
+                            }}
+                          >
+                            <IconArchive size={11} />
+                          </span>
+                        </span>
+                      </div>
+                    </button>
+                  )
+                })}
+            </div>
+          )
+        })}
+        {visibleWorkspaces.length === 0 && (
           <div className="px-2 py-4 text-xs leading-relaxed text-faint">
             {sessions.length === 0 ? (
               <>
