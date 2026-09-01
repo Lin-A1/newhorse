@@ -79,7 +79,9 @@ try {
   const rows = (await (await fetch(`${base}/v1/sessions`)).json()) as Array<{ sessionId: string; role?: string }>
   ok("T1 butler create → registry role=butler", rows.find((r) => r.sessionId === butler)?.role === "butler")
 
-  // T2 image prompt: stored once on the admit; the snapshot projection resolves it
+  // T2 image prompt: bytes land in the content-addressed store, the admit
+  // event carries sha256 REFS (hydrated back to `images` by /events), the
+  // Prompted replay stays ref-free, and the snapshot projection carries refs.
   const imgSession = await sid({})
   // drive one prompt over SSE to completion
   const res = await fetch(`${base}/v1/session/${imgSession}/prompt`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "看这张图", images: [{ mime: "image/png", data: PNG_B64 }] }) })
@@ -87,10 +89,13 @@ try {
   const evs = (await (await fetch(`${base}/v1/session/${imgSession}/events`)).json()) as Array<{ type: string; data: Record<string, unknown> }>
   const admitted = evs.filter((e) => e.type === "Session.PromptAdmitted").pop()
   const prompted = evs.filter((e) => e.type === "Session.Prompted").pop()
-  const storedOnce = (admitted?.data.images as unknown[] | undefined)?.length === 1 && prompted?.data.images === undefined
-  const snap = (await (await fetch(`${base}/v1/session/${imgSession}`)).json()) as { messages?: Array<{ kind: string; images?: unknown[] }> }
-  const userWithImage = (snap.messages ?? []).some((m) => m.kind === "user" && Array.isArray(m.images) && m.images.length === 1)
-  ok("T2 image stored once + projection resolves", storedOnce && userWithImage, `storedOnce=${storedOnce} projected=${userWithImage}`)
+  const refs = (admitted?.data.attachments as Array<{ sha256: string }> | undefined)?.length === 1
+  const hydrated = (admitted?.data.images as Array<{ data: string }> | undefined)?.length === 1 && (admitted?.data.images as Array<{ data: string }>)[0]!.data === PNG_B64
+  const storedOnce = hydrated && prompted?.data.images === undefined
+  const bytesOnDisk = refs ? (await Bun.file(join(dataDir, "attachments", "v1", (admitted!.data.attachments as Array<{ sha256: string }>)[0]!.sha256.slice(0, 2), (admitted!.data.attachments as Array<{ sha256: string }>)[0]!.sha256)).exists()) : false
+  const snap = (await (await fetch(`${base}/v1/session/${imgSession}`)).json()) as { messages?: Array<{ kind: string; attachments?: unknown[] }> }
+  const userWithRefs = (snap.messages ?? []).some((m) => m.kind === "user" && Array.isArray(m.attachments) && m.attachments.length === 1)
+  ok("T2 image → store + refs + events hydration + snapshot refs", refs && storedOnce && bytesOnDisk && userWithRefs, `refs=${refs} storedOnce=${storedOnce} bytesOnDisk=${bytesOnDisk} snapshotRefs=${userWithRefs}`)
 
   // T3 image-only prompt (empty text) is accepted
   const r3 = await post(base, `/v1/session/${imgSession}/prompt`, { text: "", images: [{ mime: "image/webp", data: PNG_B64 }] })
