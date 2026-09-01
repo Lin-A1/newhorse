@@ -79,6 +79,7 @@ ZCode（D 盘安装包）的产品功能面，逐项映射到我们引擎已有�
 | **codex** | `G:/temp/codex`（github.com/openai/codex，可重克隆） | 克制气质参考（TUI 单色 + 极少 accent） |
 | **beautifului** | `G:/temp/beautifului-src`（github.com/TurboKach/ai-native-react-components，可重克隆） | 组件源码可整段抄（prompt-bar / tool-chips / approval-card / task-rows / records-table 等 19 件 + atoms），CSS 变量体系在 `app/globals.css`。注意它假设 Tailwind v4 + `glimm`/`liveline` npm 包；用 Tailwind 3.4 时需转换映射 |
 | **emotion-ball** | `G:/temp/aora-bot/emotion-ball`（github.com/sam70361/aora-bot，可重克隆） | 球的全部源码（见 §4） |
+| **dsh-hub 调研** | `G:/temp/dsh-hub/docs/dsh-image-pipeline-wiki.md`（github.com/Lin-A1/dsh-hub，可重克隆） | 图像管线深度调研（dsh 三级流水线 + opencode/Codex/Claude Code 四方对比）；§5.5 图像契约的客户端纪律出自这里 |
 
 已验证可用的深浅两套 token 之前写在旧 `apps/web/src/index.css`：`git show ff81b663f:apps/web/src/index.css` 可直接取回——**这是历史里少数值得直接复用的部分**。
 
@@ -156,8 +157,12 @@ AGENT_RUNTIME_HOME=G:/temp/nh-dev-home NEWHORSE_PORT=3931 NEWHORSE_UI_DIR=<dist>
 ### 5.5 传输细节契约（数字都从 server/core 源码核过，别凭感觉实现）
 
 **图像管道（端到端）**：
-1. 客户端读取文件 → `arrayBuffer` → **裸 base64（不带 `data:` 前缀，标准字母表）**；渲染时才拼 `data:${mime};base64,${data}`。
-2. 建议客户端先压缩/缩放再发（上限很容易顶到）；`HEIC/AVIF` 等不在白名单，前端要转码或拒绝。
+1. 客户端读取文件 → **裸 base64（不带 `data:` 前缀，标准字母表）**；渲染时才拼 `data:${mime};base64,${data}`。
+2. **客户端发送前必须降采样**（当前引擎不做服务端转码，尺寸=token=钱）：
+   - 长边等比缩到 **≤1568px**（Anthropic token 效率最优档；4K 截图原样发一次就是数千 token）；
+   - **低色彩图（截图/图表/二维码）走 PNG**，照片走 JPEG 85 档起步——截图类 PNG 体积常常只有照片的十分之一；
+   - 能剥 EXIF 就剥（手机图的旋转标记不矫正，模型看到的是横躺的图；GPS 元数据涉及隐私）；
+   - **同一张图在会话里必须字节级稳定**：编码一次、缓存结果重复用，绝不要每轮对原图重新编码——provider 的 prefix cache 是字节级判定，哪怕差一个字节，从那张图起往后的缓存全部作废，整段全价重算（见 dsh-hub 调研 §4.2，这是最贵的一堵墙）。
 3. `POST /v1/session/:id/prompt` body `{text, images?: [{mime, data}]}`。服务端校验（每条都是显式 400/413，不静默丢弃）：
    - mime 白名单 `/^image\/(png|jpeg|webp|gif)$/`；
    - base64 形状 `/^[A-Za-z0-9+/]+={0,2}$/` 且长度 %4==0，单张 ≤ **4,000,000** 字符（`MAX_IMAGE_BASE64`）；
@@ -165,6 +170,7 @@ AGENT_RUNTIME_HOME=G:/temp/nh-dev-home NEWHORSE_PORT=3931 NEWHORSE_UI_DIR=<dist>
    - 整个 body > **40,000,000** 字节时**解析之前**就回 413（`MAX_PROMPT_BODY`，必须先查 Content-Length 再读流）。
 4. 存储一次原则：图像只随 `Session.PromptAdmitted` 落盘一次，`Prompted` 事件重放它；转录折叠时从 admitted 行解析——**客户端不要在两条事件里重复渲染**。
 5. **老化规则**：图像只在**最后一条用户消息**上降低给模型（防上下文膨胀），但历史消息的图像在 UI 里仍可展示（数据在事件里）。
+6. **引擎侧演进方向（客户端禁止自己实现）**：dsh 的三级流水线——内容寻址入库（sha256 引用进日志，日志与字节解耦）→ 确定性投影缓存（键含 transformVersion，保 KV-cache 字节稳定）→ 预算闸门（确定性整张剔除，保证重放一致）。等引擎补这块时客户端只需要换上传方式；在那之前客户端不要私建对象库或自做预算剔除。
 
 **SSE 契约**：首帧是注释 `: open`（Bun 首个 body 字节才刷响应头，没有它客户端读不到 200）；每 15s 一条 `: keepalive` 注释（Bun 默认 10s 空闲断连，注释帧保活）；事件帧 `data: {json}\n\n`；终止 `data: [DONE]`；**客户端 abort 会触发服务端 interrupt**（回流干净，不会留半开连接）。
 
