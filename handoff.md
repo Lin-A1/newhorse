@@ -5,13 +5,15 @@
 
 ## 0. 任务
 
-为 newhorse 引擎重写客户端。先 web（`apps/web`，Vite + React + Tailwind 即可），desktop 之后再说。**一切视觉从参考源码抄，不要自创**。
+为 newhorse 引擎重写客户端。**web 先行（`apps/web`，Vite + React + Tailwind 即可），desktop 是同一交付目标的一部分，不是可选项**：最终要打包成桌面应用（Tauri 2 壳 + 编译后的 server sidecar + 内置 web dist）。上一版已按此发过 v0.1.0 NSIS 安装包，整个 Tauri 配置可从 git 历史整体取回参考：`git show ff81b663f -- apps/desktop`（含 `src-tauri/`、sidecar、capabilities、icons）。
+
+视觉原则：**参考源码里有的照抄；没有的组件/场景按已提取的 token 与风格语言仿造**（同族灰阶、透明度边框、紧圆角、既有 accent），不引入新的色相和花哨效果。
 
 ## 1. 用户审美决策（多轮反馈钉死的，违反任何一条都会被打回）
 
 1. **工程化、简约**。对齐 ZCode / codex / opencode 的产品气质：中性灰表面、白色透明度边框、紧圆角、14px 基准、mono 字体承载元信息、无渐变无辉光。
 2. **禁止 emoji**。情绪球是唯一“脸”，只出现在封面主视觉、侧栏品牌位、会话头像——不做装饰散布。
-3. **禁止自造颜色**。天蓝、紫罗兰、“蜜桃”全被否过，紫色粒子也被打回。配色只从参考源码提取（见 §3）。
+3. **禁止自造色相**。天蓝、紫罗兰、“蜜桃”全被否过，紫色粒子也被打回。基色从参考源码提取（见 §3）；参考里没有的组件用同族灰阶/透明度/既有 accent 仿造，不引入新色相。
 4. **不造人设名**。「管家」「头马」都被否；常驻会话就叫 **newhorse**。引擎键 `role: "butler"` / `asButler` 是持久化标识符，不改，但 UI 文案一律 newhorse。
 5. **封面球要高表现力**：会眨眼、眼神跟随鼠标、不同状态不同表情（见 §4）。
 6. **工作区与常驻会话必须是一等概念**：侧栏顶部工作区身份块；每个工作区一个**常驻 newhorse 会话**置顶（引擎按工作区派生稳定 id，见 §5.2）；封面 composer 直接把任务发进常驻会话。
@@ -128,3 +130,4 @@ AGENT_RUNTIME_HOME=G:/temp/nh-dev-home NEWHORSE_PORT=3931 NEWHORSE_UI_DIR=<dist>
 5. 设置 / 用量 / 记忆 / 定时四页可用（数据全来自 §5.1 接口）。
 6. `bun typecheck`、`bun run build` 过；无密钥冒烟（fake-llm 或 client-surfaces）过；浏览器逐页截图自验。
 7. 提交推送 dev；纯前端改动不用同步镜像。
+8. web 验收通过后**打包 desktop**：Tauri 2 + server sidecar + 内置 dist（历史配置 `git show ff81b663f -- apps/desktop` 可整体恢复作参考），产出安装包，并验证深浅主题与球动画在 WebView 里正常。
