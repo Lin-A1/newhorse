@@ -258,8 +258,22 @@ function AppearanceSection() {
     }
     setPref(getThemePref())
   }
+  const [notify, setNotify] = useState(() => localStorage.getItem("NEWHORSE_NOTIFY") === "on" && typeof Notification !== "undefined" && Notification.permission === "granted")
+  const toggleNotify = async (): Promise<void> => {
+    if (notify) {
+      localStorage.setItem("NEWHORSE_NOTIFY", "off")
+      setNotify(false)
+      return
+    }
+    if (typeof Notification === "undefined") return
+    const perm = Notification.permission === "granted" ? "granted" : await Notification.requestPermission()
+    if (perm === "granted") {
+      localStorage.setItem("NEWHORSE_NOTIFY", "on")
+      setNotify(true)
+    }
+  }
   return (
-    <Panel title="外观" desc="界面明暗；默认跟随操作系统。">
+    <Panel title="外观" desc="界面明暗与系统提醒；明暗默认跟随操作系统。">
       <div className="grid grid-cols-3 gap-2.5">
         {options.map(({ id, label, Icon }) => (
           <button
@@ -273,6 +287,8 @@ function AppearanceSection() {
           </button>
         ))}
       </div>
+      <Toggle label="后台完成时系统通知" on={notify} onToggle={() => void toggleNotify()} />
+      <div className="text-[11px] text-faint">会话在后台跑完时发一条系统提醒；需要浏览器授权。</div>
     </Panel>
   )
 }

@@ -33,7 +33,7 @@ export interface ChatMessage { role: "user" | "assistant" | "system" | "tool"; c
 
 /** One durable event row (the client folds it into a transcript). `seq` is
  *  the fork point for 回退重发. */
-export interface StoredEventRow { aggregate?: string; seq: number; type: string; data: Record<string, unknown> }
+export interface StoredEventRow { aggregate?: string; seq: number; type: string; data: Record<string, unknown>; /** store-level write time (created_at); legacy rows may be undefined */ ts?: number }
 
 export const api = {
   health: () => json<{ status: string }>("/v1/health"),
@@ -244,16 +244,18 @@ export function relativeTime(ts: number): string {
 /** Fold the durable event log into a displayable transcript. User turns keep
  *  the `seq` of their Prompted event — the fork point for 回退重发 — and their
  *  image attachments for rendering. */
-export function foldTranscript(events: StoredEventRow[]): Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; seq?: number; images?: Array<{ mime: string; data: string }>; note?: "memory" }> {
-  type FoldRow = { kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; isError?: boolean; seq?: number; images?: Array<{ mime: string; data: string }>; note?: "memory" }
+export function foldTranscript(events: StoredEventRow[]): Array<{ kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; seq?: number; images?: Array<{ mime: string; data: string }>; note?: "memory"; ts?: number }> {
+  type FoldRow = { kind: "user" | "assistant" | "tool" | "thinking" | "todo" | "goal" | "note"; text: string; toolName?: string; model?: string; isError?: boolean; seq?: number; images?: Array<{ mime: string; data: string }>; note?: "memory"; ts?: number }
   const out: FoldRow[] = []
   // tool-call rows awaiting their result message (results arrive in call order)
   const pendingToolRows: number[] = []
   let assistant = ""
+  let assistantTs: number | undefined
   const flush = (): void => {
     if (assistant) {
-      out.push({ kind: "assistant", text: assistant })
+      out.push({ kind: "assistant", text: assistant, ts: assistantTs })
       assistant = ""
+      assistantTs = undefined
     }
   }
   for (const e of events) {
@@ -261,13 +263,16 @@ export function foldTranscript(events: StoredEventRow[]): Array<{ kind: "user" |
     if (e.type === "Session.Prompted") {
       flush()
       const images = (d.images as Array<{ mime: string; data: string }> | undefined)?.filter((img) => img?.mime && img?.data)
-      out.push({ kind: "user", text: String(d.prompt ?? ""), seq: e.seq, ...(images?.length ? { images } : {}) })
+      out.push({ kind: "user", text: String(d.prompt ?? ""), seq: e.seq, ts: e.ts, ...(images?.length ? { images } : {}) })
     } else if (e.type === "Session.MessageAppended") {
       const m = d.message as { kind?: string; text?: string; content?: Array<{ type?: string; text?: string; name?: string; input?: unknown }>; model?: string; output?: unknown } | undefined
       if (!m) continue
       if (m.kind === "assistant" && Array.isArray(m.content)) {
         for (const p of m.content) {
-          if (p.type === "text" && p.text) assistant += p.text
+          if (p.type === "text" && p.text) {
+            assistant += p.text
+            assistantTs = e.ts
+          }
           if ((p.type === "thinking" || p.type === "reasoning") && p.text) {
             flush()
             out.push({ kind: "thinking", text: p.text })

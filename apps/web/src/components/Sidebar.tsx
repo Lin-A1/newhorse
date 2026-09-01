@@ -92,7 +92,7 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
         >
           <IconPlus size={15} className="text-faint transition-colors group-hover:text-accent" />
           新会话
-          <kbd className="nh-kbd ml-auto opacity-0 transition-opacity group-hover:opacity-100">Enter</kbd>
+          <kbd className="nh-kbd ml-auto opacity-0 transition-opacity group-hover:opacity-100">Ctrl N</kbd>
         </button>
         {/* workspace chip: filters the list + defaults NEW sessions */}
         <button className="group flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[12px] text-faint transition-colors hover:bg-surface2 hover:text-fg" onClick={() => setWsOpen(!wsOpen)} title="工作区：过滤会话并作为新会话的默认目录">

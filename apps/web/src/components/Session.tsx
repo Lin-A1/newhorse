@@ -33,6 +33,8 @@ export interface Turn {
   images?: Array<{ mime: string; data: string }>
   /** structured note subtype ("memory" renders as a Context Card) */
   note?: "memory"
+  /** store-level write time — hover timestamp (opencode detail) */
+  ts?: number
 }
 
 /** Client-side attachment caps — the server enforces the same numbers. */
@@ -356,11 +358,14 @@ export function SessionView({ id }: { id: string }) {
   // stick to bottom only if the user is already near it (don't yank them while reading up)
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
+  const [showJump, setShowJump] = useState(false)
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     const onScroll = (): void => {
-      stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+      const stuck = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+      stickRef.current = stuck
+      setShowJump(!stuck)
     }
     el.addEventListener("scroll", onScroll, { passive: true })
     return () => el.removeEventListener("scroll", onScroll)
@@ -478,7 +483,8 @@ export function SessionView({ id }: { id: string }) {
         setJustSettled(true)
         setTimeout(() => setJustSettled(false), 2200)
         // run finished while the user is elsewhere → a gentle system nudge
-        if (document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+        // (opt-in via settings; the browser permission is requested there)
+        if (document.hidden && localStorage.getItem("NEWHORSE_NOTIFY") === "on" && typeof Notification !== "undefined" && Notification.permission === "granted") {
           try {
             new Notification("newhorse · 任务完成", { body: `${text.slice(0, 60)}${text.length > 60 ? "…" : ""}` })
           } catch {
@@ -576,8 +582,8 @@ export function SessionView({ id }: { id: string }) {
 
   return (
     <div className="flex h-full flex-col">
-      {/* goal + context strip */}
-      <div className="flex items-center gap-2 border-b border-line bg-black/10 px-4 py-1.5 text-[11px]">
+      {/* goal + context meta bar: goal on the left, session tools on the right */}
+      <div className="flex items-center gap-2 border-b border-line bg-surface2/60 px-4 py-1.5 text-[11px]">
         {rows?.role === "butler" && (
           <span className="pill shrink-0 !border-accent/30 !bg-accent/10 !py-0 !text-[10px] !text-accent" title="固定管家角色：可派出 / 等待 / 中断子代理，动作全部审计">
             <IconButler size={10} />
@@ -601,15 +607,16 @@ export function SessionView({ id }: { id: string }) {
         )}
         {ctx && ctx.windowTokens !== undefined && ctx.ratio !== undefined && (
           <div className="ml-auto flex shrink-0 items-center gap-1.5" title={`约 ${ctx.estTokens} / ${ctx.windowTokens} tokens`}>
-            <div className="h-1 w-20 overflow-hidden rounded-full bg-white/[0.08]">
+            <div className="h-1 w-20 overflow-hidden rounded-full bg-line">
               <div className={`h-full rounded-full ${ctx.ratio > 0.8 ? "bg-bad" : "bg-accent"}`} style={{ width: `${Math.round(ctx.ratio * 100)}%` }} />
             </div>
             <span className="tnum text-faint">{Math.round(ctx.ratio * 100)}%</span>
           </div>
         )}
+        <span className="min-w-2 flex-1" />
         {fileChanges.length > 0 && (
           <button
-            className={`tnum shrink-0 transition-colors ${panel === "changes" ? "text-accent" : "text-faint hover:text-fg"}`}
+            className={`tnum shrink-0 rounded-md px-1.5 py-0.5 transition-colors ${panel === "changes" ? "bg-surface2 text-accent" : "text-faint hover:bg-surface2 hover:text-fg"}`}
             title="本次会话改动的文件"
             onClick={() => setPanel((v) => (v === "changes" ? null : "changes"))}
           >
@@ -629,7 +636,7 @@ export function SessionView({ id }: { id: string }) {
         </button>
       </div>
       {goalOpen && (
-        <div className="nh-rise shrink-0 border-b border-line bg-black/15 p-4 space-y-2.5">
+        <div className="nh-rise shrink-0 border-b border-line bg-surface2/80 p-4 space-y-2.5">
           <textarea className="input-base resize-none" rows={2} placeholder="目标（模型可见，将引导整个会话）" value={goalText} onChange={(e) => setGoalText(e.target.value)} />
           <div className="flex items-center gap-2">
             <input type="number" className="input-base !w-40" placeholder="token 预算（可选）" value={goalBudget} onChange={(e) => setGoalBudget(e.target.value)} />
@@ -647,7 +654,7 @@ export function SessionView({ id }: { id: string }) {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
       {/* stream — document flow */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl px-4 pb-10 pt-6 md:px-6 xl:max-w-[1000px] 2xl:max-w-[1160px]">
           {turns.length === 0 && parts.length === 0 && !busy && (
             <div className="fade flex flex-col items-center gap-4 py-16 text-center">
@@ -657,6 +664,17 @@ export function SessionView({ id }: { id: string }) {
               <div>
                 <div className="text-[14px] font-medium text-dim">这个会话还没有内容</div>
                 <div className="mt-1 text-[12px] text-faint">在下方输入任务，管家会自己读文件、跑工具、记重点</div>
+              </div>
+              <div className="mt-2 flex max-w-md flex-wrap justify-center gap-2">
+                {["梳理这个项目的目录结构", "给当前改动写一次提交信息", "检查最近的改动有没有遗漏"].map((hint) => (
+                  <button
+                    key={hint}
+                    className="rounded-full border border-linestrong bg-surface2 px-3 py-1.5 text-[12px] text-dim transition-all hover:-translate-y-0.5 hover:text-fg"
+                    onClick={() => setInput(hint)}
+                  >
+                    {hint}
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -683,6 +701,20 @@ export function SessionView({ id }: { id: string }) {
           )}
           <div ref={bottom} />
         </div>
+        {/* 回到最新: appears once the user scrolled away from the live tail */}
+        {showJump && (
+          <button
+            className="pop-in absolute bottom-4 left-1/2 z-20 flex h-8 -translate-x-1/2 items-center gap-1.5 rounded-full border border-linestrong bg-surface2/95 px-3 text-[11.5px] text-fg shadow-raise backdrop-blur transition-colors hover:border-linestrong"
+            onClick={() => {
+              stickRef.current = true
+              setShowJump(false)
+              bottom.current?.scrollIntoView({ behavior: "smooth" })
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M12 5v14M19 12l-7 7-7-7" /></svg>
+            回到最新
+          </button>
+        )}
       </div>
 
       {/* composer dock */}
@@ -907,7 +939,7 @@ function TurnRow({ t, live, sessionId, showToast, onFork, onRegenerate }: { t: T
   if (t.kind === "user") {
     return (
       <div className="rise group mb-5 flex justify-end items-start gap-1.5">
-        <div className="max-w-[82%]">
+        <div className="max-w-[82%]" title={t.ts ? new Date(t.ts).toLocaleString() : undefined}>
           {t.images && t.images.length > 0 && (
             <div className="mb-1.5 flex flex-wrap justify-end gap-1.5">
               {t.images.map((img, i) => (
@@ -923,6 +955,9 @@ function TurnRow({ t, live, sessionId, showToast, onFork, onRegenerate }: { t: T
         </div>
         {sessionId && onFork && (
           <span className="mt-1 flex shrink-0 flex-col gap-1 text-faint opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100">
+            <button className="hover:text-fg" title="复制这条消息" onClick={() => void navigator.clipboard?.writeText(t.text).catch(() => {})}>
+              <IconCopy size={12} />
+            </button>
             <button className="hover:text-accent" title="回退到这里：分叉新会话，消息回到输入框可改后重发" onClick={() => void onFork(t)}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 3v12a3 3 0 0 0 3 3h9M15 6l3 3-3 3"/></svg>
             </button>
@@ -1016,7 +1051,8 @@ function TurnRow({ t, live, sessionId, showToast, onFork, onRegenerate }: { t: T
       </div>
       {/* action bar (shared grammar with the code-block copy): hover reveals
           a real button, right-aligned so it never sits orphaned in the flow */}
-      <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100">
+      <div className="mt-1 flex items-center justify-end gap-2 opacity-0 transition-opacity duration-150 group-hover/msg:opacity-100 focus-within:opacity-100">
+        {t.ts && <span className="tnum text-[10.5px] text-faint">{new Date(t.ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>}
         <button
           className="flex items-center gap-1.5 rounded-lg border border-line bg-surface2 px-2 py-1 text-[11px] text-faint shadow-card transition-colors hover:border-linestrong hover:text-fg"
           onClick={() => void navigator.clipboard?.writeText(t.text).catch(() => {})}
