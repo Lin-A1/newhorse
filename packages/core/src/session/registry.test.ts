@@ -100,3 +100,17 @@ describe("session registry", () => {
     expect(rows[1]?.reason).toContain("butler requires")
   })
 })
+
+describe("lifetime token usage", () => {
+  it("folds Session.StepEnded usage into tokensUsed (input+output)", () => {
+    const row = fold([
+      created("s1", "/proj"),
+      { aggregate: "session", aggregate_id: "s1", seq: 1, type: "Session.StepEnded", data: { sessionId: "s1", step: 1, finish: "tool", usage: { inputTokens: 100, outputTokens: 20 } } },
+      { aggregate: "session", aggregate_id: "s1", seq: 2, type: "Session.StepEnded", data: { sessionId: "s1", step: 2, finish: "stop", usage: { inputTokens: 50, outputTokens: 30 } } },
+    ])
+    expect(row?.tokensUsed).toBe(200)
+    // a usage-less log carries no field (absent = unknown, not 0-as-fake)
+    const bare = fold([created("s2", "/proj")])
+    expect(bare?.tokensUsed).toBeUndefined()
+  })
+})

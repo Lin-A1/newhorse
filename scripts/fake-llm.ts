@@ -65,6 +65,11 @@ async function streamResponse(hasToolResult: boolean): Promise<Response> {
           { choices: [{ delta: { tool_calls: [{ index: 2, id: "call_todo", type: "function", function: { name: "todo_write", arguments: JSON.stringify({ todos: [{ content: "读取仓库结构", status: "completed", activeForm: "读取仓库结构" }, { content: "总结架构与技术栈", status: "in_progress", activeForm: "总结架构" }, { content: "输出报告并给建议", status: "pending", activeForm: "输出报告" }] }) } }] } }] },
           1800,
         )
+        const demoContent = ["# 演示笔记", "", "fake-llm 写入的演示文件，用于验证变更文件面板。", "- 第一行要点", "- 第二行要点", ""].join("\n")
+        await send(
+          { choices: [{ delta: { tool_calls: [{ index: 3, id: "call_write", type: "function", function: { name: "write", arguments: JSON.stringify({ path: "nh-smoke-demo/演示.md", content: demoContent }) } }] } }] },
+          1500,
+        )
         await send({ choices: [{ delta: {}, finish_reason: "tool_calls" }] }, 120)
       } else {
         await send({ choices: [{ delta: { role: "assistant", content: "" } }] }, 60)
@@ -77,7 +82,7 @@ async function streamResponse(hasToolResult: boolean): Promise<Response> {
             buf = ""
           }
         }
-        await send({ choices: [{ delta: {}, finish_reason: "stop" }] }, 100)
+        await send({ choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5234, completion_tokens: 640 } }, 100)
       }
       controller.enqueue(enc.encode("data: [DONE]\n\n"))
       controller.close()

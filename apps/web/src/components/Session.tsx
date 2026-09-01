@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { createPortal } from "react-dom"
-import { api, foldTranscript, type SessionRow } from "../api"
+import { api, foldFileChanges, foldTranscript, type FileChange, type SessionRow, type StoredEventRow } from "../api"
 import { EmotionBall } from "./EmotionBall"
 import { Markdown } from "./Markdown"
 import { ModelPill } from "./ModelPill"
+import { FileChanges } from "./FileChanges"
 import { FileTree } from "./FileTree"
-import { pendingPrefills, takePendingPrefill, takePendingPrompt, useStore } from "../store"
+import { pendingPrefills, pendingPrompts, takePendingPrefill, takePendingPrompt, useStore } from "../store"
 import { IconSend, IconStop, IconTool, IconCheck, IconSpinner, IconCircle, IconTarget, IconBrain, IconNote, IconChevron, IconFile, IconFolder, IconTerminal, IconPencil, IconSearch, IconCopy, IconButler, IconShield, IconPaperclip } from "./icons"
 
 /** pick a semantic icon per tool name (read=file, bash=terminal, edit=pencil…) */
@@ -168,11 +169,12 @@ export function SessionView({ id }: { id: string }) {
   const { refreshSessions, setRunning, setMood, setSessionStatus, approvals, settleApproval, showToast, settings, setView } = useStore()
   const [policy, setPolicyState] = useState<"strict" | "readonly" | "trusted">("strict")
   const [policyAnchor, setPolicyAnchor] = useState<{ left: number; bottom: number } | null>(null)
-  const [treeOpen, setTreeOpen] = useState(false)
+  const [panel, setPanel] = useState<"tree" | "changes" | null>(null)
   const [commands, setCommands] = useState<Array<{ name: string; description?: string }>>([])
   const [cmdSelected, setCmdSelected] = useState(0)
   const [slashAnchor, setSlashAnchor] = useState<{ left: number; bottom: number; width: number } | null>(null)
   const [turns, setTurns] = useState<Turn[]>([])
+  const [events, setEvents] = useState<StoredEventRow[]>([])
   const [parts, setParts] = useState<Turn[]>([])
   const [busy, setBusy] = useState(false)
   const [elapsed, setElapsed] = useState(0)
@@ -209,7 +211,18 @@ export function SessionView({ id }: { id: string }) {
     return () => el.removeEventListener("focus", onFocus)
   }, [])
 
-  const fold = useCallback((): Promise<void> => api.events(id).then((events) => setTurns(foldTranscript(events))).catch(() => setTurns([])), [id])
+  const fold = useCallback((): Promise<void> => api.events(id).then((evs) => {
+    setEvents(evs)
+    setTurns(foldTranscript(evs))
+  }).catch(() => {
+    setEvents([])
+    setTurns([])
+  }), [id])
+  const fileChanges = useMemo(() => foldFileChanges(events), [events])
+  const tokensUsed = useMemo(
+    () => events.reduce((n, e) => (e.type === "Session.StepEnded" ? n + ((e.data?.usage as { inputTokens?: number; outputTokens?: number } | undefined)?.inputTokens ?? 0) + ((e.data?.usage as { outputTokens?: number } | undefined)?.outputTokens ?? 0) : n), 0),
+    [events],
+  )
 
   // goal + context meter load/refresh
   const loadMeta = useCallback((): void => {
@@ -464,6 +477,14 @@ export function SessionView({ id }: { id: string }) {
       if (!result.error && !controller.signal.aborted) {
         setJustSettled(true)
         setTimeout(() => setJustSettled(false), 2200)
+        // run finished while the user is elsewhere → a gentle system nudge
+        if (document.hidden && typeof Notification !== "undefined" && Notification.permission === "granted") {
+          try {
+            new Notification("newhorse · 任务完成", { body: `${text.slice(0, 60)}${text.length > 60 ? "…" : ""}` })
+          } catch {
+            // notification is best-effort, never load-bearing
+          }
+        }
       }
     } catch (e) {
       if (!(e instanceof DOMException && e.name === "AbortError")) setError(prettyError(e instanceof Error ? e.message : String(e)))
@@ -497,8 +518,9 @@ export function SessionView({ id }: { id: string }) {
    *  attach the fork as a live session, prefill its composer with the rewound
    *  text for editing — the old session stays intact (append-only philosophy).
    *  The role is passed on attach too (belt) — createApp also restores it from
-   *  the copied Session.Created (suspenders). */
-  const forkAndRewind = async (t: Turn): Promise<void> => {
+   *  the copied Session.Created (suspenders). `regenerate` reuses the same
+   *  fork with AUTO-SEND (codex retry): the composer consumes pendingPrompts. */
+  const forkFromTurn = async (t: Turn, mode: "edit" | "regenerate"): Promise<void> => {
     if (t.seq === undefined) {
       showToast("这条消息没有可定位的分叉点")
       return
@@ -507,7 +529,8 @@ export function SessionView({ id }: { id: string }) {
       const ws = localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace || undefined
       const r = await api.forkSession(id, t.seq - 1)
       await api.createSession(r.sessionId, ws, rows?.role === "butler")
-      pendingPrefills.set(r.sessionId, t.text)
+      if (mode === "regenerate") pendingPrompts.set(r.sessionId, t.text)
+      else pendingPrefills.set(r.sessionId, t.text)
       localStorage.setItem("NEWHORSE_CURRENT_SESSION", r.sessionId)
       window.dispatchEvent(new CustomEvent("nh-session-updated", { detail: r.sessionId }))
       setView({ kind: "session", id: r.sessionId })
@@ -515,6 +538,7 @@ export function SessionView({ id }: { id: string }) {
       showToast(e instanceof Error ? e.message : String(e))
     }
   }
+  const forkAndRewind = (t: Turn): Promise<void> => forkFromTurn(t, "edit")
 
   const pending = approvals[0]
 
@@ -583,9 +607,23 @@ export function SessionView({ id }: { id: string }) {
             <span className="tnum text-faint">{Math.round(ctx.ratio * 100)}%</span>
           </div>
         )}
-        <button className={`shrink-0 transition-colors ${treeOpen ? "text-accent" : "text-faint hover:text-fg"}`} title="工作区文件树" onClick={() => setTreeOpen(!treeOpen)}>
+        {fileChanges.length > 0 && (
+          <button
+            className={`tnum shrink-0 transition-colors ${panel === "changes" ? "text-accent" : "text-faint hover:text-fg"}`}
+            title="本次会话改动的文件"
+            onClick={() => setPanel((v) => (v === "changes" ? null : "changes"))}
+          >
+            变更 {fileChanges.length}
+          </button>
+        )}
+        <button className={`shrink-0 transition-colors ${panel === "tree" ? "text-accent" : "text-faint hover:text-fg"}`} title="工作区文件树" onClick={() => setPanel((v) => (v === "tree" ? null : "tree"))}>
           <IconFolder size={12} />
         </button>
+        {tokensUsed > 0 && (
+          <span className="tnum shrink-0 text-faint" title="本会话累计输入+输出 tokens（事件日志折叠）">
+            {tokensUsed >= 10_000 ? `${(tokensUsed / 1000).toFixed(1)}k` : tokensUsed} tok
+          </span>
+        )}
         <button className="shrink-0 text-faint hover:text-fg" title="导出会话 Markdown" onClick={() => void exportMd()}>
           导出
         </button>
@@ -623,7 +661,7 @@ export function SessionView({ id }: { id: string }) {
             </div>
           )}
           {turns.map((t, i) => (
-            <TurnRow key={i} t={t} index={i} sessionId={id} showToast={showToast} onFork={(tt) => void forkAndRewind(tt)} />
+            <TurnRow key={i} t={t} index={i} sessionId={id} showToast={showToast} onFork={(tt) => void forkAndRewind(tt)} onRegenerate={(tt) => void forkFromTurn(tt, "regenerate")} />
           ))}
           {/* ZCode-style work separator between the user's message and the run */}
           {busy && (
@@ -690,7 +728,20 @@ export function SessionView({ id }: { id: string }) {
             </button>
           </div>
         )}
-        <div ref={composerBoxRef} className="panel-strong composer-solid relative overflow-hidden !rounded-[18px]">
+        <div
+          ref={composerBoxRef}
+          className="panel-strong composer-solid relative overflow-hidden !rounded-[18px]"
+          onDragOver={(e) => {
+            if ([...(e.dataTransfer?.types ?? [])].includes("Files")) e.preventDefault()
+          }}
+          onDrop={(e) => {
+            const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith("image/"))
+            if (files.length > 0) {
+              e.preventDefault()
+              void addAttachments(files)
+            }
+          }}
+        >
           {/* attachment previews: thumbnail chips with remove, above the toolbar */}
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 px-3 pt-2.5">
@@ -804,7 +855,8 @@ export function SessionView({ id }: { id: string }) {
       </div>
       </div>
       {/* file tree — inside the body row, right of the transcript */}
-      {treeOpen && <FileTree workspace={localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace} onPick={(p) => setInput((v) => (v ? `${v} ${p}` : p))} onClose={() => setTreeOpen(false)} />}
+      {panel === "tree" && <FileTree workspace={localStorage.getItem("NEWHORSE_WORKSPACE") || settings?.workspace} onPick={(p) => setInput((v) => (v ? `${v} ${p}` : p))} onClose={() => setPanel(null)} />}
+      {panel === "changes" && <FileChanges changes={fileChanges} onClose={() => setPanel(null)} />}
       </div>
       {/* portal'd popovers (composer overflow-hidden can never clip them) */}
       {slashAnchor &&
@@ -851,7 +903,7 @@ export function SessionView({ id }: { id: string }) {
 }
 
 /** Single transcript row — document flow (assistant has NO bubble). */
-function TurnRow({ t, live, sessionId, showToast, onFork }: { t: Turn; index: number; live?: boolean; sessionId?: string; showToast?: (msg: string) => void; onFork?: (t: Turn) => void }) {
+function TurnRow({ t, live, sessionId, showToast, onFork, onRegenerate }: { t: Turn; index: number; live?: boolean; sessionId?: string; showToast?: (msg: string) => void; onFork?: (t: Turn) => void; onRegenerate?: (t: Turn) => void }) {
   if (t.kind === "user") {
     return (
       <div className="rise group mb-5 flex justify-end items-start gap-1.5">
@@ -870,13 +922,14 @@ function TurnRow({ t, live, sessionId, showToast, onFork }: { t: Turn; index: nu
           )}
         </div>
         {sessionId && onFork && (
-          <button
-            className="mt-1 shrink-0 text-faint opacity-0 transition-opacity group-hover:opacity-60 hover:!opacity-100 hover:text-accent"
-            title="回退到这里：分叉一条新会话，这条消息回到输入框可改后重发"
-            onClick={() => void onFork(t)}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 3v12a3 3 0 0 0 3 3h9M15 6l3 3-3 3"/></svg>
-          </button>
+          <span className="mt-1 flex shrink-0 flex-col gap-1 text-faint opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100">
+            <button className="hover:text-accent" title="回退到这里：分叉新会话，消息回到输入框可改后重发" onClick={() => void onFork(t)}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M6 3v12a3 3 0 0 0 3 3h9M15 6l3 3-3 3"/></svg>
+            </button>
+            <button className="hover:text-accent" title="重新生成：分叉并原样重发这条消息" onClick={() => void onRegenerate?.(t)}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>
+            </button>
+          </span>
         )}
       </div>
     )

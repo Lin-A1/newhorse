@@ -183,6 +183,7 @@ export function Sidebar({ mood, onClose }: { mood: Mood; onClose?: () => void })
                     <span className={`inline-block h-1 w-1 rounded-full ${r.status === "active" ? "bg-ok shadow-[0_0_5px_rgba(52,211,153,0.8)]" : "bg-faint"}`} />
                     <span className="tnum">{relativeTime(r.updatedAt)}</span>
                     {r.model && <span className="truncate">{r.model.split("/").pop()}</span>}
+                    {r.tokensUsed ? <span className="tnum shrink-0">{r.tokensUsed >= 1000 ? `${(r.tokensUsed / 1000).toFixed(1)}k` : r.tokensUsed} tok</span> : null}
                     {/* hover actions — stopPropagation keeps the row unopened */}
                     <span className="ml-auto flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                       <span

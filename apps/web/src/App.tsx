@@ -20,7 +20,9 @@ const VIEW_TITLES: Record<string, string> = { home: "newhorse", usage: "用量�
 
 function Shell() {
   const { view, setView, sessions, refreshSessions, toast, mood, sessionBusy, sessionElapsed, approvals, settleApproval } = useStore()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  // desktop sidebar can be hidden too (Ctrl+B) — opencode/codex both allow it
+  const [sidebarHidden, setSidebarHidden] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   // legacy dispatchers (error tray, memory CTA) route to the settings page
@@ -30,17 +32,26 @@ function Shell() {
     return () => window.removeEventListener("nh-open-settings", onOpen)
   }, [setView])
 
-  // Ctrl+K toggles the command palette (opencode keybind)
+  // opencode-style keybinds: Ctrl+K palette, Ctrl+N new session, Ctrl+B sidebar
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const k = e.key.toLowerCase()
+      if (k === "k") {
         e.preventDefault()
         setPaletteOpen((v) => !v)
+      } else if (k === "n") {
+        e.preventDefault()
+        localStorage.removeItem("NEWHORSE_CURRENT_SESSION")
+        setView({ kind: "home" })
+      } else if (k === "b") {
+        e.preventDefault()
+        setSidebarHidden((v) => !v)
       }
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [])
+  }, [setView])
 
   useEffect(() => {
     const onUpdated = (): void => {
@@ -57,25 +68,27 @@ function Shell() {
 
   return (
     <div className="relative z-10 flex h-full">
-      {/* Sidebar (desktop) */}
-      <aside className="hidden w-64 shrink-0 border-r border-line bg-chrome md:block">
-        <Sidebar mood={mood} />
-      </aside>
+      {/* Sidebar (desktop; Ctrl+B hides) */}
+      {!sidebarHidden && (
+        <aside className="hidden w-64 shrink-0 border-r border-line bg-chrome md:block">
+          <Sidebar mood={mood} />
+        </aside>
+      )}
 
       {/* Sidebar (mobile drawer) — only the backdrop dismisses; inner clicks survive */}
-      {sidebarOpen && (
+      {drawerOpen && (
         <div className="fixed inset-0 z-40 flex md:hidden">
           <div className="pop-in h-full w-72 shrink-0 border-r border-line bg-surface2 shadow-2xl">
-            <Sidebar mood={mood} onClose={() => setSidebarOpen(false)} />
+            <Sidebar mood={mood} onClose={() => setDrawerOpen(false)} />
           </div>
-          <div className="fade flex-1 bg-scrim backdrop-blur-[2px]" onClick={() => setSidebarOpen(false)} />
+          <div className="fade flex-1 bg-scrim backdrop-blur-[2px]" onClick={() => setDrawerOpen(false)} />
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Global top bar */}
         <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-chrome px-4 backdrop-blur-md">
-          <button className="btn-ghost !rounded-lg !p-1.5 md:hidden" onClick={() => setSidebarOpen(true)} aria-label="菜单">
+          <button className="btn-ghost !rounded-lg !p-1.5 md:hidden" onClick={() => setDrawerOpen(true)} aria-label="菜单">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <path d="M4 7h16M4 12h16M4 17h16" />
             </svg>

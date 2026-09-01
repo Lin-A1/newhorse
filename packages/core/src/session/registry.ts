@@ -28,6 +28,9 @@ export interface SessionRow {
   /** Fixed session role (Session.Created): "butler" = the coordinator session
    *  with the butler toolset; absent = an ordinary session. */
   readonly role?: "butler"
+  /** Lifetime token usage, folded from Session.StepEnded usage payloads
+   *  (input + output; cache/reasoning tokens are subsets, not added). */
+  readonly tokensUsed?: number
 }
 
 export type SessionStatus = "created" | "active" | "settled" | "interrupted"
@@ -141,6 +144,7 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
   let title: string | undefined
   let archived = false
   let role: "butler" | undefined
+  let tokensUsed = 0
   let hasCreated = false
 
   for (const event of stored) {
@@ -159,9 +163,14 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
         status = "created"
         break
       }
-      case "Session.StepEnded":
+      case "Session.StepEnded": {
         status = "settled"
+        // Lifetime usage (opencode-style per-session cost surface): input +
+        // output only — cache/reasoning are subsets already counted in those.
+        const u = event.data as { usage?: { inputTokens?: number; outputTokens?: number } }
+        tokensUsed += (u.usage?.inputTokens ?? 0) + (u.usage?.outputTokens ?? 0)
         break
+      }
       case "Session.Interrupted": {
         const d = event.data as { sessionId?: string }
         sessionId = sessionId || d.sessionId || ""
@@ -200,7 +209,7 @@ export function fold(stored: StoredEvent[]): SessionRow | undefined {
   }
 
   if (!hasCreated) return undefined
-  return { sessionId: sessionId || workspace, workspace, projectId, title, status, model, parentId, createdAt, updatedAt, archived, ...(role ? { role } : {}) }
+  return { sessionId: sessionId || workspace, workspace, projectId, title, status, model, parentId, createdAt, updatedAt, archived, ...(role ? { role } : {}), ...(tokensUsed > 0 ? { tokensUsed } : {}) }
 }
 
 function excerpt(content: readonly unknown[]): string {

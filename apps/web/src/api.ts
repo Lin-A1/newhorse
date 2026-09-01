@@ -28,7 +28,7 @@ async function json<T>(path: string, opts?: { method?: string; body?: unknown })
 
 // --- sessions ---
 
-export interface SessionRow { sessionId: string; workspace: string; title?: string; status: string; model?: string; parentId?: string; role?: "butler"; createdAt: number; updatedAt: number; archived?: boolean }
+export interface SessionRow { sessionId: string; workspace: string; title?: string; status: string; model?: string; parentId?: string; role?: "butler"; createdAt: number; updatedAt: number; archived?: boolean; tokensUsed?: number }
 export interface ChatMessage { role: "user" | "assistant" | "system" | "tool"; content: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown; text2?: string }> }
 
 /** One durable event row (the client folds it into a transcript). `seq` is
@@ -159,6 +159,71 @@ export function prettyTitle(title: string | undefined, fallback: string, max = 2
     .trim()
   if (!clean) return fallback
   return clean.length > max ? clean.slice(0, max) + "…" : clean
+}
+
+// --- file-change tracking (codex review-changes / opencode file-changes) ---
+
+export interface FileChange {
+  /** Workspace-relative path (as the tool addressed it). */
+  path: string
+  /** Last tool that touched the file. */
+  tool: string
+  /** How many times the file was written/edited this session. */
+  touches: number
+  added: number
+  removed: number
+  /** Synthesized unified-ish diff of the LAST change (line-based). */
+  diff: Array<{ kind: "add" | "del" | "same"; text: string }>
+}
+
+/** A minimal line diff good enough for exact-replace edit semantics: trim the
+ *  common prefix/suffix, then the middle is -old +new. Full LCS is overkill
+ *  for write (all-add) and exact-replace (one hunk) tool shapes. */
+function lineDiff(oldText: string, newText: string): FileChange["diff"] {
+  const a = oldText.length ? oldText.replace(/\n$/, "").split("\n") : []
+  const b = newText.length ? newText.replace(/\n$/, "").split("\n") : []
+  let pre = 0
+  while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++
+  let suf = 0
+  while (suf < a.length - pre && suf < b.length - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++
+  const out: FileChange["diff"] = []
+  for (let i = 0; i < pre; i++) out.push({ kind: "same", text: a[i] ?? "" })
+  for (let i = pre; i < a.length - suf; i++) out.push({ kind: "del", text: a[i] ?? "" })
+  for (let i = pre; i < b.length - suf; i++) out.push({ kind: "add", text: b[i] ?? "" })
+  for (let i = a.length - suf; i < a.length; i++) out.push({ kind: "same", text: a[i] ?? "" })
+  return out
+}
+
+/** Fold the tool surface into per-file change records (chronological, last
+ *  change's diff kept). write = whole-file add; edit = old/new hunk. */
+export function foldFileChanges(events: StoredEventRow[]): FileChange[] {
+  const byPath = new Map<string, FileChange>()
+  for (const e of events) {
+    if (e.type !== "Session.MessageAppended") continue
+    const m = (e.data ?? {}).message as { kind?: string; content?: Array<{ type?: string; name?: string; input?: unknown }> } | undefined
+    if (m?.kind !== "assistant" || !Array.isArray(m.content)) continue
+    for (const part of m.content) {
+      if (part.type !== "tool-call") continue
+      const name = part.name ?? ""
+      if (!/^(write|edit|Write|Edit)$/.test(name)) continue
+      const input = (part.input ?? {}) as { path?: string; file_path?: string; content?: string; old?: string; new?: string }
+      const path = input.path ?? input.file_path
+      if (!path) continue
+      const prev = byPath.get(path)
+      let diff: FileChange["diff"]
+      if (/^write$/i.test(name) && typeof input.content === "string") {
+        diff = lineDiff("", input.content)
+      } else if (/^edit$/i.test(name)) {
+        diff = lineDiff(typeof input.old === "string" ? input.old : "", typeof input.new === "string" ? input.new : "")
+      } else {
+        continue
+      }
+      const added = diff.filter((d) => d.kind === "add").length
+      const removed = diff.filter((d) => d.kind === "del").length
+      byPath.set(path, { path, tool: name.toLowerCase(), touches: (prev?.touches ?? 0) + 1, added, removed, diff })
+    }
+  }
+  return [...byPath.values()]
 }
 
 /** Compact relative time for session lists: 刚刚 / N 分钟前 / HH:mm / 昨天 / M月D日 */
