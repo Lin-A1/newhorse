@@ -17,6 +17,38 @@
 4. **不造人设名**。「管家」「头马」都被否；常驻会话就叫 **newhorse**。引擎键 `role: "butler"` / `asButler` 是持久化标识符，不改，但 UI 文案一律 newhorse。
 5. **封面球要高表现力**：会眨眼、眼神跟随鼠标、不同状态不同表情（见 §4）。
 6. **工作区与常驻会话必须是一等概念**：侧栏顶部工作区身份块；每个工作区一个**常驻 newhorse 会话**置顶（引擎按工作区派生稳定 id，见 §5.2）；封面 composer 直接把任务发进常驻会话。
+7. **功能上也要补全，对齐 ZCode**——视觉和功能是同一档要求，不把“简约”当砍功能的借口。逐项清单见 §1.5。
+
+## 1.5 功能补全清单（对齐 ZCode，逐项验收）
+
+ZCode（D 盘安装包）的产品功能面，逐项映射到我们引擎已有的接口。**每一项都要有 UI 落点**；做完一项勾一项，验收时对着清单过。
+
+| # | ZCode 功能 | 引擎落点 | UI 要求 |
+|---|---|---|---|
+| 1 | 会话管理（列表/搜索/重命名/归档/删除/分叉） | §5.1 sessions 相关端点 | 侧栏分组 + 归档组 + 双步删除 + 回退 fork |
+| 2 | 流式对话（正文/推理/工具卡片折叠、错误态） | prompt SSE + events | 流式渲染、thinking 可折叠、tool 行可展开输出 |
+| 3 | 中断 / 追加（steer）/ 排队 | interrupt / steer | 会话页头部中断按钮；进行中输入自动转追加 |
+| 4 | 权限分级 + 审批 | policy + approvals | 会话级三档切换；审批托盘（允许/拒绝） |
+| 5 | 任务清单 + 目标预算 | todos / goal | composer 上方 todo dock；goal 预算展示 |
+| 6 | 上下文用量统计 | /v1/session/:id/context | 上下文占比指示（ZCode 的 context 页思路） |
+| 7 | 文件改动 review（diff） | events 折叠 write/edit | 每文件 diff 视图（+N/−N、行级着色） |
+| 8 | 文件树浏览 | /v1/fs | 会话侧的懒加载文件树 |
+| 9 | 斜杠命令 + 全局命令面板 | /v1/commands、/v1/session/:id/command | 输入框支持 / 命令；Ctrl+K 面板 |
+| 10 | skills 目录（元数据→按需加载正文） | /v1/skills[?name=] | 列表 + 点开看正文 |
+| 11 | agent 角色目录 | /v1/agents | 列表（角色/工具白名单/模型） |
+| 12 | 模型与供应商管理（预设切换/模型列表/预算） | /v1/settings、/v1/models | ccswitch 式预设卡 + 原子切换 + 预算字段 |
+| 13 | 用量分析（热力图/排行/成本） | /v1/usage | 统计卡 + 热力 + 会话排行（点击跳会话） |
+| 14 | 定时任务（自动化） | /v1/schedules 全套 | 启停开关/立即执行/节奏/两步删除 |
+| 15 | 记忆（列表/搜索/删除/写入） | /v1/memory | 搜索 + 条目卡 + 删除 |
+| 16 | 子代理可视化 | parentId、role=butler | 子会话树形缩进 + 分叉标记 |
+| 17 | 多会话并行状态 | sessions 轮询 status | 侧栏状态点（进行中脉动/中断红） |
+| 18 | 通知（回合完成/需审批） | 客户端 Notification | 可开关，localStorage 记忆 |
+| 19 | 深浅主题 + 跟随系统 | 客户端 | 首屏无闪烁（index.html 内联预置） |
+| 20 | 快捷键体系 | 客户端 | Ctrl+K 面板等；按键提示可见 |
+| 21 | 引导（无密钥/无工作区时） | /v1/settings | 空状态指路设置，不白屏 |
+| 22 | 桌面端打包 | Tauri 2 + sidecar | 见 §0/§7.8，web 验收后执行 |
+
+**明确暂缓**（ZCode 有、引擎暂无对应接口，不要自己造后端）：内置终端、进程监控器、PDF/Office 文件预览、MCP 配置 UI、跨会话全文检索。清单外的新能力先问引擎有没有端点，没有就记入暂缓，不许客户端里写业务逻辑。
 
 ## 2. 仓库与工作方式
 
@@ -128,6 +160,7 @@ AGENT_RUNTIME_HOME=G:/temp/nh-dev-home NEWHORSE_PORT=3931 NEWHORSE_UI_DIR=<dist>
 3. 会话页：折叠转录（trajectory 角色色竖标）、todo dock、审批卡、steer、回退 fork、策略切换、图片附加。
 4. 侧栏：工作区身份块 + 常驻会话置顶 + 按工作区分组 + 归档组 + 状态点。
 5. 设置 / 用量 / 记忆 / 定时四页可用（数据全来自 §5.1 接口）。
+5b. **§1.5 功能清单逐项核对，缺一项不算完**。
 6. `bun typecheck`、`bun run build` 过；无密钥冒烟（fake-llm 或 client-surfaces）过；浏览器逐页截图自验。
 7. 提交推送 dev；纯前端改动不用同步镜像。
 8. web 验收通过后**打包 desktop**：Tauri 2 + server sidecar + 内置 dist（历史配置 `git show ff81b663f -- apps/desktop` 可整体恢复作参考），产出安装包，并验证深浅主题与球动画在 WebView 里正常。
