@@ -153,6 +153,35 @@ AGENT_RUNTIME_HOME=G:/temp/nh-dev-home NEWHORSE_PORT=3931 NEWHORSE_UI_DIR=<dist>
 - 服务器直接服务 dist（单源=web/手机同一产物）；无 UI 目录时纯 API。
 - 全部 env 键在 `packages/runtime/src/config.ts` 的 `ENV` 表（NEWHORSE_PORT / NEWHORSE_TOKEN / NEWHORSE_MODEL / …），默认端口 3927。
 
+### 5.5 传输细节契约（数字都从 server/core 源码核过，别凭感觉实现）
+
+**图像管道（端到端）**：
+1. 客户端读取文件 → `arrayBuffer` → **裸 base64（不带 `data:` 前缀，标准字母表）**；渲染时才拼 `data:${mime};base64,${data}`。
+2. 建议客户端先压缩/缩放再发（上限很容易顶到）；`HEIC/AVIF` 等不在白名单，前端要转码或拒绝。
+3. `POST /v1/session/:id/prompt` body `{text, images?: [{mime, data}]}`。服务端校验（每条都是显式 400/413，不静默丢弃）：
+   - mime 白名单 `/^image\/(png|jpeg|webp|gif)$/`；
+   - base64 形状 `/^[A-Za-z0-9+/]+={0,2}$/` 且长度 %4==0，单张 ≤ **4,000,000** 字符（`MAX_IMAGE_BASE64`）；
+   - 最多 **5** 张/条（`MAX_IMAGES_PER_PROMPT`）；
+   - 整个 body > **40,000,000** 字节时**解析之前**就回 413（`MAX_PROMPT_BODY`，必须先查 Content-Length 再读流）。
+4. 存储一次原则：图像只随 `Session.PromptAdmitted` 落盘一次，`Prompted` 事件重放它；转录折叠时从 admitted 行解析——**客户端不要在两条事件里重复渲染**。
+5. **老化规则**：图像只在**最后一条用户消息**上降低给模型（防上下文膨胀），但历史消息的图像在 UI 里仍可展示（数据在事件里）。
+
+**SSE 契约**：首帧是注释 `: open`（Bun 首个 body 字节才刷响应头，没有它客户端读不到 200）；每 15s 一条 `: keepalive` 注释（Bun 默认 10s 空闲断连，注释帧保活）；事件帧 `data: {json}\n\n`；终止 `data: [DONE]`；**客户端 abort 会触发服务端 interrupt**（回流干净，不会留半开连接）。
+
+**鉴权**：服务端 token 来自配置/env（`NEWHORSE_TOKEN`），客户端存 localStorage 同名键，全部请求带 `Authorization: Bearer …`；401 = 未授权/未配置。
+
+**事件日志读取**：`GET /v1/session/:id/events` 每次返回**全量数组**（无游标/增量），客户端全量重折即可（几百条以内开销可忽略）；`seq` 是聚合内单调序，**用户事件的 seq 就是 fork 点**；`ts` 是存储层写入时间，旧数据可能缺失（渲染要容错）。
+
+**admission 语义（steer/queue）**：`POST /steer` 落一条 `delivery:"steer"` 的收件（下一个安全边界晋升）；进行中直接再发 prompt 会被当成排队（`delivery:"queue"`，会话空闲时晋升）。admit 是幂等的：同 id 同内容返回同一回执，同 id 不同内容报冲突；收件箱从事件日志重建，**重启不丢**。
+
+**settings 合并语义**：PUT 是深合并（按字段）；`baseUrl/model/contextWindowTokens/maxOutputTokens` 等是 CLEARABLE（传 `""` 或 null 清空存储值，用于预设切换）；apiKey 按字段保留——**脱敏回显（hasApiKey/apiKeyHint 只是展示字段）往返绝不擦掉已存密钥**（有回归测试钉着）；密钥留空 = 保持不变。
+
+**会话状态机**：`created → active → settled | interrupted`（registry 折叠自事件）；UI 只需要三态渲染：active=脉动点、settled=灰点、interrupted=红点。
+
+**fork**：`POST /v1/session/:id/fork {atSeq?}` 复制前缀事件到新会话并**继承源会话的 workspace 与 role**；不带 atSeq = 从当前头部分叉。
+
+**协议杂项**：所有 JSON body `content-type: application/json`，解析失败显式 400；错误响应形状统一 `{error: string}`；SSE 内错误是 `{type:"error", code, message}` 事件（HTTP 层可能已 200）。
+
 ## 6. 上一轮踩过的坑（别再踩）
 
 1. **Tailwind 指令漏写**：自定义 index.css 必须带 `@tailwind base/components/utilities`，否则工具类全不生效（页面“裸奔”）。
